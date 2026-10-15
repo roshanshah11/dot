@@ -14,10 +14,11 @@ final class OverlayWindow: NSPanel {
         super.init(contentRect: screen.frame, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
         isOpaque = false
         backgroundColor = .clear
-        level = .screenSaver
         ignoresMouseEvents = true
         collectionBehavior = [.canJoinAllSpaces, .stationary, .fullScreenAuxiliary]
         isFloatingPanel = true
+        // After isFloatingPanel, which resets the level to .floating: Dot sits above menus and Spotlight.
+        level = .screenSaver
         isReleasedWhenClosed = false
         hasShadow = false
         hidesOnDeactivate = false

@@ -20,6 +20,7 @@ final class AgentManager {
         let session: ClaudeSession
         var startedAt = Date()
         var lastLine = "starting"
+        var lastBrief = ""
         var finalText = ""
         var buffer = ""
         var idleWork: DispatchWorkItem?
@@ -34,6 +35,17 @@ final class AgentManager {
     private var pendingConsent: [UUID: (String, Bool, String?) -> Void] = [:]
     /// Set after init: Atlas's view of his day rides along with every brief.
     var atlas: AtlasBridge?
+    /// Set after init: clears unrecognised shell commands that are plainly harmless.
+    var jev: Jev?
+
+    struct Running { let slug: String; let name: String; let task: String }
+
+    /// Agents with a turn in flight, newest first.
+    func runningAgents() -> [Running] {
+        runs.values.filter { $0.session.turnInFlight }
+            .sorted { $0.startedAt > $1.startedAt }
+            .map { Running(slug: $0.agent.slug, name: $0.agent.name, task: Log.short($0.lastBrief, 120)) }
+    }
     /// The last final text of each agent, for the notch card and Home.
     private(set) var lastResults: [String: String] = [:]
 
@@ -131,6 +143,7 @@ final class AgentManager {
         run.finalText = ""
         run.buffer = ""
         run.lastLine = "starting"
+        run.lastBrief = brief
         hud.upsertAgent(AgentRow(id: agent.slug, name: agent.name, line: Log.short(brief, 90), state: .running))
 
         var text = brief
@@ -240,14 +253,16 @@ final class AgentManager {
 
     private func finished(_ run: Run, result: ResultInfo) {
         let agent = run.agent
-        let text = run.finalText.isEmpty ? (result.resultText ?? "") : run.finalText
+        let raw = run.finalText.isEmpty ? (result.resultText ?? "") : run.finalText
+        let parsed = AgentResult.parse(raw)
+        let text = parsed.body
         ledger.record(kind: "agent", agent: agent.slug, model: config.agentModel, result: result, summary: Log.short(text, 200))
         let summary = Self.firstSentence(of: text)
         let failed = result.isError
         lastResults[agent.slug] = text
         let outputs = outputFiles(for: agent)
         hud.upsertAgent(AgentRow(id: agent.slug, name: agent.name, line: failed ? "failed: \(summary)" : summary, state: failed ? .failed : .done,
-                                 result: text, outputCount: outputs.count))
+                                 result: text, outputCount: outputs.count, outputs: Array(outputs.prefix(4)), nextAction: parsed.nextAction))
         appendTranscript(agent, role: "result", text: "\(result.subtype) in \(result.durationMs) ms, $\(String(format: "%.3f", result.costUSD))")
         NSSound(named: failed ? "Basso" : "Glass")?.play()
         if config.speakAgentResults, !summary.isEmpty {
@@ -285,6 +300,32 @@ final class AgentManager {
             appendTranscript(run.agent, role: "denied", text: "\(request.toolName): \(reason)")
             completion(false, "Dot refused: \(reason)")
         case .ask(let reason):
+            if let jev, request.toolName == "Bash", let command = request.toolRequest.string("command"), !ConsentPolicy.isAlwaysAsk(command) {
+                // Unrecognised, not on the always-ask list: let Jev judge whether it is plainly harmless.
+                let state: [String: Any] = [
+                    "command": String(command.prefix(1500)), "description": request.description ?? "",
+                    "agent_folder": run.agent.folder.path, "task": Log.short(run.lastBrief, 200),
+                ]
+                jev.evaluate("consent", state: state, questions: [
+                    "risky": .yesNo(instructions: "Would running this shell command send, post, submit, pay, delete or overwrite anything, change files outside the agent's own folder or /tmp, install software system-wide, control another app, or otherwise need the user's say-so? Reading, computing, and writing inside the agent folder are not risky.", yes: "yes, it could act outside the agent's folder or needs the user's judgment", no: "no, plainly harmless"),
+                ]) { [weak self] answers in
+                    guard let self else { completion(false, "Dot is gone."); return }
+                    if let p = answers?["risky"]?.probability, p <= 0.08 {
+                        Log.info("consent: jev cleared `\(Log.short(command, 80))` (risk \(String(format: "%.2f", p)))")
+                        self.appendTranscript(run.agent, role: "cleared", text: "\(request.toolName): \(reason)")
+                        completion(true, nil)
+                    } else {
+                        self.askCard(request, run: run, reason: reason, completion: completion)
+                    }
+                }
+                return
+            }
+            askCard(request, run: run, reason: reason, completion: completion)
+        }
+    }
+
+    private func askCard(_ request: PermissionRequest, run: Run, reason: String, completion: @escaping (Bool, String?) -> Void) {
+        do {
             let title = Self.consentTitle(request)
             hud.upsertAgent(AgentRow(id: run.agent.slug, name: run.agent.name, line: "waiting for you: \(reason)", state: .waiting))
             let card = ConsentCard(agent: run.agent.name, title: title, detail: reason, onAllow: { [weak self] in

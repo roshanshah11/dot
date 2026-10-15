@@ -16,6 +16,7 @@ final class Talk {
     private let agents: AgentManager
     private let ledger: Ledger
     private let atlas: AtlasBridge
+    private let jev: Jev?
 
     private let recorder = AudioRecorder()
     private var talkSession: ClaudeSession?
@@ -53,7 +54,7 @@ final class Talk {
     private var walkthroughTimeout: DispatchWorkItem?
 
     init(config: DotConfig, hud: NotchHUD, overlay: OverlayManager, speaker: TTSProvider, transcriber: Transcriber,
-         agents: AgentManager, ledger: Ledger, atlas: AtlasBridge) {
+         agents: AgentManager, ledger: Ledger, atlas: AtlasBridge, jev: Jev?) {
         self.config = config
         self.hud = hud
         self.overlay = overlay
@@ -62,6 +63,7 @@ final class Talk {
         self.agents = agents
         self.ledger = ledger
         self.atlas = atlas
+        self.jev = jev
         self.speaker.onFinishedAll = { [weak self] in
             Task { @MainActor in self?.scheduleIdleCheck() }
         }
@@ -120,6 +122,7 @@ final class Talk {
         options.mcpConfigPath = config.mcpConfigPath(config.talkMCPConfig)
         options.strictMCP = true
         options.allowedTools = options.mcpConfigPath == nil ? [] : config.talkAllowedTools
+        if kind == .talk { options.effort = config.talkEffort }
         let session = ClaudeSession(label: kind.rawValue, claudePath: config.claudeExecutable, options: options)
         session.onEvent = { [weak self, weak session] event in
             guard let self, let session, self.activeSession === session else { return }
@@ -307,6 +310,44 @@ final class Talk {
             return
         }
 
+        if let jev, walkthrough == nil {
+            let route = await self.route(text, with: jev)
+            switch route {
+            case .agent:
+                phase = .idle
+                overlay.setPhase(.speaking)
+                speaker.speak("on it, i'll tell you when it's done.")
+                overlay.setBubble("on it, i'll tell you when it's done.")
+                hud.set(phase: .hidden)
+                agents.handoff(brief: text, agentName: nil, context: context, shots: shots)
+                region = nil
+                scheduleIdleCheck()
+                return
+            case .followUp(let slug):
+                phase = .idle
+                overlay.setPhase(.speaking)
+                speaker.speak("passing that along.")
+                overlay.setBubble("passing that along.")
+                hud.set(phase: .hidden)
+                agents.reply(to: slug, text: text)
+                region = nil
+                scheduleIdleCheck()
+                return
+            case .think:
+                if let think = session(for: .think) {
+                    speaker.speak("let me think about that for a second.")
+                    overlay.setBubble("let me think about that for a second.")
+                    let (message, images) = buildMessage(text, kind: .think)
+                    lastMessage = message
+                    lastImages = images
+                    sendTurn(message, images: images, to: think, kind: .think)
+                    return
+                }
+            case .answer:
+                break
+            }
+        }
+
         guard let session = session(for: .talk) else {
             phase = .idle
             settle()
@@ -316,6 +357,58 @@ final class Talk {
         lastMessage = message
         lastImages = images
         sendTurn(message, images: images, to: session, kind: .talk)
+    }
+
+    private enum Route { case answer, agent, think, followUp(String) }
+
+    /// One Jev call (about 150 ms) while the screen capture finishes: where does this go, and
+    /// which element did he mean. A confident "agent" skips the talk model entirely; a likely
+    /// element gets the dot moving before Claude has said a word.
+    private func route(_ text: String, with jev: Jev) async -> Route {
+        let running = agents.runningAgents()
+        var state: [String: Any] = [
+            "user_said": text,
+            "frontmost_app": context.appName ?? "",
+            "window_title": String((context.windowTitle ?? "").prefix(120)),
+            "agents_working": running.map { ["name": $0.name, "task": $0.task] },
+            "elements_on_screen": context.elements.prefix(40).map { "\($0.role.dropFirst(2)) \($0.title)" },
+        ]
+        if let selected = context.selectedText, !selected.isEmpty { state["selected_text"] = String(selected.prefix(200)) }
+        var questions: [String: Jev.Question] = [
+            "route": .choice(instructions: "How should a voice companion that can see the screen handle what the user just said? Pick one.", criteria: [
+                "answer": "answer out loud in a sentence or two from the screen, the day's calendar and deadlines, or general knowledge; no files, no browsing, nothing to operate",
+                "agent": "real work in the background: looking something up properly across apps or sites, drafting or writing, making or changing files, going through mail, operating an app for a while, anything that sends or submits",
+                "think": "a hard reasoning question (a calculation, a tricky technical or finance judgment) that deserves a stronger model",
+            ]),
+        ]
+        if !running.isEmpty {
+            questions["followup"] = .yesNo(instructions: "Is this a follow-up, a steer or a question for the agent that is already working, rather than a new request?", yes: "it continues the agent's current task", no: "a new request or a question about the screen")
+        }
+        var elementCriteria: [String: String] = [:]
+        for (index, element) in context.elements.prefix(40).enumerated() where !element.title.isEmpty {
+            elementCriteria["e\(index)"] = String(element.title.prefix(60))
+        }
+        if elementCriteria.count >= 2 {
+            elementCriteria["none"] = "the user is not asking about one specific element on screen"
+            questions["element"] = .choice(instructions: "If the user is asking where something is, how to do something here, or about one specific control, which on-screen element do they mean?", criteria: elementCriteria)
+        }
+        let answers: [String: Jev.Answer]? = await withCheckedContinuation { continuation in
+            jev.evaluate("route", state: state, questions: questions) { continuation.resume(returning: $0) }
+        }
+        guard let answers, let route = answers["route"]?.choice else { return .answer }
+        if let follow = answers["followup"]?.probability, follow >= 0.7, let live = running.first {
+            Log.info("jev: follow-up for \(live.name) (\(String(format: "%.2f", follow)))")
+            return .followUp(live.slug)
+        }
+        if let element = answers["element"]?.choice, element.choice != "none", element.probability >= 0.5, element.confidence >= 0.5,
+           let index = Int(element.choice.dropFirst()), context.elements.indices.contains(index) {
+            let hit = context.elements[index]
+            Log.info("jev: pre-pointing at \(hit.role) \"\(hit.title)\" (\(String(format: "%.2f", element.probability)))")
+            overlay.point(at: CGPoint(x: hit.frame.midX, y: hit.frame.midY), label: String(hit.title.prefix(24)))
+        }
+        if route.choice == "agent", route.probability >= config.jevRouteThreshold, route.confidence >= 0.6 { return .agent }
+        if route.choice == "think", route.probability >= 0.75, route.confidence >= 0.6 { return .think }
+        return .answer
     }
 
     private func sendTurn(_ message: String, images: [(data: Data, mediaType: String)], to session: ClaudeSession, kind: SessionKind) {

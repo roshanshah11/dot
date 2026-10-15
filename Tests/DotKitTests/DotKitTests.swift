@@ -200,3 +200,26 @@ final class TodayBriefTests: XCTestCase {
         XCTAssertEqual(brief.morningLine(), "")
     }
 }
+
+
+final class AgentResultTests: XCTestCase {
+    func testNextLineBecomesAButton() {
+        let parsed = AgentResult.parse("Done, the brief is on your desktop.\n\nNext: compare launch economics\n")
+        XCTAssertEqual(parsed.body, "Done, the brief is on your desktop.")
+        XCTAssertEqual(parsed.nextAction, "compare launch economics")
+        let plain = AgentResult.parse("Nothing to suggest here.")
+        XCTAssertEqual(plain.body, "Nothing to suggest here.")
+        XCTAssertNil(plain.nextAction)
+    }
+}
+
+final class AlwaysAskTests: XCTestCase {
+    func testDangerousCommandsAreNeverCleared() {
+        XCTAssertTrue(ConsentPolicy.isAlwaysAsk("rm -rf ~/Dot"))
+        XCTAssertTrue(ConsentPolicy.isAlwaysAsk("git push origin main"))
+        XCTAssertTrue(ConsentPolicy.isAlwaysAsk("imsg send +1555 hi"))
+        XCTAssertTrue(ConsentPolicy.isAlwaysAsk("echo hi > ~/notes.txt"))
+        XCTAssertFalse(ConsentPolicy.isAlwaysAsk("sips -s format png in.icns --out tmp/out.png"))
+        XCTAssertFalse(ConsentPolicy.isAlwaysAsk("python3 tmp/build_report.py"))
+    }
+}

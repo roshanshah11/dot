@@ -1,9 +1,12 @@
 # Dot
 
-An open-source voice assistant that lives beside your cursor on macOS and runs on
-[Claude Code](https://code.claude.com). Hold a key, ask about anything on your screen, and
-Dot answers out loud, flies a small ember dot to the button you need, and hands real work
-to background agents that use your own Claude Code skills, MCP servers, and CLIs.
+An open-source companion that lives beside your cursor on macOS and runs on
+[Claude Code](https://code.claude.com). A small ember orb with eyes follows the pointer, blinks,
+and leans into its motion. Hold a key and talk: Dot looks at your screen, answers out loud in a
+sentence or two in a bubble beside itself, flies to the button you need, rings the next thing to
+click in a walkthrough, and hands real work to background agents that use your own Claude Code
+skills, MCP servers and CLIs. If you run [Atlas](https://github.com/roshanshah11) (a personal
+chief-of-staff store), Dot knows your deadlines, calendar, commitments and mail at every turn.
 
 It is a from-scratch, MIT-licensed take on what [HeyClicky](https://www.heyclicky.com)
 does, built for people who already live in Claude Code: no account, no subscription
@@ -15,20 +18,39 @@ Clicky and from Murmur.
 
 | You | Dot |
 |---|---|
-| Hold **control + option** and talk | Looks at your screen, answers aloud in a sentence or two, points at the element you asked about |
+| Hold **control + option** and talk | Looks at your screen, answers aloud in a sentence or two (and in a bubble beside the orb), points at the element you asked about |
+| Drag while holding | Draws a box; Dot answers about what is inside it (the region is cropped and enlarged for the model) |
+| Ask "how do I..." | One step at a time: Dot rings the control to click, sees your click, and gives the next step |
 | Hold **control + option + shift** and talk | Hands the request to a background agent and tells you when it is done |
-| Tap **control + option** | Opens a text field in the notch for a typed question |
+| Tap **control + option**, or click the tab under the notch | A text field for a typed question |
 | Press **escape** | Stops Dot talking |
-| Say "go do it" mid-answer | The talk model hands the job to an agent itself |
+| Say "go do it", or ask for real work | The request goes to an agent on its own; a confident route skips the talk model entirely |
+| Switch to an app that touches a deadline | One quiet line beside the cursor ("heads up: wells fargo coffee chat, due today") |
+
+Every talk turn carries a `[today]` block read straight from Atlas (deadlines, calendar,
+open commitments, mail waiting, priorities, preferences; no model call, a few seconds in the
+background every ten minutes), and a dozen Atlas tools (search, facts, people, calendar,
+commitments, canvas, remember, deadline_add, commit) so "what's due", "who is she" and
+"remember that" work by voice.
 
 Agents live in `~/Dot/agents/<name>/`, each with a `CLAUDE.md` that is its identity and
 notes, an `output/` folder for deliverables, and a transcript. They run as Claude Code
 sessions on Opus with your skills, your MCP servers, and your settings. Reads happen
-silently. Clicks, keystrokes, sends, submits, and shell commands that change things show
-an **Allow / Not now** card in the notch first.
+silently. Clicks, keystrokes, sends and writes outside the agent's folder show an Allow / Not
+now card in the notch. When an agent finishes, its row in the notch opens into a card: the
+full answer, its files, a "Next: ..." button it suggested, and a reply field. The Dot window
+has the same chat with a composer, plus a Day tab with everything Atlas knows about today.
 
-Talk mode runs on Sonnet with the screenshot attached: about two seconds from release
-to the first spoken word on an M3. Hard questions escalate to Opus on their own.
+### Quick decisions on Jev
+
+With a TypeSafe key (`TYPESAFE_API_KEY` in the environment or in `jevKeyFile`), Dot asks
+[Jev](https://typesafe.ai) the small calibrated questions a companion makes constantly, in
+about 150 ms for two hundredths of a cent each: where does this request go (answer, agent,
+stronger model, a follow-up for the agent already working), which on-screen element did he
+mean (the orb moves before Claude has spoken), is this unrecognised shell command plainly
+harmless (cleared without a card; anything on the always-ask list still asks), and does the
+window he just switched to touch a deadline. Without a key everything still works; it is just
+Claude doing all of it.
 
 ## How it works
 
@@ -82,6 +104,14 @@ Any other engine works through `ttsCommand`: a process that reads `{"text": ...}
 and answers `{"wav": "/path"}` lines, as `scripts/dot-tts-kokoro.py` does.
 
 ### Configuration
+
+Phase 2 keys (all optional, defaults shown in `~/.config/dot/config.json` after the first launch):
+`showCompanion` (Dot beside the cursor at all times), `bubbleText`, `hudShowsResponse`,
+`morningGreeting`, `notchPresence` (the tab under the notch), `atlasRoot`, `atlasHarness`,
+`atlasPython`, `todayRefreshMinutes`, `talkSessionMaxTurns`, `talkEffort`, `walkthroughMaxSteps`,
+`jevEnabled`, `jevKeyFile`, `jevRouteThreshold`, `proactiveNotices`, `noticeCooldownMinutes`.
+Talk-mode Atlas tools come from `~/.config/dot/mcp-talk.json`, which starts Atlas's MCP server
+with `ATLAS_MCP_TOOLS=now,search,facts,...` so only those tools ride along.
 
 `~/.config/dot/config.json` is written with defaults on first launch. The useful knobs:
 

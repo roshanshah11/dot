@@ -122,6 +122,13 @@ public struct ConsentPolicy: Equatable {
         }
     }
 
+    /// True when the command matches a pattern that always asks (sudo, rm -rf, sends, pushes...).
+    /// A command that asks without matching is merely unrecognised, and a cheap judge may clear it.
+    public static func isAlwaysAsk(_ command: String) -> Bool {
+        let trimmed = command.trimmingCharacters(in: .whitespacesAndNewlines)
+        return alwaysAskPatterns.contains { trimmed.range(of: $0, options: .regularExpression) != nil }
+    }
+
     func decideShell(_ command: String, description: String?) -> ConsentDecision {
         let trimmed = command.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return .ask(reason: "Run an empty command") }

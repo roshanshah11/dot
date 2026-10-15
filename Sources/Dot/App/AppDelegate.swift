@@ -14,6 +14,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var talk: Talk!
     private var home: HomeWindowController!
     private var atlas: AtlasBridge!
+    private var jev: Jev?
+    private var noticer: Noticer!
     private let hotkeys = HotkeyMonitor()
     private var permissionTimer: Timer?
     private var presenceItem: NSMenuItem?
@@ -36,9 +38,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         transcriber = Transcriber(onDownloadProgress: { progress in
             Task { @MainActor in hud.flash(status: "downloading speech model \(Int(progress * 100))%", for: 3) }
         })
+        jev = Jev(config: config)
+        Log.info("jev: \(jev == nil ? "off (no TYPESAFE_API_KEY in the environment or \(config.jevKeyFile))" : "on")")
         agents = AgentManager(config: config, hud: hud, speaker: speaker, ledger: ledger)
         agents.atlas = atlas
-        talk = Talk(config: config, hud: hud, overlay: overlay, speaker: speaker, transcriber: transcriber, agents: agents, ledger: ledger, atlas: atlas)
+        agents.jev = jev
+        talk = Talk(config: config, hud: hud, overlay: overlay, speaker: speaker, transcriber: transcriber, agents: agents, ledger: ledger, atlas: atlas, jev: jev)
+        noticer = Noticer(config: config, atlas: atlas, overlay: overlay, jev: jev)
+        hud.setPresence(config.notchPresence)
         home = HomeWindowController(agents: agents, ledger: ledger, config: config, atlas: atlas)
         let hudModel = hud.model
         atlas.onUpdate = { [weak self] brief in
@@ -52,6 +59,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         installIPC()
         requestPermissionsThenStart()
         atlas.start()
+        noticer.start()
     }
 
     /// `Dot --ask ...` and `Dot --agent ...` from a shell reach the running app here.

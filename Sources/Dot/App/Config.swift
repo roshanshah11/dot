@@ -55,6 +55,19 @@ struct DotConfig: Codable {
     /// The talk session restarts after this many questions, so context stays fast.
     var talkSessionMaxTurns = 30
     var walkthroughMaxSteps = 12
+    /// Claude Code effort for the talk session ("low" keeps answers quick).
+    var talkEffort: String? = "low"
+    /// Jev (TypeSafe) for quick decisions: routing, element picks, command clearing, notices.
+    var jevEnabled = true
+    /// Where TYPESAFE_API_KEY lives when it is not in the environment (dotenv format).
+    var jevKeyFile = "~/Projects/browser-agent/.env"
+    /// Hand a request straight to an agent when Jev is at least this sure, skipping the talk model.
+    var jevRouteThreshold = 0.8
+    /// A quiet line when the app he switches to touches a deadline Atlas knows about.
+    var proactiveNotices = true
+    var noticeCooldownMinutes = 20
+    /// Keep a small black tab under the notch when idle, so Dot visibly lives there.
+    var notchPresence = true
 
     static let defaultTalkTools = ["now", "search", "facts", "people", "calendar", "free", "commitments", "todo", "unanswered",
                                    "canvas_find", "docs", "proposals", "remember", "deadline_add", "commit"].map { "mcp__atlas__\($0)" }
@@ -101,6 +114,13 @@ struct DotConfig: Codable {
         todayRefreshMinutes = get(.todayRefreshMinutes, d.todayRefreshMinutes)
         talkSessionMaxTurns = get(.talkSessionMaxTurns, d.talkSessionMaxTurns)
         walkthroughMaxSteps = get(.walkthroughMaxSteps, d.walkthroughMaxSteps)
+        talkEffort = c.contains(.talkEffort) ? (try? c.decodeIfPresent(String.self, forKey: .talkEffort)) : d.talkEffort
+        jevEnabled = get(.jevEnabled, d.jevEnabled)
+        jevKeyFile = get(.jevKeyFile, d.jevKeyFile)
+        jevRouteThreshold = get(.jevRouteThreshold, d.jevRouteThreshold)
+        proactiveNotices = get(.proactiveNotices, d.proactiveNotices)
+        noticeCooldownMinutes = get(.noticeCooldownMinutes, d.noticeCooldownMinutes)
+        notchPresence = get(.notchPresence, d.notchPresence)
     }
 
     static var directory: URL {

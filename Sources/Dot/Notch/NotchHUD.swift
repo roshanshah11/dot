@@ -10,6 +10,8 @@ struct AgentRow: Identifiable, Equatable {
     var state: State
     var result: String? = nil
     var outputCount: Int = 0
+    var outputs: [URL] = []
+    var nextAction: String? = nil
 }
 
 struct ConsentCard: Identifiable {
@@ -40,6 +42,9 @@ final class HUDModel: ObservableObject {
     @Published var expanded: String?
     @Published var replyText = ""
     @Published var todayLine: String?
+    /// A small black tab under the notch when there is nothing else to show.
+    @Published var presence = false
+    @Published var hovering = false
     var onSubmitInput: ((String) -> Void)?
     var onOpenAgent: ((String) -> Void)?
     var onReply: ((String, String) -> Void)?
@@ -48,6 +53,8 @@ final class HUDModel: ObservableObject {
     var hasContent: Bool {
         phase != .hidden || !agents.isEmpty || consent != nil || showInput || status != nil || error != nil
     }
+
+    var showsPanel: Bool { hasContent || presence }
 }
 
 /// The black panel hanging from the notch: state, what he said, what Dot answered,
@@ -65,6 +72,9 @@ final class NotchHUD {
             Task { @MainActor in self?.reposition() }
         }
         model.onOpenAgent = nil
+        NotificationCenter.default.addObserver(forName: .dotShowInput, object: nil, queue: .main) { [weak self] _ in
+            Task { @MainActor in self?.showInput() }
+        }
     }
 
     // MARK: State
@@ -162,9 +172,9 @@ final class NotchHUD {
         panel.isOpaque = false
         panel.backgroundColor = .clear
         panel.hasShadow = false
-        panel.level = .statusBar
         panel.collectionBehavior = [.canJoinAllSpaces, .stationary, .fullScreenAuxiliary]
         panel.isFloatingPanel = true
+        panel.level = .statusBar   // set after isFloatingPanel, which would reset it to .floating
         panel.becomesKeyOnlyIfNeeded = false
         panel.hidesOnDeactivate = false
         panel.isReleasedWhenClosed = false
@@ -204,9 +214,14 @@ final class NotchHUD {
         }
     }
 
+    func setPresence(_ on: Bool) {
+        model.presence = on
+        refreshVisibility()
+    }
+
     private func refreshVisibility() {
         let panel = ensurePanel()
-        if model.hasContent {
+        if model.showsPanel {
             if !visible {
                 visible = true
                 panel.alphaValue = 0
@@ -239,6 +254,44 @@ struct NotchHUDView: View {
     private let text = Color(red: 0.925, green: 0.91, blue: 0.882)
 
     var body: some View {
+        if !model.hasContent && model.presence {
+            idleStrip
+        } else {
+            panel
+        }
+    }
+
+    /// Dot's idle presence: a black tab hugging the notch, after HeyClicky's resting notch.
+    /// Hover for the day in one line; click to type.
+    private var idleStrip: some View {
+        VStack(spacing: 0) {
+            VStack(spacing: 4) {
+                Color.clear.frame(height: max(geometry.notchHeight - 4, 0))
+                if model.hovering {
+                    VStack(spacing: 3) {
+                        Text(model.todayLine ?? "hold control and option and talk").font(.system(size: 11.5)).foregroundStyle(text.opacity(0.75)).lineLimit(2)
+                        Text("click to type, hold ⌃⌥ to talk").font(.system(size: 10)).foregroundStyle(text.opacity(0.4))
+                    }
+                    .padding(.horizontal, 14).padding(.bottom, 8)
+                } else {
+                    HStack(spacing: 5) {
+                        Circle().fill(model.accent).frame(width: 5, height: 5).shadow(color: model.accent.opacity(0.8), radius: 3)
+                    }
+                    .frame(height: 8)
+                    .padding(.bottom, 2)
+                }
+            }
+            .frame(width: model.hovering ? min(geometry.notchWidth + 220, 420) : geometry.notchWidth + 36, alignment: .center)
+            .background(ground, in: UnevenRoundedRectangle(cornerRadii: .init(topLeading: 0, bottomLeading: 14, bottomTrailing: 14, topTrailing: 0)))
+            .contentShape(Rectangle())
+            .onHover { inside in withAnimation(.easeOut(duration: 0.15)) { model.hovering = inside } }
+            .onTapGesture { NotificationCenter.default.post(name: .dotShowInput, object: nil) }
+            Spacer(minLength: 0)
+        }
+        .frame(width: NotchGeometry.panelWidth, height: NotchHUD.tallPanelHeight, alignment: .top)
+    }
+
+    private var panel: some View {
         VStack(spacing: 0) {
             VStack(alignment: .leading, spacing: 8) {
                 // Keep the notch itself black so the panel reads as one shape with it.
@@ -404,13 +457,30 @@ struct NotchHUDView: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
             .frame(maxHeight: 220)
+            ForEach(row.outputs, id: \.self) { url in
+                HStack(spacing: 6) {
+                    Image(systemName: "doc").font(.system(size: 10)).foregroundStyle(model.accent)
+                    Text(url.lastPathComponent).font(.system(size: 11.5)).foregroundStyle(text.opacity(0.85)).lineLimit(1)
+                    Spacer()
+                    smallButton("open") { NSWorkspace.shared.open(url) }
+                }
+            }
             HStack(spacing: 8) {
                 smallButton("copy") {
                     NSPasteboard.general.clearContents()
                     NSPasteboard.general.setString(result, forType: .string)
                 }
                 if row.outputCount > 0 {
-                    smallButton("open output (\(row.outputCount))") { model.onOpenAgent?(row.id) }
+                    smallButton("output folder") { model.onOpenAgent?(row.id) }
+                }
+                if let next = row.nextAction {
+                    Button {
+                        model.expanded = nil
+                        model.onReply?(row.id, next)
+                    } label: {
+                        Text(next).font(.system(size: 11, weight: .semibold)).lineLimit(1).padding(.horizontal, 10).padding(.vertical, 4)
+                            .background(model.accent, in: Capsule()).foregroundStyle(.black)
+                    }.buttonStyle(.plain)
                 }
                 Spacer()
             }
@@ -440,4 +510,9 @@ struct NotchHUDView: View {
                 .background(Color.white.opacity(0.1), in: Capsule()).foregroundStyle(text)
         }.buttonStyle(.plain)
     }
+}
+
+
+extension Notification.Name {
+    static let dotShowInput = Notification.Name("com.roshan.dot.showInput")
 }
