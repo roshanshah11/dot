@@ -9,9 +9,9 @@ The binary names 212 Swift files. 42 are third-party (Sentry 19, PostHog 21, `re
 
 | Status | Components | What it means |
 |---|---|---|
-| built | 37 | Dot has a working counterpart, sometimes built a different way (noted in the row) |
-| partial | 48 | Dot covers part of it; the row says what is missing |
-| missing | 63 | Nothing in Dot does it |
+| built | 51 | Dot has a working counterpart, sometimes built a different way (noted in the row) |
+| partial | 40 | Dot covers part of it; the row says what is missing |
+| missing | 57 | Nothing in Dot does it |
 | n/a | 21 | Exists because HeyClicky is a hosted product (16: accounts, billing, referrals, paywall, analytics, remote config, the Codex runtime bridge, its OpenAI client), the hosted Composio catalog (3), a developer preview (1) and a release announcement (1). Dot runs on Claude Code and has no accounts |
 | total | 169 | |
 
@@ -40,11 +40,11 @@ Paths in the Dot owner column are relative to the repository root. "(inferred)" 
 | NotchWindowManager | the panel that hangs from the notch, per screen | `Sources/Dot/Notch/NotchHUD.swift` | built | one panel, on the notched (or main) screen |
 | NotchPresenter | decides which notch surface shows and reads the feature toggles (inferred) | `Sources/Dot/Notch/NotchHUD.swift` | built | |
 | NotchRootView | root view of the notch panel | `Sources/Dot/Notch/NotchHUD.swift` | built | |
-| NotchActivitySurface | state line: listening, thinking, speaking, dictating, with a waveform (observed) | `Sources/Dot/Notch/NotchHUD.swift` | built | no separate "thinking deeper" label |
+| NotchActivitySurface | state line: listening, thinking, speaking, dictating, with a waveform (observed) | `Sources/Dot/Notch/NotchHUD.swift` | built | the line being spoken shows under the state (2026-10-15) |
 | NotchAgentSurface | dropdown under the notch: Clickys with last line and artifact thumbnail, suggestions row, Home button (observed) | `Sources/Dot/Notch/NotchHUD.swift` | partial | task bar shows running and recent tasks only; no roster, thumbnails or suggestions row |
 | NotchAgentPeekSurface | hover peek of working Clickys and their latest files (settings copy) | `Sources/Dot/Notch/NotchHUD.swift` | partial | hover shows the day line and folded task pills, not files |
 | NotchTextInputSurface | typed question field with file attachments and agent follow-up | `Sources/Dot/Notch/NotchHUD.swift` | partial | text only; no attachments or file drop |
-| NotchTextResponseSurface | the answer to a typed question, shown in the notch | `Sources/Dot/Notch/NotchHUD.swift` | partial | off by default (`hudShowsResponse`); typed answers go to the bubble; open in docs/tasks.md |
+| NotchTextResponseSurface | the answer to a typed question, shown in the notch | `Sources/Dot/Notch/NotchHUD.swift` | built | a typed question's answer stays in the notch with copy and close; silent unless `speakTypedAnswers` (2026-10-15) |
 | NotchEyeView | eyes drawn on the notch (inferred) | none | missing | the idle tab shows a glowing dot |
 | NotchGelActionButtonStyle | button style for notch actions | `Sources/Dot/Notch/NotchHUD.swift` | built | |
 | NotchSystemOverlayCoordinator | steps aside for Spotlight, Control Center, Notification Center and the screenshot UI (their bundle IDs sit beside it) | none | missing | Dot's overlay sits above Spotlight by design (`OverlayWindow.swift` comment) |
@@ -55,19 +55,19 @@ Paths in the Dot owner column are relative to the repository root. "(inferred)" 
 | HeyClicky component | What it does | Dot owner | Status | Note |
 |---|---|---|---|---|
 | CompanionManager | the coordinator for voice, screen context and agents | `Sources/Dot/Brain/Talk.swift`, `Sources/Dot/App/AppDelegate.swift` | built | |
-| CompanionManager+RealtimeVoice | speech-to-speech session (gpt-realtime-2.1, observed) with voice barge-in, always-on mode and the New Clicky interview | `Sources/Dot/Brain/Talk.swift` | partial | turn-based: key, Parakeet, Claude Code, Kokoro; no always-on mode, no interrupting by voice |
+| CompanionManager+RealtimeVoice | speech-to-speech session (gpt-realtime-2.1, observed) with voice barge-in, always-on mode and the New Clicky interview | `Sources/Dot/Brain/Talk.swift` | partial | turn-based, key or typed; "listen to the lecture" keeps the ear open for a rolling transcript (`LectureListener`); no voice barge-in |
 | RealtimeVoiceClient | websocket client for the realtime model | `Sources/Dot/Brain/ClaudeSession.swift` | partial | Claude Code carries text only; speech in and out are separate engines |
 | RealtimeDuplexAudioEngine | full-duplex audio with echo cancellation | none | missing | the base for always-on and talking over Dot |
-| RealtimeMicrophoneCapture | mic capture that detects stalls, rebuilds and fails over to the built-in mic | `Sources/Dot/Audio/AudioRecorder.swift` | partial | no stall detection or device failover |
+| RealtimeMicrophoneCapture | mic capture that detects stalls, rebuilds and fails over to the built-in mic | `Sources/Dot/Audio/AudioRecorder.swift`, `Sources/Dot/Audio/AudioDevices.swift` | built | a hold that stays silent names the mic and fails over to the built-in one (`AudioDevices`) |
 | RealtimePlayer | streaming playback of the model's audio | `Sources/Dot/Audio/CommandSpeaker.swift`, `Sources/Dot/Audio/Speaker.swift` | built | one WAV per sentence |
 | RealtimeProviderAvailabilityDiagnosis | explains a voice provider blocked by the network or the region | `Sources/Dot/Brain/Talk.swift` | partial | only the raw "Claude Code did not start" error |
 | ClickyAudioBufferConversion | converts mic buffers to the format a recognizer takes | `Sources/Dot/Audio/AudioRecorder.swift` | built | |
-| SystemAudioOutputVolume | checks the output volume and asks him to turn sound back on (inferred) | none | missing | a muted Mac gets a silent answer |
+| SystemAudioOutputVolume | checks the output volume and asks him to turn sound back on (inferred) | `Sources/Dot/Audio/AudioDevices.swift`, `Sources/Dot/Brain/Talk.swift` | built | a muted or silent output sends the answer to the notch as text |
 | ClickyChimeWarmer | preloads the app's own sounds (agent-done.wav, clicky-text-open.wav, hatching.wav, ...) | `Sources/Dot/Agents/AgentManager.swift`, `Sources/Dot/Notch/NotchHUD.swift` | partial | system sounds only (Glass, Basso, Tink) |
 | CompanionManager+EscapeInterrupt | escape stops speech and cancels work | `Sources/Dot/Input/HotkeyMonitor.swift`, `Sources/Dot/Brain/Talk.swift` | built | |
 | CompanionManager+ResponsePipeline | parses tags out of the reply and speaks agent updates | `Sources/Dot/Brain/Talk.swift`, `Sources/DotKit/Beats.swift`, `Sources/DotKit/TagParser.swift` | built | agent results are spoken by AgentManager, not by the talk model |
 | InlineVoiceRecordingWaveformView | waveform while he speaks | `Sources/Dot/Notch/NotchHUD.swift`, `Sources/Dot/Overlay/OverlayWindow.swift` | built | |
-| NotchMicrophoneTroubleSurface | notch card when the mic hears nothing, with a Mic settings button | `Sources/Dot/Brain/Talk.swift` | partial | an error line when the recorder fails to start; no dead-air check, no button |
+| NotchMicrophoneTroubleSurface | notch card when the mic hears nothing, with a Mic settings button | `Sources/Dot/Brain/Talk.swift` | built | a status line naming the dead mic, no button (2026-10-15) |
 
 ### Dictation
 
@@ -75,22 +75,22 @@ Paths in the Dot owner column are relative to the repository root. "(inferred)" 
 |---|---|---|---|---|
 | CompanionManager+Dictation | the dictation flow: focus capture, insertion, clipboard fallback, delivery to Home or the tutorial | `Sources/Dot/Brain/Talk.swift` | built | hold only; no hands-free toggle |
 | DictationInsertion | inserts text through the focused element's selected-text attribute | `Sources/Dot/Input/TextInjection.swift` | built | |
-| DictationFocusContext | captures the app, site host and text around the cursor for cleanup | none | missing | the tidy-up never sees the field |
-| DictationTranscriptionClient | server transcription and cleanup with known terms; daily archive `DictationTranscripts/<date>.jsonl` (observed) | `Sources/Dot/Audio/Transcriber.swift`, `Sources/DotKit/SentenceSplitter.swift`, `Sources/Dot/Brain/TranscriptLog.swift` | partial | rule-based tidy (capital, full stop, fillers); no model cleanup, no word list |
+| DictationFocusContext | captures the app, site host and text around the cursor for cleanup | `Sources/Dot/Input/TextInjection.swift` | partial | the focused role is checked (a password field never takes dictation); no text around the cursor |
+| DictationTranscriptionClient | server transcription and cleanup with known terms; daily archive `DictationTranscripts/<date>.jsonl` (observed) | `Sources/Dot/Audio/Transcriber.swift`, `Sources/DotKit/SentenceSplitter.swift`, `Sources/Dot/Brain/TranscriptLog.swift` | partial | rule-based tidy plus his dictionary (`~/.config/dot/dictionary.txt`); no model cleanup |
 | DictationDeepgramTranscriber | streaming cloud transcription over a websocket | `Sources/Dot/Audio/Transcriber.swift` | built | local Parakeet sliding window instead of the cloud |
 | AppleSpeechTranscriptionProvider | Apple Speech as a second recognizer | `Sources/Dot/Audio/Transcriber.swift` | partial | one model; its offline pass is the only fallback |
-| DictationCorrectionLearner | learns spellings from his corrections into the dictionary (inferred) | none | missing | |
+| DictationCorrectionLearner | learns spellings from his corrections into the dictionary (inferred) | `Sources/Dot/Brain/Talk.swift`, `Sources/DotKit/DictationDictionary.swift` | partial | "x is spelled y" and "add x to my dictionary" write the dictionary; nothing is learned from edits |
 | DictationAnnouncementWindow | introduces dictation to existing users | none | n/a | a release announcement |
 | NotchDictationClipboardSurface | "copied to your clipboard, press ⌘V" when no field takes the text (observed) | `Sources/Dot/Brain/Talk.swift` | built | a status line rather than a card |
-| NotchDictionaryLearnedSurface | "added to your dictionary" notice | none | missing | no dictionary |
+| NotchDictionaryLearnedSurface | "added to your dictionary" notice | `Sources/Dot/Notch/NotchHUD.swift` | built | "added to your dictionary" status line |
 
 ### Seeing and annotating
 
 | HeyClicky component | What it does | Dot owner | Status | Note |
 |---|---|---|---|---|
-| ScreenAnnotationManager | turns his strokes into words for the model: circled, a line across, scribbled over, several marks in order | `Sources/Dot/Input/HotkeyMonitor.swift`, `Sources/Dot/Brain/Talk.swift` | partial | one stroke becomes a padded box plus an enlarged crop; no stroke shape, one mark per turn |
+| ScreenAnnotationManager | turns his strokes into words for the model: circled, a line across, scribbled over, several marks in order | `Sources/DotKit/StrokeShape.swift`, `Sources/Dot/Brain/Talk.swift` | built | circled, a line along, scribbled over; several marks per hold, in order (`StrokeClassifier`) |
 | AnnotationOverlay | draws his ink and gathers accessibility data inside the marked region | `Sources/Dot/Overlay/OverlayWindow.swift`, `Sources/Dot/Brain/Talk.swift` | built | elements inside the box are marked "(in box)" |
-| ElementLocationDetector | asks Claude's computer-use tool for the exact pixel to point at | `Sources/Dot/Screen/AccessibilityContext.swift`, `Sources/Dot/Brain/Jev.swift` | built | accessibility snap plus a Jev pick, no second model call |
+| ElementLocationDetector | asks Claude's computer-use tool for the exact pixel to point at | `Sources/Dot/Screen/AccessibilityContext.swift`, `Sources/Dot/Brain/Jev.swift` | built | accessibility snap plus a Jev pick; a passage is boxed where the OCR sees its words |
 
 ### Showing
 
@@ -100,15 +100,15 @@ The visual grammar has no files of its own in HeyClicky (it lives in the respons
 |---|---|---|---|---|
 | OverlayWindow | full-screen click-through overlay for the character and its marks (from open-source Clicky) | `Sources/Dot/Overlay/OverlayWindow.swift` | built | |
 | ClickySystemWindowPickerYield | moves its transparent windows aside while the system window picker or screenshot tool is open | none | missing | |
-| ClickyWindowCapturePolicy | per-window rule for whether recordings and screen sharing capture HeyClicky (inferred: a Role type, the `setSharingType:` selector, the "Show in screen recordings" setting) | none | missing | no sharing type set anywhere in Dot; open in docs/tasks.md |
+| ClickyWindowCapturePolicy | per-window rule for whether recordings and screen sharing capture HeyClicky (inferred: a Role type, the `setSharingType:` selector, the "Show in screen recordings" setting) | `Sources/Dot/App/AppDelegate.swift` | built | "Show Dot in screen recordings" in the menu sets every window's sharing type |
 | ClickyBackgroundCursorControl | changes the system cursor while another app is in front, through a private WindowServer property (inferred) | none | missing | (unclear) what it is used for |
 
 ### Walkthrough
 
 | HeyClicky component | What it does | Dot owner | Status | Note |
 |---|---|---|---|---|
-| CompanionManager+Annotation | the guided walkthrough: step history, click-to-advance budget, a fresh look after each click, waiting until the screen settles | `Sources/Dot/Brain/Talk.swift` | partial | fixed 0.9 s wait before the next look; HeyClicky samples until the screen stops changing |
-| TextInjectionDelivery | types or pastes prepared text at a point; refuses secure fields; leaves it on the clipboard when the field is wrong | `Sources/Dot/Input/Driver.swift`, `Sources/Dot/Brain/Talk.swift` | partial | TYPE copies and points (pastes in drive mode); no secure-field or focused-field check |
+| CompanionManager+Annotation | the guided walkthrough: step history, click-to-advance budget, a fresh look after each click, waiting until the screen settles | `Sources/Dot/Brain/Talk.swift`, `Sources/Dot/Screen/ScreenSettle.swift` | built | `ScreenSettle` waits until two thumbnails match (up to `walkthroughSettleSeconds`) and says when the screen was still changing |
+| TextInjectionDelivery | types or pastes prepared text at a point; refuses secure fields; leaves it on the clipboard when the field is wrong | `Sources/Dot/Input/Driver.swift`, `Sources/Dot/Brain/Talk.swift` | partial | TYPE copies and points (pastes in drive mode); dictation refuses secure fields |
 
 ### Agents and Home (with computer use)
 
@@ -119,7 +119,7 @@ The visual grammar has no files of its own in HeyClicky (it lives in the respons
 | CodexAgentSession | one agent session; reads its NEXT_ACTIONS, DONE_TITLE, ARTIFACTS, SUMMARY, ROUTINE and COMPUTER_USE_REQUEST blocks | `Sources/Dot/Agents/AgentManager.swift`, `Sources/DotKit/AgentResult.swift` | partial | only a trailing "Next:" line is parsed |
 | CodexHomeSpaceCaches | on-disk thread cache and turn journal | `Sources/Dot/Agents/AgentManager.swift` | built | `.dot/transcript.jsonl` and a resumable session id |
 | CompanionManager+AgentNotifications | announces when a Clicky starts or finishes (inferred) | `Sources/Dot/Agents/AgentManager.swift` | built | |
-| CompanionManager+AgentCommentaryStream | feeds what background agents just did into the voice session as silent context | `Sources/Dot/Brain/Talk.swift` | partial | the Jev router sees which agents run; the talk model gets no progress or results |
+| CompanionManager+AgentCommentaryStream | feeds what background agents just did into the voice session as silent context | `Sources/Dot/Brain/Talk.swift` | built | an agents line in every talk turn: who is working, who finished, what they said (`AgentManager.recentRuns`) |
 | CompanionManager+ClickyOrganizer | founds named Clickys from earlier threads | `Sources/DotKit/TagParser.swift`, `Sources/Dot/Agents/AgentManager.swift` | partial | `[NEW_AGENT]` founds one per request; no sweep over history |
 | CompanionManager+HomeSpace | sends Home messages to a Clicky | `Sources/Dot/Home/HomeWindow.swift`, `Sources/Dot/Agents/AgentManager.swift` | built | |
 | ClickyRoster | the Clickys: created, archived, renamed, a portrait each | `Sources/Dot/Agents/AgentManager.swift` | built | no portraits |
@@ -133,7 +133,7 @@ The visual grammar has no files of its own in HeyClicky (it lives in the respons
 | HomeSpaceIconRail | the rail: Clickys with unread dots, suggested and archived sections, usage ring | `Sources/Dot/Home/HomeWindow.swift` | partial | no suggested or archived sections |
 | HomeSpaceSearchInput | search across Clickys | `Sources/Dot/Home/HomeWindow.swift` | built | |
 | HomeSpaceConversationTranscript | a thread's messages, with an interrupted marker | `Sources/Dot/Home/HomeWindow.swift` | built | result rows show success or failure; no interrupted marker |
-| HomeSpaceCoworkTranscript | step rows ("Read a file", "Edited a file") with command and output blocks, copy and collapse | `Sources/Dot/Home/HomeWindow.swift`, `Sources/Dot/Agents/AgentManager.swift` | partial | one-line steps; no expandable output or copy |
+| HomeSpaceCoworkTranscript | step rows ("Read a file", "Edited a file") with command and output blocks, copy and collapse | `Sources/Dot/Home/HomeWindow.swift`, `Sources/Dot/Agents/AgentManager.swift` | built | tool rows expand to the tool's output with copy (2026-10-15) |
 | HomeSpaceArtifactCards | artifact cards inside the thread | `Sources/Dot/Home/HomeWindow.swift` | partial | outputs sit in a side column, not in the thread |
 | HomeSpaceCardViews | card views with a thumbnail per kind (markdown, document, spreadsheet, image, link) | `Sources/Dot/Home/HomeWindow.swift` | partial | icons, not thumbnails |
 | HomeSpaceOutputPreviewColumn | right-hand preview: PDF, markdown, QuickLook, open, reveal | `Sources/Dot/Home/HomeWindow.swift` | built | no fold or resize |
@@ -148,8 +148,8 @@ The visual grammar has no files of its own in HeyClicky (it lives in the respons
 | HomeSpaceNewClickyPage | New Clicky page: a spoken interview that designs the agent (observed) | `Sources/Dot/Home/HomeWindow.swift` | partial | a name and first-task form |
 | InterviewThoughtBubbles | thought bubbles during that interview (inferred) | none | missing | |
 | HomeSpaceVoicePill | hold-to-talk pill in the Home composer | none | missing | the composer is typed only |
-| MarkdownViewerContentView | a markdown document viewer with images | `Sources/Dot/Home/HomeWindow.swift` | partial | QuickLook preview only; no markdown rendering of its own |
-| MarkdownViewerTableView | markdown tables in that viewer | none | missing | thread text renders inline markdown only |
+| MarkdownViewerContentView | a markdown document viewer with images | `Sources/Dot/Home/MarkdownViewer.swift` | built | `MarkdownViewer.swift`: marked plus KaTeX, tables, code, images; long results and .md outputs open in it |
+| MarkdownViewerTableView | markdown tables in that viewer | `Sources/Dot/Home/MarkdownViewer.swift` | built | tables render in the viewer |
 | DocumentAnimatedImageView | animated images inside documents | none | missing | |
 | ClickyCuaDriverDaemonController | runs the bundled cua-driver daemon under a policy file | `Sources/Dot/Agents/AgentManager.swift` | partial | cua-driver installed separately and listed in `~/.config/dot/mcp.json` |
 | ClickyComputerUseGate | MCP proxy that refuses input tools until he allows the turn | `Sources/Dot/Agents/AgentManager.swift`, `Sources/DotKit/ConsentPolicy.swift` | built | asks only for clicks that read like a send, buy or delete (his rule) |
@@ -173,7 +173,7 @@ The visual grammar has no files of its own in HeyClicky (it lives in the respons
 
 | HeyClicky component | What it does | Dot owner | Status | Note |
 |---|---|---|---|---|
-| CompanionManager+Proactive | suggestions and proactive launches; goes quiet on calls (a `ClickyCallPresenceDetector` type; observed) | `Sources/Dot/Brain/Noticer.swift`, `Sources/Dot/App/AppDelegate.swift` | partial | a deadline line on app switch and a meeting notice; no task suggestions; not quiet on calls |
+| CompanionManager+Proactive | suggestions and proactive launches; goes quiet on calls (a `ClickyCallPresenceDetector` type; observed) | `Sources/Dot/Brain/Noticer.swift`, `Sources/Dot/App/AppDelegate.swift` | partial | deadline notices, document offers and the meeting notice; quiet on calls (`CallPresence`); no task suggestions |
 | ProactiveAgentsClient | fetches proactive agent suggestions | none | missing | no suggestion sweep |
 | HomeSpaceSuggestionsPage | suggestion cards with yes, no and "not now because", adjust, a daily sweep | none | missing | |
 | NotchMorningSuggestionsSurface | morning card "I can do N things for you today" (observed) | `Sources/Dot/Brain/Talk.swift` | partial | one Atlas line in the bubble, no cards to pick |
@@ -205,8 +205,8 @@ Also in Resources with no Dot counterpart beyond his own Claude Code skills: `Cl
 | HeyClicky component | What it does | Dot owner | Status | Note |
 |---|---|---|---|---|
 | ResponseCardOverlay | a response card that shows a stock, image or place widget from a tag such as `[IMAGES:` | `Sources/Dot/Board/Board.swift` | partial | cards are model-written HTML; no typed widget payloads |
-| StockQuoteAPI | live quote: price, change, day range, sparkline closes (field names) | `Sources/Dot/Brain/Talk.swift` | partial | a web lookup, no quote source |
-| StockWidget | stock card with a range switch | `Sources/Dot/Board/Board.swift` | partial | the `.chart` piece, no ready stock card; live, HeyClicky only spoke the price |
+| StockQuoteAPI | live quote: price, change, day range, sparkline closes (field names) | `Sources/Dot/Brain/Quotes.swift` | built | Yahoo chart endpoint: price, change, a month of closes |
+| StockWidget | stock card with a range switch | `Sources/Dot/Brain/Quotes.swift` | built | [STOCK:NVDA] card with a sparkline; no range switch |
 | ImageSearchAPI | image search returning source and thumbnail URLs | `Sources/Dot/Brain/Talk.swift`, `Resources/board/board.css` | partial | the model finds and checks image URLs itself for a `.figure` |
 | PlaceSearchAPI | place search: rating, photos, phone, maps link | none | missing | web lookup only |
 | PlaceWidget | a place card | none | missing | |
@@ -251,7 +251,7 @@ Also in Resources with no Dot counterpart beyond his own Claude Code skills: `Cl
 |---|---|---|---|---|
 | HomeSpaceSettingsPage | settings sidebar: Account, General, Voice, Microphone, Dictation, Shortcuts, Cursor, Agents, Integrations (observed) | `Sources/Dot/Home/HomeWindow.swift` | partial | one page: talking, agents, models, context folder, permissions |
 | HomeSpaceSettingsContent | the controls on those pages | `Sources/Dot/Home/HomeWindow.swift`, `Sources/Dot/App/Config.swift` | partial | no mic, voice or language picker, dictionary, cursor color or recordings toggle; the rest lives in config.json |
-| ClickyHotkeyConfiguration | four shortcuts (talk, text, dictate, hands-free dictate) with reset | `Sources/Dot/Input/HotkeyMonitor.swift` | partial | fixed chords: control+option, plus shift for an agent, control+fn to dictate; no hands-free |
+| ClickyHotkeyConfiguration | four shortcuts (talk, text, dictate, hands-free dictate) with reset | `Sources/Dot/Input/HotkeyMonitor.swift` | partial | fixed chords: control+option, plus shift for an agent, control+fn to dictate; hands-free long dictation is Murmur's (double-tap fn), by his decision 2026-10-15 |
 | ClickyHotkeyRecorder | records a new key combination | none | missing | |
 | HomeSpaceShortcutHelpButton | shows the shortcuts | none | missing | README only |
 | ClickyLabWindow | internal previews and debug window (inferred) | `Sources/Dot/main.swift`, `scripts/dot-try.sh` | partial | command-line hooks (`--ask --quiet`, `--card`, `--stt`), no window |
@@ -280,6 +280,10 @@ Also in Resources with no Dot counterpart beyond his own Claude Code skills: `Cl
 | CompanionManager+EarlyStopRefund | refunds an agent message stopped early | none | n/a | |
 | CompanionManager+DiscoveryChannel | asks how he heard about the app | none | n/a | |
 | ClickyAITracing | model-call tracing to PostHog | none | n/a | analytics |
+
+## Round four (2026-10-15, late afternoon)
+
+Rows moved by the round: NotchTextResponseSurface, NotchActivitySurface, RealtimeMicrophoneCapture, SystemAudioOutputVolume, NotchMicrophoneTroubleSurface, NotchDictionaryLearnedSurface, ScreenAnnotationManager, ClickyWindowCapturePolicy, CompanionManager+Annotation, CompanionManager+AgentCommentaryStream, HomeSpaceCoworkTranscript, MarkdownViewerContentView, MarkdownViewerTableView, StockQuoteAPI, StockWidget to built; DictationFocusContext, DictationCorrectionLearner, CompanionManager+RealtimeVoice (the lecture ear), CompanionManager+Proactive (quiet on calls) to partial. Beyond the ledger: documents read by their text (PDFKit, pages, docx), passages found by words and scrolled to with the app's own find box, matches boxed from OCR line boxes, the FIND tag, the lecture ear with its saved transcript and recap, Murmur's history in talk.
 
 ## What finishing means
 

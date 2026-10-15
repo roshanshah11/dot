@@ -25,8 +25,22 @@ final class AudioRecorder {
     private var tapInstalled = false
     private let lock = NSLock()
     private var lastLevel: Float = 0
+    private var peakLevel: Float = 0
+    private var stream: SlidingWindowAsrManager?
 
     var isRecording: Bool { engine.isRunning && file != nil }
+
+    /// The loudest moment since the recording started (0...1): zero after a few seconds means a dead mic.
+    func peak() -> Float {
+        lock.lock(); defer { lock.unlock() }
+        return peakLevel
+    }
+
+    /// Point the live audio at another recognizer without stopping the engine (a lecture rolls
+    /// its stream every few minutes).
+    func swapStream(_ next: SlidingWindowAsrManager?) {
+        lock.lock(); stream = next; lock.unlock()
+    }
 
     /// 0...1 from the last buffer's RMS, shaped like the old meter.
     func level() -> Float {
@@ -51,6 +65,7 @@ final class AudioRecorder {
         }
         self.file = file
         fileURL = url
+        lock.lock(); self.stream = stream; peakLevel = 0; lock.unlock()
         let sampleRate = format.sampleRate
         let channels = format.channelCount
         if tapInstalled { input.removeTap(onBus: 0) }
@@ -64,8 +79,9 @@ final class AudioRecorder {
                 let rms = n > 0 ? sqrt(sum / Float(n)) : 0
                 let dB = max(-50, min(0, 20 * log10(max(rms, 1e-6))))
                 let shaped = Float((dB + 50) / 50)
-                self.lock.lock(); self.lastLevel = shaped * shaped; self.lock.unlock()
+                self.lock.lock(); self.lastLevel = shaped * shaped; self.peakLevel = max(self.peakLevel, self.lastLevel); self.lock.unlock()
             }
+            self.lock.lock(); let stream = self.stream; self.lock.unlock()
             if let stream, let data = buffer.floatChannelData {
                 // Copy the samples out: the engine reuses its buffer, and the actor wants its own.
                 let n = Int(buffer.frameLength)
@@ -114,6 +130,9 @@ final class AudioRecorder {
         if engine.isRunning { engine.stop() }
         file = nil
         startedAt = nil
-        lock.lock(); lastLevel = 0; lock.unlock()
+        lock.lock(); lastLevel = 0; stream = nil; lock.unlock()
     }
+
+    /// The microphone macOS is recording from, by name.
+    var inputName: String { AudioDevices.defaultInput.map { AudioDevices.name(of: $0) } ?? "the microphone" }
 }

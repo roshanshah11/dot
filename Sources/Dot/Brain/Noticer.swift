@@ -51,6 +51,7 @@ final class Noticer {
 
     private func consider(_ app: NSRunningApplication) {
         guard let jev, let brief = atlas.brief else { return }
+        if config.quietOnCalls, CallPresence.isOnCall() { return }
         guard Date().timeIntervalSince(lastNoticeAt) > Double(config.noticeCooldownMinutes) * 60 else { return }
         let items = Array((brief.deadlines(withinDays: 2) + brief.commitments.prefix(4)).prefix(8))
         guard !items.isEmpty else { return }
@@ -111,6 +112,7 @@ final class Noticer {
         let probe = title + " " + url
         guard Self.documentWords.firstMatch(in: probe, range: NSRange(location: 0, length: (probe as NSString).length)) != nil else { return }
         guard Date().timeIntervalSince(lastSuggestAt) > Double(config.suggestionCooldownMinutes) * 60 else { return }
+        if config.quietOnCalls, CallPresence.isOnCall() { return }
         suggest(app: context.appName ?? "", title: title, url: url)
     }
 

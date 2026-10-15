@@ -51,6 +51,16 @@ final class HUDModel: ObservableObject {
     @Published var expanded: String?
     @Published var replyText = ""
     @Published var todayLine: String?
+    /// The sentence Dot is saying right now (voice answers): one line in the notch, the way
+    /// HeyClicky shows its state there, instead of a bubble over the page.
+    @Published var caption: String?
+    /// A typed question's answer, kept readable until he closes it (HeyClicky's text response surface).
+    @Published var answer: String?
+    @Published var answerQuestion = ""
+    /// "ochem in 12 min": the next meeting, shown on the idle tab when it is close.
+    @Published var meetingLine: String?
+    /// "listening to the lecture, 12 min" while Dot's ear is on.
+    @Published var listeningLine: String?
     /// A small black tab under the notch when there is nothing else to show.
     @Published var presence = false
     @Published var hovering = false
@@ -64,7 +74,7 @@ final class HUDModel: ObservableObject {
     var onCollapseChanged: (() -> Void)?
 
     var hasContent: Bool {
-        phase != .hidden || (!agents.isEmpty && !collapsed) || consent != nil || showInput || status != nil || error != nil
+        phase != .hidden || (!agents.isEmpty && !collapsed) || consent != nil || showInput || status != nil || error != nil || answer != nil
     }
     var foldedTasks: [AgentRow] { collapsed ? agents : [] }
 
@@ -93,6 +103,14 @@ final class NotchHUD {
         NotificationCenter.default.addObserver(forName: .dotShowInput, object: nil, queue: .main) { [weak self] _ in
             Task { @MainActor in self?.showInput() }
         }
+        NotificationCenter.default.addObserver(forName: .dotDismissAnswer, object: nil, queue: .main) { [weak self] _ in
+            Task { @MainActor in self?.dismissAnswer() }
+        }
+    }
+
+    /// Whether the notch shows up in recordings and screen shares.
+    func setVisibleInRecordings(_ visible: Bool) {
+        ensurePanel().sharingType = visible ? .readOnly : .none
     }
 
     // MARK: State
@@ -103,7 +121,29 @@ final class NotchHUD {
             model.showInput = false
             model.transcript = ""
             model.response = ""
+            model.caption = nil
         }
+        refreshVisibility()
+    }
+
+    /// The line being spoken, shown under the header while the voice plays.
+    func setCaption(_ text: String?) {
+        model.caption = text
+        refreshVisibility()
+    }
+
+    /// A typed question's answer stays in the notch until he closes it or asks again.
+    func presentAnswer(question: String, text: String) {
+        model.answerQuestion = question
+        model.answer = text
+        model.caption = nil
+        refreshVisibility()
+    }
+
+    func dismissAnswer() {
+        guard model.answer != nil else { return }
+        model.answer = nil
+        model.answerQuestion = ""
         refreshVisibility()
     }
 
@@ -138,6 +178,14 @@ final class NotchHUD {
         // so the user's window keeps focus and the next screenshot still shows it active.
         panel?.makeKeyAndOrderFront(nil)
         Log.info("input: field shown, panel key \(panel?.isKeyWindow == true)")
+        if panel?.isKeyWindow != true {
+            // The panel was still ordering in (seen 2026-10-15 15:35, "panel key false" twice): one more try.
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.12) { [weak self] in
+                guard let self, self.model.showInput, self.panel?.isKeyWindow != true else { return }
+                self.panel?.makeKeyAndOrderFront(nil)
+                Log.info("input: field key retry \(self.panel?.isKeyWindow == true)")
+            }
+        }
         // An untouched field goes away on its own, so a stray tap does not pin the HUD open.
         inputTimeout?.cancel()
         let work = DispatchWorkItem { [weak self] in
@@ -227,6 +275,7 @@ final class NotchHUD {
         panel.isReleasedWhenClosed = false
         panel.contentView = NSHostingView(rootView: NotchHUDView(model: model, geometry: currentGeometry(), onClose: { [weak self] in
             self?.hideInput()
+            self?.dismissAnswer()
             self?.set(phase: .hidden)
         }))
         self.panel = panel
@@ -256,6 +305,7 @@ final class NotchHUD {
         if let hosting = panel.contentView as? NSHostingView<NotchHUDView> {
             hosting.rootView = NotchHUDView(model: model, geometry: geometry, onClose: { [weak self] in
                 self?.hideInput()
+                self?.dismissAnswer()
                 self?.set(phase: .hidden)
             })
         }
@@ -326,6 +376,17 @@ struct NotchHUDView: View {
                         ForEach(model.foldedTasks.prefix(3)) { row in taskPill(row) }
                     }
                     .padding(.horizontal, 12).padding(.bottom, 6)
+                } else if let line = model.listeningLine ?? model.meetingLine {
+                    // The ear is on, or a meeting is close: a quiet line on the tab, after HeyClicky's notch countdown.
+                    HStack(spacing: 6) {
+                        if model.listeningLine != nil {
+                            BreathingDot(color: model.accent)
+                        } else {
+                            Image(systemName: "calendar").font(.system(size: 9.5)).foregroundStyle(model.accent)
+                        }
+                        Text(line).font(.system(size: 10.5, weight: .medium)).foregroundStyle(text.opacity(0.8)).lineLimit(1)
+                    }
+                    .padding(.horizontal, 12).padding(.bottom, 5)
                 } else {
                     HStack(spacing: 5) {
                         Circle().fill(model.accent).frame(width: 5, height: 5).shadow(color: model.accent.opacity(0.8), radius: 3)
@@ -334,7 +395,7 @@ struct NotchHUDView: View {
                     .padding(.bottom, 2)
                 }
             }
-            .frame(width: model.hovering ? min(geometry.notchWidth + 220, 420) : (model.foldedTasks.isEmpty ? geometry.notchWidth + 36 : min(geometry.notchWidth + 80 + CGFloat(min(model.foldedTasks.count, 3)) * 150, 560)), alignment: .center)
+            .frame(width: model.hovering ? min(geometry.notchWidth + 220, 420) : (model.foldedTasks.isEmpty ? ((model.listeningLine ?? model.meetingLine) == nil ? geometry.notchWidth + 36 : geometry.notchWidth + 120) : min(geometry.notchWidth + 80 + CGFloat(min(model.foldedTasks.count, 3)) * 150, 560)), alignment: .center)
             .background(ground, in: UnevenRoundedRectangle(cornerRadii: .init(topLeading: 0, bottomLeading: 14, bottomTrailing: 14, topTrailing: 0)))
             .contentShape(Rectangle())
             .onHover { inside in withAnimation(.easeOut(duration: 0.15)) { model.hovering = inside } }
@@ -355,10 +416,17 @@ struct NotchHUDView: View {
                 if let error = model.error {
                     Text(error).font(.system(size: 12)).foregroundStyle(Color(red: 1, green: 0.5, blue: 0.4)).lineLimit(3)
                 }
-                if !model.transcript.isEmpty {
+                if !model.transcript.isEmpty, model.answer == nil {
                     Text(model.transcript).font(.system(size: 12.5)).foregroundStyle(text.opacity(0.55)).lineLimit(2)
                 }
-                if !model.response.isEmpty {
+                if let caption = model.caption, !caption.isEmpty, model.answer == nil {
+                    Text(caption).font(.system(size: 13.5)).foregroundStyle(text.opacity(0.92)).lineLimit(3)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .transition(.opacity)
+                        .animation(.easeOut(duration: 0.15), value: caption)
+                }
+                if let answer = model.answer { answerBlock(answer) }
+                if !model.response.isEmpty, model.answer == nil {
                     Text(model.response).font(.system(size: 14)).foregroundStyle(text).lineLimit(6)
                         .fixedSize(horizontal: false, vertical: true)
                 }
@@ -385,6 +453,35 @@ struct NotchHUDView: View {
         .frame(width: NotchGeometry.panelWidth, height: NotchHUD.tallPanelHeight, alignment: .top)
     }
 
+    /// The readable answer to a typed question: the question in small type, the answer with room
+    /// to scroll, copy and close. It stays until he closes it, asks again, or presses escape.
+    private func answerBlock(_ answer: String) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            if !model.answerQuestion.isEmpty {
+                Text(model.answerQuestion).font(.system(size: 12)).foregroundStyle(text.opacity(0.5)).lineLimit(2)
+            }
+            ScrollView {
+                Text(answer)
+                    .font(.system(size: 13.5))
+                    .foregroundStyle(text.opacity(0.95))
+                    .lineSpacing(3)
+                    .textSelection(.enabled)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .frame(maxHeight: 300)
+            HStack(spacing: 8) {
+                smallButton("copy") {
+                    NSPasteboard.general.clearContents()
+                    NSPasteboard.general.setString(answer, forType: .string)
+                }
+                smallButton("ask again") { NotificationCenter.default.post(name: .dotShowInput, object: nil) }
+                Spacer()
+                smallButton("close") { NotificationCenter.default.post(name: .dotDismissAnswer, object: nil) }
+            }
+        }
+        .padding(.top, 2)
+    }
+
     private var header: some View {
         HStack(spacing: 10) {
             Circle().fill(model.accent).frame(width: 9, height: 9)
@@ -394,7 +491,7 @@ struct NotchHUDView: View {
             Text(headerText).font(.system(size: 12, weight: .medium)).foregroundStyle(text.opacity(0.8))
             if model.phase == .listening { waveform }
             Spacer()
-            if model.showInput {
+            if model.showInput || model.answer != nil {
                 Button(action: onClose) { Image(systemName: "xmark").font(.system(size: 10, weight: .bold)) }
                     .buttonStyle(.plain).foregroundStyle(text.opacity(0.5))
             }
@@ -403,7 +500,9 @@ struct NotchHUDView: View {
 
     private var headerText: String {
         switch model.phase {
-        case .hidden: return model.showInput ? "ask dot" : (model.agents.isEmpty ? "dot" : (model.agents.count == 1 ? "one task" : "\(model.agents.count) tasks"))
+        case .hidden:
+            if model.answer != nil { return "dot" }
+            return model.showInput ? "ask dot" : (model.agents.isEmpty ? "dot" : (model.agents.count == 1 ? "one task" : "\(model.agents.count) tasks"))
         case .listening: return model.mode == .agent ? "listening, for an agent" : (model.mode == .dictate ? "dictating" : "listening")
         case .transcribing: return "hearing you"
         case .thinking: return "thinking"
@@ -617,6 +716,7 @@ struct NotchHUDView: View {
 
 extension Notification.Name {
     static let dotShowInput = Notification.Name("com.roshan.dot.showInput")
+    static let dotDismissAnswer = Notification.Name("com.roshan.dot.dismissAnswer")
 }
 
 /// A borderless panel refuses to become the key window by default, so keystrokes never reached the

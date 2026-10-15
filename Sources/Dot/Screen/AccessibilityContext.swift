@@ -16,6 +16,8 @@ struct ScreenContext {
     var windowTitle: String?
     var selectedText: String?
     var url: String?
+    /// The file the window shows (Preview, Skim, TextEdit, Pages expose it as AXDocument), as a path.
+    var documentPath: String?
     /// The frontmost window's frame in AppKit screen coordinates, when known.
     var windowFrame: CGRect?
     var elements: [AXElementInfo] = []
@@ -74,7 +76,11 @@ enum AccessibilityContext {
 
         guard let window = attribute(appElement, kAXFocusedWindowAttribute) ?? firstChildWindow(appElement) else { return context }
         context.windowTitle = string(window, kAXTitleAttribute)
-        if let document = string(window, kAXDocumentAttribute), document.hasPrefix("http") { context.url = document }
+        if let document = string(window, kAXDocumentAttribute) {
+            if document.hasPrefix("http") { context.url = document }
+            else if document.hasPrefix("file://"), let fileURL = URL(string: document) { context.documentPath = fileURL.path }
+            else if document.hasPrefix("/") { context.documentPath = document }
+        }
 
         let primaryHeight = NSScreen.screens.first?.frame.height ?? 0
         let windowFrame = frame(of: window).map { Coordinates.appKitRect(fromCG: $0, primaryHeight: primaryHeight) }

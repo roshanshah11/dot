@@ -45,6 +45,34 @@ struct TranscriptEntry: Identifiable, Equatable {
     let time: Date?
 }
 
+/// A transcript row as the thread draws it. A step owns the "output" and "tool_error" rows
+/// written right after it, so those are only ever seen by opening the step.
+struct ThreadItem: Identifiable, Equatable {
+    let entry: TranscriptEntry
+    var outputs: [TranscriptEntry] = []
+    var outputLines = 0
+    var id: Int { entry.id }
+    var failed: Bool { outputs.contains { $0.role == "tool_error" } }
+
+    static func group(_ entries: [TranscriptEntry]) -> [ThreadItem] {
+        var items: [ThreadItem] = []
+        var attaching = false
+        for entry in entries {
+            if entry.role == "output" || entry.role == "tool_error" {
+                let text = entry.text.trimmingCharacters(in: .newlines)
+                if attaching, !text.isEmpty {
+                    items[items.count - 1].outputs.append(entry)
+                    items[items.count - 1].outputLines += text.split(omittingEmptySubsequences: false, whereSeparator: \.isNewline).count
+                }
+                continue
+            }
+            items.append(ThreadItem(entry: entry))
+            attaching = entry.role == "tool"
+        }
+        return items
+    }
+}
+
 @MainActor
 final class HomeModel: ObservableObject {
     enum Page: Equatable { case agent, day, settings }
@@ -52,7 +80,9 @@ final class HomeModel: ObservableObject {
     @Published var page: Page = .agent
     @Published var agents: [AgentManager.Agent] = []
     @Published var selected: AgentManager.Agent?
-    @Published var entries: [TranscriptEntry] = []
+    @Published var entries: [TranscriptEntry] = [] { didSet { items = ThreadItem.group(entries) } }
+    /// The thread as drawn, regrouped once per transcript change rather than per row.
+    private(set) var items: [ThreadItem] = []
     @Published var outputs: [URL] = []
     @Published var previewURL: URL?
     @Published var showOutputs = true
@@ -244,6 +274,7 @@ final class HomeModel: ObservableObject {
 struct HomeView: View {
     @ObservedObject var model: HomeModel
     @State private var showingNew = false
+    @State private var openSteps: Set<String> = []
 
     private let accent = Color(red: 1.0, green: 0.42, blue: 0.17)
 
@@ -439,7 +470,7 @@ struct HomeView: View {
                     if model.entries.isEmpty {
                         Text("Nothing yet. Say \"agent, …\" with the key held, or type below.").font(.callout).foregroundStyle(.secondary).padding(.top, 20)
                     }
-                    ForEach(model.entries) { entry in entryView(entry) }
+                    ForEach(model.items) { item in entryView(item) }
                     if running {
                         HStack(spacing: 8) {
                             BreathingDot(color: accent)
@@ -471,7 +502,8 @@ struct HomeView: View {
     }
 
     @ViewBuilder
-    private func entryView(_ entry: TranscriptEntry) -> some View {
+    private func entryView(_ item: ThreadItem) -> some View {
+        let entry = item.entry
         switch entry.role {
         case "user":
             HStack(alignment: .bottom) {
@@ -484,10 +516,15 @@ struct HomeView: View {
                 }
             }
         case "assistant":
+            let body = AgentResult.parse(entry.text).body
             HStack(alignment: .top) {
-                Text(Self.markdown(AgentResult.parse(entry.text).body)).font(.system(size: 13)).textSelection(.enabled)
-                    .padding(.horizontal, 12).padding(.vertical, 8)
-                    .background(Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 14))
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(Self.markdown(body)).font(.system(size: 13)).textSelection(.enabled)
+                        .padding(.horizontal, 12).padding(.vertical, 8)
+                        .background(Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 14))
+                    // Past a screenful the bubble loses tables, math and headings; the reader keeps them.
+                    if body.count > 600 { readButton { read(message: body, at: entry.time) }.padding(.leading, 6) }
+                }
                 Spacer(minLength: 60)
             }
         case "result":
@@ -498,12 +535,41 @@ struct HomeView: View {
             }
             .padding(.leading, 4)
         case "tool":
-            HStack(alignment: .top, spacing: 8) {
-                Image(systemName: Self.stepIcon(entry.text)).font(.system(size: 10)).foregroundStyle(.secondary).frame(width: 14)
-                Text(entry.text).font(.system(size: 11.5, design: .monospaced)).foregroundStyle(.secondary).lineLimit(2).textSelection(.enabled)
-                Spacer()
+            if item.outputs.isEmpty {
+                HStack(alignment: .top, spacing: 8) {
+                    Image(systemName: Self.stepIcon(entry.text)).font(.system(size: 10)).foregroundStyle(.secondary).frame(width: 14)
+                    Text(entry.text).font(.system(size: 11.5, design: .monospaced)).foregroundStyle(.secondary).lineLimit(2).textSelection(.enabled)
+                    Spacer()
+                }
+                .padding(.leading, 6)
+            } else {
+                let key = Self.stepKey(entry)
+                let open = openSteps.contains(key)
+                VStack(alignment: .leading, spacing: 6) {
+                    Button {
+                        withAnimation(.easeOut(duration: 0.15)) {
+                            if open { openSteps.remove(key) } else { openSteps.insert(key) }
+                        }
+                    } label: {
+                        HStack(alignment: .top, spacing: 8) {
+                            Image(systemName: Self.stepIcon(entry.text)).font(.system(size: 10)).foregroundStyle(.secondary).frame(width: 14)
+                            Text(entry.text).font(.system(size: 11.5, design: .monospaced)).foregroundStyle(.secondary).lineLimit(2)
+                            HStack(spacing: 3) {
+                                Text(item.outputLines == 1 ? "1 line" : "\(item.outputLines) lines")
+                                Image(systemName: "chevron.right").font(.system(size: 7, weight: .bold)).rotationEffect(.degrees(open ? 90 : 0))
+                            }
+                            .font(.system(size: 10)).foregroundStyle(item.failed ? Color.orange : Color.secondary).opacity(0.75).padding(.top, 1)
+                            Spacer()
+                        }
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    if open { stepOutput(item.outputs) }
+                }
+                .padding(.leading, 6)
             }
-            .padding(.leading, 6)
+        case "output", "tool_error":
+            EmptyView()
         default:
             HStack(alignment: .top, spacing: 8) {
                 Image(systemName: "hand.raised").font(.system(size: 10)).foregroundStyle(.orange).frame(width: 14)
@@ -523,6 +589,58 @@ struct HomeView: View {
         if l.hasPrefix("running") || l.hasPrefix("$") { return "terminal" }
         if l.contains("click") || l.contains("window") || l.contains("screen") { return "cursorarrow.click" }
         return "circle.dotted"
+    }
+
+    /// Steps are remembered by time and text, not by row id: ids are positions in the last 300
+    /// rows and shift as the transcript grows, which would open the wrong step.
+    static func stepKey(_ entry: TranscriptEntry) -> String {
+        "\(entry.time?.timeIntervalSince1970 ?? 0)|\(entry.text)"
+    }
+
+    /// What a step returned, under the step on demand; an error reads in orange so a failed
+    /// step stands out from a long successful one.
+    private func stepOutput(_ outputs: [TranscriptEntry]) -> some View {
+        let failed = outputs.contains { $0.role == "tool_error" }
+        return VStack(alignment: .leading, spacing: 6) {
+            ForEach(outputs) { row in
+                Text(row.text).font(.system(size: 11, design: .monospaced))
+                    .foregroundStyle(row.role == "tool_error" ? Color.orange : Color.primary.opacity(0.75))
+                    .textSelection(.enabled)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+        }
+        .padding(.leading, 10).padding(.trailing, 44).padding(.vertical, 8)
+        .background((failed ? Color.orange : Color.primary).opacity(0.06), in: RoundedRectangle(cornerRadius: 8))
+        .overlay(alignment: .topTrailing) {
+            Button("copy") {
+                NSPasteboard.general.clearContents()
+                NSPasteboard.general.setString(outputs.map(\.text).joined(separator: "\n"), forType: .string)
+            }
+            .buttonStyle(.plain).font(.system(size: 10.5)).foregroundStyle(.secondary).padding(7)
+        }
+        .padding(.leading, 22)
+    }
+
+    private func readButton(action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            HStack(spacing: 4) {
+                Image(systemName: "book").font(.system(size: 9.5, weight: .semibold))
+                Text("read").font(.system(size: 11, weight: .medium))
+            }
+            .foregroundStyle(accent)
+            .padding(.horizontal, 8).padding(.vertical, 3)
+            .background(accent.opacity(0.12), in: Capsule())
+        }
+        .buttonStyle(.plain)
+        .help("Open in a reading window")
+    }
+
+    /// The reader keys text by title, so the message time keeps two long answers from the
+    /// same agent in separate windows.
+    private func read(message body: String, at time: Date?) {
+        guard let agent = model.selected else { return }
+        let when = time.map { $0.formatted(date: .omitted, time: .standard) } ?? "message"
+        MarkdownViewer.show(text: body, title: "\(agent.name) · \(when)", baseURL: agent.folder)
     }
 
     static func markdown(_ text: String) -> AttributedString {
@@ -603,20 +721,27 @@ struct HomeView: View {
             ScrollView {
                 LazyVStack(spacing: 2) {
                     ForEach(model.outputs.prefix(40), id: \.self) { url in
-                        Button { model.previewURL = url } label: {
-                            HStack(spacing: 8) {
-                                Image(systemName: Self.fileIcon(url)).foregroundStyle(.secondary).frame(width: 16)
-                                VStack(alignment: .leading, spacing: 1) {
-                                    Text(url.lastPathComponent).font(.system(size: 12)).lineLimit(1)
-                                    Text(Self.fileMeta(url)).font(.system(size: 10)).foregroundStyle(.secondary)
+                        let markdown = MarkdownViewer.isMarkdown(url)
+                        HStack(spacing: 6) {
+                            Button { model.previewURL = url } label: {
+                                HStack(spacing: 8) {
+                                    Image(systemName: Self.fileIcon(url)).foregroundStyle(.secondary).frame(width: 16)
+                                    VStack(alignment: .leading, spacing: 1) {
+                                        Text(url.lastPathComponent).font(.system(size: 12)).lineLimit(1)
+                                        Text(Self.fileMeta(url)).font(.system(size: 10)).foregroundStyle(.secondary)
+                                    }
+                                    Spacer()
                                 }
-                                Spacer()
+                                .padding(.leading, 8).padding(.vertical, 5)
+                                .contentShape(Rectangle())
                             }
-                            .padding(.horizontal, 8).padding(.vertical, 5)
-                            .background(model.previewURL == url ? Color.primary.opacity(0.08) : .clear, in: RoundedRectangle(cornerRadius: 7))
-                            .contentShape(Rectangle())
+                            .buttonStyle(.plain)
+                            // QuickLook shows Markdown as raw text, so a double-click on a Markdown output opens the reader.
+                            .simultaneousGesture(TapGesture(count: 2).onEnded { if markdown { MarkdownViewer.show(file: url) } })
+                            if markdown { readButton { MarkdownViewer.show(file: url) } }
                         }
-                        .buttonStyle(.plain)
+                        .padding(.trailing, 8)
+                        .background(model.previewURL == url ? Color.primary.opacity(0.08) : .clear, in: RoundedRectangle(cornerRadius: 7))
                         .contextMenu {
                             Button("Open") { NSWorkspace.shared.open(url) }
                             Button("Reveal in Finder") { NSWorkspace.shared.activateFileViewerSelecting([url]) }

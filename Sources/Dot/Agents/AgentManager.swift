@@ -53,6 +53,25 @@ final class AgentManager {
     }
     /// The last final text of each agent, for the notch card and Home.
     private(set) var lastResults: [String: String] = [:]
+    private var finishedAt: [String: Date] = [:]
+    private var lastBriefs: [String: String] = [:]
+
+    /// What the talk model is told about agents: who is working on what, who just finished and what they said.
+    struct Recent { let name: String; let task: String; let state: String; let line: String; let result: String?; let when: Date }
+
+    /// Running agents and those that finished within `minutes`, newest first.
+    func recentRuns(minutes: Double = 45) -> [Recent] {
+        var out: [Recent] = []
+        for run in runs.values where run.session.turnInFlight {
+            out.append(Recent(name: run.agent.name, task: Log.short(run.lastBrief, 160), state: "working", line: run.lastLine, result: nil, when: run.startedAt))
+        }
+        let cutoff = Date().addingTimeInterval(-minutes * 60)
+        for (slug, when) in finishedAt where when >= cutoff && !out.contains(where: { $0.name.lowercased() == Self.displayName(for: config.agentsRootURL.appendingPathComponent(slug))?.lowercased() }) {
+            let name = Self.displayName(for: config.agentsRootURL.appendingPathComponent(slug)) ?? slug
+            out.append(Recent(name: name, task: Log.short(lastBriefs[slug] ?? "", 160), state: "finished", line: "", result: lastResults[slug].map { String($0.prefix(600)) }, when: when))
+        }
+        return out.sorted { $0.when > $1.when }
+    }
 
     var onRosterChanged: (() -> Void)?
     var onRunFinished: ((Agent) -> Void)?
@@ -273,6 +292,10 @@ final class AgentManager {
             run.step(Log.short(line, 90))
             hud.upsertAgent(run.row(line))
             appendTranscript(agent, role: "tool", text: line)
+        case .toolResult(let content, let isError):
+            // What the tool said back, trimmed: Home shows it under the step when he opens it.
+            let trimmed = content.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !trimmed.isEmpty { appendTranscript(agent, role: isError ? "tool_error" : "output", text: String(trimmed.prefix(1200))) }
         default:
             break
         }
@@ -287,6 +310,8 @@ final class AgentManager {
         let summary = Self.firstSentence(of: text)
         let failed = result.isError
         lastResults[agent.slug] = text
+        finishedAt[agent.slug] = Date()
+        lastBriefs[agent.slug] = run.lastBrief
         let outputs = outputFiles(for: agent)
         hud.upsertAgent(AgentRow(id: agent.slug, name: agent.name, line: failed ? "failed: \(summary)" : summary, state: failed ? .failed : .done,
                                  result: text, outputCount: outputs.count, outputs: Array(outputs.prefix(4)), nextAction: parsed.nextAction))

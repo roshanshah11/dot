@@ -133,6 +133,9 @@ final class BoardManager {
 
 /// One card: a title strip with a close button over a transparent web view, draggable by its strip.
 final class CardPanel: NSPanel, WKNavigationDelegate {
+    /// Cards follow the same recordings setting as the orb and the notch.
+    static var visibleInRecordings = true { didSet { for panel in all.allObjects { panel.sharingType = visibleInRecordings ? .readOnly : .none } } }
+    private static let all = NSHashTable<CardPanel>.weakObjects()
     let cardID: String
     private(set) var title_ = ""
     private(set) var shown = 0
@@ -171,6 +174,8 @@ final class CardPanel: NSPanel, WKNavigationDelegate {
         hidesOnDeactivate = false
         isReleasedWhenClosed = false
         alphaValue = 0
+        sharingType = Self.visibleInRecordings ? .readOnly : .none
+        Self.all.add(self)
 
         container.wantsLayer = true
         container.layer?.backgroundColor = NSColor(calibratedRed: 0.05, green: 0.047, blue: 0.043, alpha: 0.95).cgColor

@@ -49,12 +49,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         noticer = Noticer(config: config, atlas: atlas, overlay: overlay, jev: jev)
         noticer.onSuggest = { [weak self] suggestion in Task { @MainActor in self?.talk.offerSuggestion(suggestion) } }
         hud.setPresence(config.notchPresence)
+        applyRecordingVisibility()
         home = HomeWindowController(agents: agents, ledger: ledger, config: config, atlas: atlas)
         let hudModel = hud.model
         hudModel.onStopAgent = { [weak self] id in
             Task { @MainActor in
                 guard let self else { return }
-                if id == "walkthrough" || id == "lesson" { self.talk.stopTask(id) } else { self.agents.stop(id) }
+                if id == "walkthrough" || id == "lesson" || id == "lecture" { self.talk.stopTask(id) } else { self.agents.stop(id) }
             }
         }
         atlas.onUpdate = { [weak self] brief in
@@ -67,6 +68,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 guard let self, let brief = self.atlas.brief else { return }
                 hudModel.todayLine = brief.hoverLine()
                 self.noticeMeeting(brief)
+                // The countdown on the idle tab, from half an hour out (HeyClicky's meeting countdown notch).
+                if let next = brief.nextEvent(), next.startsIn > 0, next.startsIn <= 30 {
+                    hudModel.meetingLine = "\(String(next.title.lowercased().prefix(28))) in \(next.startsIn) min"
+                } else {
+                    hudModel.meetingLine = nil
+                }
             }
         }
 
@@ -95,8 +102,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         noticedMeetings.insert(key)
         let line = "\(next.title.lowercased()) in \(next.startsIn) min"
         hud.flash(status: line, for: 20)
-        overlay.greet(line, for: 12)
-        if talk.isIdle, config.speakMeetingNotice {
+        let onCall = config.quietOnCalls && CallPresence.isOnCall()
+        if !onCall { overlay.greet(line, for: 12) }
+        if talk.isIdle, config.speakMeetingNotice, !onCall {
             speaker.speak("heads up, \(next.title.lowercased()) in \(next.startsIn) minutes.")
         }
         Log.info("notice: \(line)")
@@ -145,6 +153,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         center.addObserver(forName: DotIPC.card, object: nil, queue: .main) { [weak self] note in
             guard let path = note.userInfo?["text"] as? String else { return }
             Task { @MainActor in self?.talk.showCardFile(path) }
+        }
+        // `Dot --find "phrase"`: search the app in front and highlight the match (the FIND tag's path).
+        center.addObserver(forName: DotIPC.find, object: nil, queue: .main) { [weak self] note in
+            guard let text = note.userInfo?["text"] as? String else { return }
+            Task { @MainActor in self?.talk.findOnScreen(text) }
+        }
+        // `Dot --listen [title]` and `Dot --stop-listening`: the lecture ear.
+        center.addObserver(forName: DotIPC.listen, object: nil, queue: .main) { [weak self] note in
+            let title = (note.userInfo?["text"] as? String) ?? ""
+            Task { @MainActor in await self?.talk.startLecture(title: title) }
+        }
+        center.addObserver(forName: DotIPC.stopListening, object: nil, queue: .main) { [weak self] _ in
+            Task { @MainActor in await self?.talk.stopLecture() }
+        }
+        // `Dot --dictionary "heard => correct"` or a bare term.
+        center.addObserver(forName: DotIPC.dictionary, object: nil, queue: .main) { [weak self] note in
+            guard let text = note.userInfo?["text"] as? String else { return }
+            let parts = text.components(separatedBy: "=>").map { $0.trimmingCharacters(in: .whitespaces) }
+            Task { @MainActor in self?.talk.addToDictionary(heard: parts.count == 2 ? parts[0] : nil, correct: parts.last ?? text) }
         }
         // `Dot --stt file.wav`: feed a WAV through the streaming recognizer and log what it hears.
         center.addObserver(forName: DotIPC.stt, object: nil, queue: .main) { [weak self] note in
@@ -210,11 +237,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         let menu = NSMenu()
         menu.addItem(withTitle: "Ask by typing", action: #selector(askByTyping), keyEquivalent: "")
+        menu.addItem(withTitle: "Listen to the lecture", action: #selector(toggleLecture), keyEquivalent: "")
         menu.addItem(withTitle: "Open Dot", action: #selector(openHome), keyEquivalent: "")
         let presence = NSMenuItem(title: "Dot beside the cursor", action: #selector(togglePresence), keyEquivalent: "")
         presence.state = config.showCompanion ? .on : .off
         menu.addItem(presence)
         presenceItem = presence
+        let recordings = NSMenuItem(title: "Show Dot in screen recordings", action: #selector(toggleRecordings), keyEquivalent: "")
+        recordings.state = config.showInRecordings ? .on : .off
+        menu.addItem(recordings)
+        recordingsItem = recordings
         menu.addItem(.separator())
         menu.addItem(withTitle: "Stop talking", action: #selector(interrupt), keyEquivalent: "")
         menu.addItem(withTitle: "Refresh today from Atlas", action: #selector(refreshToday), keyEquivalent: "")
@@ -228,6 +260,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @objc private func askByTyping() { hud.showInput() }
+    @objc private func toggleLecture() {
+        Task { @MainActor in
+            if talk.lecture.isListening { await talk.stopLecture() } else { await talk.startLecture(title: AccessibilityContext.capture(maxElements: 0, timeBudget: 0.1).windowTitle ?? "") }
+        }
+    }
+    private var recordingsItem: NSMenuItem?
+    @objc private func toggleRecordings() {
+        config.showInRecordings.toggle()
+        config.save()
+        recordingsItem?.state = config.showInRecordings ? .on : .off
+        applyRecordingVisibility()
+    }
+    /// HeyClicky's "Show in screen recordings": every Dot window takes the same sharing type.
+    private func applyRecordingVisibility() {
+        overlay.setVisibleInRecordings(config.showInRecordings)
+        hud.setVisibleInRecordings(config.showInRecordings)
+        CardPanel.visibleInRecordings = config.showInRecordings
+    }
     @objc private func openHome() { home.show() }
     @objc private func interrupt() { talk.interrupt() }
     @objc private func refreshToday() { atlas.refresh(reason: "menu"); hud.flash(status: "reading atlas") }
@@ -245,7 +295,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 }
 
 enum Version {
-    static let string = "0.3.0"
+    static let string = "0.4.0"
 }
 
 enum DotIPC {
@@ -258,4 +308,8 @@ enum DotIPC {
     static let stt = Notification.Name("com.roshan.dot.stt")
     static let card = Notification.Name("com.roshan.dot.card")
     static let input = Notification.Name("com.roshan.dot.input")
+    static let find = Notification.Name("com.roshan.dot.find")
+    static let listen = Notification.Name("com.roshan.dot.listen")
+    static let stopListening = Notification.Name("com.roshan.dot.stopListening")
+    static let dictionary = Notification.Name("com.roshan.dot.dictionary")
 }

@@ -16,6 +16,8 @@ import Foundation
 ///   [AGENT:brief]                  hand the task to a background agent
 ///   [NEW_AGENT:name:brief]         create a named agent for this kind of work, then hand off
 ///   [THINK]                        the question deserves the stronger model; Dot re-asks it
+///   [FIND:phrase]                  find the phrase in the document in front, scroll to it and highlight it
+///   [STOCK:NVDA]                   a live quote card on the board
 public enum DotTag: Equatable {
     case point(x: Int, y: Int, label: String, screen: Int?)
     case pointNone
@@ -33,6 +35,10 @@ public enum DotTag: Equatable {
     case agent(brief: String)
     case newAgent(name: String, brief: String)
     case think
+    /// Dot finds the phrase in the document in front (its text, not the pixels), scrolls to it and highlights it.
+    case find(phrase: String)
+    /// A live quote card for a ticker.
+    case stock(symbol: String)
 }
 
 public enum ShapeKind: String, Equatable, Sendable { case line, arrow, circle, curve, polygon }
@@ -56,7 +62,7 @@ public extension DotTag {
     /// Tags that draw or move something on screen (as opposed to handing off or escalating).
     var isVisual: Bool {
         switch self {
-        case .point, .highlight, .target, .hover, .shape, .card, .reveal, .clearBoard, .type, .web: return true
+        case .point, .highlight, .target, .hover, .shape, .card, .reveal, .clearBoard, .type, .web, .find, .stock: return true
         case .pointNone, .agent, .newAgent, .think: return false
         }
     }
@@ -91,11 +97,11 @@ public struct ParsedResponse: Equatable {
 }
 
 public enum TagParser {
-    static let tagNames = ["POINT", "HIGHLIGHT", "TARGET", "HOVER", "SHAPE", "CARD", "REVEAL", "CLEAR_BOARD", "TYPE", "WEB", "AGENT", "NEW_AGENT", "THINK"]
+    static let tagNames = ["POINT", "HIGHLIGHT", "TARGET", "HOVER", "SHAPE", "CARD", "REVEAL", "CLEAR_BOARD", "TYPE", "WEB", "FIND", "STOCK", "AGENT", "NEW_AGENT", "THINK"]
 
     // swiftlint:disable:next force_try
     static let pattern = try! NSRegularExpression(
-        pattern: #"\[(POINT|HIGHLIGHT|TARGET|HOVER|SHAPE|CARD|REVEAL|CLEAR_BOARD|TYPE|WEB|AGENT|NEW_AGENT|THINK)(?::([^\]]*))?\]"#,
+        pattern: #"\[(POINT|HIGHLIGHT|TARGET|HOVER|SHAPE|CARD|REVEAL|CLEAR_BOARD|TYPE|WEB|FIND|STOCK|AGENT|NEW_AGENT|THINK)(?::([^\]]*))?\]"#,
         options: []
     )
 
@@ -152,6 +158,13 @@ public enum TagParser {
             return .think
         case "CLEAR_BOARD":
             return .clearBoard
+        case "FIND":
+            let phrase = payload.trimmingCharacters(in: .whitespacesAndNewlines).trimmingCharacters(in: CharacterSet(charactersIn: "\"'"))
+            return phrase.count >= 2 ? .find(phrase: phrase) : nil
+        case "STOCK":
+            let symbol = payload.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
+            guard !symbol.isEmpty, symbol.count <= 12, symbol.allSatisfy({ $0.isLetter || $0.isNumber || $0 == "." || $0 == "-" || $0 == "^" || $0 == "=" }) else { return nil }
+            return .stock(symbol: symbol)
         case "REVEAL":
             let parts = splitPayload(payload)
             guard parts.count >= 1, !parts[0].isEmpty else { return nil }

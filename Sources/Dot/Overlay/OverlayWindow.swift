@@ -82,6 +82,8 @@ final class CompanionModel: ObservableObject {
     @Published var highlightLabel: String?
     @Published var drawRect: CGRect?
     @Published var stroke: [CGPoint] = []
+    /// Strokes already finished while the key stays held (he can mark two things).
+    @Published var strokes: [[CGPoint]] = []
     @Published var color = Color(red: 1.0, green: 0.42, blue: 0.17)
     let screenSize: CGSize
 
@@ -100,6 +102,16 @@ struct CompanionView: View {
     var body: some View {
         ZStack(alignment: .topLeading) {
             Color.black.opacity(0.001)
+            ForEach(Array(model.strokes.enumerated()), id: \.offset) { _, points in
+                if points.count >= 2 {
+                    Path { path in
+                        path.move(to: points[0])
+                        for p in points.dropFirst() { path.addLine(to: p) }
+                    }
+                    .stroke(model.color.opacity(0.9), style: StrokeStyle(lineWidth: 3, lineCap: .round, lineJoin: .round))
+                    .shadow(color: model.color.opacity(0.6), radius: 4)
+                }
+            }
             if model.stroke.count >= 2 {
                 Path { path in
                     path.move(to: model.stroke[0])
@@ -107,7 +119,7 @@ struct CompanionView: View {
                 }
                 .stroke(model.color.opacity(0.9), style: StrokeStyle(lineWidth: 3, lineCap: .round, lineJoin: .round))
                 .shadow(color: model.color.opacity(0.6), radius: 4)
-            } else if let rect = model.drawRect {
+            } else if let rect = model.drawRect, model.strokes.isEmpty {
                 Rectangle()
                     .stroke(model.color, style: StrokeStyle(lineWidth: 2, dash: [6, 4]))
                     .background(model.color.opacity(0.07))
@@ -164,7 +176,7 @@ struct CompanionView: View {
 
     /// Short answers get a snug bubble; long ones wrap at the max width. Measured, not guessed.
     private func bubbleWidth(for text: String, max maxWidth: CGFloat) -> CGFloat {
-        let font = NSFont.systemFont(ofSize: 13)
+        let font = NSFont.systemFont(ofSize: 12.5)
         let line = (text as NSString).size(withAttributes: [.font: font]).width
         return min(maxWidth, ceil(line) + 2)
     }
@@ -173,36 +185,37 @@ struct CompanionView: View {
     /// parked beside a target it opens to the right (or left near the edge) at Dot's height, so
     /// the thing being pointed at stays uncovered; following the cursor it hangs below.
     private var bubble: some View {
-        let maxWidth: CGFloat = model.motion == .parked ? 260 : 300
+        let maxWidth: CGFloat = model.motion == .parked ? 240 : 260
         let width = bubbleWidth(for: model.bubbleText, max: maxWidth)
         let parked = model.motion == .parked
         let roomRight = model.position.x + 24 + width + 28 <= model.screenSize.width - 12
         let roomLeft = model.position.x - 20 - width - 28 >= 12
         let flip = model.bubbleFlip.map { $0 ? roomLeft : !roomRight } ?? !roomRight
         let below = model.position.y + 180 < model.screenSize.height
-        return VStack(alignment: .leading, spacing: 3) {
+        // A quiet note beside Dot (a greeting, an offer, a short line): light paper, two lines at
+        // most, nothing that reads as a panel over his page. Spoken answers do not come here; their
+        // words are in the voice and the current line sits in the notch.
+        return VStack(alignment: .leading, spacing: 2) {
             if let label = model.bubbleLabel, !label.isEmpty {
-                Text(label.uppercased())
-                    .font(.system(size: 10, weight: .semibold))
-                    .tracking(0.6)
+                Text(label)
+                    .font(.system(size: 10.5, weight: .semibold))
                     .foregroundStyle(model.color)
                     .lineLimit(1)
             }
-            // One spoken sentence, three lines at most: a caption beside Dot, not a paragraph.
             Text(model.bubbleText)
-                .font(.system(size: 13, weight: .regular))
-                .foregroundStyle(paper)
-                .lineSpacing(2.5)
-                .lineLimit(3)
+                .font(.system(size: 12.5, weight: .regular))
+                .foregroundStyle(ink)
+                .lineSpacing(2)
+                .lineLimit(2)
                 .truncationMode(.tail)
         }
             .frame(width: width, alignment: .leading)
             .fixedSize(horizontal: false, vertical: true)
-            .padding(.horizontal, 12)
-            .padding(.vertical, 8)
-            .background(ink.opacity(0.92), in: RoundedRectangle(cornerRadius: 11, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: 11, style: .continuous).stroke(Color.white.opacity(0.08), lineWidth: 1))
-            .shadow(color: .black.opacity(0.28), radius: 10, x: 0, y: 4)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 6)
+            .background(paper.opacity(0.97), in: RoundedRectangle(cornerRadius: 9, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 9, style: .continuous).stroke(ink.opacity(0.1), lineWidth: 1))
+            .shadow(color: .black.opacity(0.18), radius: 8, x: 0, y: 3)
             .alignmentGuide(.leading) { d in flip ? d[.trailing] - (model.position.x - 20) : -(model.position.x + 22) }
             .alignmentGuide(.top) { d in
                 if parked { return d[VerticalAlignment.center] - model.position.y }
@@ -415,13 +428,14 @@ struct OrbView: View {
             case .neutral: return model.phase == .speaking ? 0.2 : 0.14
             }
         }()
-        let open = talking * body * 0.26 + (model.mood == .puzzled ? body * 0.03 : 0)
+        let open = talking * body * 0.16 + (model.mood == .puzzled ? body * 0.03 : 0)
+        // Brows only lift (puzzled, happy); nothing tilts them inward, which read as anger
+        // (his screenshot 2026-10-15, "this doesn't look good"). Focus shows in the eyes.
         let browTilt: CGFloat = {
             switch model.mood {
-            case .focused: return 0.35
             case .puzzled: return -0.25
             case .happy: return -0.12
-            default: return model.phase == .thinking ? 0.28 : 0
+            default: return 0
             }
         }()
         return ZStack {
@@ -775,6 +789,23 @@ final class OverlayManager {
         models[index].stroke = points.map { Coordinates.overlayPoint(fromScreen: $0, screenFrame: frame) }
     }
 
+    /// A stroke is finished: it stays on screen while he draws the next or speaks.
+    func keepStroke(_ points: [CGPoint]) {
+        guard let first = points.first, let index = screenIndex(containing: first) else { return }
+        let frame = windows[index].screenFrame
+        models[index].strokes.append(points.map { Coordinates.overlayPoint(fromScreen: $0, screenFrame: frame) })
+        models[index].stroke = []
+    }
+
+    func clearStrokes() {
+        for model in models { model.strokes = []; model.stroke = [] }
+    }
+
+    /// Whether screen recordings and shares capture Dot (HeyClicky's "Show in screen recordings").
+    func setVisibleInRecordings(_ visible: Bool) {
+        for window in windows { window.sharingType = visible ? .readOnly : .none }
+    }
+
     func clearRing() {
         for model in models { model.ring = nil }
     }
@@ -792,6 +823,7 @@ final class OverlayManager {
                 model.tailTo = nil
                 model.drawRect = nil
                 model.stroke = []
+                model.strokes = []
                 model.shapes = []
                 model.bubbleFlip = nil
             }
@@ -814,6 +846,7 @@ final class OverlayManager {
             model.tailTo = nil
             model.drawRect = nil
             model.stroke = []
+            model.strokes = []
             model.shapes = []
             model.scale = 1
             model.bubbleFlip = nil

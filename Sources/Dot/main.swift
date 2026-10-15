@@ -21,6 +21,9 @@ case "--help", "-h":
       Dot --ask --drive <q>   a walkthrough Dot clicks through itself (tests; by voice say "do it")
       Dot --home        open the Dot window              Dot --stop            stop talking
       Dot --refresh     re-read today from Atlas         Dot --input           open the typed-question field
+      Dot --find <phrase>      search the app in front and highlight the match
+      Dot --listen [title]     start the lecture ear       Dot --stop-listening  stop it and save the transcript
+      Dot --dictionary "heard => correct"   add a term the recognizer should write your way
       Dot --version
 
     Hold control+option and talk; drag while holding to draw a box to ask about.
@@ -85,15 +88,16 @@ case "--ask", "--agent":
     DistributedNotificationCenter.default().postNotificationName(name, object: nil, userInfo: ["text": text, "quiet": quiet, "drive": drive], deliverImmediately: true)
     print("sent to Dot")
     exit(0)
-case "--type", "--stt", "--card":
+case "--type", "--stt", "--card", "--find", "--dictionary", "--listen":
     let text = arguments.dropFirst().joined(separator: " ")
-    guard !text.isEmpty else { print("usage: Dot --type \"text\" | Dot --stt file.wav"); exit(2) }
-    let name = arguments.first == "--type" ? DotIPC.type : (arguments.first == "--stt" ? DotIPC.stt : DotIPC.card)
-    DistributedNotificationCenter.default().postNotificationName(name, object: nil, userInfo: ["text": text], deliverImmediately: true)
+    guard !text.isEmpty || arguments.first == "--listen" else { print("usage: Dot --type \"text\" | Dot --stt file.wav | Dot --card file.html | Dot --find \"phrase\" | Dot --dictionary \"heard => correct\""); exit(2) }
+    let names: [String: Notification.Name] = ["--type": DotIPC.type, "--stt": DotIPC.stt, "--card": DotIPC.card, "--find": DotIPC.find, "--dictionary": DotIPC.dictionary, "--listen": DotIPC.listen]
+    DistributedNotificationCenter.default().postNotificationName(names[arguments.first!]!, object: nil, userInfo: ["text": text], deliverImmediately: true)
     print("sent to Dot")
     exit(0)
-case "--home", "--stop", "--refresh", "--input":
-    let name = arguments.first == "--home" ? DotIPC.home : (arguments.first == "--stop" ? DotIPC.stop : (arguments.first == "--input" ? DotIPC.input : DotIPC.refresh))
+case "--home", "--stop", "--refresh", "--input", "--stop-listening":
+    let names: [String: Notification.Name] = ["--home": DotIPC.home, "--stop": DotIPC.stop, "--input": DotIPC.input, "--refresh": DotIPC.refresh, "--stop-listening": DotIPC.stopListening]
+    let name = names[arguments.first!]!
     DistributedNotificationCenter.default().postNotificationName(name, object: nil, userInfo: nil, deliverImmediately: true)
     exit(0)
 default:

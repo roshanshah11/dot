@@ -5,6 +5,15 @@ bottom with the date. "His ask" quotes the message that created the item.
 
 ## Now
 
+- [ ] 2026-10-15 Round four, his asks ("it struggles with traversing through pdfs", "this doesn't look good" (the bubble), "a lot missing between HeyClicky's binary and what i have; act as a senior dev and build out its entirety of features", and "rethink dot and murmur, the different use cases; bring back murmur"):
+      1. [x] documents, not pixels: Dot reads the document in front (PDFKit for a pdf the window names or a pdf url, a page's text, docx, md, txt; cached), finds the passage by its words (DocumentSearch), scrolls the app there with its own find box or Preview's go-to-page (Navigator), and boxes the match where the OCR sees it (TextRecognizer.lines). "find the part about x" is answered from the document with no model call; the lecture companion uses the same path; the model has [FIND:phrase] for the rest. Untested on his screen: needs a pdf in front.
+      2. [x] the bubble is gone from spoken answers: the line being said shows in the notch (HeyClicky's way), typed questions get a readable answer that stays in the notch with copy and close, and they are silent unless `speakTypedAnswers` is on. The orb's brows no longer tilt inward (it read as angry). A one-line greet bubble stays, lighter and two lines at most.
+      3. [x] the two recorders, decided: Dot is short (hold to talk, tap to type, hold control+fn for a sentence of dictation); Murmur is long (double-tap fn: meetings, long notes, pastes and keeps history). Murmur is running again under a launch agent (com.murmur.app, history on); Dot reads its history when he asks "what did i say in the meeting". No hands-free dictation in Dot; that is Murmur's. New in Dot: "listen to the lecture" (the ear: a rolling transcript, "what did he just say" answered from the last minute, "stop listening" saves ~/Dot/transcripts/lectures/<date>.md, "recap the lecture").
+      4. [x] from the coverage ledger: agents' progress and results in the talk context ("what did the agent find"), a dead mic named and failed over to the built-in one, a muted Mac sends the answer to the notch as text, quiet on calls (mic in use elsewhere or a meeting app in front), the walkthrough waits for the screen to settle before the next look, stroke shapes (circled, a line along, scribbled over) and several marks per hold, Dot hidden from screen recordings on a menu toggle, the meeting countdown on the idle tab, a dictionary for dictation (~/.config/dot/dictionary.txt, "add x to my dictionary", "x is spelled y"), a password field never takes dictation, [STOCK:NVDA] quote cards, stray fragments ("oh uh") dropped before the model, a markdown viewer and expandable tool output in Home.
+      5. [ ] his verdicts: the notch caption while Dot speaks, the typed answer surface, the lecture ear on a real lecture, Murmur back in his hands.
+      Still out (his calls earlier): routines, always-on voice answering, paid realtime voice, onboarding, character editor, billing. Not built this round: the Jev fast lane for agents, place cards, hand-off into another app, the skills library page, settings pages for voice and mic (config.json still), hands-free dictation in Dot (Murmur's job).
+- [ ] Murmur: the installed 1.2.1 build (Sep 29, ad-hoc signed) predates the daily Markdown transcript commit of 2026-10-15; rebuilding it would drop its mic and accessibility grants until Scripts/setup_signing.sh makes the "Murmur Local Signer". Dot reads history.jsonl, which 1.2.1 writes. His uncommitted notch work in ~/Projects/murmur is untouched.
+
 - [ ] 2026-10-15 Round three, his plan ("dot is okay, but needs to be and can be a lot better"; bar: beyond HeyClicky, parity on the parts that matter):
       1. [x] the lesson stage: one thing at a time, spoken not printed, opaque fixed card, back/next/dots, a conversation not a quiz (Resources/board, Board.swift, Talk.lessonHeld); his verdict pending;
       2. [x] lecture companion: when the held key hears a lecture (Jev "lecture"), Dot reads the screen with OCR, finds the passage and explains it; untested by voice;
@@ -21,7 +30,7 @@ bottom with the date. "His ask" quotes the message that created the item.
 - [x] 2026-10-15 Transcripts saved automatically (md per day + jsonl); the homework guard removed at his ask; agents run with Atlas's full chat prompt and the vault.
 
 - [ ] Math mode, round two: his feedback after the weekend of midterm prep; faster partials (chunk 2.5 s); a "what did I miss" review card from the math-miss memory.
-- [ ] Typed questions answered as a text surface in the notch (the response already shows there; make it the primary surface when he typed).
+- [x] 2026-10-15 Typed questions answered as a text surface in the notch (round four).
 
 - [x] 2026-10-15 Task bar: a slim bar under the notch (and in Home) listing every running and recent
       task (agents, walkthroughs, board lessons) with status, a live one-line commentary, Stop
@@ -42,12 +51,10 @@ bottom with the date. "His ask" quotes the message that created the item.
 - [x] 2026-10-15 Streaming transcription while the key is held (FluidAudio SlidingWindowAsrManager).
 - [ ] First-sound latency measured end to end and kept under 1 s for the acknowledgment.
 - [x] 2026-10-15 Orb face and expressions (listening, thinking, speaking, idle).
-- [ ] Walkthrough: wait for the pane to repaint before the next ring, and say so when it has
-      not ("give it a moment, then say continue").
-- [ ] Typed-question surface: a text answer in the notch when he types instead of talks.
+- [x] 2026-10-15 Walkthrough: wait for the pane to repaint before the next ring (ScreenSettle), and say so when it has not.
 - [x] 2026-10-15 Dictation: hold-to-dictate into the focused field, clipboard fallback with a notch
       notice, a transcript archive.
-- [ ] Board cards for stock quotes and places (the chart piece covers quotes; a place card needs a map).
+- [ ] Place cards (a map, directions); stock quote cards landed 2026-10-15 ([STOCK:NVDA]).
 
 ## Next
 
@@ -57,8 +64,8 @@ bottom with the date. "His ask" quotes the message that created the item.
 - [ ] Morning suggestions card with yes/no history.
 - [ ] Routines (scheduled agent runs, pause, log).
 - [ ] Onboarding tour and the three starter agents.
-- [ ] Quiet when on a call or sharing the screen.
-- [ ] Show or hide the orb in screen recordings (window sharing type).
+- [x] 2026-10-15 Quiet when on a call (CallPresence: mic in use elsewhere, a meeting app in front).
+- [x] 2026-10-15 Show or hide Dot in screen recordings (menu toggle, window sharing type).
 
 ## Done
 

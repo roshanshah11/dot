@@ -42,8 +42,21 @@ struct DotConfig: Codable {
     // Phase 2: the companion, Atlas, walkthroughs.
     /// Dot lives beside the cursor all the time (false: appears only while you talk to it).
     var showCompanion = true
-    /// The answer streams into a bubble beside Dot while it speaks.
-    var bubbleText = true
+    /// A caption bubble beside the orb while Dot speaks. Off: the words are spoken and the notch
+    /// shows the current line, the way HeyClicky does it (his verdict 2026-10-15: the bubble "looks bad").
+    var cursorBubble = false
+    /// Answers to typed questions are read aloud as well as shown in the notch.
+    var speakTypedAnswers = false
+    /// Dot's windows appear in screen recordings and screen shares.
+    var showInRecordings = true
+    /// Hold notices, suggestions and spoken heads-ups while he is on a call (mic in use by another app).
+    var quietOnCalls = true
+    /// Course terms and names the recognizer should write his way (one per line, "heard => correct").
+    var dictionaryFile = "~/.config/dot/dictionary.txt"
+    /// Where Murmur keeps its dictation history, read for "what did i say in the meeting".
+    var murmurHistoryFile = "~/Library/Application Support/Murmur/history.jsonl"
+    /// Longest wait for the screen to stop changing after a walkthrough click, in seconds.
+    var walkthroughSettleSeconds = 2.5
     /// Also keep the answer text in the notch panel.
     var hudShowsResponse = false
     /// Once a day, a quiet bubble with the day's shape (deadlines, calendar, mail waiting).
@@ -128,7 +141,13 @@ struct DotConfig: Codable {
         maxAccessibilityElements = get(.maxAccessibilityElements, d.maxAccessibilityElements)
         pointerColorHex = get(.pointerColorHex, d.pointerColorHex)
         showCompanion = get(.showCompanion, d.showCompanion)
-        bubbleText = get(.bubbleText, d.bubbleText)
+        cursorBubble = get(.cursorBubble, d.cursorBubble)
+        speakTypedAnswers = get(.speakTypedAnswers, d.speakTypedAnswers)
+        showInRecordings = get(.showInRecordings, d.showInRecordings)
+        quietOnCalls = get(.quietOnCalls, d.quietOnCalls)
+        dictionaryFile = get(.dictionaryFile, d.dictionaryFile)
+        murmurHistoryFile = get(.murmurHistoryFile, d.murmurHistoryFile)
+        walkthroughSettleSeconds = get(.walkthroughSettleSeconds, d.walkthroughSettleSeconds)
         hudShowsResponse = get(.hudShowsResponse, d.hudShowsResponse)
         morningGreeting = get(.morningGreeting, d.morningGreeting)
         meetingNoticeMinutes = get(.meetingNoticeMinutes, d.meetingNoticeMinutes)

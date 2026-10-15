@@ -33,6 +33,16 @@ final class Talk {
     private var shots: [ScreenShot] = []
     private var context = ScreenContext.empty
     private var region: CGRect?
+    /// Every stroke he drew with the key held this turn: its box, its points and what it looks like.
+    private var marks: [(rect: CGRect, points: [CGPoint], shape: StrokeShape)] = []
+    /// The document in front, read once and cached, so a question can land on its words.
+    private let documents = DocumentReader()
+    /// Dot's ear in a lecture: a rolling transcript the companion can answer from.
+    let lecture: LectureListener
+    private var dictionary = DictationDictionary()
+    private var dictionaryLoadedAt = Date.distantPast
+    /// The answer goes to the notch as text (a typed question, a muted Mac) instead of a bubble.
+    private var textSurface = false
     private var lastMessage = ""
     private var lastImages: [(data: Data, mediaType: String)] = []
     /// A turn that dies inside the CLI before the model is even called gets one more try.
@@ -103,7 +113,13 @@ final class Talk {
         self.atlas = atlas
         self.jev = jev
         self.board = BoardManager(accentHex: config.pointerColorHex)
+        self.lecture = LectureListener(transcriber: transcriber)
         (speaker as? CommandSpeaker)?.warm(Self.acks + Self.thinkAcks)
+        lecture.onStatus = { [weak self] line in self?.hud.model.listeningLine = line }
+        CallPresence.setOwnMicrophoneCheck { [weak self] in
+            guard let self else { return false }
+            return self.recorder.isRecording || self.lecture.isListening
+        }
         self.speaker.onFinishedAll = { [weak self] in
             Task { @MainActor in self?.scheduleIdleCheck() }
         }
@@ -120,7 +136,7 @@ final class Talk {
         hud.model.onSubmitInput = { [weak self] text in
             Task { @MainActor in
                 guard let self else { return }
-                if self.pendingRegionAgent { self.pendingRegionAgent = false; self.handRegionToAgent(text) } else { self.askTyped(text) }
+                if self.pendingRegionAgent { self.pendingRegionAgent = false; self.handRegionToAgent(text) } else { self.askTyped(text, fromField: true) }
             }
         }
         driver.onAbort = { [weak self] what in
@@ -234,10 +250,13 @@ final class Talk {
             if rect.isNull { region = nil; overlay.setDrawRect(nil) } else { overlay.setDrawRect(rect) }
         case .dragPath(let points):
             overlay.setDrawPath(points)
-        case .dragEnded(let rect):
-            region = rect
-            overlay.setDrawRect(rect)
-            hud.flash(status: "asking about what you circled")
+        case .dragEnded(let rect, let points):
+            let shape = StrokeClassifier.classify(points)
+            marks.append((rect, points, shape))
+            region = marks.map(\.rect).reduce(CGRect.null) { $0.union($1) }
+            overlay.keepStroke(points)
+            overlay.setDrawRect(nil)
+            hud.flash(status: marks.count == 1 ? "asking about what you \(shape.words == "marked" ? "marked" : shape == .enclosure ? "circled" : "drew on")" : "\(marks.count) marks")
         }
     }
 
@@ -252,6 +271,8 @@ final class Talk {
         overlay.showTransient()
         overlay.setMouseCapture(true)
         region = nil
+        marks = []
+        hud.dismissAnswer()
         let live = config.streamingTranscription ? readyStream : nil
         readyStream = nil
         do {
@@ -307,6 +328,8 @@ final class Talk {
             return
         }
 
+        let peak = recorder.peak()
+        let inputName = recorder.inputName
         guard let stopped = try? recorder.stop() else {
             stopPartials(cancel: true)
             phase = .idle
@@ -314,6 +337,7 @@ final class Talk {
             settle()
             return
         }
+        if heldFor >= 1.2, peak < 0.002 { microphoneHeardNothing(named: inputName) }
         phase = .transcribing
         hud.set(phase: .transcribing)
         overlay.setPhase(.thinking)
@@ -333,7 +357,8 @@ final class Talk {
                 return
             }
             try? FileManager.default.removeItem(at: stopped.url)
-            let spoken = text.trimmingCharacters(in: .whitespacesAndNewlines)
+            loadDictionaryIfNeeded()
+            let spoken = dictionary.apply(to: text.trimmingCharacters(in: .whitespacesAndNewlines))
             if spoken.count < 2, region != nil {
                 showRegionBar()
                 return
@@ -350,6 +375,50 @@ final class Talk {
     }
 
     var isIdle: Bool { phase == .idle && walkthrough == nil }
+
+    /// The key was held for a while and the stream never moved: the chosen mic is dead or muted.
+    /// Say which one, and fall over to the built-in microphone for the next hold (HeyClicky's
+    /// RealtimeMicrophoneCapture fails over the same way).
+    private func microphoneHeardNothing(named name: String) {
+        let devices = AudioDevices.inputDevices()
+        if let builtIn = devices.first(where: { $0.builtIn }), AudioDevices.defaultInput != builtIn.id, AudioDevices.setDefaultInput(builtIn.id) {
+            hud.flash(status: "\(name.lowercased()) heard nothing; switched to \(builtIn.name.lowercased())", for: 7)
+            Log.warn("mic: \(name) silent for the whole hold; default input now \(builtIn.name)")
+        } else {
+            hud.flash(status: "\(name.lowercased()) heard nothing; check System Settings, Sound, Input", for: 7)
+            Log.warn("mic: \(name) silent for the whole hold; no other input to fall over to")
+        }
+        overlay.setMood(.puzzled, for: 3)
+    }
+
+    // MARK: Dictionary: his terms, written his way
+
+    private func loadDictionaryIfNeeded() {
+        let path = DotConfig.expand(config.dictionaryFile)
+        let modified = (try? FileManager.default.attributesOfItem(atPath: path)[.modificationDate] as? Date) ?? .distantPast
+        guard modified > dictionaryLoadedAt || (dictionary.isEmpty && dictionaryLoadedAt == .distantPast) else { return }
+        dictionaryLoadedAt = Date()
+        if let text = try? String(contentsOfFile: path, encoding: .utf8) {
+            dictionary = DictationDictionary(text: text)
+            Log.info("dictionary: \(dictionary.terms.count) term(s), \(dictionary.rules.count) correction(s)")
+        }
+    }
+
+    /// "add centerview to my dictionary", "jev is spelled j e v": one line in the file, applied from now on.
+    func addToDictionary(heard: String?, correct: String) {
+        let path = DotConfig.expand(config.dictionaryFile)
+        let line = DictationDictionary.line(forHeard: heard, correct: correct)
+        try? FileManager.default.createDirectory(atPath: (path as NSString).deletingLastPathComponent, withIntermediateDirectories: true)
+        let existing = (try? String(contentsOfFile: path, encoding: .utf8)) ?? "# dot's dictionary: one term per line, or \"heard => correct\"\n"
+        try? (existing.hasSuffix("\n") || existing.isEmpty ? existing : existing + "\n").appending(line + "\n").write(toFile: path, atomically: true, encoding: .utf8)
+        dictionaryLoadedAt = .distantPast
+        loadDictionaryIfNeeded()
+        hud.flash(status: "added to your dictionary: \(correct)", for: 4)
+        Log.info("dictionary: added \(line)")
+    }
+
+    private static let dictionaryWords = try! NSRegularExpression(pattern: #"^(?:add|put) (.+?) (?:to|in|into) (?:my |the )?dictionary\W*$"#, options: .caseInsensitive)
+    private static let spelledWords = try! NSRegularExpression(pattern: #"^(.+?) is spell(?:ed|t) (.+?)\W*$"#, options: .caseInsensitive)
 
     // MARK: A circled region with nothing said
 
@@ -403,8 +472,10 @@ final class Talk {
 
     private func clearRegion() {
         region = nil
+        marks = []
         pendingRegionAgent = false
         overlay.setDrawRect(nil)
+        overlay.clearStrokes()
         settle()
     }
 
@@ -611,14 +682,16 @@ final class Talk {
                 hud.flash(error: "didn't catch that: \(error.localizedDescription)"); return
             }
             try? FileManager.default.removeItem(at: stopped.url)
-            let cleaned = SpeechText.dictated(text)
+            loadDictionaryIfNeeded()
+            let cleaned = dictionary.apply(to: SpeechText.dictated(text))
             guard !cleaned.isEmpty else { hud.flash(status: "didn't catch that"); return }
             hud.model.transcript = cleaned
+            let secure = TextInjection.focusedRole() == "AXSecureTextField"
             let method = TextInjection.insert(cleaned)
             switch method {
             case .accessibility: hud.flash(status: "typed it", for: 2)
             case .paste: hud.flash(status: "pasted it", for: 2)
-            case .clipboard: hud.flash(status: "on your clipboard, press command v", for: 6)
+            case .clipboard: hud.flash(status: secure ? "that's a password field, so it's on your clipboard instead" : "on your clipboard, press command v", for: 6)
             }
             hud.set(phase: .hidden)
             Log.info("dictation (\(method.rawValue)): \(Log.short(cleaned, 120))")
@@ -629,14 +702,19 @@ final class Talk {
     /// The typed-question field, the same one a tap of the hotkey opens.
     func showTypedField() { hud.showInput() }
 
-    func askTyped(_ text: String, quiet: Bool = false, drive: Bool = false) {
+    /// `fromField`: he typed in the notch, so the answer is text there (and spoken only when
+    /// `speakTypedAnswers` is on); the command line keeps the voice unless `quiet`.
+    func askTyped(_ text: String, quiet: Bool = false, drive: Bool = false, fromField: Bool = false) {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
         if phase == .speaking || phase == .thinking { stopSpeaking(); activeSession?.interrupt() }
-        quietTurn = quiet
+        quietTurn = quiet || (fromField && !config.speakTypedAnswers)
+        textSurface = fromField
         if drive, config.driveEnabled { driveRequested = true }
+        hud.dismissAnswer()
         hud.model.transcript = trimmed
         hud.model.response = ""
+        if fromField { hud.set(phase: .thinking) }
         overlay.showTransient()
         overlay.clearMarks(keepRing: walkthrough != nil)
         overlay.hideBubble(after: 0)
@@ -653,12 +731,19 @@ final class Talk {
         lastAskWasTyped = typed
         lastAskWasLecture = false
         lastAsked = text
+        if !typed { textSurface = false }
         if let captureTask {
             let captured = await captureTask.value
             shots = captured.shots
             context = captured.context
         }
         captureTask = nil
+        // A muted Mac would lose a spoken answer: show it in the notch as well.
+        if !textSurface, !quietTurn, AudioDevices.outputIsSilent() {
+            textSurface = true
+            hud.flash(status: "your sound is off, so the answer is here too", for: 5)
+            Log.info("output is muted; answer goes to the notch")
+        }
         Log.info("context: app \(context.appName ?? "?") window \(Log.short(context.windowTitle ?? "", 60)) url \(context.url != nil) selected \(context.selectedText?.count ?? 0) elements \(context.elements.count) shots \(shots.count)\(region != nil ? " box" : "")")
 
         if mode == .agent {
@@ -703,6 +788,25 @@ final class Talk {
             return
         case .suggestion(let askText):
             await ask(askText, typed: typed)
+            return
+        case .find(let query):
+            await findInDocument(query)
+            return
+        case .listen:
+            await startLecture(title: context.windowTitle.map { String($0.prefix(60)) } ?? "")
+            return
+        case .stopListening:
+            await stopLecture()
+            return
+        case .recapLecture:
+            await recapLecture()
+            return
+        case .dictionary(let heard, let correct):
+            addToDictionary(heard: heard, correct: correct)
+            phase = .idle
+            overlay.setPhase(.speaking)
+            speaker.speak("got it, \(correct) is in your dictionary.")
+            scheduleIdleCheck()
             return
         case .dismiss:
             overlay.hideBubble(after: 0)
@@ -766,19 +870,203 @@ final class Talk {
     private func askLecture(_ heard: String) async {
         guard let session = session(for: .talk) else { phase = .idle; settle(); return }
         lastAskWasLecture = true
-        hud.flash(status: "lecture: finding it on screen", for: 4)
+        hud.flash(status: "lecture: finding the passage", for: 4)
         overlay.setPhase(.thinking)
-        let cursorShot = shots.first(where: { $0.isCursorScreen }) ?? shots.first
+        // What the lecturer said: the held key's words plus the last minute of the ear, when it is on.
+        var said = heard
+        let recent = lecture.isListening ? lecture.recent(seconds: 60) : ""
+        if !recent.isEmpty, !recent.contains(heard.prefix(40)) { said = recent + " " + heard }
+        let located = await locate(query: said, highlightLabel: "the passage")
+        var lines: [String] = ["[lecture] dot heard the lecturer (or a video), not a question from him: \"\(heard)\""]
+        if !recent.isEmpty { lines.append("the last minute of the lecture, from dot's ear: \"\(Log.short(recent, 900))\"") }
+        if let located {
+            lines.append("the document in front is \"\(located.title)\"\(located.isPDF ? " (\(located.pageCount) pages)" : ""). the passage the lecturer is on\(located.isPDF ? ", page \(located.page)" : ""):")
+            lines.append("\"\(Log.short(located.passage, 1200))\"")
+            lines.append(located.highlighted ? "dot has scrolled to it and highlighted it; do not add a highlight of your own." : (located.navigated ? "dot scrolled the document to that page." : "it is on page \(located.page); dot could not scroll there, so say where it is."))
+            lines.append("explain the concept in two or three sentences tied to that passage, in the lecturer's own terms. never say that it was not a question.")
+        } else {
+            var screenText = located?.screenText ?? ""
+            if screenText.isEmpty, let shot = shots.first(where: { $0.isCursorScreen }) ?? shots.first { screenText = await TextRecognizer.recognize(jpeg: shot.jpeg) }
+            if screenText.count > 3000 { screenText = String(screenText.prefix(3000)) + "…" }
+            lines.append("words on his screen, read top to bottom by ocr:\n\(screenText.isEmpty ? "(nothing readable)" : screenText)")
+            lines.append("find the passage, figure, slide or formula the lecturer is on. if it is visible, highlight it with [HIGHLIGHT:x,y,w,h:label] (coordinates from the screenshot) and explain the concept in two or three sentences tied to it, in the lecturer's own terms. if it is elsewhere in the document, say where and still explain the idea. never say that it was not a question.")
+        }
+        let (built, images) = buildMessage(lines.joined(separator: "\n"), kind: .talk)
+        lastMessage = built
+        lastImages = images
+        sendTurn(built, images: images, to: session, kind: .talk)
+    }
+
+    struct Located {
+        let title: String
+        let isPDF: Bool
+        let pageCount: Int
+        let page: Int
+        let passage: String
+        let phrase: String
+        let navigated: Bool
+        let highlighted: Bool
+        let screenText: String
+    }
+
+    /// Read the document in front, find the passage the words are about, bring it on screen with
+    /// the app's own find box when it is not, and box it where the OCR sees it. Nil when there is
+    /// no readable document or nothing in it matches.
+    private func locate(query: String, highlightLabel: String) async -> Located? {
+        guard let document = await documents.document(for: context) else { return nil }
+        let hits = DocumentSearch.bestPassages(for: query, in: document.pages, count: 3)
+        guard let best = hits.first, best.score >= 1.0 else {
+            Log.info("locate: nothing in \"\(Log.short(document.title, 40))\" matches \(Log.short(query, 60))")
+            return nil
+        }
+        let phrase = DocumentSearch.distinctivePhrase(in: best.passage, preferring: query)
+        var shot = shots.first(where: { $0.isCursorScreen }) ?? shots.first
+        var lines: [RecognizedLine] = []
+        if let shot { lines = await TextRecognizer.lines(jpeg: shot.jpeg) }
+        var screenText = lines.map(\.text).joined(separator: "\n")
+        var navigated = false
+        let onScreen = DocumentSearch.contains(screenText, phrase: phrase) || TextRecognizer.box(for: phrase, in: lines) != nil
+        Log.info("locate: page \(best.page) score \(String(format: "%.1f", best.score)) phrase \"\(phrase)\" \(onScreen ? "on screen" : "off screen")")
+        if !onScreen, !phrase.isEmpty {
+            hud.flash(status: "page \(best.page): scrolling there", for: 4)
+            var moved = false
+            if document.isPDF, let bundle = context.bundleIdentifier, Navigator.pdfApps.contains(bundle) { moved = await Navigator.goToPage(best.page, in: bundle) }
+            if await Navigator.find(phrase, in: context.bundleIdentifier) { moved = true }
+            if moved {
+                navigated = true
+                _ = await ScreenSettle.wait(minimum: 0.3, timeout: 1.6)
+                if let fresh = try? await ScreenCapture.captureAll(maxDimension: config.screenshotMaxDimension, includeOtherScreens: false) {
+                    shots = fresh
+                    shot = fresh.first(where: { $0.isCursorScreen }) ?? fresh.first
+                    lines = []
+                    if let shot { lines = await TextRecognizer.lines(jpeg: shot.jpeg) }
+                    screenText = lines.map(\.text).joined(separator: "\n")
+                }
+            }
+        }
+        var highlighted = false
+        if let shot, let box = TextRecognizer.box(for: phrase, in: lines) {
+            let rect = Coordinates.screenRect(fromPixel: box.insetBy(dx: -6, dy: -4), in: shot.frame)
+            overlay.highlight(rect.intersection(shot.frame.displayFrame), label: highlightLabel)
+            highlighted = true
+        }
+        return Located(title: document.title, isPDF: document.isPDF, pageCount: document.pageCount, page: best.page, passage: best.passage, phrase: phrase,
+                       navigated: navigated, highlighted: highlighted, screenText: screenText)
+    }
+
+    /// "find the part about x": answered from the document itself, instantly, with the passage
+    /// boxed on screen; the model only comes in when the document has nothing for it.
+    private func findInDocument(_ query: String) async {
+        hud.flash(status: "looking in the document for \(Log.short(query, 40))", for: 4)
+        overlay.setPhase(.thinking)
+        if let located = await locate(query: query, highlightLabel: Log.short(query, 24)) {
+            phase = .speaking
+            overlay.setPhase(.speaking)
+            var sentence = located.passage
+            var splitter = SentenceSplitter()
+            if let first = splitter.feed(located.passage + " ").first { sentence = first }
+            let where_ = located.isPDF ? "page \(located.page)" : (located.highlighted ? "found it" : (located.navigated ? "found it, further down" : "it's in there"))
+            let line = "\(where_): \(Log.short(sentence, 200))"
+            hud.setCaption(line)
+            hud.set(phase: .speaking)
+            speaker.speak("\(located.isPDF ? "it's on page \(located.page)" : where_). \(Log.short(sentence, 220))")
+            TranscriptLog.append(kind: .talk, you: lastAsked, dot: line, app: context.appName, extra: ["via": "document"])
+            scheduleIdleCheck()
+            return
+        }
+        guard let session = session(for: .talk) else { phase = .idle; settle(); return }
+        acknowledge()
         var screenText = ""
-        if let cursorShot { screenText = await TextRecognizer.recognize(jpeg: cursorShot.jpeg) }
-        if screenText.count > 3500 { screenText = String(screenText.prefix(3500)) + "…" }
-        Log.info("lecture: \(screenText.count) chars of screen text, heard \(heard.count) chars")
-        let message = """
-        [lecture] dot heard the lecturer (or a video), not a question from him: "\(heard)"
-        words on his screen, read top to bottom by ocr:
-        \(screenText.isEmpty ? "(nothing readable)" : screenText)
-        find the passage, figure, slide or formula the lecturer is on. if it is visible, highlight it with [HIGHLIGHT:x,y,w,h:label] (coordinates from the screenshot) and explain the concept in two or three sentences tied to that passage, in the lecturer's own terms. if the document has a url you can read, webfetch it and quote the line. if the passage is not on this page, say where in the document it is and still explain the idea. never say that it was not a question.
-        """
+        if let shot = shots.first(where: { $0.isCursorScreen }) ?? shots.first { screenText = await TextRecognizer.recognize(jpeg: shot.jpeg) }
+        if screenText.count > 3000 { screenText = String(screenText.prefix(3000)) + "…" }
+        let message = "[find] he asked: \"\(lastAsked)\". dot could not read the document's text itself. words on his screen by ocr:\n\(screenText)\nif the thing is visible, highlight it; if it is likely elsewhere, say [FIND:a distinctive phrase that would appear there] on its own line and dot will search the document with the app's find box and highlight the match; then say in a sentence what it covers."
+        let (built, images) = buildMessage(message, kind: .talk)
+        lastMessage = built
+        lastImages = images
+        sendTurn(built, images: images, to: session, kind: .talk)
+    }
+
+    /// [FIND:phrase] from the model: search the app in front, re-look, box the match.
+    private func findOnScreen(phrase: String, label: String) {
+        Task { @MainActor in
+            let bundle = context.bundleIdentifier
+            var lines: [RecognizedLine] = []
+            if let shot = shots.first(where: { $0.isCursorScreen }) ?? shots.first { lines = await TextRecognizer.lines(jpeg: shot.jpeg) }
+            if TextRecognizer.box(for: phrase, in: lines) == nil {
+                guard await Navigator.find(phrase, in: bundle) else { return }
+                _ = await ScreenSettle.wait(minimum: 0.3, timeout: 1.6)
+                if let fresh = try? await ScreenCapture.captureAll(maxDimension: config.screenshotMaxDimension, includeOtherScreens: false) { shots = fresh }
+                if let shot = shots.first(where: { $0.isCursorScreen }) ?? shots.first { lines = await TextRecognizer.lines(jpeg: shot.jpeg) }
+            }
+            guard let shot = shots.first(where: { $0.isCursorScreen }) ?? shots.first, let box = TextRecognizer.box(for: phrase, in: lines) else {
+                Log.info("find: \"\(Log.short(phrase, 50))\" not on screen after the search")
+                return
+            }
+            let rect = Coordinates.screenRect(fromPixel: box.insetBy(dx: -6, dy: -4), in: shot.frame)
+            overlay.highlight(rect.intersection(shot.frame.displayFrame), label: label)
+            overlay.bringToFront()
+        }
+    }
+
+    /// Public entry for `Dot --find "phrase"`.
+    func findOnScreen(_ phrase: String) {
+        startCapture()
+        Task { @MainActor in
+            if let captureTask { let captured = await captureTask.value; shots = captured.shots; context = captured.context }
+            captureTask = nil
+            overlay.showTransient()
+            findOnScreen(phrase: phrase, label: Log.short(phrase, 24))
+        }
+    }
+
+    // MARK: The lecture ear
+
+    func startLecture(title: String) async {
+        phase = .idle
+        hud.set(phase: .hidden)
+        if lecture.isListening {
+            speaker.speak("still listening, \(lecture.elapsedMinutes) minutes in.")
+            scheduleIdleCheck()
+            return
+        }
+        let ok = await lecture.start(title: title)
+        hud.model.listeningLine = ok ? "listening to the lecture" : nil
+        overlay.setPhase(.speaking)
+        speaker.speak(ok ? "listening. ask me about what he says any time, and say stop listening when it's over." : "i couldn't open the microphone for that.")
+        if ok { hud.upsertAgent(AgentRow(id: "lecture", name: "lecture", line: "listening; say stop listening when it's over", state: .running, kind: .lesson, canStop: true)) }
+        Log.info("lecture: \(ok ? "listening" : "failed to start")")
+        scheduleIdleCheck()
+    }
+
+    func stopLecture() async {
+        guard lecture.isListening else { return }
+        let minutes = lecture.elapsedMinutes
+        let text = await lecture.stop()
+        hud.model.listeningLine = nil
+        hud.removeAgent(id: "lecture")
+        phase = .idle
+        overlay.setPhase(.speaking)
+        let words = text.split(separator: " ").count
+        speaker.speak(words < 30 ? "stopped. i barely heard anything, so there's no transcript worth keeping." : "stopped after \(minutes) minutes; the transcript is saved. say recap the lecture for the short version.")
+        if let file = lecture.transcriptFile, words >= 30 {
+            hud.flash(status: "saved \(file.lastPathComponent)", for: 6)
+            TranscriptLog.append(kind: .lecture, you: "(lecture, \(minutes) min)", dot: nil, app: context.appName, extra: ["file": file.path, "words": String(words)])
+        }
+        scheduleIdleCheck()
+    }
+
+    private func recapLecture() async {
+        guard let session = session(for: .talk) else { phase = .idle; settle(); return }
+        let text = lecture.transcript
+        guard !text.isEmpty else {
+            phase = .idle; overlay.setPhase(.speaking)
+            speaker.speak("i haven't heard a lecture yet; say listen to the lecture at the start of one.")
+            scheduleIdleCheck()
+            return
+        }
+        acknowledge()
+        let clipped = text.count > 24_000 ? "…" + text.suffix(24_000) : text
+        let message = "[recap] his ask: \"\(lastAsked)\". the lecture transcript dot heard (\(lecture.elapsedMinutes) minutes, machine transcribed, names may be misspelled):\n\(clipped)\n\ngive the recap he asked for in five or six spoken sentences: the main thread, the two or three ideas that matter, anything that sounded like an announcement (a deadline, an exam, a reading), and the one thing to review. if a card would help (a short outline of the lecture), put one up."
         let (built, images) = buildMessage(message, kind: .talk)
         lastMessage = built
         lastImages = images
@@ -795,7 +1083,14 @@ final class Talk {
         sendTurn(built, images: images, to: session, kind: .talk)
     }
 
-    private enum Route { case answer, agent, think, followUp(String), continueWalkthrough, drive, closeBoard, lessonNext, lessonBack, lessonAgain, lecture, suggestion(String), dismiss }
+    private enum Route { case answer, agent, think, followUp(String), continueWalkthrough, drive, closeBoard, lessonNext, lessonBack, lessonAgain, lecture, suggestion(String), dismiss, find(String), listen, stopListening, recapLecture, dictionary(heard: String?, correct: String) }
+
+    /// "find the part about x", "where does it talk about x", "go to the section on x": Dot reads
+    /// the document itself and scrolls there, no model needed when the words are plainly in it.
+    private static let findWords = try! NSRegularExpression(pattern: #"^(?:(?:can you |could you |please )?(?:find|go to|jump to|scroll to|take me to|show me|navigate to) (?:the |that |a )?(?:part|section|bit|page|place|paragraph|passage|spot|where it talks?|where it says)(?: of (?:the|this) (?:paper|pdf|document|reading|chapter))?(?: (?:about|on|that talks about|that says|where it says|about the|on the))?|where (?:does|do|is) (?:it|this|the (?:paper|pdf|document|reading|chapter|text)) (?:talk about|explain|mention|discuss|say|cover|define|introduce|go over)|which page (?:is|has|talks about|covers)) (.+?)\W*$"#, options: .caseInsensitive)
+    private static let listenWords = try! NSRegularExpression(pattern: #"^(?:(?:dot,? )?(?:start )?listen(?:ing)? (?:to )?(?:the |this )?(?:lecture|class|talk|lecturer|meeting)|(?:start|begin) (?:the )?lecture(?: mode)?|lecture mode(?: on)?)\W*$"#, options: .caseInsensitive)
+    private static let stopListenWords = try! NSRegularExpression(pattern: #"^(?:(?:dot,? )?stop listening|(?:the )?lecture(?:'s| is)? (?:over|done|finished)|end (?:the )?lecture|lecture mode off|stop the lecture)\W*$"#, options: .caseInsensitive)
+    private static let recapWords = try! NSRegularExpression(pattern: #"^(?:(?:can you |could you |please )?(?:recap|summarize|summarise|sum up|review|go over) (?:the |this |today's )?(?:lecture|class|talk)|what did i miss(?: in (?:the )?lecture)?|what (?:was|is) (?:the |this )?lecture about)\W*$"#, options: .caseInsensitive)
 
     private static let yesWords = try! NSRegularExpression(pattern: #"^(yes|yeah|yep|yup|sure|ok(ay)?|go( ahead)?|do it|please|yes please|sounds good)\W*$"#, options: .caseInsensitive)
     private static let noWords = try! NSRegularExpression(pattern: #"^(no|nah|nope|not now|later|no thanks|skip|never mind|nevermind)\W*$"#, options: .caseInsensitive)
@@ -838,6 +1133,21 @@ final class Talk {
         let inWalkthrough = walkthrough != nil
         let range = NSRange(location: 0, length: (text as NSString).length)
         if !board.isEmpty, Self.closeWords.firstMatch(in: text, range: range) != nil { return .closeBoard }
+        if Self.listenWords.firstMatch(in: text, range: range) != nil { return .listen }
+        if lecture.isListening, Self.stopListenWords.firstMatch(in: text, range: range) != nil { return .stopListening }
+        if Self.recapWords.firstMatch(in: text, range: range) != nil, lecture.isListening || !lecture.transcript.isEmpty { return .recapLecture }
+        if let match = Self.dictionaryWords.firstMatch(in: text, range: range) {
+            return .dictionary(heard: nil, correct: (text as NSString).substring(with: match.range(at: 1)).trimmingCharacters(in: CharacterSet(charactersIn: "\"' ")))
+        }
+        if let match = Self.spelledWords.firstMatch(in: text, range: range) {
+            let heard = (text as NSString).substring(with: match.range(at: 1)).trimmingCharacters(in: .whitespaces)
+            let spelled = (text as NSString).substring(with: match.range(at: 2)).replacingOccurrences(of: #"[\s\-.,]"#, with: "", options: .regularExpression)
+            if spelled.count >= 2, spelled.count <= 40 { return .dictionary(heard: heard, correct: spelled) }
+        }
+        if let match = Self.findWords.firstMatch(in: text, range: range), DocumentReader.key(for: context) != nil {
+            let query = (text as NSString).substring(with: match.range(at: 1))
+            if !query.lowercased().contains("explain") { return .find(query) }
+        }
         if let (suggestion, until) = pendingSuggestion {
             pendingSuggestion = nil
             if Date() < until {
@@ -883,9 +1193,13 @@ final class Talk {
             "agent": "real work in the background: looking something up properly across apps or sites, drafting or writing, making or changing files, going through mail, operating an app for a while, anything that sends or submits",
             "think": "a hard reasoning question (a calculation, a tricky technical or finance judgment) that deserves a stronger model",
         ]
-        if !lastAskWasTyped, text.count >= 40 {
+        if !lastAskWasTyped, text.count >= 40 || lecture.isListening {
             // The held key in a lecture hall picks up the lecturer: statements, not a question to the companion.
-            routeCriteria["lecture"] = "the microphone picked up someone else speaking at length (a lecturer, a video, a conversation): statements about a subject, not a question or request addressed to the companion"
+            routeCriteria["lecture"] = "the microphone picked up someone else speaking (a lecturer, a video, a conversation): statements about a subject, not a question or request addressed to the companion"
+        }
+        if !lastAskWasTyped, text.count < 60 {
+            // A cough, a half word, a stray "okay yeah": nothing to answer (2026-10-15, "Oh uh" and "But we're um um" each cost a turn).
+            routeCriteria["ignore"] = "a fragment with no request in it: a stray word or two, a cough, someone else's half sentence, filler like okay or um with nothing asked"
         }
         var questions: [String: Jev.Question] = [
             "route": .choice(instructions: "How should a voice companion that can see the screen handle what the user just said? Pick one.", criteria: routeCriteria),
@@ -932,6 +1246,11 @@ final class Talk {
             let hit = context.elements[index]
             Log.info("jev: pre-pointing at \(hit.role) \"\(hit.title)\" (\(String(format: "%.2f", element.probability)))")
             overlay.point(at: CGPoint(x: hit.frame.midX, y: hit.frame.midY), label: String(hit.title.prefix(24)))
+        }
+        if route.choice == "ignore", route.probability >= 0.7, route.confidence >= 0.5 {
+            Log.info("jev: nothing asked (\(String(format: "%.2f", route.probability))): \(Log.short(text, 60))")
+            hud.flash(status: "didn't catch a question", for: 2)
+            return .dismiss
         }
         if route.choice == "lecture", route.probability >= 0.6, route.confidence >= 0.5 { return .lecture }
         if route.choice == "agent", route.probability >= config.jevRouteThreshold, route.confidence >= 0.6 { return .agent }
@@ -997,11 +1316,22 @@ final class Talk {
             let pixels = Coordinates.pixelRect(fromScreen: region, in: cursorShot.frame)
             if pixels.width > 2, pixels.height > 2 {
                 boxPixels = pixels
-                if let crop = ImageCrop.crop(jpeg: cursorShot.jpeg, pixelRect: pixels) {
-                    images.append((data: crop.data, mediaType: "image/jpeg"))
-                    lines.append("he drew around a region of image \(cursorIndex + 1): its box is at \(Int(pixels.minX)),\(Int(pixels.minY)) size \(Int(pixels.width))x\(Int(pixels.height)) pixels; image \(images.count) is that region enlarged (\(crop.width)x\(crop.height)). answer about what he circled.")
+                // Each stroke in its own words: circled, a line along, scribbled over (HeyClicky's ScreenAnnotationManager does the same).
+                let described: String
+                if marks.count >= 2 {
+                    described = marks.enumerated().map { index, mark in
+                        let p = Coordinates.pixelRect(fromScreen: mark.rect, in: cursorShot.frame)
+                        return "mark \(index + 1): he \(mark.shape.words) the region at \(Int(p.minX)),\(Int(p.minY)) size \(Int(p.width))x\(Int(p.height))"
+                    }.joined(separator: "; ") + " (in that order; a question like \"why does this follow from that\" refers to them in order)"
                 } else {
-                    lines.append("he drew around a region of image \(cursorIndex + 1): its box is at \(Int(pixels.minX)),\(Int(pixels.minY)) size \(Int(pixels.width))x\(Int(pixels.height)) pixels. answer about what he circled.")
+                    let shape = marks.first?.shape ?? .enclosure
+                    described = "he \(shape.words) a region of image \(cursorIndex + 1): its box is at \(Int(pixels.minX)),\(Int(pixels.minY)) size \(Int(pixels.width))x\(Int(pixels.height)) pixels"
+                }
+                if let crop = ImageCrop.crop(jpeg: cursorShot.jpeg, pixelRect: pixels), crop.width >= 16, crop.height >= 12 {
+                    images.append((data: crop.data, mediaType: "image/jpeg"))
+                    lines.append("\(described); image \(images.count) is that region enlarged (\(crop.width)x\(crop.height)). answer about what he marked.")
+                } else {
+                    lines.append("\(described). answer about what he marked.")
                 }
             }
         }
@@ -1019,6 +1349,23 @@ final class Talk {
         }
         if !board.isEmpty {
             lines.append("board: " + board.stateLines().joined(separator: "; "))
+        }
+        // Who is working for him and what they just said, so "what did the agent find" has an answer.
+        let recent = agents.recentRuns()
+        if !recent.isEmpty {
+            lines.append("agents: " + recent.map { run -> String in
+                var line = "\(run.name) (\(run.state)): \(run.task)"
+                if let result = run.result, !result.isEmpty { line += "; it said: \"\(Log.short(result, 320))\"" }
+                else if !run.line.isEmpty { line += "; now: \(Log.short(run.line, 80))" }
+                return line
+            }.joined(separator: " | "))
+        }
+        if lecture.isListening {
+            lines.append("dot's ear is on: listening to the lecture for \(lecture.elapsedMinutes) min; the last minute: \"\(Log.short(lecture.recent(seconds: 60), 600))\"")
+        }
+        // His long recordings live in Murmur; they ride along only when he asks about them.
+        if MurmurHistory.asksAboutRecordings(transcript), let block = MurmurHistory.block(file: config.murmurHistoryFile) {
+            lines.append(block)
         }
         if let step = walkthrough {
             let left = max(config.walkthroughMaxSteps - step.step, 0)
@@ -1044,11 +1391,13 @@ final class Talk {
         switch event {
         case .textDelta(let delta):
             for beat in streamer.feed(delta) { enqueue(beat) }
-            if !speechStarted, config.bubbleText {
+            if textSurface {
+                // A typed question: the words appear in the notch as they are written.
                 let ahead = (streamer.spokenSoFar + " " + streamer.partial).trimmingCharacters(in: .whitespaces)
-                if !ahead.isEmpty { overlay.setBubble(ahead) }
+                if !ahead.isEmpty { hud.model.response = ahead; hud.set(phase: .thinking) }
+            } else if config.hudShowsResponse {
+                hud.model.response = streamer.spokenSoFar
             }
-            if config.hudShowsResponse { hud.model.response = streamer.spokenSoFar }
         case .assistantText(let text):
             if streamer.spokenSoFar.isEmpty, streamer.partial.isEmpty { for beat in streamer.feed(text) { enqueue(beat) } }
         case .toolUse(_, let name, let input):
@@ -1185,12 +1534,8 @@ final class Talk {
         if phase != .speaking, !beat.text.isEmpty {
             phase = .speaking
             overlay.setPhase(.speaking)
-            if config.hudShowsResponse {
-                hud.set(phase: .speaking)
-            } else {
-                // The answer lives in the bubble beside Dot; the notch steps back unless it holds agents or a card.
-                hud.set(phase: .hidden)
-            }
+            // The notch shows the state and the line being said, the way HeyClicky's does.
+            hud.set(phase: .speaking)
         }
         let visuals = beat.tags.filter { $0.isVisual }
         Log.info("beat \(beatsFired)\(quietTurn ? " (quiet)" : ""): " + (visuals.isEmpty ? "" : visuals.map { "\($0)" }.joined(separator: " ") + " ") + Log.short(beat.text, 120))
@@ -1254,6 +1599,12 @@ final class Talk {
                 label = label ?? "step \(step)"
             case .clearBoard:
                 clearBoard()
+            case .find(let phrase):
+                findOnScreen(phrase: phrase, label: label ?? Log.short(phrase, 24))
+                label = label ?? Log.short(phrase, 24)
+            case .stock(let symbol):
+                showStock(symbol)
+                label = label ?? symbol
             default:
                 break
             }
@@ -1261,13 +1612,27 @@ final class Talk {
         if lessonCard != nil, !beat.text.isEmpty {
             lessonSaid[lessonStep, default: ""] += (lessonSaid[lessonStep, default: ""].isEmpty ? "" : " ") + beat.text
         }
-        guard config.bubbleText else { return }
-        // One sentence beside Dot, never a paragraph (2026-10-15, "this looks bad"); a stage carries
-        // its own caption and the words are spoken, so no bubble over a lesson.
-        if let id = lessonCard, board.isStage(id) { overlay.hideBubble(after: 0); return }
-        if beat.hasVisual { bubbleLabel = label.map { String($0.prefix(32)) } }
-        bubbleGroup = Self.bubbleLine(beat.text)
-        if !bubbleGroup.isEmpty { overlay.setBubble(bubbleGroup, label: bubbleLabel) }
+        guard !beat.text.isEmpty else { return }
+        // The words are in the voice. The notch shows the line being said; the page stays clear
+        // (his verdict on the bubble, 2026-10-15: "this looks bad"). A typed answer is already
+        // streaming into the notch as text, so no caption on top of it.
+        if textSurface { return }
+        if config.cursorBubble {
+            if let id = lessonCard, board.isStage(id) { overlay.hideBubble(after: 0); return }
+            if beat.hasVisual { bubbleLabel = label.map { String($0.prefix(32)) } }
+            bubbleGroup = Self.bubbleLine(beat.text)
+            if !bubbleGroup.isEmpty { overlay.setBubble(bubbleGroup, label: bubbleLabel) }
+        } else {
+            hud.setCaption(Self.bubbleLine(beat.text, limit: 170))
+        }
+    }
+
+    /// [STOCK:NVDA]: a live quote card on the board.
+    private func showStock(_ symbol: String) {
+        Task { @MainActor in
+            guard let quote = await Quotes.quote(symbol) else { hud.flash(status: "no quote for \(symbol)", for: 3); return }
+            showCard(id: "stock-\(symbol.lowercased())", rect: nil, title: "\(quote.name) (\(symbol))", html: Quotes.cardHTML(quote), screen: nil)
+        }
     }
 
     /// The bubble holds one spoken sentence, cut at a word when it runs long.
@@ -1293,6 +1658,10 @@ final class Talk {
         let tags = streamer.allTags
         let spoken = streamer.spokenSoFar
         if config.hudShowsResponse { hud.model.response = spoken }
+        if textSurface, !spoken.isEmpty {
+            hud.model.response = ""
+            hud.presentAnswer(question: lastAsked, text: spoken)
+        }
         let kind = activeSession === thinkSession ? "think" : "talk"
         ledger.record(kind: kind, agent: nil, model: turnModel, result: result, summary: hud.model.transcript)
         TranscriptLog.append(kind: lastAskWasTyped ? .typed : (lastAskWasLecture ? .lecture : .talk), you: lastAsked, dot: spoken, app: context.appName,
@@ -1346,6 +1715,7 @@ final class Talk {
         let rings = tags.contains { if case .target = $0 { return true }; if case .hover = $0 { return true }; return false }
         if !rings, walkthrough != nil, !escalated { endWalkthrough(reason: "the model gave a step with no target") }
         region = nil
+        marks = []
         overlay.setDrawRect(nil)
         if escalated { return }
         scheduleIdleCheck()
@@ -1587,11 +1957,12 @@ final class Talk {
         overlay.clearRing()
         hud.flash(status: "saw that, looking", for: 3)
         stopSpeaking()
-        // Give the app a moment to redraw what the step opened, then ask for the next one.
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.9) { [weak self] in
-            guard let self, self.walkthrough?.step == step.step else { return }
+        // Wait for what the step opened to finish drawing (a pane, a sheet, a page), then look.
+        Task { @MainActor in
+            let settled = await ScreenSettle.wait(minimum: 0.35, timeout: config.walkthroughSettleSeconds)
+            guard self.walkthrough?.step == step.step else { return }
             self.startCapture()
-            Task { @MainActor in
+            do {
                 if let captureTask = self.captureTask {
                     let captured = await captureTask.value
                     self.shots = captured.shots
@@ -1601,6 +1972,9 @@ final class Talk {
                 guard let session = self.session(for: .talk) else { return }
                 self.hud.model.transcript = "[\(how) \(step.label)]"
                 var text = "[step_done] \(self.walkthrough?.driving == true ? "dot" : "i") \(how) \(step.label) (step \(step.step)). look at the new screenshot as the truth and give the next step, or say it's finished with no tag."
+                if !settled {
+                    text += " the screen was still changing when dot looked: if the pane or page has not finished loading, say so in one sentence and tell me to say next when it has, with no tag."
+                }
                 if self.walkthrough?.userActedWhileWaiting == true {
                     text += " i also clicked again while you were thinking, so the next thing may already be done; don't ask me to repeat it."
                 }
@@ -1648,6 +2022,7 @@ final class Talk {
         switch id {
         case "walkthrough": endWalkthrough(reason: "stopped from the task bar")
         case "lesson": clearBoard()
+        case "lecture": Task { @MainActor in await stopLecture() }
         default: break
         }
     }
@@ -1694,6 +2069,7 @@ final class Talk {
         phase = .idle
         endWalkthrough(reason: "escape")
         clearBoard()
+        hud.dismissAnswer()
         overlay.clearMarks()
         overlay.hideBubble(after: 0)
         overlay.setPhase(.idle)

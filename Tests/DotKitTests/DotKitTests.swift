@@ -420,3 +420,96 @@ final class DictationTextTests: XCTestCase {
         XCTAssertEqual(SpeechText.dictated("   "), "")
     }
 }
+
+final class FindAndStockTagTests: XCTestCase {
+    func testFindTagCarriesThePhrase() {
+        let parsed = TagParser.parse("[FIND:discount rate]\nit's in the appendix, highlighted now.")
+        XCTAssertEqual(parsed.tags, [.find(phrase: "discount rate")])
+        XCTAssertEqual(parsed.spoken, "it's in the appendix, highlighted now.")
+        XCTAssertEqual(TagParser.parse("[FIND:\"theory and experiment\"]").tags, [.find(phrase: "theory and experiment")])
+        XCTAssertEqual(TagParser.parse("[FIND:x]").tags, [])
+    }
+
+    func testStockTag() {
+        XCTAssertEqual(TagParser.parse("nvidia is up. [STOCK:nvda]").tags, [.stock(symbol: "NVDA")])
+        XCTAssertEqual(TagParser.parse("[STOCK:not a ticker]").tags, [])
+        XCTAssertTrue(DotTag.find(phrase: "a b").isVisual)
+    }
+}
+
+final class DictationDictionaryTests: XCTestCase {
+    func testTermsAndCorrections() {
+        let dictionary = DictationDictionary(text: "# mine\nUChicago\nTypeSafe\njev => Jev\ncenter view => Centerview\n")
+        XCTAssertEqual(dictionary.terms, ["UChicago", "TypeSafe"])
+        XCTAssertEqual(dictionary.rules.count, 2)
+        XCTAssertEqual(dictionary.apply(to: "I go to uchicago and use type safe with jev at center view."),
+                       "I go to UChicago and use TypeSafe with Jev at Centerview.")
+        XCTAssertEqual(dictionary.apply(to: "typesafety is a word"), "typesafety is a word")
+    }
+
+    func testEmptyDictionaryLeavesTextAlone() {
+        XCTAssertEqual(DictationDictionary(text: "").apply(to: "hello"), "hello")
+        XCTAssertEqual(DictationDictionary.line(forHeard: "jeff", correct: "Jev"), "jeff => Jev")
+        XCTAssertEqual(DictationDictionary.line(forHeard: "jev", correct: "Jev"), "Jev")
+        XCTAssertEqual(DictationDictionary.line(forHeard: nil, correct: "Centerview"), "Centerview")
+    }
+}
+
+final class StrokeShapeTests: XCTestCase {
+    private func ring(cx: CGFloat, cy: CGFloat, r: CGFloat, closeTo: CGFloat = 0.98) -> [CGPoint] {
+        (0...40).map { i in
+            let t = Double(i) / 40.0 * 2 * .pi * Double(closeTo)
+            return CGPoint(x: cx + r * CGFloat(cos(t)), y: cy + r * CGFloat(sin(t)))
+        }
+    }
+
+    func testRingIsAnEnclosure() {
+        XCTAssertEqual(StrokeClassifier.classify(ring(cx: 100, cy: 100, r: 40)), .enclosure)
+        XCTAssertEqual(StrokeClassifier.classify(ring(cx: 100, cy: 100, r: 40, closeTo: 0.8)), .enclosure)
+    }
+
+    func testLinesAndScribbles() {
+        let underline = (0...30).map { CGPoint(x: 100 + CGFloat($0) * 6, y: 200 + CGFloat($0 % 2)) }
+        XCTAssertEqual(StrokeClassifier.classify(underline), .horizontalLine)
+        let vertical = (0...30).map { CGPoint(x: 100 + CGFloat($0 % 2), y: 200 + CGFloat($0) * 6) }
+        XCTAssertEqual(StrokeClassifier.classify(vertical), .verticalLine)
+        var scribble: [CGPoint] = []
+        for i in 0..<60 { scribble.append(CGPoint(x: 100 + CGFloat(i) * 2, y: 200 + (i % 2 == 0 ? 0 : 18))) }
+        XCTAssertEqual(StrokeClassifier.classify(scribble), .scribble)
+        XCTAssertEqual(StrokeClassifier.classify([CGPoint(x: 0, y: 0)]), .stroke)
+    }
+}
+
+final class DocumentSearchTests: XCTestCase {
+    let pages = [
+        DocumentPage(number: 1, text: "Introduction\n\nThis lab is about estimating uncertainty from repeated measurements of a falling paper square.\n\nYou will time the drops with a stopwatch and record every value in your notebook."),
+        DocumentPage(number: 2, text: "Theory and experiment\n\nTheory and experiment depend on each other: a prediction is only as good as the measurement that tests it, and the pendulum's period is the prediction you will test.\n\nThe period of a simple pendulum depends on its length and on gravity."),
+        DocumentPage(number: 3, text: "Appendix\n\nThe discount rate converts future cash flows to present value; a higher discount rate lowers the present value."),
+    ]
+
+    func testFindsThePageTheWordsAreAbout() {
+        let hits = DocumentSearch.bestPassages(for: "so the pendulum's period is what we predict and then test with the experiment", in: pages)
+        XCTAssertEqual(hits.first?.page, 2)
+        XCTAssertTrue(hits.first?.passage.contains("pendulum") ?? false)
+        let discount = DocumentSearch.bestPassages(for: "where does it explain the discount rate", in: pages)
+        XCTAssertEqual(discount.first?.page, 3)
+        XCTAssertTrue(DocumentSearch.bestPassages(for: "the and of", in: pages).isEmpty)
+    }
+
+    func testDistinctivePhraseIsPlainAndFindable() {
+        let passage = pages[2].text.components(separatedBy: "\n\n")[1]
+        let phrase = DocumentSearch.distinctivePhrase(in: passage, preferring: "discount rate")
+        XCTAssertEqual(phrase.split(separator: " ").count, 5)
+        XCTAssertTrue(DocumentSearch.contains(passage, phrase: phrase))
+        XCTAssertTrue(DocumentSearch.contains("Theory and experiment depend on each other", phrase: "theory and experiment"))
+        XCTAssertTrue(DocumentSearch.contains("the pendulum’s period", phrase: "pendulum's period"))
+        XCTAssertFalse(DocumentSearch.contains("nothing here", phrase: "pendulum"))
+    }
+
+    func testPassagesSplitLongBlocksIntoWindows() {
+        let long = (1...300).map { "word\($0)" }.joined(separator: " ")
+        let parts = DocumentSearch.passages(of: long)
+        XCTAssertGreaterThan(parts.count, 2)
+        XCTAssertTrue(parts.allSatisfy { $0.split(separator: " ").count <= 90 })
+    }
+}

@@ -26,7 +26,8 @@ final class HotkeyMonitor {
         case dragChanged(CGRect)
         /// The stroke so far while he draws with the key held, in AppKit coordinates.
         case dragPath([CGPoint])
-        case dragEnded(CGRect)
+        /// One finished stroke (he can draw several while the key stays held): its box and its points.
+        case dragEnded(CGRect, points: [CGPoint])
     }
 
     var onEvent: ((Event) -> Void)?
@@ -116,10 +117,12 @@ final class HotkeyMonitor {
                 emit(.pressed(mode))
             } else if held && !chord {
                 held = false
-                if dragging, let start = dragStart {
+                if dragging, dragStart != nil {
                     dragging = false
-                    emit(.dragEnded(Self.rect(from: start, to: Self.appKitPoint(event.location))))
+                    dragPoints.append(Self.appKitPoint(event.location))
+                    emit(.dragEnded(Self.bounds(of: dragPoints), points: dragPoints))
                 }
+                dragStart = nil
                 emit(.released(mode, heldFor: Date().timeIntervalSince(pressedAt)))
             } else if held && chord, mode != .dictate {
                 let newMode: Mode = shift ? .agent : .talk
@@ -159,7 +162,7 @@ final class HotkeyMonitor {
             dragStart = nil
             if dragging {
                 dragging = false
-                if rect.width > 12 || rect.height > 12 { emit(.dragEnded(rect)) } else { emit(.dragChanged(.null)) }
+                if rect.width > 12 || rect.height > 12 { emit(.dragEnded(rect, points: dragPoints)) } else { emit(.dragChanged(.null)) }
             }
         default:
             break

@@ -9,11 +9,34 @@ enum TextInjection {
 
     static func insert(_ text: String) -> Method {
         guard !text.isEmpty else { return .clipboard }
+        // A password field never takes dictated text; it goes to the clipboard with a note instead.
+        if focusedRole() == "AXSecureTextField" {
+            NSPasteboard.general.clearContents()
+            NSPasteboard.general.setString(text, forType: .string)
+            return .clipboard
+        }
         if insertViaAccessibility(text) { return .accessibility }
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(text, forType: .string)
         if Driver.paste() { return .paste }
         return .clipboard
+    }
+
+    /// The accessibility role of whatever has the keyboard, system wide.
+    static func focusedRole() -> String? {
+        let system = AXUIElementCreateSystemWide()
+        var focused: AnyObject?
+        guard AXUIElementCopyAttributeValue(system, kAXFocusedUIElementAttribute as CFString, &focused) == .success,
+              let value = focused, CFGetTypeID(value) == AXUIElementGetTypeID() else { return nil }
+        var role: AnyObject?
+        AXUIElementCopyAttributeValue(value as! AXUIElement, kAXRoleAttribute as CFString, &role)
+        return role as? String
+    }
+
+    /// Whether a text field has the keyboard right now (dictation lands somewhere visible).
+    static func hasTextFocus() -> Bool {
+        guard let role = focusedRole() else { return false }
+        return ["AXTextField", "AXTextArea", "AXComboBox", "AXSearchField"].contains(role) || role.hasSuffix("TextArea") || role.hasSuffix("TextField")
     }
 
     private static func insertViaAccessibility(_ text: String) -> Bool {
