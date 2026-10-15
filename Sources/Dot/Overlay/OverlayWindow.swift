@@ -38,6 +38,19 @@ struct Ring: Equatable {
     var center: CGPoint
     var radius: CGFloat
     var label: String
+    /// A hover ring completes when the cursor rests inside it; drawn dashed so it reads differently.
+    var hover = false
+}
+
+/// A drawn mark: a line, an arrow, a circle (center then a point on its edge), a curve
+/// through its points, or a closed polygon. Points are overlay coordinates.
+struct ShapeMark: Identifiable, Equatable {
+    let id = UUID()
+    var kind: ShapeKind
+    var points: [CGPoint]
+    var label: String
+    /// 0...1, the part of the stroke drawn so far (animated when the mark appears).
+    var progress: CGFloat = 0
 }
 
 /// Everything one screen's view draws. Positions are overlay coordinates (top-left origin).
@@ -54,13 +67,16 @@ final class CompanionModel: ObservableObject {
     @Published var breath: CGFloat = 1
     @Published var scale: CGFloat = 1
     @Published var bubbleText = ""
+    @Published var bubbleLabel: String?
     @Published var bubbleVisible = false
     @Published var chip: String?
     @Published var tailTo: CGPoint?
     @Published var ring: Ring?
+    @Published var shapes: [ShapeMark] = []
     @Published var highlight: CGRect?
     @Published var highlightLabel: String?
     @Published var drawRect: CGRect?
+    @Published var stroke: [CGPoint] = []
     @Published var color = Color(red: 1.0, green: 0.42, blue: 0.17)
     let screenSize: CGSize
 
@@ -79,7 +95,14 @@ struct CompanionView: View {
     var body: some View {
         ZStack(alignment: .topLeading) {
             Color.black.opacity(0.001)
-            if let rect = model.drawRect {
+            if model.stroke.count >= 2 {
+                Path { path in
+                    path.move(to: model.stroke[0])
+                    for p in model.stroke.dropFirst() { path.addLine(to: p) }
+                }
+                .stroke(model.color.opacity(0.9), style: StrokeStyle(lineWidth: 3, lineCap: .round, lineJoin: .round))
+                .shadow(color: model.color.opacity(0.6), radius: 4)
+            } else if let rect = model.drawRect {
                 Rectangle()
                     .stroke(model.color, style: StrokeStyle(lineWidth: 2, dash: [6, 4]))
                     .background(model.color.opacity(0.07))
@@ -96,9 +119,15 @@ struct CompanionView: View {
                     chip(text).offset(x: rect.minX, y: max(4, rect.minY - 30))
                 }
             }
+            ForEach(model.shapes) { mark in
+                ShapeMarkView(mark: mark, color: model.color)
+                if !mark.label.isEmpty, mark.progress > 0.95, let anchor = mark.points.last {
+                    chip(mark.label).offset(x: anchor.x + 10, y: anchor.y - 30)
+                }
+            }
             if let ring = model.ring {
                 RingView(ring: ring, color: model.color)
-                if !ring.label.isEmpty {
+                if !ring.label.isEmpty, !(model.bubbleVisible && !model.bubbleText.isEmpty) {
                     chip(ring.label).offset(x: ring.center.x + ring.radius + 8, y: ring.center.y - 12)
                 }
             }
@@ -115,7 +144,7 @@ struct CompanionView: View {
                 OrbView(model: model)
                     .position(model.position)
                     .animation(.easeOut(duration: 0.12), value: model.level)
-                if model.motion == .parked, let text = model.chip, !text.isEmpty {
+                if model.motion == .parked, let text = model.chip, !text.isEmpty, !(model.bubbleVisible && !model.bubbleText.isEmpty) {
                     chip(text).offset(x: model.position.x + 16, y: model.position.y + 10)
                 }
                 if model.bubbleVisible, !model.bubbleText.isEmpty {
@@ -134,16 +163,29 @@ struct CompanionView: View {
         return min(maxWidth, ceil(line) + 2)
     }
 
+    /// The bubble sits beside Dot, on the side with room, and away from the point it is showing:
+    /// parked beside a target it opens to the right (or left near the edge) at Dot's height, so
+    /// the thing being pointed at stays uncovered; following the cursor it hangs below.
     private var bubble: some View {
-        let maxWidth: CGFloat = 320
+        let maxWidth: CGFloat = model.motion == .parked ? 280 : 320
         let width = bubbleWidth(for: model.bubbleText, max: maxWidth)
-        let flip = model.position.x + 24 + width + 28 > model.screenSize.width - 12
+        let parked = model.motion == .parked
+        let roomRight = model.position.x + 24 + width + 28 <= model.screenSize.width - 12
+        let flip = !roomRight
         let below = model.position.y + 180 < model.screenSize.height
-        return Text(model.bubbleText)
-            .font(.system(size: 13.5, weight: .regular))
-            .foregroundStyle(paper)
-            .lineSpacing(3)
-            .lineLimit(10)
+        return VStack(alignment: .leading, spacing: 3) {
+            if let label = model.bubbleLabel, !label.isEmpty {
+                Text(label)
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(model.color)
+                    .lineLimit(1)
+            }
+            Text(model.bubbleText)
+                .font(.system(size: 13.5, weight: .regular))
+                .foregroundStyle(paper)
+                .lineSpacing(3)
+                .lineLimit(parked ? 6 : 10)
+        }
             .frame(width: width, alignment: .leading)
             .fixedSize(horizontal: false, vertical: true)
             .padding(.horizontal, 14)
@@ -152,7 +194,10 @@ struct CompanionView: View {
             .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(Color.white.opacity(0.1), lineWidth: 1))
             .shadow(color: .black.opacity(0.35), radius: 14, x: 0, y: 6)
             .alignmentGuide(.leading) { d in flip ? d[.trailing] - (model.position.x - 20) : -(model.position.x + 22) }
-            .alignmentGuide(.top) { d in below ? -(model.position.y + 18) : d[.bottom] - (model.position.y - 18) }
+            .alignmentGuide(.top) { d in
+                if parked { return d[VerticalAlignment.center] - model.position.y }
+                return below ? -(model.position.y + 18) : d[.bottom] - (model.position.y - 18)
+            }
             .transition(.opacity.combined(with: .scale(scale: 0.96, anchor: .topLeading)))
             .animation(.spring(response: 0.3, dampingFraction: 0.8), value: model.bubbleVisible)
     }
@@ -183,12 +228,95 @@ private struct RingView: View {
                     .stroke(color.opacity(0.25 + 0.2 * (1 - pulse)), lineWidth: 2)
                     .frame(width: ring.radius * 2 + 10 + pulse * 14, height: ring.radius * 2 + 10 + pulse * 14)
                 Circle()
-                    .stroke(color, lineWidth: 2.5)
+                    .stroke(color, style: StrokeStyle(lineWidth: 2.5, dash: ring.hover ? [7, 5] : []))
                     .shadow(color: color.opacity(0.8), radius: 6)
                     .frame(width: ring.radius * 2, height: ring.radius * 2)
             }
             .position(ring.center)
         }
+    }
+}
+
+/// A drawn mark that strokes itself on over half a second, like a pen.
+private struct ShapeMarkView: View {
+    let mark: ShapeMark
+    let color: Color
+
+    var body: some View {
+        ZStack(alignment: .topLeading) {
+            MarkPath(kind: mark.kind, points: mark.points)
+                .trim(from: 0, to: mark.progress)
+                .stroke(color, style: StrokeStyle(lineWidth: 3, lineCap: .round, lineJoin: .round))
+                .shadow(color: color.opacity(0.7), radius: 5)
+            if mark.kind == .arrow, mark.progress > 0.92, mark.points.count >= 2 {
+                ArrowHead(from: mark.points[mark.points.count - 2], to: mark.points[mark.points.count - 1])
+                    .fill(color)
+                    .shadow(color: color.opacity(0.7), radius: 5)
+            }
+        }
+    }
+}
+
+/// Shapes as paths in overlay coordinates. The circle takes its center and a point on its edge.
+private struct MarkPath: Shape {
+    let kind: ShapeKind
+    let points: [CGPoint]
+
+    func path(in rect: CGRect) -> Path {
+        var path = Path()
+        guard points.count >= 2 else { return path }
+        switch kind {
+        case .line, .arrow:
+            path.move(to: points[0])
+            for p in points.dropFirst() { path.addLine(to: p) }
+        case .polygon:
+            path.move(to: points[0])
+            for p in points.dropFirst() { path.addLine(to: p) }
+            path.closeSubpath()
+        case .circle:
+            let c = points[0], e = points[1]
+            let r = max(hypot(e.x - c.x, e.y - c.y), 8)
+            path.addEllipse(in: CGRect(x: c.x - r, y: c.y - r, width: r * 2, height: r * 2))
+        case .curve:
+            path.move(to: points[0])
+            if points.count == 2 {
+                let a = points[0], b = points[1]
+                let mid = CGPoint(x: (a.x + b.x) / 2, y: (a.y + b.y) / 2)
+                let dx = b.x - a.x, dy = b.y - a.y
+                let len = max(hypot(dx, dy), 1)
+                let bulge = min(len * 0.25, 60)
+                let control = CGPoint(x: mid.x - dy / len * bulge, y: mid.y + dx / len * bulge)
+                path.addQuadCurve(to: b, control: control)
+            } else {
+                // Catmull-Rom through every point, as cubic segments.
+                let pts = [points[0]] + points + [points[points.count - 1]]
+                for i in 1..<(pts.count - 2) {
+                    let p0 = pts[i - 1], p1 = pts[i], p2 = pts[i + 1], p3 = pts[i + 2]
+                    let c1 = CGPoint(x: p1.x + (p2.x - p0.x) / 6, y: p1.y + (p2.y - p0.y) / 6)
+                    let c2 = CGPoint(x: p2.x - (p3.x - p1.x) / 6, y: p2.y - (p3.y - p1.y) / 6)
+                    path.addCurve(to: p2, control1: c1, control2: c2)
+                }
+            }
+        }
+        return path
+    }
+}
+
+private struct ArrowHead: Shape {
+    let from: CGPoint
+    let to: CGPoint
+
+    func path(in rect: CGRect) -> Path {
+        var path = Path()
+        let angle = atan2(to.y - from.y, to.x - from.x)
+        let size: CGFloat = 13
+        let left = CGPoint(x: to.x - size * cos(angle - .pi / 6), y: to.y - size * sin(angle - .pi / 6))
+        let right = CGPoint(x: to.x - size * cos(angle + .pi / 6), y: to.y - size * sin(angle + .pi / 6))
+        path.move(to: to)
+        path.addLine(to: left)
+        path.addLine(to: right)
+        path.closeSubpath()
+        return path
     }
 }
 
@@ -388,11 +516,12 @@ final class OverlayManager {
         for model in models { model.level = level }
     }
 
-    /// Streamed answer text beside Dot.
-    func setBubble(_ text: String) {
+    /// Streamed answer text beside Dot, with an optional one-line label (what it is pointing at).
+    func setBubble(_ text: String, label: String? = nil) {
         bubbleHide?.cancel()
         for model in models {
             model.bubbleText = text
+            model.bubbleLabel = label
             if !text.isEmpty { model.bubbleVisible = true }
         }
     }
@@ -404,7 +533,7 @@ final class OverlayManager {
             for model in self.models { model.bubbleVisible = false }
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { [weak self] in
                 guard let self, self.models.allSatisfy({ !$0.bubbleVisible }) else { return }
-                for model in self.models { model.bubbleText = "" }
+                for model in self.models { model.bubbleText = ""; model.bubbleLabel = nil }
             }
         }
         bubbleHide = work
@@ -444,14 +573,14 @@ final class OverlayManager {
         }
     }
 
-    /// Ring the control to click next and perch beside it.
-    func target(at screenPoint: CGPoint, radius: CGFloat, label: String) {
+    /// Ring the control to click (or hover) next and perch beside it.
+    func target(at screenPoint: CGPoint, radius: CGFloat, label: String, hover: Bool = false) {
         guard let index = screenIndex(containing: screenPoint) else { return }
         showTransient()
         returnWork?.cancel()
         let model = models[index]
         let center = Coordinates.overlayPoint(fromScreen: screenPoint, screenFrame: windows[index].screenFrame)
-        model.ring = Ring(center: center, radius: max(radius, 10), label: label)
+        model.ring = Ring(center: center, radius: max(radius, 10), label: label, hover: hover)
         let seat = clampToScreen(CGPoint(x: center.x + radius + 20, y: center.y + radius + 14), model: model)
         park(on: index)
         model.chip = nil
@@ -480,12 +609,51 @@ final class OverlayManager {
         }
     }
 
+    /// Draw a mark through screen points, stroking it on, and perch Dot at its end.
+    func shape(kind: ShapeKind, points screenPoints: [CGPoint], label: String) {
+        guard let first = screenPoints.first, let index = screenIndex(containing: first) else { return }
+        showTransient()
+        returnWork?.cancel()
+        let model = models[index]
+        let frame = windows[index].screenFrame
+        let local = screenPoints.map { Coordinates.overlayPoint(fromScreen: $0, screenFrame: frame) }
+        var mark = ShapeMark(kind: kind, points: local, label: label)
+        mark.progress = 0
+        model.shapes.append(mark)
+        let id = mark.id
+        withAnimation(.easeInOut(duration: 0.55)) {
+            if let i = model.shapes.firstIndex(where: { $0.id == id }) { model.shapes[i].progress = 1 }
+        }
+        let anchor: CGPoint
+        if kind == .circle, local.count >= 2 {
+            let r = hypot(local[1].x - local[0].x, local[1].y - local[0].y)
+            anchor = CGPoint(x: local[0].x + r + 18, y: local[0].y + r * 0.6)
+        } else {
+            anchor = CGPoint(x: (local.last ?? first).x + 18, y: (local.last ?? first).y + 18)
+        }
+        park(on: index)
+        model.chip = nil
+        model.tailTo = nil
+        fly(model: model, to: clampToScreen(anchor, model: model)) {
+            model.motion = .parked
+            model.look = CGPoint(x: -0.6, y: -0.6)
+        }
+    }
+
     /// The box the user is drawing while holding the key, in screen coordinates; nil clears it.
     func setDrawRect(_ rect: CGRect?) {
         for (index, model) in models.enumerated() {
-            guard let rect, windows[index].screenFrame.intersects(rect) else { model.drawRect = nil; continue }
+            guard let rect, windows[index].screenFrame.intersects(rect) else { model.drawRect = nil; if rect == nil { model.stroke = [] }; continue }
             model.drawRect = Coordinates.overlayRect(fromScreen: rect.intersection(windows[index].screenFrame), screenFrame: windows[index].screenFrame)
         }
+    }
+
+    /// The stroke he is drawing, as ink on the screen it is on.
+    func setDrawPath(_ points: [CGPoint]) {
+        guard let first = points.first, let index = screenIndex(containing: first) else { return }
+        for (i, model) in models.enumerated() where i != index { model.stroke = [] }
+        let frame = windows[index].screenFrame
+        models[index].stroke = points.map { Coordinates.overlayPoint(fromScreen: $0, screenFrame: frame) }
     }
 
     func clearRing() {
@@ -504,6 +672,8 @@ final class OverlayManager {
                 model.chip = nil
                 model.tailTo = nil
                 model.drawRect = nil
+                model.stroke = []
+                model.shapes = []
             }
             self.returnToCursor()
         }
@@ -511,22 +681,33 @@ final class OverlayManager {
         DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: work)
     }
 
-    /// Clear everything now (interrupt, new question).
-    func clearMarks() {
+    /// Clear everything now (interrupt, new question). A walkthrough's ring can stay.
+    func clearMarks(keepRing: Bool = false) {
         returnWork?.cancel()
         flightTimer?.invalidate()
         flightTimer = nil
         for model in models {
-            model.ring = nil
+            if !keepRing { model.ring = nil }
             model.highlight = nil
             model.highlightLabel = nil
             model.chip = nil
             model.tailTo = nil
             model.drawRect = nil
+            model.stroke = []
+            model.shapes = []
             model.scale = 1
             model.motion = .following
         }
         parkedScreen = nil
+    }
+
+    /// Older marks go when a new beat lands somewhere else, so a tour does not pile up boxes.
+    func fadeOldMarks() {
+        for model in models {
+            model.highlight = nil
+            model.highlightLabel = nil
+            if model.shapes.count > 1 { model.shapes.removeFirst(model.shapes.count - 1) }
+        }
     }
 
     private func park(on index: Int) {

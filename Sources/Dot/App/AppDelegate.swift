@@ -67,7 +67,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let center = DistributedNotificationCenter.default()
         center.addObserver(forName: DotIPC.ask, object: nil, queue: .main) { [weak self] note in
             guard let text = note.userInfo?["text"] as? String else { return }
-            Task { @MainActor in self?.talk.askTyped(text) }
+            let quiet = (note.userInfo?["quiet"] as? Bool) ?? false
+            let drive = (note.userInfo?["drive"] as? Bool) ?? false
+            Task { @MainActor in self?.talk.askTyped(text, quiet: quiet, drive: drive) }
         }
         center.addObserver(forName: DotIPC.agent, object: nil, queue: .main) { [weak self] note in
             guard let text = note.userInfo?["text"] as? String else { return }
@@ -180,7 +182,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 }
 
 enum Version {
-    static let string = "0.2.0"
+    static let string = "0.3.0"
 }
 
 enum DotIPC {

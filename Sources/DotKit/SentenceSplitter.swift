@@ -4,17 +4,21 @@ import Foundation
 /// first sentence while the model is still writing the second.
 public struct SentenceSplitter {
     private var buffer = ""
+    /// Cut the very first chunk at a comma once it is long enough, so the voice starts sooner;
+    /// every chunk after that waits for a sentence end.
+    public var eagerFirst = false
+    private var emitted = 0
 
-    public init() {}
+    public init(eagerFirst: Bool = false) { self.eagerFirst = eagerFirst }
 
     /// Feed a delta; returns every complete sentence now available, in order.
     public mutating func feed(_ delta: String) -> [String] {
         buffer += delta
         var sentences: [String] = []
-        while let boundary = Self.boundary(in: buffer) {
+        while let boundary = Self.boundary(in: buffer, eager: eagerFirst && emitted == 0) {
             let sentence = String(buffer[..<boundary]).trimmingCharacters(in: .whitespacesAndNewlines)
             buffer = String(buffer[boundary...].drop(while: { $0 == " " || $0 == "\t" || $0 == "\n" }))
-            if !sentence.isEmpty { sentences.append(sentence) }
+            if !sentence.isEmpty { sentences.append(sentence); emitted += 1 }
         }
         return sentences
     }
@@ -31,13 +35,18 @@ public struct SentenceSplitter {
     /// The index just past the first sentence end: a terminator (. ! ? or a newline),
     /// optionally followed by a closing quote or bracket, then whitespace. A period
     /// between two digits (3.5) or after a single letter (e.g. "u.s.") is not an end.
-    static func boundary(in text: String) -> String.Index? {
+    static func boundary(in text: String, eager: Bool = false) -> String.Index? {
         let scalars = Array(text.unicodeScalars)
         guard scalars.count > 1 else { return nil }
         var i = 0
+        var words = 0
         while i < scalars.count - 1 {
             let c = scalars[i]
+            if c == " " { words += 1 }
             if c == "\n" {
+                return text.unicodeScalars.index(text.unicodeScalars.startIndex, offsetBy: i + 1)
+            }
+            if eager, (c == "," || c == ";" || c == ":"), scalars[i + 1] == " ", words >= 6, i >= 36 {
                 return text.unicodeScalars.index(text.unicodeScalars.startIndex, offsetBy: i + 1)
             }
             if c == "." || c == "!" || c == "?" {

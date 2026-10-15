@@ -21,9 +21,11 @@ final class HotkeyMonitor {
         case modeChanged(Mode)
         case released(Mode, heldFor: TimeInterval)
         case escape
-        /// AppKit screen coordinates (bottom-left origin).
-        case mouseDown(CGPoint)
+        /// AppKit screen coordinates (bottom-left origin). `own` is true for a click Dot posted itself.
+        case mouseDown(CGPoint, own: Bool)
         case dragChanged(CGRect)
+        /// The stroke so far while he draws with the key held, in AppKit coordinates.
+        case dragPath([CGPoint])
         case dragEnded(CGRect)
     }
 
@@ -36,6 +38,7 @@ final class HotkeyMonitor {
     private var pressedAt = Date.distantPast
     private var dragStart: CGPoint?
     private var dragging = false
+    private var dragPoints: [CGPoint] = []
 
     var isRunning: Bool { tap != nil }
     var isHeld: Bool { held }
@@ -131,20 +134,25 @@ final class HotkeyMonitor {
             let point = Self.appKitPoint(event.location)
             if held {
                 dragStart = point
+                dragPoints = [point]
                 dragging = false
             } else {
-                emit(.mouseDown(point))
+                emit(.mouseDown(point, own: Driver.isOwn(event)))
             }
         case .leftMouseDragged:
             guard held, let start = dragStart else { return }
-            let rect = Self.rect(from: start, to: Self.appKitPoint(event.location))
+            let point = Self.appKitPoint(event.location)
+            let rect = Self.rect(from: start, to: point)
+            if let last = dragPoints.last, hypot(point.x - last.x, point.y - last.y) >= 2 { dragPoints.append(point) }
             if rect.width > 6 || rect.height > 6 {
                 dragging = true
-                emit(.dragChanged(rect))
+                emit(.dragChanged(Self.bounds(of: dragPoints)))
+                emit(.dragPath(dragPoints))
             }
         case .leftMouseUp:
-            guard held, let start = dragStart else { return }
-            let rect = Self.rect(from: start, to: Self.appKitPoint(event.location))
+            guard held, dragStart != nil else { return }
+            dragPoints.append(Self.appKitPoint(event.location))
+            let rect = Self.bounds(of: dragPoints)
             dragStart = nil
             if dragging {
                 dragging = false
@@ -153,6 +161,14 @@ final class HotkeyMonitor {
         default:
             break
         }
+    }
+
+    /// The box around a stroke, padded a little so a circled thing is inside it.
+    private static func bounds(of points: [CGPoint]) -> CGRect {
+        guard let first = points.first else { return .null }
+        var minX = first.x, maxX = first.x, minY = first.y, maxY = first.y
+        for p in points { minX = min(minX, p.x); maxX = max(maxX, p.x); minY = min(minY, p.y); maxY = max(maxY, p.y) }
+        return CGRect(x: minX, y: minY, width: maxX - minX, height: maxY - minY).insetBy(dx: -6, dy: -6)
     }
 
     private static func rect(from a: CGPoint, to b: CGPoint) -> CGRect {

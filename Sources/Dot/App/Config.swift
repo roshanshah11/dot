@@ -23,7 +23,7 @@ struct DotConfig: Codable {
     var talkRoot = "~/Dot/talk"
     /// A Claude Code mcp-config JSON file (`{"mcpServers": {...}}`) handed to agents.
     var agentMCPConfig: String? = "~/.config/dot/mcp.json"
-    /// Same, for talk mode: a dozen Atlas tools (ATLAS_MCP_TOOLS) so voice turns stay fast.
+    /// Same, for talk mode: the reading, remembering and drafting Atlas tools (ATLAS_MCP_TOOLS), not the sends.
     var talkMCPConfig: String? = "~/.config/dot/mcp-talk.json"
     /// Tool names talk mode may call without asking (`--allowedTools`).
     var talkAllowedTools: [String] = DotConfig.defaultTalkTools
@@ -68,9 +68,23 @@ struct DotConfig: Codable {
     var noticeCooldownMinutes = 20
     /// Keep a small black tab under the notch when idle, so Dot visibly lives there.
     var notchPresence = true
+    /// When he says "do it" in a walkthrough, Dot moves the real cursor and clicks the steps itself
+    /// (never a send, buy or delete; his first move or key stops it).
+    var driveEnabled = true
+    /// Start speaking at the first long clause instead of the first full sentence.
+    var eagerSpeech = true
 
-    static let defaultTalkTools = ["now", "search", "facts", "people", "calendar", "free", "commitments", "todo", "unanswered",
-                                   "canvas_find", "docs", "proposals", "remember", "deadline_add", "commit"].map { "mcp__atlas__\($0)" }
+    /// Atlas tools a talk turn may call without asking: everything that reads, remembers or drafts.
+    /// Sends, submits, posts and harness administration stay with agents and his yes.
+    static let talkAtlasTools = [
+        "now", "search", "facts", "people", "contacts", "calendar", "calendars", "free", "commitments", "todo", "unanswered",
+        "mail", "messages", "messages_thread", "thread", "canvas_find", "canvas_courses", "canvas_read", "docs", "read_doc",
+        "recent_files", "proposals", "history", "state", "status", "preferences", "postings", "project", "task", "deliverable",
+        "apple_note_read", "view_note", "get", "quote", "sec_lookup", "sec_facts", "sec_filings", "fin_calc", "vocabulary", "lesson",
+        "remember", "deadline_add", "deadline_confirm", "commit", "commit_done", "commit_update", "contact_upsert", "reminder", "journal",
+        "draft_email", "write_note", "apple_note", "calendar_create", "calendar_update", "watch_add", "xlsx_write",
+    ]
+    static let defaultTalkTools = talkAtlasTools.map { "mcp__atlas__\($0)" }
 
     init() {}
 
@@ -93,8 +107,9 @@ struct DotConfig: Codable {
         talkRoot = get(.talkRoot, d.talkRoot)
         agentMCPConfig = c.contains(.agentMCPConfig) ? (try? c.decodeIfPresent(String.self, forKey: .agentMCPConfig)) : d.agentMCPConfig
         talkMCPConfig = c.contains(.talkMCPConfig) ? (try? c.decodeIfPresent(String.self, forKey: .talkMCPConfig)) : d.talkMCPConfig
-        talkAllowedTools = get(.talkAllowedTools, d.talkAllowedTools)
-        if talkAllowedTools.isEmpty { talkAllowedTools = d.talkAllowedTools }
+        // The file's list adds to the built-in set, so a widened default reaches an old config.
+        let extra = get(.talkAllowedTools, [String]()).filter { !d.talkAllowedTools.contains($0) }
+        talkAllowedTools = d.talkAllowedTools + extra
         allowTools = get(.allowTools, d.allowTools)
         allowToolPrefixes = get(.allowToolPrefixes, d.allowToolPrefixes)
         denyTools = get(.denyTools, d.denyTools)
@@ -121,6 +136,8 @@ struct DotConfig: Codable {
         proactiveNotices = get(.proactiveNotices, d.proactiveNotices)
         noticeCooldownMinutes = get(.noticeCooldownMinutes, d.noticeCooldownMinutes)
         notchPresence = get(.notchPresence, d.notchPresence)
+        driveEnabled = get(.driveEnabled, d.driveEnabled)
+        eagerSpeech = get(.eagerSpeech, d.eagerSpeech)
     }
 
     static var directory: URL {

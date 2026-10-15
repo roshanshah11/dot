@@ -7,8 +7,15 @@ import Foundation
 protocol TTSProvider: AnyObject {
     var isSpeaking: Bool { get }
     var onFinishedAll: (() -> Void)? { get set }
-    func speak(_ sentence: String)
+    /// Queue a sentence. `onStart` runs on the main thread the moment this sentence begins to
+    /// play, so a visual can land on the words it belongs to. An empty sentence with an
+    /// `onStart` is a marker: it fires when the queue reaches it (at once when nothing is queued).
+    func speak(_ sentence: String, onStart: (() -> Void)?)
     func stop()
+}
+
+extension TTSProvider {
+    func speak(_ sentence: String) { speak(sentence, onStart: nil) }
 }
 
 final class AppleSpeaker: NSObject, TTSProvider, AVSpeechSynthesizerDelegate {
@@ -16,6 +23,10 @@ final class AppleSpeaker: NSObject, TTSProvider, AVSpeechSynthesizerDelegate {
     private let voice: AVSpeechSynthesisVoice?
     private let rate: Float
     private var queued = 0
+    private var starts: [ObjectIdentifier: () -> Void] = [:]
+    /// Markers waiting on the utterance they follow.
+    private var markers: [ObjectIdentifier: [() -> Void]] = [:]
+    private var lastUtterance: AVSpeechUtterance?
 
     var onFinishedAll: (() -> Void)?
     var isSpeaking: Bool { synthesizer.isSpeaking || queued > 0 }
@@ -28,31 +39,55 @@ final class AppleSpeaker: NSObject, TTSProvider, AVSpeechSynthesizerDelegate {
         if let voice { Log.info("speaker: voice \(voice.name) (\(voice.identifier))") }
     }
 
-    func speak(_ sentence: String) {
+    func speak(_ sentence: String, onStart: (() -> Void)?) {
         let text = SpeechText.clean(sentence)
-        guard !text.isEmpty else { return }
+        guard !text.isEmpty else {
+            guard let onStart else { return }
+            if queued == 0 || lastUtterance == nil {
+                DispatchQueue.main.async(execute: onStart)
+            } else if let last = lastUtterance {
+                markers[ObjectIdentifier(last), default: []].append(onStart)
+            }
+            return
+        }
         let utterance = AVSpeechUtterance(string: text)
         utterance.voice = voice
         utterance.rate = rate
         utterance.prefersAssistiveTechnologySettings = false
+        if let onStart { starts[ObjectIdentifier(utterance)] = onStart }
         queued += 1
+        lastUtterance = utterance
         synthesizer.speak(utterance)
     }
 
     func stop() {
         queued = 0
+        starts = [:]
+        markers = [:]
+        lastUtterance = nil
         synthesizer.stopSpeaking(at: .immediate)
     }
 
+    func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didStart utterance: AVSpeechUtterance) {
+        if let start = starts.removeValue(forKey: ObjectIdentifier(utterance)) {
+            DispatchQueue.main.async(execute: start)
+        }
+    }
+
     func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didFinish utterance: AVSpeechUtterance) {
-        finishedOne()
+        finishedOne(utterance)
     }
 
     func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didCancel utterance: AVSpeechUtterance) {
-        finishedOne()
+        finishedOne(utterance)
     }
 
-    private func finishedOne() {
+    private func finishedOne(_ utterance: AVSpeechUtterance) {
+        starts.removeValue(forKey: ObjectIdentifier(utterance))
+        if let fire = markers.removeValue(forKey: ObjectIdentifier(utterance)) {
+            DispatchQueue.main.async { fire.forEach { $0() } }
+        }
+        if lastUtterance === utterance { lastUtterance = nil }
         queued = max(0, queued - 1)
         guard queued == 0 else { return }
         // `isSpeaking` can still read true inside the delegate callback for the last utterance;

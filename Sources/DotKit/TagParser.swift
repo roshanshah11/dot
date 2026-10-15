@@ -8,6 +8,8 @@ import Foundation
 ///   [POINT:none]                   nothing worth pointing at
 ///   [HIGHLIGHT:x,y,w,h:label]      draw a box around a region (same coordinate rules)
 ///   [TARGET:x,y,r:label]           ring the thing to click next and wait for the click (a walkthrough step)
+///   [HOVER:x,y,r:label]            ring the thing to hover; the step completes when the cursor rests inside
+///   [SHAPE:arrow:x1,y1;x2,y2:label] draw a line, arrow, circle (center;edge), curve or polygon through the points
 ///   [AGENT:brief]                  hand the task to a background agent
 ///   [NEW_AGENT:name:brief]         create a named agent for this kind of work, then hand off
 ///   [THINK]                        the question deserves the stronger model; Dot re-asks it
@@ -16,9 +18,29 @@ public enum DotTag: Equatable {
     case pointNone
     case highlight(x: Int, y: Int, width: Int, height: Int, label: String, screen: Int?)
     case target(x: Int, y: Int, radius: Int, label: String, screen: Int?)
+    case hover(x: Int, y: Int, radius: Int, label: String, screen: Int?)
+    case shape(kind: ShapeKind, points: [ShapePoint], label: String, screen: Int?)
     case agent(brief: String)
     case newAgent(name: String, brief: String)
     case think
+}
+
+public enum ShapeKind: String, Equatable, Sendable { case line, arrow, circle, curve, polygon }
+
+public struct ShapePoint: Equatable {
+    public let x: Int
+    public let y: Int
+    public init(x: Int, y: Int) { self.x = x; self.y = y }
+}
+
+public extension DotTag {
+    /// Tags that draw or move something on screen (as opposed to handing off or escalating).
+    var isVisual: Bool {
+        switch self {
+        case .point, .highlight, .target, .hover, .shape: return true
+        case .pointNone, .agent, .newAgent, .think: return false
+        }
+    }
 }
 
 public struct ParsedResponse: Equatable {
@@ -33,11 +55,11 @@ public struct ParsedResponse: Equatable {
 }
 
 public enum TagParser {
-    static let tagNames = ["POINT", "HIGHLIGHT", "TARGET", "AGENT", "NEW_AGENT", "THINK"]
+    static let tagNames = ["POINT", "HIGHLIGHT", "TARGET", "HOVER", "SHAPE", "AGENT", "NEW_AGENT", "THINK"]
 
     // swiftlint:disable:next force_try
     static let pattern = try! NSRegularExpression(
-        pattern: #"\[(POINT|HIGHLIGHT|TARGET|AGENT|NEW_AGENT|THINK)(?::([^\]]*))?\]"#,
+        pattern: #"\[(POINT|HIGHLIGHT|TARGET|HOVER|SHAPE|AGENT|NEW_AGENT|THINK)(?::([^\]]*))?\]"#,
         options: []
     )
 
@@ -98,7 +120,7 @@ public enum TagParser {
             parts.removeFirst()
             let screen = takeScreen(&parts)
             return .point(x: numbers[0], y: numbers[1], label: parts.joined(separator: ":"), screen: screen)
-        case "TARGET":
+        case "TARGET", "HOVER":
             var parts = splitPayload(payload)
             guard let coords = parts.first else { return nil }
             let numbers = integers(in: coords)
@@ -106,7 +128,22 @@ public enum TagParser {
             parts.removeFirst()
             let screen = takeScreen(&parts)
             let radius = numbers.count == 3 ? max(numbers[2], 10) : 28
-            return .target(x: numbers[0], y: numbers[1], radius: radius, label: parts.joined(separator: ":"), screen: screen)
+            let label = parts.joined(separator: ":")
+            if kind == "HOVER" { return .hover(x: numbers[0], y: numbers[1], radius: radius, label: label, screen: screen) }
+            return .target(x: numbers[0], y: numbers[1], radius: radius, label: label, screen: screen)
+        case "SHAPE":
+            var parts = splitPayload(payload)
+            guard parts.count >= 2, let shapeKind = ShapeKind(rawValue: parts[0].lowercased()) else { return nil }
+            parts.removeFirst()
+            let pointText = parts.removeFirst()
+            let points: [ShapePoint] = pointText.split(separator: ";").compactMap { pair in
+                let numbers = integers(in: String(pair))
+                return numbers.count == 2 ? ShapePoint(x: numbers[0], y: numbers[1]) : nil
+            }
+            let minimum = shapeKind == .polygon ? 3 : 2
+            guard points.count >= minimum else { return nil }
+            let screen = takeScreen(&parts)
+            return .shape(kind: shapeKind, points: points, label: parts.joined(separator: ":"), screen: screen)
         case "HIGHLIGHT":
             var parts = splitPayload(payload)
             guard let coords = parts.first else { return nil }

@@ -17,6 +17,8 @@ case "--help", "-h":
       Dot --voices      list installed English voices (set voiceIdentifier in config)
       Dot --today       print the [today] block Dot reads from Atlas
       Dot --ask <q>     ask the running Dot by text      Dot --agent <brief>   hand a job to an agent
+      Dot --ask --quiet <q>   same, with no voice (beats pace themselves)
+      Dot --ask --drive <q>   a walkthrough Dot clicks through itself (tests; by voice say "do it")
       Dot --home        open the Dot window              Dot --stop            stop talking
       Dot --refresh     re-read today from Atlas
       Dot --version
@@ -70,10 +72,17 @@ case "--voices":
     exit(0)
 case "--ask", "--agent":
     // Talk to the running app: `Dot --ask "what's in front?"`, `Dot --agent "sort my downloads"`.
-    let text = arguments.dropFirst().joined(separator: " ").trimmingCharacters(in: .whitespacesAndNewlines)
-    guard !text.isEmpty else { print("usage: Dot --ask <question> | Dot --agent <brief>"); exit(2) }
+    // `--ask --quiet` runs the turn with the bubble and marks but no voice (tests at night).
+    var rest = Array(arguments.dropFirst())
+    var quiet = false, drive = false
+    while let flag = rest.first, flag.hasPrefix("--") {
+        if flag == "--quiet" { quiet = true } else if flag == "--drive" { drive = true } else { break }
+        rest.removeFirst()
+    }
+    let text = rest.joined(separator: " ").trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !text.isEmpty else { print("usage: Dot --ask [--quiet] [--drive] <question> | Dot --agent <brief>"); exit(2) }
     let name = arguments.first == "--ask" ? DotIPC.ask : DotIPC.agent
-    DistributedNotificationCenter.default().postNotificationName(name, object: nil, userInfo: ["text": text], deliverImmediately: true)
+    DistributedNotificationCenter.default().postNotificationName(name, object: nil, userInfo: ["text": text, "quiet": quiet, "drive": drive], deliverImmediately: true)
     print("sent to Dot")
     exit(0)
 case "--home", "--stop", "--refresh":

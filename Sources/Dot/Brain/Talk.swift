@@ -3,7 +3,8 @@ import DotKit
 import Foundation
 
 /// The voice loop: hold the key, speak (or draw a box), see the screen, answer aloud beside
-/// the cursor, point, ring the next click in a walkthrough, hand real work to an agent.
+/// the cursor in beats that land on what they describe, walk him through a task one click at
+/// a time, hand real work to an agent.
 @MainActor
 final class Talk {
     enum Phase: Equatable { case idle, listening, transcribing, thinking, speaking }
@@ -17,6 +18,7 @@ final class Talk {
     private let ledger: Ledger
     private let atlas: AtlasBridge
     private let jev: Jev?
+    private let driver = Driver()
 
     private let recorder = AudioRecorder()
     private var talkSession: ClaudeSession?
@@ -30,9 +32,7 @@ final class Talk {
     private var region: CGRect?
     private var lastMessage = ""
     private var lastImages: [(data: Data, mediaType: String)] = []
-    private var responseBuffer = ""
-    private var heldBack = ""
-    private var splitter = SentenceSplitter()
+    private var streamer = BeatStreamer()
     private var activeSession: ClaudeSession?
     private var levelTimer: Timer?
     private var idleTimer: Timer?
@@ -41,17 +41,41 @@ final class Talk {
     private var turnModel = ""
     private var turnsInSession = 0
     private var lastTurnAt = Date()
-    private var todayStamp: [String: String] = [:]
 
-    /// A step-by-step walkthrough: the ringed control Dot waits for the user to click.
+    // Beats: what the bubble shows follows the voice, not the text stream.
+    private var speechStarted = false
+    private var bubbleGroup = ""
+    private var bubbleLabel: String?
+    /// A quiet turn (tests, `Dot --ask --quiet`) paces its beats on a timer instead of the voice.
+    private var quietTurn = false
+    private var quietWork: [DispatchWorkItem] = []
+    private var quietClock = Date()
+    private var beatsFired = 0
+
+    /// A step-by-step walkthrough: the ringed control Dot waits for him to click (or rest on).
     private struct Walkthrough {
+        enum Kind { case click, hover }
+        var kind: Kind
         var target: CGPoint
         var radius: CGFloat
         var label: String
         var step: Int
+        var appBundle: String?
+        var history: [String] = []
+        var offTargetClicks = 0
+        var userActedWhileWaiting = false
+        /// The step was completed and the next one is being asked for.
+        var awaitingNextStep = false
+        var hoverSince: Date?
+        /// Dot clicks the steps itself while he watches.
+        var driving = false
     }
     private var walkthrough: Walkthrough?
     private var walkthroughTimeout: DispatchWorkItem?
+    private var hoverTimer: Timer?
+    /// He asked Dot to do the clicking for the walkthrough about to start.
+    private var driveRequested = false
+    private static let driveWords = try! NSRegularExpression(pattern: #"\b(do it( for me)?|you (do|click) it|take over|take the (mouse|wheel)|click (it|them|through)( for me)?|drive|go ahead and do it)\b"#, options: .caseInsensitive)
 
     init(config: DotConfig, hud: NotchHUD, overlay: OverlayManager, speaker: TTSProvider, transcriber: Transcriber,
          agents: AgentManager, ledger: Ledger, atlas: AtlasBridge, jev: Jev?) {
@@ -69,6 +93,17 @@ final class Talk {
         }
         hud.model.onSubmitInput = { [weak self] text in
             Task { @MainActor in self?.askTyped(text) }
+        }
+        driver.onAbort = { [weak self] what in
+            guard let self else { return }
+            self.walkthrough?.driving = false
+            self.driveRequested = false
+            self.speaker.speak("okay, you've got it.")
+            self.overlay.setBubble("okay, you've got it.", label: nil)
+        }
+        NSWorkspace.shared.notificationCenter.addObserver(forName: NSWorkspace.didActivateApplicationNotification, object: nil, queue: .main) { [weak self] note in
+            guard let app = note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication else { return }
+            Task { @MainActor in self?.appActivated(app) }
         }
     }
 
@@ -101,12 +136,10 @@ final class Talk {
                 }
             }
             turnsInSession = 0
-            todayStamp[SessionKind.talk.rawValue] = nil
             talkSession = makeSession(kind: .talk)
             return talkSession
         case .think:
             if let thinkSession, thinkSession.isRunning { return thinkSession }
-            todayStamp[SessionKind.think.rawValue] = nil
             thinkSession = makeSession(kind: .think)
             return thinkSession
         }
@@ -133,7 +166,7 @@ final class Talk {
             if allowed.contains(request.toolName) {
                 completion(true, nil)
             } else {
-                completion(false, "dot's talk mode only reads; hand this to an agent with [AGENT:...].")
+                completion(false, "dot's talk mode only reads and remembers; hand this to an agent with [AGENT:...].")
                 Log.warn("talk: refused tool \(request.toolName)")
             }
         }
@@ -162,14 +195,16 @@ final class Talk {
             endListening(heldFor: heldFor)
         case .escape:
             interrupt()
-        case .mouseDown(let point):
-            clicked(at: point)
+        case .mouseDown(let point, let own):
+            clicked(at: point, own: own)
         case .dragChanged(let rect):
             if rect.isNull { region = nil; overlay.setDrawRect(nil) } else { overlay.setDrawRect(rect) }
+        case .dragPath(let points):
+            overlay.setDrawPath(points)
         case .dragEnded(let rect):
             region = rect
             overlay.setDrawRect(rect)
-            hud.flash(status: "asking about the box")
+            hud.flash(status: "asking about what you circled")
         }
     }
 
@@ -178,8 +213,7 @@ final class Talk {
         if phase == .speaking || phase == .thinking { stopSpeaking(); activeSession?.interrupt() }
         self.mode = mode
         idleTimer?.invalidate()
-        endWalkthrough(reason: "new question")
-        overlay.clearMarks()
+        overlay.clearMarks(keepRing: walkthrough != nil)
         overlay.hideBubble(after: 0)
         overlay.showTransient()
         overlay.setMouseCapture(true)
@@ -274,14 +308,16 @@ final class Talk {
         }
     }
 
-    func askTyped(_ text: String) {
+    func askTyped(_ text: String, quiet: Bool = false, drive: Bool = false) {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
-        endWalkthrough(reason: "typed question")
+        if phase == .speaking || phase == .thinking { stopSpeaking(); activeSession?.interrupt() }
+        quietTurn = quiet
+        if drive, config.driveEnabled { driveRequested = true }
         hud.model.transcript = trimmed
         hud.model.response = ""
         overlay.showTransient()
-        overlay.clearMarks()
+        overlay.clearMarks(keepRing: walkthrough != nil)
         overlay.hideBubble(after: 0)
         startCapture()
         overlay.setPhase(.thinking)
@@ -310,42 +346,46 @@ final class Talk {
             return
         }
 
-        if let jev, walkthrough == nil {
-            let route = await self.route(text, with: jev)
-            switch route {
-            case .agent:
-                phase = .idle
-                overlay.setPhase(.speaking)
-                speaker.speak("on it, i'll tell you when it's done.")
-                overlay.setBubble("on it, i'll tell you when it's done.")
-                hud.set(phase: .hidden)
-                agents.handoff(brief: text, agentName: nil, context: context, shots: shots)
-                region = nil
-                scheduleIdleCheck()
+        let route = await self.route(text)
+        switch route {
+        case .continueWalkthrough:
+            continueWalkthrough(said: text)
+            return
+        case .drive:
+            startDriving()
+            return
+        case .agent:
+            phase = .idle
+            overlay.setPhase(.speaking)
+            speaker.speak("on it, i'll tell you when it's done.")
+            overlay.setBubble("on it, i'll tell you when it's done.")
+            hud.set(phase: .hidden)
+            agents.handoff(brief: text, agentName: nil, context: context, shots: shots)
+            region = nil
+            scheduleIdleCheck()
+            return
+        case .followUp(let slug):
+            phase = .idle
+            overlay.setPhase(.speaking)
+            speaker.speak("passing that along.")
+            overlay.setBubble("passing that along.")
+            hud.set(phase: .hidden)
+            agents.reply(to: slug, text: text)
+            region = nil
+            scheduleIdleCheck()
+            return
+        case .think:
+            if let think = session(for: .think) {
+                speaker.speak("let me think about that for a second.")
+                overlay.setBubble("let me think about that for a second.")
+                let (message, images) = buildMessage(text, kind: .think)
+                lastMessage = message
+                lastImages = images
+                sendTurn(message, images: images, to: think, kind: .think)
                 return
-            case .followUp(let slug):
-                phase = .idle
-                overlay.setPhase(.speaking)
-                speaker.speak("passing that along.")
-                overlay.setBubble("passing that along.")
-                hud.set(phase: .hidden)
-                agents.reply(to: slug, text: text)
-                region = nil
-                scheduleIdleCheck()
-                return
-            case .think:
-                if let think = session(for: .think) {
-                    speaker.speak("let me think about that for a second.")
-                    overlay.setBubble("let me think about that for a second.")
-                    let (message, images) = buildMessage(text, kind: .think)
-                    lastMessage = message
-                    lastImages = images
-                    sendTurn(message, images: images, to: think, kind: .think)
-                    return
-                }
-            case .answer:
-                break
             }
+        case .answer:
+            break
         }
 
         guard let session = session(for: .talk) else {
@@ -359,12 +399,31 @@ final class Talk {
         sendTurn(message, images: images, to: session, kind: .talk)
     }
 
-    private enum Route { case answer, agent, think, followUp(String) }
+    private enum Route { case answer, agent, think, followUp(String), continueWalkthrough, drive }
+
+    private func saysDrive(_ text: String) -> Bool {
+        Self.driveWords.firstMatch(in: text, range: NSRange(location: 0, length: (text as NSString).length)) != nil
+    }
+
+    private static let continueWords = try! NSRegularExpression(pattern: #"^(ok(ay)?|yes|yep|done|next|continue|go on|what('s| is) next|now what|did it|i did( it| that)?|keep going|and now)\W*$"#, options: .caseInsensitive)
 
     /// One Jev call (about 150 ms) while the screen capture finishes: where does this go, and
     /// which element did he mean. A confident "agent" skips the talk model entirely; a likely
-    /// element gets the dot moving before Claude has said a word.
-    private func route(_ text: String, with jev: Jev) async -> Route {
+    /// element gets the dot moving before Claude has said a word. During a walkthrough, "next"
+    /// and "done" continue it instead of starting over.
+    private func route(_ text: String) async -> Route {
+        let inWalkthrough = walkthrough != nil
+        if inWalkthrough, Self.continueWords.firstMatch(in: text, range: NSRange(location: 0, length: (text as NSString).length)) != nil {
+            return .continueWalkthrough
+        }
+        if config.driveEnabled, saysDrive(text) {
+            if inWalkthrough, walkthrough?.awaitingNextStep == false { return .drive }
+            driveRequested = true   // the walkthrough about to start is his to watch, not to click
+        }
+        guard let jev else {
+            if inWalkthrough { endWalkthrough(reason: "new question") }
+            return .answer
+        }
         let running = agents.runningAgents()
         var state: [String: Any] = [
             "user_said": text,
@@ -374,6 +433,9 @@ final class Talk {
             "elements_on_screen": context.elements.prefix(40).map { "\($0.role.dropFirst(2)) \($0.title)" },
         ]
         if let selected = context.selectedText, !selected.isEmpty { state["selected_text"] = String(selected.prefix(200)) }
+        if let step = walkthrough {
+            state["walkthrough_in_progress"] = ["last_instruction": "\(step.kind == .hover ? "rest on" : "click") \(step.label)", "steps_done": step.history]
+        }
         var questions: [String: Jev.Question] = [
             "route": .choice(instructions: "How should a voice companion that can see the screen handle what the user just said? Pick one.", criteria: [
                 "answer": "answer out loud in a sentence or two from the screen, the day's calendar and deadlines, or general knowledge; no files, no browsing, nothing to operate",
@@ -384,16 +446,27 @@ final class Talk {
         if !running.isEmpty {
             questions["followup"] = .yesNo(instructions: "Is this a follow-up, a steer or a question for the agent that is already working, rather than a new request?", yes: "it continues the agent's current task", no: "a new request or a question about the screen")
         }
+        if inWalkthrough {
+            questions["walkthrough"] = .yesNo(instructions: "A step-by-step walkthrough is in progress (see walkthrough_in_progress). Is what the user said part of it: saying they did the step, asking what's next, a question about this step, or a request to show it or do it for them?", yes: "it continues the current walkthrough", no: "a new, unrelated question or request")
+            if config.driveEnabled, walkthrough?.awaitingNextStep == false {
+                questions["drive"] = .yesNo(instructions: "Did the user ask the companion to perform the click itself (take over the mouse, do it for them) rather than keep showing them?", yes: "they want the companion to click it", no: "they will click it themselves, or said something else")
+            }
+        }
         var elementCriteria: [String: String] = [:]
         for (index, element) in context.elements.prefix(40).enumerated() where !element.title.isEmpty {
             elementCriteria["e\(index)"] = String(element.title.prefix(60))
         }
-        if elementCriteria.count >= 2 {
+        if elementCriteria.count >= 2, !inWalkthrough {
             elementCriteria["none"] = "the user is not asking about one specific element on screen"
             questions["element"] = .choice(instructions: "If the user is asking where something is, how to do something here, or about one specific control, which on-screen element do they mean?", criteria: elementCriteria)
         }
         let answers: [String: Jev.Answer]? = await withCheckedContinuation { continuation in
             jev.evaluate("route", state: state, questions: questions) { continuation.resume(returning: $0) }
+        }
+        if inWalkthrough {
+            if let d = answers?["drive"]?.probability, d >= 0.7 { return .drive }
+            if let p = answers?["walkthrough"]?.probability, p >= 0.55 { return .continueWalkthrough }
+            endWalkthrough(reason: "new question")
         }
         guard let answers, let route = answers["route"]?.choice else { return .answer }
         if let follow = answers["followup"]?.probability, follow >= 0.7, let live = running.first {
@@ -419,9 +492,14 @@ final class Talk {
         }
         hud.hideInput()
         activeSession = session
-        responseBuffer = ""
-        heldBack = ""
-        splitter = SentenceSplitter()
+        streamer = BeatStreamer(eagerFirst: config.eagerSpeech && !quietTurn)
+        speechStarted = false
+        bubbleGroup = ""
+        bubbleLabel = nil
+        beatsFired = 0
+        quietWork.forEach { $0.cancel() }
+        quietWork = []
+        quietClock = Date()
         turnStartedAt = Date()
         lastTurnAt = Date()
         if kind == .talk { turnsInSession += 1 }
@@ -429,25 +507,17 @@ final class Talk {
         phase = .thinking
         hud.set(phase: .thinking)
         overlay.setPhase(.thinking)
-        if let brief = atlas.brief { todayStamp[kind.rawValue] = brief.builtAt }
         session.send(text: message, images: images)
         Log.info("turn[\(kind.rawValue)] sent \(images.count) image(s), \(message.count) chars: \(Log.short(hud.model.transcript))")
     }
 
-    /// The user message: today's shape from Atlas (when it changed), the screen context, the
-    /// element list, the box he drew, then his words. Returns the text and the images to attach.
+    /// The user message: the screen context, the element list, the box he drew, then his words.
+    /// Returns the text and the images to attach.
     private func buildMessage(_ transcript: String, kind: SessionKind) -> (String, [(data: Data, mediaType: String)]) {
         var lines: [String] = []
-        if let brief = atlas.brief, !brief.block.isEmpty {
-            if todayStamp[kind.rawValue] != brief.builtAt {
-                lines.append(brief.block)
-            } else {
-                lines.append("[today] unchanged since \(brief.builtAt.suffix(5)) [/today]")
-            }
-            lines.append("")
-        }
         var images = shots.map { (data: $0.jpeg, mediaType: "image/jpeg") }
         lines.append("[context]")
+        lines.append("now: \(Self.nowLine())")
         if let app = context.appName {
             lines.append("app: \(app)" + (context.bundleIdentifier.map { " (\($0))" } ?? ""))
         }
@@ -468,9 +538,9 @@ final class Talk {
                 boxPixels = pixels
                 if let crop = ImageCrop.crop(jpeg: cursorShot.jpeg, pixelRect: pixels) {
                     images.append((data: crop.data, mediaType: "image/jpeg"))
-                    lines.append("he drew a box on image \(cursorIndex + 1) at \(Int(pixels.minX)),\(Int(pixels.minY)) size \(Int(pixels.width))x\(Int(pixels.height)) pixels; image \(images.count) is that region enlarged (\(crop.width)x\(crop.height)). answer about what is in the box.")
+                    lines.append("he drew around a region of image \(cursorIndex + 1): its box is at \(Int(pixels.minX)),\(Int(pixels.minY)) size \(Int(pixels.width))x\(Int(pixels.height)) pixels; image \(images.count) is that region enlarged (\(crop.width)x\(crop.height)). answer about what he circled.")
                 } else {
-                    lines.append("he drew a box on image \(cursorIndex + 1) at \(Int(pixels.minX)),\(Int(pixels.minY)) size \(Int(pixels.width))x\(Int(pixels.height)) pixels. answer about what is in the box.")
+                    lines.append("he drew around a region of image \(cursorIndex + 1): its box is at \(Int(pixels.minX)),\(Int(pixels.minY)) size \(Int(pixels.width))x\(Int(pixels.height)) pixels. answer about what he circled.")
                 }
             }
         }
@@ -486,26 +556,37 @@ final class Talk {
                 lines.append("\(count). \(role) \"\(element.title)\" \(Int(pixel.x)),\(Int(pixel.y))\(inBox ? " (in box)" : "")")
             }
         }
+        if let step = walkthrough {
+            let left = max(config.walkthroughMaxSteps - step.step, 0)
+            lines.append("walkthrough: step \(step.step) was \"\(step.kind == .hover ? "rest on" : "click") \(step.label)\"; \(left) click-to-advance steps left" +
+                         (step.history.isEmpty ? "" : "; so far: " + step.history.joined(separator: "; ")))
+        }
         lines.append("[/context]")
         lines.append("")
         lines.append(transcript)
         return (lines.joined(separator: "\n"), images)
     }
 
-    // MARK: Streaming
+    static func nowLine() -> String {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US")
+        formatter.dateFormat = "EEEE, MMMM d, yyyy, h:mm a"
+        return formatter.string(from: Date())
+    }
+
+    // MARK: Streaming and beats
 
     private func handle(_ event: StreamEvent) {
         switch event {
         case .textDelta(let delta):
-            responseBuffer += delta
-            let (speak, hold) = TagParser.speakablePrefix(heldBack + delta)
-            heldBack = hold
-            for sentence in splitter.feed(speak) { say(sentence) }
-            let spoken = TagParser.parse(responseBuffer).spoken
-            if config.hudShowsResponse { hud.model.response = spoken }
-            if config.bubbleText { overlay.setBubble(spoken) }
+            for beat in streamer.feed(delta) { enqueue(beat) }
+            if !speechStarted, config.bubbleText {
+                let ahead = (streamer.spokenSoFar + " " + streamer.partial).trimmingCharacters(in: .whitespaces)
+                if !ahead.isEmpty { overlay.setBubble(ahead) }
+            }
+            if config.hudShowsResponse { hud.model.response = streamer.spokenSoFar }
         case .assistantText(let text):
-            if responseBuffer.isEmpty { responseBuffer = text }
+            if streamer.spokenSoFar.isEmpty, streamer.partial.isEmpty { for beat in streamer.feed(text) { enqueue(beat) } }
         case .toolUse(_, let name, let input):
             Log.info("talk: tool \(name) \(Log.short(input.map { "\($0.key)=\($0.value.json)" }.joined(separator: " "), 120))")
             hud.flash(status: "checking \(Self.friendlyTool(name))")
@@ -518,10 +599,25 @@ final class Talk {
         }
     }
 
-    private func say(_ sentence: String) {
-        let clean = TagParser.parse(sentence).spoken
-        guard !clean.isEmpty else { return }
-        if phase != .speaking {
+    /// Queue one beat: its words go to the voice, and its visuals fire the moment those words start.
+    private func enqueue(_ beat: Beat) {
+        let visuals = beat.tags.filter { $0.isVisual }
+        guard !beat.text.isEmpty || !visuals.isEmpty else { return }
+        if quietTurn {
+            let delay = max(quietClock.timeIntervalSinceNow, 0)
+            let work = DispatchWorkItem { [weak self] in self?.beatStarted(beat) }
+            quietWork.append(work)
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: work)
+            quietClock = Date(timeIntervalSinceNow: delay + (beat.text.isEmpty ? 0.3 : max(0.9, Double(beat.text.count) * 0.045)))
+            return
+        }
+        speaker.speak(beat.text) { [weak self] in self?.beatStarted(beat) }
+    }
+
+    private func beatStarted(_ beat: Beat) {
+        beatsFired += 1
+        speechStarted = true
+        if phase != .speaking, !beat.text.isEmpty {
             phase = .speaking
             overlay.setPhase(.speaking)
             if config.hudShowsResponse {
@@ -531,35 +627,61 @@ final class Talk {
                 hud.set(phase: .hidden)
             }
         }
-        speaker.speak(clean)
+        let visuals = beat.tags.filter { $0.isVisual }
+        Log.info("beat \(beatsFired)\(quietTurn ? " (quiet)" : ""): " + (visuals.isEmpty ? "" : visuals.map { "\($0)" }.joined(separator: " ") + " ") + Log.short(beat.text, 120))
+        if !visuals.isEmpty { overlay.fadeOldMarks() }
+        var label: String?
+        for tag in visuals {
+            switch tag {
+            case .point(let x, let y, let text, let screen):
+                point(pixel: CGPoint(x: x, y: y), label: text, screen: screen)
+                label = label ?? text
+            case .highlight(let x, let y, let w, let h, let text, let screen):
+                highlight(pixelRect: CGRect(x: x, y: y, width: w, height: h), label: text, screen: screen)
+                label = label ?? text
+            case .shape(let kind, let points, let text, let screen):
+                shape(kind: kind, pixels: points.map { CGPoint(x: $0.x, y: $0.y) }, label: text, screen: screen)
+                label = label ?? text
+            case .target(let x, let y, let radius, let text, let screen):
+                _ = target(pixel: CGPoint(x: x, y: y), radius: CGFloat(radius), label: text, screen: screen, hover: false)
+                label = label ?? text
+            case .hover(let x, let y, let radius, let text, let screen):
+                _ = target(pixel: CGPoint(x: x, y: y), radius: CGFloat(radius), label: text, screen: screen, hover: true)
+                label = label ?? text
+            default:
+                break
+            }
+        }
+        guard config.bubbleText else { return }
+        if beat.hasVisual || bubbleGroup.count > 240 {
+            bubbleGroup = beat.text
+            bubbleLabel = label.map { String($0.prefix(40)) }
+        } else {
+            bubbleGroup = (bubbleGroup + " " + beat.text).trimmingCharacters(in: .whitespaces)
+        }
+        if !bubbleGroup.isEmpty { overlay.setBubble(bubbleGroup, label: bubbleLabel) }
     }
 
     private func finishTurn(_ result: ResultInfo) {
-        let full = responseBuffer.isEmpty ? (result.resultText ?? "") : responseBuffer
-        let parsed = TagParser.parse(full)
-        if let rest = splitter.flush() { say(rest) }
-        if config.hudShowsResponse { hud.model.response = parsed.spoken }
-        if config.bubbleText, !parsed.spoken.isEmpty { overlay.setBubble(parsed.spoken) }
+        for beat in streamer.flush() { enqueue(beat) }
+        if streamer.spokenSoFar.isEmpty, streamer.allTags.isEmpty, let text = result.resultText, !text.isEmpty {
+            for beat in streamer.feed(text) { enqueue(beat) }
+            for beat in streamer.flush() { enqueue(beat) }
+        }
+        let tags = streamer.allTags
+        let spoken = streamer.spokenSoFar
+        if config.hudShowsResponse { hud.model.response = spoken }
         let kind = activeSession === thinkSession ? "think" : "talk"
         ledger.record(kind: kind, agent: nil, model: turnModel, result: result, summary: hud.model.transcript)
-        Log.info("turn[\(kind)] done in \(result.durationMs) ms, $\(String(format: "%.4f", result.costUSD)), tags \(parsed.tags.map { "\($0)" }.joined(separator: " | "))")
-        Log.info("turn[\(kind)] said: \(Log.short(parsed.spoken, 240))")
-        if result.isError, parsed.spoken.isEmpty {
+        Log.info("turn[\(kind)] done in \(result.durationMs) ms, $\(String(format: "%.4f", result.costUSD)), \(tags.filter { $0.isVisual }.count) visual beat(s), tags \(tags.map { "\($0)" }.joined(separator: " | "))")
+        Log.info("turn[\(kind)] said: \(Log.short(spoken, 240))")
+        if result.isError, spoken.isEmpty {
             hud.flash(error: Log.short(result.resultText ?? "the turn failed", 160))
         }
 
         var escalated = false
-        var ringed = false
-        for tag in parsed.tags {
+        for tag in tags {
             switch tag {
-            case .point(let x, let y, let label, let screen):
-                point(pixel: CGPoint(x: x, y: y), label: label, screen: screen)
-            case .highlight(let x, let y, let w, let h, let label, let screen):
-                highlight(pixelRect: CGRect(x: x, y: y, width: w, height: h), label: label, screen: screen)
-            case .target(let x, let y, let radius, let label, let screen):
-                ringed = target(pixel: CGPoint(x: x, y: y), radius: CGFloat(radius), label: label, screen: screen)
-            case .pointNone:
-                break
             case .agent(let brief):
                 agents.handoff(brief: brief, agentName: nil, context: context, shots: shots)
             case .newAgent(let name, let brief):
@@ -574,13 +696,14 @@ final class Talk {
                         self.sendTurn(message, images: images, to: think, kind: .think)
                     }
                 }
+            default:
+                break
             }
         }
-        if !ringed, walkthrough != nil { endWalkthrough(reason: "step without a target") }
+        let rings = tags.contains { if case .target = $0 { return true }; if case .hover = $0 { return true }; return false }
+        if !rings, walkthrough != nil, !escalated { endWalkthrough(reason: "the model gave a step with no target") }
         region = nil
         overlay.setDrawRect(nil)
-        responseBuffer = ""
-        heldBack = ""
         if escalated { return }
         scheduleIdleCheck()
     }
@@ -593,7 +716,7 @@ final class Talk {
             Task { @MainActor in
                 guard let self else { timer.invalidate(); return }
                 if self.phase == .listening || self.phase == .transcribing { timer.invalidate(); return }
-                if self.activeSession?.turnInFlight == true || self.speaker.isSpeaking { return }
+                if self.activeSession?.turnInFlight == true || self.speaker.isSpeaking || self.quietPending { return }
                 timer.invalidate()
                 self.phase = .idle
                 self.overlay.setPhase(.idle)
@@ -610,10 +733,12 @@ final class Talk {
         }
     }
 
+    private var quietPending: Bool { quietTurn && quietClock > Date() }
+
     /// Bubble fades, marks clear and Dot returns to the cursor, unless a walkthrough is waiting for a click.
     private func settle() {
         overlay.setPhase(.idle)
-        overlay.hideBubble(after: walkthrough == nil ? 4.0 : 12.0)
+        overlay.hideBubble(after: walkthrough == nil ? 4.0 : 14.0)
         if walkthrough == nil {
             overlay.release(after: 2.5)
             overlay.releaseTransient(after: 5.0)
@@ -630,7 +755,8 @@ final class Talk {
     private func snapped(pixel: CGPoint, label: String, in shot: ScreenShot) -> (point: CGPoint, element: AXElementInfo?) {
         var target = Coordinates.screenPoint(fromPixel: pixel, in: shot.frame)
         var hit: AXElementInfo?
-        if shot.isCursorScreen, let element = AccessibilityContext.element(near: target, label: label, in: context.elements) {
+        if shot.isCursorScreen, let element = AccessibilityContext.element(near: target, label: label, in: context.elements),
+           max(element.frame.width, element.frame.height) <= 420 {
             target = CGPoint(x: element.frame.midX, y: element.frame.midY)
             hit = element
         }
@@ -654,8 +780,14 @@ final class Talk {
         overlay.highlight(rect.intersection(shot.frame.displayFrame), label: label)
     }
 
-    /// Ring the next control and wait for the click. Returns false when the walkthrough has run long enough.
-    private func target(pixel: CGPoint, radius: CGFloat, label: String, screen: Int?) -> Bool {
+    private func shape(kind: ShapeKind, pixels: [CGPoint], label: String, screen: Int?) {
+        guard let shot = shot(forScreen: screen) else { return }
+        let points = pixels.map { Coordinates.clamp(Coordinates.screenPoint(fromPixel: $0, in: shot.frame), to: shot.frame.displayFrame, inset: 2) }
+        overlay.shape(kind: kind, points: points, label: label)
+    }
+
+    /// Ring the next control and wait for the click (or the hover). Returns false when the walkthrough has run long enough.
+    private func target(pixel: CGPoint, radius: CGFloat, label: String, screen: Int?, hover: Bool) -> Bool {
         guard let shot = shot(forScreen: screen) else { return false }
         let step = (walkthrough?.step ?? 0) + 1
         if step > config.walkthroughMaxSteps {
@@ -675,26 +807,114 @@ final class Talk {
             screenRadius = max(screenRadius, max(element.frame.width, element.frame.height) / 2 + 6)
         }
         screenRadius = min(max(screenRadius, 14), 90)
-        walkthrough = Walkthrough(target: target, radius: screenRadius, label: label, step: step)
-        overlay.target(at: target, radius: screenRadius, label: label)
-        hud.flash(status: "step \(step): click \(label)", for: 6)
+        var next = Walkthrough(kind: hover ? .hover : .click, target: target, radius: screenRadius, label: label, step: step,
+                               appBundle: context.bundleIdentifier)
+        if let previous = walkthrough {
+            next.history = previous.history
+            next.appBundle = previous.appBundle ?? context.bundleIdentifier
+            next.driving = previous.driving
+        }
+        if driveRequested, config.driveEnabled { next.driving = true; driveRequested = false }
+        walkthrough = next
+        overlay.target(at: target, radius: screenRadius, label: label, hover: hover)
+        hud.flash(status: "step \(step): \(hover ? "rest on" : "click") \(label)", for: 6)
         walkthroughTimeout?.cancel()
-        let work = DispatchWorkItem { [weak self] in self?.endWalkthrough(reason: "no click in 90 s") }
+        let work = DispatchWorkItem { [weak self] in self?.endWalkthrough(reason: "no click in 120 s") }
         walkthroughTimeout = work
-        DispatchQueue.main.asyncAfter(deadline: .now() + 90, execute: work)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 120, execute: work)
+        if hover { startHoverWatch() } else { hoverTimer?.invalidate() }
+        if next.driving { driveStep() }
         return true
     }
 
-    private func clicked(at point: CGPoint) {
-        guard let step = walkthrough else { return }
+    // MARK: Driving (he said "do it")
+
+    /// Take the current ringed step and every one after it, until the task ends or he moves.
+    private func startDriving() {
+        guard config.driveEnabled, walkthrough != nil else { return }
+        walkthrough?.driving = true
+        let line = "okay, i'll click through it. move the mouse or press a key and i stop."
+        speaker.speak(line)
+        overlay.setBubble(line, label: nil)
+        Log.info("drive: taking over the walkthrough at step \(walkthrough?.step ?? 0)")
+        // Let the sentence land, then go.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { [weak self] in self?.driveStep() }
+    }
+
+    private func driveStep() {
+        guard let step = walkthrough, step.driving, !step.awaitingNextStep else { return }
+        if Driver.isCommitLabel(step.label) {
+            let line = "this one looks like it commits something, so it's yours: \(step.kind == .hover ? "rest on" : "click") \(step.label)."
+            Log.info("drive: leaving \"\(step.label)\" to him")
+            speaker.speak(line)
+            overlay.setBubble(line, label: step.label)
+            return
+        }
+        driver.begin()
+        // The glide starts once the instruction has been spoken, so the voice and the hand agree.
+        let delay: TimeInterval = quietTurn ? 0.3 : 1.0
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
+            guard let self, let current = self.walkthrough, current.driving, current.step == step.step, !current.awaitingNextStep else { return }
+            self.driver.go(to: current.target, click: current.kind == .click) { done in
+                Log.info("drive: step \(current.step) \(current.kind == .click ? "clicked" : "rested on") \(current.label): \(done ? "ok" : "stopped")")
+            }
+        }
+    }
+
+    /// A hover step completes when the cursor rests inside the ring for most of a second.
+    private func startHoverWatch() {
+        hoverTimer?.invalidate()
+        hoverTimer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { [weak self] timer in
+            Task { @MainActor in
+                guard let self, let step = self.walkthrough, step.kind == .hover, !step.awaitingNextStep else { timer.invalidate(); return }
+                let mouse = NSEvent.mouseLocation
+                let inside = hypot(mouse.x - step.target.x, mouse.y - step.target.y) <= step.radius * 1.2 + 6
+                if inside {
+                    if self.walkthrough?.hoverSince == nil { self.walkthrough?.hoverSince = Date() }
+                    if let since = self.walkthrough?.hoverSince, Date().timeIntervalSince(since) >= 0.7 {
+                        timer.invalidate()
+                        self.stepCompleted(how: "rested on")
+                    }
+                } else {
+                    self.walkthrough?.hoverSince = nil
+                }
+            }
+        }
+    }
+
+    private func clicked(at point: CGPoint, own: Bool = false) {
+        guard var step = walkthrough else { return }
+        if step.awaitingNextStep {
+            if !own {
+                walkthrough?.userActedWhileWaiting = true
+                Log.info("walkthrough: he clicked again while the next step was being worked out")
+            }
+            return
+        }
         let distance = hypot(point.x - step.target.x, point.y - step.target.y)
-        guard distance <= step.radius * 1.6 + 16 else { return }
+        guard distance <= step.radius * 1.6 + 16 else {
+            step.offTargetClicks += 1
+            walkthrough = step
+            Log.info("walkthrough: click \(Int(distance)) pt from \(step.label) (off-target \(step.offTargetClicks))")
+            if step.offTargetClicks >= 3 { endWalkthrough(reason: "he went elsewhere") }
+            return
+        }
         Log.info("walkthrough: click on \(step.label) (step \(step.step)), \(Int(distance)) pt from center")
+        stepCompleted(how: "clicked")
+    }
+
+    /// The ringed step is done: look at what it opened and ask for the next one.
+    private func stepCompleted(how: String) {
+        guard var step = walkthrough else { return }
         walkthroughTimeout?.cancel()
+        hoverTimer?.invalidate()
+        step.awaitingNextStep = true
+        step.history.append("\(step.step). \(how) \(step.label)")
+        walkthrough = step
         overlay.clearRing()
-        hud.flash(status: "saw the click, looking", for: 3)
+        hud.flash(status: "saw that, looking", for: 3)
         stopSpeaking()
-        // Give the app a moment to redraw what the click opened, then ask for the next step.
+        // Give the app a moment to redraw what the step opened, then ask for the next one.
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.9) { [weak self] in
             guard let self, self.walkthrough?.step == step.step else { return }
             self.startCapture()
@@ -706,8 +926,12 @@ final class Talk {
                 }
                 self.captureTask = nil
                 guard let session = self.session(for: .talk) else { return }
-                self.hud.model.transcript = "[clicked \(step.label)]"
-                let (message, images) = self.buildMessage("[clicked_on_target] i clicked \(step.label) (step \(step.step)). what's next? if that finished it, say so with no tag.", kind: .talk)
+                self.hud.model.transcript = "[\(how) \(step.label)]"
+                var text = "[step_done] \(self.walkthrough?.driving == true ? "dot" : "i") \(how) \(step.label) (step \(step.step)). look at the new screenshot as the truth and give the next step, or say it's finished with no tag."
+                if self.walkthrough?.userActedWhileWaiting == true {
+                    text += " i also clicked again while you were thinking, so the next thing may already be done; don't ask me to repeat it."
+                }
+                let (message, images) = self.buildMessage(text, kind: .talk)
                 self.lastMessage = message
                 self.lastImages = images
                 self.sendTurn(message, images: images, to: session, kind: .talk)
@@ -715,11 +939,35 @@ final class Talk {
         }
     }
 
+    /// He spoke during a walkthrough ("done", "next", "what's this", "do it"): continue it with a fresh look.
+    private func continueWalkthrough(said text: String) {
+        guard var step = walkthrough else { return }
+        walkthroughTimeout?.cancel()
+        step.awaitingNextStep = true
+        walkthrough = step
+        guard let session = session(for: .talk) else { return }
+        let message = "[walkthrough] he said: \"\(text)\". \(step.driving ? "dot is clicking the steps for him; keep giving one target at a time. " : "")the ringed step was \"\(step.kind == .hover ? "rest on" : "click") \(step.label)\". look at the new screenshot as the truth: if that step looks done, give the next one; if he asked something, answer it and keep the current step ringed with the same tag; if the task is finished, say so with no tag."
+        let (built, images) = buildMessage(message, kind: .talk)
+        lastMessage = built
+        lastImages = images
+        sendTurn(built, images: images, to: session, kind: .talk)
+    }
+
+    private func appActivated(_ app: NSRunningApplication) {
+        guard let step = walkthrough, app.processIdentifier != ProcessInfo.processInfo.processIdentifier else { return }
+        guard let expected = step.appBundle, let actual = app.bundleIdentifier, actual != expected else { return }
+        Log.info("walkthrough: step-away to \(actual)")
+        endWalkthrough(reason: "he switched to \(app.localizedName ?? actual)")
+    }
+
     private func endWalkthrough(reason: String) {
         guard walkthrough != nil else { return }
         Log.info("walkthrough: ended (\(reason))")
         walkthrough = nil
+        driveRequested = false
+        driver.end()
         walkthroughTimeout?.cancel()
+        hoverTimer?.invalidate()
         overlay.clearRing()
         if phase == .idle { settle() }
     }
@@ -734,6 +982,7 @@ final class Talk {
         guard !line.isEmpty else { return }
         UserDefaults.standard.set(true, forKey: key)
         let hour = Calendar.current.component(.hour, from: Date())
+        guard hour >= 6 else { return }   // a new day's brief at one in the morning is not a greeting
         let opener = hour < 12 ? "morning." : (hour < 17 ? "afternoon." : "evening.")
         overlay.greet("\(opener) \(line).", for: 10)
         Log.info("greeting: \(line)")
@@ -759,7 +1008,9 @@ final class Talk {
 
     private func stopSpeaking() {
         speaker.stop()
-        splitter = SentenceSplitter()
+        quietWork.forEach { $0.cancel() }
+        quietWork = []
+        quietClock = Date()
     }
 
     static func friendlyTool(_ name: String) -> String {

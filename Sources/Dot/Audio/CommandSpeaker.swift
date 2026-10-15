@@ -15,15 +15,24 @@ final class CommandSpeaker: NSObject, TTSProvider, AVAudioPlayerDelegate {
     private var lineBuffer = Data()
     private let synthQueue = DispatchQueue(label: "com.roshan.dot.tts.synth")
     private var pendingReplies: [(generation: Int, completion: (URL?) -> Void)] = []
-    private var playQueue: [URL] = []
+    /// Everything queued, in speaking order: sentences waiting for their audio, sentences
+    /// ready to play, and markers that fire when the queue reaches them.
+    private final class Item {
+        let text: String
+        let onStart: (() -> Void)?
+        var url: URL?
+        var ready = false
+        var isMarker: Bool { text.isEmpty }
+        init(text: String, onStart: (() -> Void)?) { self.text = text; self.onStart = onStart }
+    }
+    private var items: [Item] = []
     private var player: AVAudioPlayer?
     private var generation = 0
-    private var inFlight = 0
     private(set) var ready = false
     private let fallback: TTSProvider
 
     var onFinishedAll: (() -> Void)?
-    var isSpeaking: Bool { player?.isPlaying == true || !playQueue.isEmpty || inFlight > 0 }
+    var isSpeaking: Bool { player?.isPlaying == true || !items.isEmpty }
 
     init(command: [String], environment: [String: String] = [:], fallback: TTSProvider) {
         self.command = command
@@ -79,37 +88,39 @@ final class CommandSpeaker: NSObject, TTSProvider, AVAudioPlayerDelegate {
         }
     }
 
-    func speak(_ sentence: String) {
+    func speak(_ sentence: String, onStart: (() -> Void)?) {
         let text = SpeechText.clean(sentence)
-        guard !text.isEmpty else { return }
-        guard process != nil, ready else {
-            fallback.speak(text)
+        if text.isEmpty {
+            guard let onStart else { return }
+            let marker = Item(text: "", onStart: onStart)
+            marker.ready = true
+            items.append(marker)
+            playNextIfIdle()
             return
         }
+        guard process != nil, ready else {
+            fallback.speak(text, onStart: onStart)
+            return
+        }
+        let item = Item(text: text, onStart: onStart)
+        items.append(item)
         let myGeneration = generation
-        inFlight += 1
         request(text) { [weak self] url in
             DispatchQueue.main.async {
-                guard let self else { return }
-                self.inFlight = max(0, self.inFlight - 1)
-                guard myGeneration == self.generation else { return }
-                if let url {
-                    self.playQueue.append(url)
-                    self.playNextIfIdle()
-                } else {
-                    self.fallback.speak(text)
-                }
+                guard let self, myGeneration == self.generation else { return }
+                item.url = url
+                item.ready = true
+                self.playNextIfIdle()
             }
         }
     }
 
     func stop() {
         generation += 1
-        playQueue = []
+        items = []
         player?.stop()
         player = nil
         fallback.stop()
-        inFlight = 0
     }
 
     // MARK: Worker protocol
@@ -154,27 +165,36 @@ final class CommandSpeaker: NSObject, TTSProvider, AVAudioPlayerDelegate {
     // MARK: Playback
 
     private func playNextIfIdle() {
-        guard player?.isPlaying != true, !playQueue.isEmpty else { return }
-        let url = playQueue.removeFirst()
-        do {
-            let player = try AVAudioPlayer(contentsOf: url)
-            player.delegate = self
-            self.player = player
-            player.play()
-        } catch {
-            Log.warn("tts playback failed: \(error)")
-            try? FileManager.default.removeItem(at: url)
-            playNextIfIdle()
+        guard player?.isPlaying != true else { return }
+        while let item = items.first, item.ready {
+            items.removeFirst()
+            if item.isMarker {
+                item.onStart?()
+                continue
+            }
+            guard let url = item.url else {
+                // The worker could not say this one; Apple speech says it, out of band.
+                fallback.speak(item.text, onStart: item.onStart)
+                continue
+            }
+            do {
+                let player = try AVAudioPlayer(contentsOf: url)
+                player.delegate = self
+                self.player = player
+                player.play()
+                item.onStart?()
+                return
+            } catch {
+                Log.warn("tts playback failed: \(error)")
+                try? FileManager.default.removeItem(at: url)
+            }
         }
+        if items.isEmpty, player == nil { onFinishedAll?() }
     }
 
     func audioPlayerDidFinishPlaying(_ player: AVAudioPlayer, successfully flag: Bool) {
         if let url = player.url { try? FileManager.default.removeItem(at: url) }
         self.player = nil
-        if playQueue.isEmpty {
-            if inFlight == 0 { onFinishedAll?() }
-        } else {
-            playNextIfIdle()
-        }
+        playNextIfIdle()
     }
 }

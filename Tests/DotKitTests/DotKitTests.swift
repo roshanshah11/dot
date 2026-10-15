@@ -223,3 +223,74 @@ final class AlwaysAskTests: XCTestCase {
         XCTAssertFalse(ConsentPolicy.isAlwaysAsk("python3 tmp/build_report.py"))
     }
 }
+
+final class BeatTests: XCTestCase {
+    func testHoverAndShapeTags() {
+        let hover = TagParser.parse("rest on file to open the menu. [HOVER:40,12,22:file menu]")
+        XCTAssertEqual(hover.tags, [.hover(x: 40, y: 12, radius: 22, label: "file menu", screen: nil)])
+        let arrow = TagParser.parse("[SHAPE:arrow:100,200;300,220:drag it here] drag the clip over here.")
+        XCTAssertEqual(arrow.spoken, "drag the clip over here.")
+        XCTAssertEqual(arrow.tags, [.shape(kind: .arrow, points: [ShapePoint(x: 100, y: 200), ShapePoint(x: 300, y: 220)], label: "drag it here", screen: nil)])
+        let circle = TagParser.parse("[SHAPE:circle:500,300;540,300:the knob:screen2] this knob.")
+        XCTAssertEqual(circle.tags, [.shape(kind: .circle, points: [ShapePoint(x: 500, y: 300), ShapePoint(x: 540, y: 300)], label: "the knob", screen: 2)])
+        XCTAssertEqual(TagParser.parse("[SHAPE:polygon:1,1;2,2:two points]").tags, [])
+        XCTAssertEqual(TagParser.parse("[SHAPE:blob:1,1;2,2:x]").tags, [])
+    }
+
+    func testTagFirstBeatsAttachToTheFollowingSentence() {
+        var streamer = BeatStreamer()
+        var beats: [Beat] = []
+        for delta in ["[POINT:10,20:sidebar] this is the sidebar. ", "[HIGH", "LIGHT:0,0,50,50:toolbar] the toolbar lives up here.", " and that's it. [POINT:none]"] {
+            beats += streamer.feed(delta)
+        }
+        beats += streamer.flush()
+        XCTAssertEqual(beats.map(\.text), ["this is the sidebar.", "the toolbar lives up here.", "and that's it.", ""])
+        XCTAssertEqual(beats[0].tags, [.point(x: 10, y: 20, label: "sidebar", screen: nil)])
+        XCTAssertEqual(beats[1].tags, [.highlight(x: 0, y: 0, width: 50, height: 50, label: "toolbar", screen: nil)])
+        XCTAssertEqual(beats[2].tags, [])
+        XCTAssertEqual(beats[3].tags, [.pointNone])
+        XCTAssertEqual(streamer.spokenSoFar, "this is the sidebar. the toolbar lives up here. and that's it.")
+    }
+
+    func testTrailingTagsBecomeAWordlessBeat() {
+        var streamer = BeatStreamer()
+        var beats = streamer.feed("on it, i'll tell you when it's done.\n[AGENT:find the three cheapest flights to austin next weekend]")
+        beats += streamer.flush()
+        XCTAssertEqual(beats.count, 2)
+        XCTAssertEqual(beats[0].text, "on it, i'll tell you when it's done.")
+        XCTAssertEqual(beats[0].tags, [])
+        XCTAssertEqual(beats[1].text, "")
+        XCTAssertEqual(beats[1].tags, [.agent(brief: "find the three cheapest flights to austin next weekend")])
+    }
+
+    func testInlineTagStaysWithItsSentence() {
+        var streamer = BeatStreamer()
+        var beats = streamer.feed("click save [TARGET:900,40,20:save] up top. then wait.")
+        beats += streamer.flush()
+        XCTAssertEqual(beats.map(\.text), ["click save up top.", "then wait."])
+        XCTAssertEqual(beats[0].tags, [.target(x: 900, y: 40, radius: 20, label: "save", screen: nil)])
+        XCTAssertEqual(beats[1].tags, [])
+        XCTAssertEqual(BeatStreamer().partial, "")
+    }
+
+    func testEagerFirstClauseStartsTheVoiceEarly() {
+        var eager = SentenceSplitter(eagerFirst: true)
+        let text = "this is the start here page for your midterm prep folder, and the table is a map of seven files. then more."
+        var out = eager.feed(text)
+        XCTAssertEqual(out.first, "this is the start here page for your midterm prep folder,")
+        XCTAssertEqual(out.count, 2)
+        XCTAssertEqual(out[1], "and the table is a map of seven files.")
+        out += eager.flush().map { [$0] } ?? []
+        XCTAssertEqual(out.last, "then more.")
+        var plain = SentenceSplitter()
+        XCTAssertEqual(plain.feed(text).count, 1)   // the last sentence waits for a space or a flush
+        var short = SentenceSplitter(eagerFirst: true)
+        XCTAssertEqual(short.feed("yes, that one. "), ["yes, that one."])   // too short to cut at the comma
+    }
+
+    func testPartialShowsTheSentenceInProgressWithoutTags() {
+        var streamer = BeatStreamer()
+        _ = streamer.feed("first one. [POINT:1,2:x] second is still goi")
+        XCTAssertEqual(streamer.partial, "second is still goi")
+    }
+}
