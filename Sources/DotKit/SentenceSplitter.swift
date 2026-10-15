@@ -73,6 +73,19 @@ public struct SentenceSplitter {
 
 /// Text prepared for the ear: markdown markers, code fences, and raw links removed.
 public enum SpeechText {
+    /// Dictated text, tidied the way a typist would: trimmed, first letter up, a full stop on a
+    /// sentence that ends without one, and filler words that speech leaves behind dropped.
+    public static func dictated(_ raw: String) -> String {
+        var text = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        for filler in ["um,", "um ", "uh,", "uh "] where text.lowercased().hasPrefix(filler) { text = String(text.dropFirst(filler.count)) }
+        text = text.replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression).trimmingCharacters(in: .whitespaces)
+        guard let first = text.first else { return "" }
+        text = first.uppercased() + text.dropFirst()
+        let words = text.split(separator: " ").count
+        if words >= 4, let last = text.last, !".!?:;,\"')".contains(last) { text += "." }
+        return text
+    }
+
     public static func clean(_ text: String) -> String {
         var s = text
         s = s.replacingOccurrences(of: #"```[\s\S]*?```"#, with: " code block ", options: .regularExpression)

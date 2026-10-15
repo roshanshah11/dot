@@ -206,3 +206,37 @@ meeting countdown in the notch, an onboarding tour, and embedding cua-driver ins
 Dictation is left to [Murmur](https://github.com/roshanshah11/murmur).
 
 MIT. Built by Roshan Shah.
+
+## What was added on 2026-10-15 (afternoon)
+
+- **Math, as his tutor.** Dot knows the course it is tutoring from `~/Dot/talk/context/*.md`
+  (a map of every numbered definition and result in the notes, the exam date, the syllabus
+  rules), cites results by number, starts every proof with his attempt, grades a written proof
+  for the gaps a proof course marks, checks numbers with python and sympy before saying them
+  (the one shell command talk mode may run, `TalkGuard.isComputationCommand`), drills with
+  quiz cards and remembers misses in Atlas. Homework is off limits by his syllabus: a homework
+  window on screen is flagged in the context and Dot teaches the idea on another problem.
+- **Task bar.** Every running task sits under the notch: agents with their last steps and a
+  stop button, a walkthrough with its step, a lesson on the board. Steady work folds into pills
+  on the idle tab after twenty seconds; a change or a hover unfolds it.
+- **Home, rebuilt** after HeyClicky's shape: a rail of agents with status and unread dots,
+  pin, rename and archive in the context menu, a thread with step rows and result footers,
+  next-action pills, a composer that takes dropped files, an outputs column with a QuickLook
+  preview, a day page and a settings page.
+- **Agents know him.** Every brief carries an `[about him]` block from Atlas (preferences,
+  facts, priorities) and a routing rule: decks through powerpoint-design, pages through
+  web-taste, research through research, mail through roshan-email, and so on.
+- **Streaming transcription.** Words show in the notch and on the orb's chip while the key is
+  held (FluidAudio's sliding window over the same Parakeet models); the final text is ready
+  about half a second after release, with the WAV path as the fallback. `Dot --stt file.wav`
+  replays a clip through it.
+- **Dictation.** Hold control and fn, talk, release: the text lands in the focused field
+  through accessibility, else a paste, else the clipboard with a notch note. Tidied first
+  (capital, full stop, fillers dropped), archived in `~/Dot/talk/dictation.jsonl`.
+- **TYPE steps.** `[TYPE:x,y:label]` with the text between `<<<` and `>>>`: Dot copies it,
+  points at the field, and in drive mode clicks there and pastes.
+- **A face.** The orb has a mouth that moves with its voice and brows that tilt: focused while
+  he talks, happy when an agent finishes, puzzled when a turn fails.
+- **Meeting notice.** Ten minutes before the next calendar event, once: a line in the notch and
+  a spoken heads-up when Dot is idle (`meetingNoticeMinutes`, `speakMeetingNotice`).
+- Per-turn cost: Claude Code reports a session's running total; Dot now records the turn's own cost.

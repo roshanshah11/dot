@@ -48,6 +48,9 @@ struct DotConfig: Codable {
     var hudShowsResponse = false
     /// Once a day, a quiet bubble with the day's shape (deadlines, calendar, mail waiting).
     var morningGreeting = true
+    /// Minutes before the next calendar event to say so; 0 turns the notice off.
+    var meetingNoticeMinutes = 10
+    var speakMeetingNotice = true
     var atlasRoot = "~/roshan"
     var atlasHarness = "~/roshan/Atlas/harness"
     var atlasPython = "/opt/homebrew/bin/python3.13"
@@ -73,6 +76,8 @@ struct DotConfig: Codable {
     var driveEnabled = true
     /// Start speaking at the first long clause instead of the first full sentence.
     var eagerSpeech = true
+    /// Words appear while the key is held (FluidAudio sliding window); the WAV is the fallback.
+    var streamingTranscription = true
 
     /// Atlas tools a talk turn may call without asking: everything that reads, remembers or drafts.
     /// Sends, submits, posts and harness administration stay with agents and his yes.
@@ -123,6 +128,8 @@ struct DotConfig: Codable {
         bubbleText = get(.bubbleText, d.bubbleText)
         hudShowsResponse = get(.hudShowsResponse, d.hudShowsResponse)
         morningGreeting = get(.morningGreeting, d.morningGreeting)
+        meetingNoticeMinutes = get(.meetingNoticeMinutes, d.meetingNoticeMinutes)
+        speakMeetingNotice = get(.speakMeetingNotice, d.speakMeetingNotice)
         atlasRoot = get(.atlasRoot, d.atlasRoot)
         atlasHarness = get(.atlasHarness, d.atlasHarness)
         atlasPython = get(.atlasPython, d.atlasPython)
@@ -138,6 +145,7 @@ struct DotConfig: Codable {
         notchPresence = get(.notchPresence, d.notchPresence)
         driveEnabled = get(.driveEnabled, d.driveEnabled)
         eagerSpeech = get(.eagerSpeech, d.eagerSpeech)
+        streamingTranscription = get(.streamingTranscription, d.streamingTranscription)
     }
 
     static var directory: URL {

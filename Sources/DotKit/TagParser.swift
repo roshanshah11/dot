@@ -24,6 +24,8 @@ public enum DotTag: Equatable {
     case hover(x: Int, y: Int, radius: Int, label: String, screen: Int?)
     case shape(kind: ShapeKind, points: [ShapePoint], label: String, screen: Int?)
     case card(id: String, rect: CardRect?, title: String, html: String, screen: Int?)
+    /// Text for him to put into a field at x,y: Dot copies it and points; in drive mode it pastes.
+    case type(x: Int, y: Int, label: String, text: String, screen: Int?)
     case reveal(id: String, step: Int)
     case clearBoard
     case agent(brief: String)
@@ -52,8 +54,25 @@ public extension DotTag {
     /// Tags that draw or move something on screen (as opposed to handing off or escalating).
     var isVisual: Bool {
         switch self {
-        case .point, .highlight, .target, .hover, .shape, .card, .reveal, .clearBoard: return true
+        case .point, .highlight, .target, .hover, .shape, .card, .reveal, .clearBoard, .type: return true
         case .pointNone, .agent, .newAgent, .think: return false
+        }
+    }
+
+    /// CARD and TYPE carry a `<<< ... >>>` block after the tag.
+    public var hasBlock: Bool {
+        switch self {
+        case .card, .type: return true
+        default: return false
+        }
+    }
+
+    /// The tag with its block body filled in.
+    public func filled(with body: String) -> DotTag {
+        switch self {
+        case .card(let id, let rect, let title, _, let screen): return .card(id: id, rect: rect, title: title, html: body, screen: screen)
+        case .type(let x, let y, let label, _, let screen): return .type(x: x, y: y, label: label, text: body.trimmingCharacters(in: .whitespacesAndNewlines), screen: screen)
+        default: return self
         }
     }
 }
@@ -70,11 +89,11 @@ public struct ParsedResponse: Equatable {
 }
 
 public enum TagParser {
-    static let tagNames = ["POINT", "HIGHLIGHT", "TARGET", "HOVER", "SHAPE", "CARD", "REVEAL", "CLEAR_BOARD", "AGENT", "NEW_AGENT", "THINK"]
+    static let tagNames = ["POINT", "HIGHLIGHT", "TARGET", "HOVER", "SHAPE", "CARD", "REVEAL", "CLEAR_BOARD", "TYPE", "AGENT", "NEW_AGENT", "THINK"]
 
     // swiftlint:disable:next force_try
     static let pattern = try! NSRegularExpression(
-        pattern: #"\[(POINT|HIGHLIGHT|TARGET|HOVER|SHAPE|CARD|REVEAL|CLEAR_BOARD|AGENT|NEW_AGENT|THINK)(?::([^\]]*))?\]"#,
+        pattern: #"\[(POINT|HIGHLIGHT|TARGET|HOVER|SHAPE|CARD|REVEAL|CLEAR_BOARD|TYPE|AGENT|NEW_AGENT|THINK)(?::([^\]]*))?\]"#,
         options: []
     )
 
@@ -94,11 +113,11 @@ public enum TagParser {
             let payloadRange = match.range(at: 2)
             let payload = payloadRange.location == NSNotFound ? "" : ns.substring(with: payloadRange)
             guard var tag = makeTag(kind: kind, payload: payload) else { continue }
-            if case .card(let id, let rect, let title, _, let screen) = tag {
+            if tag.hasBlock {
                 let rest = ns.substring(from: cursor)
                 if let block = blockPattern.firstMatch(in: rest, range: NSRange(location: 0, length: (rest as NSString).length)) {
-                    let html = (rest as NSString).substring(with: block.range(at: 1))
-                    tag = .card(id: id, rect: rect, title: title, html: html, screen: screen)
+                    let body = (rest as NSString).substring(with: block.range(at: 1))
+                    tag = tag.filled(with: body)
                     cursor += block.range.location + block.range.length
                 }
             }
@@ -194,6 +213,14 @@ public enum TagParser {
             guard points.count >= minimum else { return nil }
             let screen = takeScreen(&parts)
             return .shape(kind: shapeKind, points: points, label: parts.joined(separator: ":"), screen: screen)
+        case "TYPE":
+            var parts = splitPayload(payload)
+            guard let coords = parts.first else { return nil }
+            let numbers = integers(in: coords)
+            guard numbers.count == 2 else { return nil }
+            parts.removeFirst()
+            let screen = takeScreen(&parts)
+            return .type(x: numbers[0], y: numbers[1], label: parts.joined(separator: ":"), text: "", screen: screen)
         case "HIGHLIGHT":
             var parts = splitPayload(payload)
             guard let coords = parts.first else { return nil }

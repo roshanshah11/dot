@@ -54,6 +54,8 @@ enum AccessibilityContext {
         }
     }
 
+    static func frontmostAppName() -> String? { NSWorkspace.shared.frontmostApplication?.localizedName }
+
     static func capture(maxElements: Int, timeBudget: TimeInterval = 0.6) -> ScreenContext {
         var context = ScreenContext()
         guard AXIsProcessTrusted() else { return context }

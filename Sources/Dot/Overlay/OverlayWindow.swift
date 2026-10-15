@@ -32,6 +32,8 @@ final class OverlayWindow: NSPanel {
 }
 
 enum CompanionPhase: Equatable { case idle, listening, thinking, speaking }
+/// The face: what Dot feels about the moment, on top of the phase.
+enum CompanionMood: Equatable { case neutral, happy, puzzled, focused, sleepy }
 enum CompanionMotion: Equatable { case following, flying, parked }
 
 struct Ring: Equatable {
@@ -58,6 +60,7 @@ final class CompanionModel: ObservableObject {
     @Published var position = CGPoint(x: 200, y: 200)
     @Published var visible = false
     @Published var phase: CompanionPhase = .idle
+    @Published var mood: CompanionMood = .neutral
     @Published var motion: CompanionMotion = .following
     @Published var level: Float = 0
     @Published var heading: CGFloat = 0
@@ -328,13 +331,17 @@ private struct ArrowHead: Shape {
 struct OrbView: View {
     @ObservedObject var model: CompanionModel
 
-    private let size: CGFloat = 18
+    private let size: CGFloat = 20
 
     var body: some View {
-        let paused = model.phase == .idle && model.motion != .flying
+        let paused = model.phase == .idle && model.motion != .flying && model.mood == .neutral
         TimelineView(.animation(minimumInterval: 1 / 30, paused: paused)) { context in
             let t = context.date.timeIntervalSinceReferenceDate
-            let talking = model.phase == .speaking ? CGFloat((sin(t * 9) + 1) / 2) * 0.35 : 0
+            // The mouth opens with the voice: two overlapping sines read as speech, not a metronome.
+            let slow: Double = (sin(t * 9.0) + 1.0) / 2.0
+            let fast: Double = (sin(t * 23.0) + 1.0) / 2.0
+            let voice: Double = slow * 0.6 + fast * 0.4
+            let talking: CGFloat = model.phase == .speaking ? CGFloat(voice * 0.35) : 0
             let listening = model.phase == .listening ? CGFloat(model.level) : 0
             let glow = 0.35 + talking * 0.5 + listening * 0.6
             let body = size * model.breath * model.scale * (1 + listening * 0.35)
@@ -351,6 +358,7 @@ struct OrbView: View {
                     .scaleEffect(x: 1 + model.lean * 0.28, y: 1 - model.lean * 0.14)
                     .rotationEffect(.radians(Double(model.heading)))
                 eyes(body: body)
+                face(body: body, talking: talking, t: t)
                 if model.phase == .thinking {
                     Circle()
                         .trim(from: 0, to: 0.33)
@@ -385,6 +393,50 @@ struct OrbView: View {
         Capsule().fill(Color(red: 0.12, green: 0.06, blue: 0.03)).frame(width: width, height: height)
     }
 
+    /// Mouth and brows. Tiny, so every stroke is a single curve: the mouth bends up when
+    /// happy, down and small when puzzled, opens with the voice; the brows tilt in when
+    /// focused or thinking and one lifts when puzzled.
+    private func face(body: CGFloat, talking: CGFloat, t: Double) -> some View {
+        let ink = Color(red: 0.12, green: 0.06, blue: 0.03)
+        let mouthW = body * 0.36
+        let curve: CGFloat = {
+            switch model.mood {
+            case .happy: return 0.5
+            case .puzzled: return -0.3
+            case .sleepy: return 0.05
+            case .focused: return 0.05
+            case .neutral: return model.phase == .speaking ? 0.2 : 0.14
+            }
+        }()
+        let open = talking * body * 0.26 + (model.mood == .puzzled ? body * 0.03 : 0)
+        let browTilt: CGFloat = {
+            switch model.mood {
+            case .focused: return 0.35
+            case .puzzled: return -0.25
+            case .happy: return -0.12
+            default: return model.phase == .thinking ? 0.28 : 0
+            }
+        }()
+        return ZStack {
+            MouthShape(curve: curve, open: open)
+                .stroke(ink, style: StrokeStyle(lineWidth: max(body * 0.07, 1.1), lineCap: .round))
+                .frame(width: mouthW, height: max(body * 0.18, open + 2))
+                .offset(y: body * 0.27)
+            if browTilt != 0 {
+                HStack(spacing: body * 0.22) {
+                    BrowShape().stroke(ink, style: StrokeStyle(lineWidth: max(body * 0.06, 1), lineCap: .round))
+                        .frame(width: body * 0.2, height: body * 0.08).rotationEffect(.radians(Double(browTilt)))
+                    BrowShape().stroke(ink, style: StrokeStyle(lineWidth: max(body * 0.06, 1), lineCap: .round))
+                        .frame(width: body * 0.2, height: body * 0.08)
+                        .rotationEffect(.radians(Double(model.mood == .puzzled ? browTilt * 0.2 : -browTilt)))
+                        .offset(y: model.mood == .puzzled ? -body * 0.05 : 0)
+                }
+                .offset(y: -body * 0.3)
+            }
+        }
+        .animation(.easeInOut(duration: 0.25), value: model.mood)
+    }
+
     private func waveform(level: CGFloat, t: Double) -> some View {
         let profile: [CGFloat] = [0.4, 0.7, 1.0, 0.7, 0.4]
         return HStack(spacing: 2) {
@@ -396,6 +448,36 @@ struct OrbView: View {
             }
         }
         .shadow(color: model.color.opacity(0.6), radius: 5)
+    }
+}
+
+/// A mouth: a quadratic curve bent by `curve` (positive smiles), opened into a lens by `open`.
+struct MouthShape: Shape {
+    var curve: CGFloat
+    var open: CGFloat
+    var animatableData: AnimatablePair<CGFloat, CGFloat> {
+        get { AnimatablePair(curve, open) }
+        set { curve = newValue.first; open = newValue.second }
+    }
+    func path(in rect: CGRect) -> Path {
+        var path = Path()
+        let left = CGPoint(x: rect.minX, y: rect.midY), right = CGPoint(x: rect.maxX, y: rect.midY)
+        let bend = rect.width * curve * 0.6
+        path.move(to: left)
+        path.addQuadCurve(to: right, control: CGPoint(x: rect.midX, y: rect.midY + bend + open * 0.5))
+        if open > 0.6 {
+            path.addQuadCurve(to: left, control: CGPoint(x: rect.midX, y: rect.midY + bend - open * 0.9))
+        }
+        return path
+    }
+}
+
+struct BrowShape: Shape {
+    func path(in rect: CGRect) -> Path {
+        var path = Path()
+        path.move(to: CGPoint(x: rect.minX, y: rect.maxY))
+        path.addQuadCurve(to: CGPoint(x: rect.maxX, y: rect.maxY), control: CGPoint(x: rect.midX, y: rect.minY))
+        return path
     }
 }
 
@@ -513,6 +595,25 @@ final class OverlayManager {
 
     func setPhase(_ phase: CompanionPhase) {
         for model in models { model.phase = phase }
+    }
+
+    private var moodWork: DispatchWorkItem?
+
+    /// A feeling for a moment: happy when something worked, puzzled when it did not,
+    /// focused while he talks. Falls back to neutral after `seconds` unless told otherwise.
+    func setMood(_ mood: CompanionMood, for seconds: TimeInterval? = nil) {
+        moodWork?.cancel()
+        for model in models { model.mood = mood }
+        if let seconds {
+            let work = DispatchWorkItem { [weak self] in self?.models.forEach { $0.mood = .neutral } }
+            moodWork = work
+            DispatchQueue.main.asyncAfter(deadline: .now() + seconds, execute: work)
+        }
+    }
+
+    /// The small chip beside Dot: what it is hearing while the key is held.
+    func setChip(_ text: String?) {
+        for model in models { model.chip = text }
     }
 
     func setLevel(_ level: Float) {

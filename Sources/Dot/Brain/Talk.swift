@@ -1,3 +1,5 @@
+import AVFoundation
+import FluidAudio
 import AppKit
 import DotKit
 import Foundation
@@ -119,7 +121,11 @@ final class Talk {
 
     func warmUp() {
         Task.detached { [transcriber] in
-            do { try await transcriber.warmUp(); Log.info("transcriber ready") } catch { Log.error("transcriber warm-up failed: \(error)") }
+            do {
+                try await transcriber.warmUp()
+                Log.info("transcriber ready")
+                await MainActor.run { self.prepareStream() }
+            } catch { Log.error("transcriber warm-up failed: \(error)") }
         }
         _ = session(for: .talk)
     }
@@ -150,8 +156,8 @@ final class Talk {
 
     private func makeSession(kind: SessionKind) -> ClaudeSession? {
         var options = ClaudeSession.Options(cwd: config.talkRootURL, model: kind == .talk ? config.talkModel : config.thinkModel)
-        options.systemPrompt = kind == .talk ? Prompts.talk : Prompts.think
-        options.tools = []
+        options.systemPrompt = (kind == .talk ? Prompts.talk : Prompts.think) + Prompts.contextFiles(in: config.talkRootURL)
+        options.tools = ["Bash"]
         options.maxTurns = 6
         options.settingSources = ""
         options.permissionMode = "default"
@@ -166,10 +172,10 @@ final class Talk {
         }
         let allowed = Set(config.talkAllowedTools)
         session.permissionHandler = { request, completion in
-            if allowed.contains(request.toolName) {
+            if allowed.contains(request.toolName) || Talk.isComputation(request) {
                 completion(true, nil)
             } else {
-                completion(false, "dot's talk mode only reads and remembers; hand this to an agent with [AGENT:...].")
+                completion(false, "dot's talk mode only reads, remembers and computes with python; hand this to an agent with [AGENT:...].")
                 Log.warn("talk: refused tool \(request.toolName)")
             }
         }
@@ -188,14 +194,14 @@ final class Talk {
     func hotkey(_ event: HotkeyMonitor.Event) {
         switch event {
         case .pressed(let mode):
-            beginListening(mode: mode)
+            if mode == .dictate { beginDictation() } else { beginListening(mode: mode) }
         case .modeChanged(let mode):
             self.mode = mode
             hud.model.mode = mode
         case .released(let mode, let heldFor):
             self.mode = mode
             overlay.setMouseCapture(false)
-            endListening(heldFor: heldFor)
+            if mode == .dictate { endDictation(heldFor: heldFor) } else { endListening(heldFor: heldFor) }
         case .escape:
             interrupt()
         case .mouseDown(let point, let own):
@@ -222,14 +228,18 @@ final class Talk {
         overlay.showTransient()
         overlay.setMouseCapture(true)
         region = nil
+        let live = config.streamingTranscription ? readyStream : nil
+        readyStream = nil
         do {
-            _ = try recorder.start()
+            _ = try recorder.start(stream: live)
         } catch {
             overlay.setMouseCapture(false)
             hud.flash(error: "\(error)")
             return
         }
+        startPartials(live)
         phase = .listening
+        overlay.setMood(.focused)
         hud.model.mode = mode
         hud.model.transcript = ""
         hud.model.response = ""
@@ -274,6 +284,7 @@ final class Talk {
         }
 
         guard let stopped = try? recorder.stop() else {
+            stopPartials(cancel: true)
             phase = .idle
             hud.set(phase: .hidden)
             settle()
@@ -282,11 +293,14 @@ final class Talk {
         phase = .transcribing
         hud.set(phase: .transcribing)
         overlay.setPhase(.thinking)
+        overlay.setMood(.neutral)
+        let live = liveStream
+        stopPartials(cancel: false)
 
         Task { @MainActor in
             let text: String
             do {
-                text = try await transcriber.transcribe(wavURL: stopped.url)
+                text = try await finalText(from: live, wavURL: stopped.url)
             } catch {
                 Log.error("transcription failed: \(error)")
                 hud.flash(error: "Speech recognition failed: \(error.localizedDescription)")
@@ -309,6 +323,174 @@ final class Talk {
             }
             hud.model.transcript = spoken
             await ask(spoken, typed: false)
+        }
+    }
+
+    var isIdle: Bool { phase == .idle && walkthrough == nil }
+
+    // MARK: Streaming transcription
+
+    /// A recognizer made ahead of time so the key press costs nothing; replaced after each use.
+    private var readyStream: SlidingWindowAsrManager?
+    private var liveStream: SlidingWindowAsrManager?
+    private var partialTask: Task<Void, Never>?
+    private var partialText = ""
+
+    func prepareStream() {
+        guard config.streamingTranscription, readyStream == nil else { return }
+        Task { @MainActor in
+            do {
+                let stream = try await transcriber.makeStream()
+                if readyStream == nil { readyStream = stream }
+            } catch {
+                Log.warn("streaming transcription unavailable: \(error)")
+            }
+        }
+    }
+
+    private func startPartials(_ stream: SlidingWindowAsrManager?) {
+        liveStream = stream
+        partialText = ""
+        guard let stream else { return }
+        partialTask = Task { @MainActor in
+            do { try await stream.startStreaming(source: .microphone) } catch { Log.warn("stream start: \(error)"); return }
+            for await update in await stream.transcriptionUpdates {
+                if Task.isCancelled { break }
+                let text = update.text.trimmingCharacters(in: .whitespaces)
+                guard !text.isEmpty else { continue }
+                partialText = text
+                hud.model.transcript = text
+                overlay.setChip(Log.short(text, 48))
+            }
+        }
+    }
+
+    private func stopPartials(cancel: Bool) {
+        partialTask?.cancel()
+        partialTask = nil
+        overlay.setChip(nil)
+        if cancel, let stream = liveStream { Task { await stream.cancel() } }
+        if cancel { liveStream = nil }
+        prepareStream()
+    }
+
+    /// The streamed recognizer's full text when it has one, else the WAV through the offline model.
+    private func finalText(from stream: SlidingWindowAsrManager?, wavURL: URL) async throws -> String {
+        if let stream {
+            let started = Date()
+            if let text = try? await stream.finish(), !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                Log.info("transcript (streamed) in \(Int(Date().timeIntervalSince(started) * 1000)) ms")
+                liveStream = nil
+                return text
+            }
+            liveStream = nil
+        }
+        return try await transcriber.transcribe(wavURL: wavURL)
+    }
+
+    /// Pushes a WAV through the streaming recognizer the way the microphone would, logging each
+    /// partial and the final text with timings. For `Dot --stt file.wav`.
+    func streamingSelfTest(wavPath: String) async {
+        let url = URL(fileURLWithPath: (wavPath as NSString).expandingTildeInPath)
+        guard let file = try? AVAudioFile(forReading: url) else { Log.error("stt test: cannot read \(url.path)"); return }
+        let stream: SlidingWindowAsrManager
+        do { stream = try await transcriber.makeStream() } catch { Log.error("stt test: \(error)"); return }
+        let started = Date()
+        let format = file.processingFormat
+        let chunk = AVAudioFrameCount(format.sampleRate * 0.1)
+        let consumer = Task {
+            do { try await stream.startStreaming(source: .microphone) } catch { Log.error("stt test start: \(error)"); return }
+            for await update in await stream.transcriptionUpdates {
+                Log.info("stt test partial +\(Int(Date().timeIntervalSince(started) * 1000)) ms\(update.isConfirmed ? " (confirmed)" : ""): \(update.text)")
+            }
+        }
+        while file.framePosition < file.length {
+            guard let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: chunk) else { break }
+            do { try file.read(into: buffer, frameCount: chunk) } catch { break }
+            if buffer.frameLength == 0 { break }
+            await stream.streamAudio(buffer)
+            try? await Task.sleep(nanoseconds: 100_000_000)   // real time, like the microphone
+        }
+        let final = (try? await stream.finish()) ?? "(failed)"
+        consumer.cancel()
+        Log.info("stt test final +\(Int(Date().timeIntervalSince(started) * 1000)) ms: \(final)")
+        hud.flash(status: "stt test: \(Log.short(final, 80))", for: 5)
+    }
+
+    // MARK: Dictation
+
+    /// Hold control and fn: what he says lands in the field he is typing in.
+    private func beginDictation() {
+        guard phase == .idle else { return }
+        quietTurn = false
+        let live = config.streamingTranscription ? readyStream : nil
+        readyStream = nil
+        do { _ = try recorder.start(stream: live) } catch { hud.flash(error: "\(error)"); return }
+        startPartials(live)
+        phase = .listening
+        mode = .dictate
+        hud.model.mode = .dictate
+        hud.model.transcript = ""
+        hud.model.response = ""
+        hud.set(phase: .listening)
+        overlay.showTransient()
+        overlay.setPhase(.listening)
+        overlay.setMood(.focused)
+        levelTimer?.invalidate()
+        levelTimer = Timer.scheduledTimer(withTimeInterval: 1.0 / 30.0, repeats: true) { [weak self] _ in
+            Task { @MainActor in
+                guard let self else { return }
+                let level = self.recorder.level()
+                self.hud.model.level = level
+                self.overlay.setLevel(level)
+            }
+        }
+    }
+
+    private func endDictation(heldFor: TimeInterval) {
+        guard phase == .listening else { return }
+        levelTimer?.invalidate()
+        levelTimer = nil
+        hud.model.level = 0
+        overlay.setLevel(0)
+        guard heldFor >= 0.35, let stopped = try? recorder.stop() else {
+            recorder.cancel()
+            stopPartials(cancel: true)
+            phase = .idle
+            hud.set(phase: .hidden)
+            overlay.setPhase(.idle)
+            settle()
+            return
+        }
+        let live = liveStream
+        stopPartials(cancel: false)
+        phase = .transcribing
+        hud.set(phase: .transcribing)
+        overlay.setMood(.neutral)
+        Task { @MainActor in
+            defer { phase = .idle; overlay.setPhase(.idle); settle() }
+            let text: String
+            do { text = try await finalText(from: live, wavURL: stopped.url) } catch {
+                hud.flash(error: "didn't catch that: \(error.localizedDescription)"); return
+            }
+            try? FileManager.default.removeItem(at: stopped.url)
+            let cleaned = SpeechText.dictated(text)
+            guard !cleaned.isEmpty else { hud.flash(status: "didn't catch that"); return }
+            hud.model.transcript = cleaned
+            let method = TextInjection.insert(cleaned)
+            switch method {
+            case .accessibility: hud.flash(status: "typed it", for: 2)
+            case .paste: hud.flash(status: "pasted it", for: 2)
+            case .clipboard: hud.flash(status: "on your clipboard, press command v", for: 6)
+            }
+            hud.set(phase: .hidden)
+            Log.info("dictation (\(method.rawValue)): \(Log.short(cleaned, 120))")
+            let archive = config.talkRootURL.appendingPathComponent("dictation.jsonl")
+            let entry: [String: Any] = ["ts": ISO8601DateFormatter().string(from: Date()), "app": AccessibilityContext.frontmostAppName() ?? "", "text": cleaned, "via": method.rawValue]
+            if let data = try? JSONSerialization.data(withJSONObject: entry), let line = String(data: data, encoding: .utf8) {
+                if let handle = try? FileHandle(forWritingTo: archive) { _ = try? handle.seekToEnd(); try? handle.write(contentsOf: (line + "\n").data(using: .utf8)!); try? handle.close() }
+                else { try? (line + "\n").write(to: archive, atomically: true, encoding: .utf8) }
+            }
         }
     }
 
@@ -356,7 +538,7 @@ final class Talk {
             if walkthrough != nil { continueWalkthrough(said: text) } else { continueBoard(said: text) }
             return
         case .closeBoard:
-            board.clear()
+            clearBoard()
             phase = .idle
             overlay.setPhase(.speaking)
             speaker.speak("closed.")
@@ -561,6 +743,15 @@ final class Talk {
 
     /// The user message: the screen context, the element list, the box he drew, then his words.
     /// Returns the text and the images to attach.
+    nonisolated static func isComputation(_ request: PermissionRequest) -> Bool {
+        guard request.toolName == "Bash", case .string(let command)? = request.input["command"] else { return false }
+        return TalkGuard.isComputationCommand(command)
+    }
+
+    nonisolated static func homeworkHint(title: String?, url: String?) -> String? {
+        TalkGuard.homeworkHint(title: title, url: url)
+    }
+
     private func buildMessage(_ transcript: String, kind: SessionKind) -> (String, [(data: Data, mediaType: String)]) {
         var lines: [String] = []
         var images = shots.map { (data: $0.jpeg, mediaType: "image/jpeg") }
@@ -571,6 +762,7 @@ final class Talk {
         }
         if let title = context.windowTitle, !title.isEmpty { lines.append("window: \(title)") }
         if let url = context.url { lines.append("url: \(url)") }
+        if let hint = Self.homeworkHint(title: context.windowTitle, url: context.url) { lines.append(hint) }
         if let selected = context.selectedText, !selected.isEmpty {
             lines.append("selected text: \"\(Log.short(selected, 400))\"")
         }
@@ -699,6 +891,20 @@ final class Talk {
             case .hover(let x, let y, let radius, let text, let screen):
                 _ = target(pixel: CGPoint(x: x, y: y), radius: CGFloat(radius), label: text, screen: screen, hover: true)
                 label = label ?? text
+            case .type(let x, let y, let text, let body, let screen):
+                if !body.isEmpty {
+                    NSPasteboard.general.clearContents()
+                    NSPasteboard.general.setString(body, forType: .string)
+                }
+                point(pixel: CGPoint(x: x, y: y), label: text.isEmpty ? "paste here" : text, screen: screen)
+                if walkthrough?.driving == true || driveRequested, let shot = shot(forScreen: screen), !body.isEmpty {
+                    let target = Coordinates.screenPoint(fromPixel: CGPoint(x: x, y: y), in: shot.frame)
+                    driver.begin()
+                    driver.go(to: target, click: true) { ok in
+                        if ok { DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { Driver.paste() } }
+                    }
+                }
+                label = label ?? (text.isEmpty ? "paste" : text)
             case .card(let id, let rect, let title, let html, let screen):
                 showCard(id: id, rect: rect, title: title, html: html, screen: screen)
                 label = label ?? title
@@ -713,7 +919,7 @@ final class Talk {
                 }
                 label = label ?? "step \(step)"
             case .clearBoard:
-                board.clear()
+                clearBoard()
             default:
                 break
             }
@@ -743,6 +949,8 @@ final class Talk {
         Log.info("turn[\(kind)] said: \(Log.short(spoken, 240))")
         if result.isError, spoken.isEmpty {
             hud.flash(error: Log.short(result.resultText ?? "the turn failed", 160))
+            overlay.setMood(.puzzled, for: 3)
+            Log.error("turn[\(kind)] failed: \(result.subtype) \(Log.short(result.resultText ?? "", 300))")
         }
 
         var escalated = false
@@ -861,6 +1069,9 @@ final class Talk {
             }
         }
         board.show(id: id, title: title, html: html, rect: placed, on: screenFrame, avoiding: context.windowFrame)
+        hud.upsertAgent(AgentRow(id: "lesson", name: title.isEmpty ? "on the board" : title, line: "on the board; say next, or close it",
+                                 state: .running, kind: .lesson, canStop: true, startedAt: lessonStartedAt ?? Date()))
+        if lessonStartedAt == nil { lessonStartedAt = Date() }
         overlay.bringToFront()
         if let frame = board.frame(of: id) {
             let edge = CGPoint(x: frame.minX + 4, y: frame.maxY - 16)
@@ -907,6 +1118,9 @@ final class Talk {
         walkthrough = next
         overlay.target(at: target, radius: screenRadius, label: label, hover: hover)
         hud.flash(status: "step \(step): \(hover ? "rest on" : "click") \(label)", for: 6)
+        hud.upsertAgent(AgentRow(id: "walkthrough", name: next.driving ? "dot is clicking" : "walkthrough", line: "step \(step): \(hover ? "rest on" : "click") \(label)",
+                                 state: .running, kind: .walkthrough, steps: Array(next.history.suffix(3)), canStop: true, startedAt: walkthroughStartedAt ?? Date()))
+        if walkthroughStartedAt == nil { walkthroughStartedAt = Date() }
         walkthroughTimeout?.cancel()
         let work = DispatchWorkItem { [weak self] in self?.endWalkthrough(reason: "no click in 120 s") }
         walkthroughTimeout = work
@@ -1049,10 +1263,30 @@ final class Talk {
         endWalkthrough(reason: "he switched to \(app.localizedName ?? actual)")
     }
 
+    private var walkthroughStartedAt: Date?
+    private var lessonStartedAt: Date?
+
+    private func clearBoard() {
+        board.clear()
+        lessonStartedAt = nil
+        hud.removeAgent(id: "lesson")
+    }
+
+    /// Stop from the task bar.
+    func stopTask(_ id: String) {
+        switch id {
+        case "walkthrough": endWalkthrough(reason: "stopped from the task bar")
+        case "lesson": clearBoard()
+        default: break
+        }
+    }
+
     private func endWalkthrough(reason: String) {
         guard walkthrough != nil else { return }
         Log.info("walkthrough: ended (\(reason))")
         walkthrough = nil
+        walkthroughStartedAt = nil
+        hud.removeAgent(id: "walkthrough")
         driveRequested = false
         driver.end()
         walkthroughTimeout?.cancel()
@@ -1087,7 +1321,7 @@ final class Talk {
         levelTimer?.invalidate()
         phase = .idle
         endWalkthrough(reason: "escape")
-        board.clear()
+        clearBoard()
         overlay.clearMarks()
         overlay.hideBubble(after: 0)
         overlay.setPhase(.idle)

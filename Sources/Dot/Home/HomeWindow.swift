@@ -1,10 +1,13 @@
 import AppKit
 import DotKit
+import Quartz
 import SwiftUI
+import UniformTypeIdentifiers
 
-/// The one ordinary window: his day as Atlas has it, the agents with their chats and
-/// outputs, the ledger, and the permission checklist. Everything else Dot does happens
-/// beside the cursor and in the notch.
+/// The one ordinary window, after HeyClicky's Home: a rail of agents on the left with a
+/// status dot and an unread dot, the selected agent's thread in the middle (his messages,
+/// the agent's words, each step it took, what it made), the outputs with a preview on the
+/// right, and pages for his day and Dot's settings.
 @MainActor
 final class HomeWindowController {
     private var window: NSWindow?
@@ -16,16 +19,18 @@ final class HomeWindowController {
         agents.onRunFinished = { [weak self] _ in Task { @MainActor in self?.model.refreshLive() } }
     }
 
-    func show() {
+    func show(agent slug: String? = nil) {
         model.reload()
+        if let slug, let agent = model.agents.first(where: { $0.slug == slug }) { model.select(agent); model.page = .agent }
         if window == nil {
-            let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 960, height: 640), styleMask: [.titled, .closable, .miniaturizable, .resizable],
+            let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 1120, height: 700), styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
                                   backing: .buffered, defer: false)
             window.title = "Dot"
+            window.titlebarAppearsTransparent = true
             window.isReleasedWhenClosed = false
             window.center()
             window.contentView = NSHostingView(rootView: HomeView(model: model))
-            window.minSize = NSSize(width: 760, height: 480)
+            window.minSize = NSSize(width: 900, height: 560)
             self.window = window
         }
         window?.makeKeyAndOrderFront(nil)
@@ -33,12 +38,25 @@ final class HomeWindowController {
     }
 }
 
+struct TranscriptEntry: Identifiable, Equatable {
+    let id: Int
+    let role: String
+    let text: String
+    let time: Date?
+}
+
 @MainActor
 final class HomeModel: ObservableObject {
+    enum Page: Equatable { case agent, day, settings }
+
+    @Published var page: Page = .agent
     @Published var agents: [AgentManager.Agent] = []
     @Published var selected: AgentManager.Agent?
-    @Published var transcript: [(role: String, text: String)] = []
+    @Published var entries: [TranscriptEntry] = []
     @Published var outputs: [URL] = []
+    @Published var previewURL: URL?
+    @Published var showOutputs = true
+    @Published var showCLAUDEMD = false
     @Published var claudeMD = ""
     @Published var runs: [Ledger.Row] = []
     @Published var permissions = Permissions.status()
@@ -47,59 +65,150 @@ final class HomeModel: ObservableObject {
     @Published var newAgentName = ""
     @Published var newAgentBrief = ""
     @Published var composer = ""
-    @Published var showingCLAUDEMD = false
+    @Published var attachments: [URL] = []
+    @Published var filter = ""
+    @Published var lastLines: [String: String] = [:]
+    @Published var lastActivity: [String: Date] = [:]
+    @Published var unread: Set<String> = []
+    @Published var running: Set<String> = []
+    @Published var settings: DotConfig
+    @Published var settingsNote: String?
+    @Published var renaming: AgentManager.Agent?
+    @Published var renameText = ""
 
     let agentManager: AgentManager
     let ledger: Ledger
     let config: DotConfig
     let atlas: AtlasBridge
     private var timer: Timer?
+    private let defaults = UserDefaults.standard
 
     init(agents: AgentManager, ledger: Ledger, config: DotConfig, atlas: AtlasBridge) {
         self.agentManager = agents
         self.ledger = ledger
         self.config = config
         self.atlas = atlas
+        self.settings = config
         timer = Timer.scheduledTimer(withTimeInterval: 2.0, repeats: true) { [weak self] _ in
             Task { @MainActor in self?.refreshLive() }
         }
     }
 
+    // MARK: Rail
+
+    var pinned: Set<String> {
+        get { Set(defaults.stringArray(forKey: "dot.home.pinned") ?? []) }
+        set { defaults.set(Array(newValue), forKey: "dot.home.pinned"); objectWillChange.send() }
+    }
+
+    func togglePin(_ agent: AgentManager.Agent) {
+        var set = pinned
+        if set.contains(agent.slug) { set.remove(agent.slug) } else { set.insert(agent.slug) }
+        pinned = set
+    }
+
+    /// Pinned first, then whoever is working, then the most recent conversation.
+    var railAgents: [AgentManager.Agent] {
+        let needle = filter.trimmingCharacters(in: .whitespaces).lowercased()
+        let pins = pinned
+        return agents
+            .filter { needle.isEmpty || $0.name.lowercased().contains(needle) || (lastLines[$0.slug] ?? "").lowercased().contains(needle) }
+            .sorted { a, b in
+                let pa = pins.contains(a.slug), pb = pins.contains(b.slug)
+                if pa != pb { return pa }
+                let ra = running.contains(a.slug), rb = running.contains(b.slug)
+                if ra != rb { return ra }
+                return (lastActivity[a.slug] ?? .distantPast) > (lastActivity[b.slug] ?? .distantPast)
+            }
+    }
+
     func reload() {
         agents = agentManager.roster()
         if selected == nil || !agents.contains(where: { $0.slug == selected?.slug }) { selected = agents.first }
+        refreshLive()
         select(selected)
         permissions = Permissions.status()
-        today = ledger.today()
         brief = atlas.brief
     }
 
     func select(_ agent: AgentManager.Agent?) {
         selected = agent
-        guard let agent else { transcript = []; claudeMD = ""; runs = []; outputs = []; return }
-        transcript = agentManager.transcript(for: agent)
+        guard let agent else { entries = []; claudeMD = ""; runs = []; outputs = []; previewURL = nil; return }
+        entries = agentManager.transcriptEntries(for: agent)
         claudeMD = (try? String(contentsOf: agent.claudeMD, encoding: .utf8)) ?? ""
         runs = ledger.recent(limit: 30, agent: agent.slug)
         outputs = agentManager.outputFiles(for: agent)
+        if previewURL == nil || !outputs.contains(previewURL!) { previewURL = outputs.first }
+        markSeen(agent)
+    }
+
+    func markSeen(_ agent: AgentManager.Agent) {
+        defaults.set(Date(), forKey: "dot.home.seen.\(agent.slug)")
+        unread.remove(agent.slug)
     }
 
     func refreshLive() {
         permissions = Permissions.status()
         today = ledger.today()
         brief = atlas.brief
+        running = Set(agentManager.roster().filter { agentManager.hasTurnInFlight($0) }.map(\.slug))
+        var lines: [String: String] = [:], times: [String: Date] = [:], fresh: Set<String> = []
+        for agent in agents {
+            let file = agent.folder.appendingPathComponent(".dot/transcript.jsonl")
+            let modified = (try? FileManager.default.attributesOfItem(atPath: file.path)[.modificationDate] as? Date) ?? .distantPast
+            times[agent.slug] = modified
+            if let last = agentManager.transcriptEntries(for: agent, limit: 3).last(where: { $0.role == "assistant" || $0.role == "user" }) {
+                lines[agent.slug] = Log.short(last.text.replacingOccurrences(of: "\n", with: " "), 70)
+            }
+            let seen = defaults.object(forKey: "dot.home.seen.\(agent.slug)") as? Date ?? .distantPast
+            if modified > seen, agent.slug != selected?.slug || !(NSApp.keyWindow?.title == "Dot") { fresh.insert(agent.slug) }
+        }
+        lastLines = lines
+        lastActivity = times
+        unread = fresh
         if let selected {
-            transcript = agentManager.transcript(for: selected)
+            let latest = agentManager.transcriptEntries(for: selected)
+            if latest != entries { entries = latest }
             runs = ledger.recent(limit: 30, agent: selected.slug)
-            outputs = agentManager.outputFiles(for: selected)
+            let files = agentManager.outputFiles(for: selected)
+            if files != outputs {
+                outputs = files
+                if previewURL == nil || !files.contains(previewURL!) { previewURL = files.first }
+            }
+            if NSApp.keyWindow?.title == "Dot" { markSeen(selected) }
         }
     }
 
+    // MARK: Actions
+
     func send() {
-        let text = composer.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !text.isEmpty, let selected else { return }
+        var text = composer.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty || !attachments.isEmpty, let selected else { return }
+        if !attachments.isEmpty {
+            text += (text.isEmpty ? "" : "\n\n") + "Attached files:\n" + attachments.map { "- \($0.path)" }.joined(separator: "\n")
+        }
         composer = ""
+        attachments = []
         agentManager.reply(to: selected.slug, text: text)
         refreshLive()
+    }
+
+    func stop(_ agent: AgentManager.Agent) {
+        agentManager.stop(agent.slug)
+        refreshLive()
+    }
+
+    func archive(_ agent: AgentManager.Agent) {
+        agentManager.archive(agent)
+        reload()
+    }
+
+    func rename() {
+        guard let agent = renaming else { return }
+        let name = renameText.trimmingCharacters(in: .whitespaces)
+        if !name.isEmpty { agentManager.rename(agent, to: name) }
+        renaming = nil
+        reload()
     }
 
     func createAgent() {
@@ -115,77 +224,443 @@ final class HomeModel: ObservableObject {
         reload()
         select(agent)
     }
+
+    func saveSettings() {
+        settings.save()
+        settingsNote = "saved to ~/.config/dot/config.json; voice, hotkey and model changes take effect when Dot relaunches"
+        DispatchQueue.main.asyncAfter(deadline: .now() + 6) { [weak self] in self?.settingsNote = nil }
+    }
+
+    /// The last next-action offer the selected agent made, if its latest words were a result.
+    var nextAction: String? {
+        guard let last = entries.last(where: { $0.role == "assistant" }) else { return nil }
+        guard let idx = entries.firstIndex(of: last), !entries[idx...].contains(where: { $0.role == "user" }) else { return nil }
+        return AgentResult.parse(last.text).nextAction
+    }
 }
+
+// MARK: - View
 
 struct HomeView: View {
     @ObservedObject var model: HomeModel
     @State private var showingNew = false
-    @State private var tab = 0
+
+    private let accent = Color(red: 1.0, green: 0.42, blue: 0.17)
 
     var body: some View {
-        NavigationSplitView {
-            List(selection: Binding(get: { model.selected?.slug }, set: { slug in model.select(model.agents.first { $0.slug == slug }) })) {
-                Section("Agents") {
-                    ForEach(model.agents) { agent in
-                        HStack {
-                            Circle().fill(model.agentManager.isRunning(agent) ? Color.orange : Color.secondary.opacity(0.4)).frame(width: 8, height: 8)
-                            Text(agent.name)
-                        }.tag(agent.slug)
+        HStack(spacing: 0) {
+            rail.frame(width: 240)
+            Divider()
+            switch model.page {
+            case .agent:
+                if let agent = model.selected {
+                    thread(agent)
+                    if model.showOutputs {
+                        Divider()
+                        outputsColumn(agent).frame(width: 300)
                     }
-                }
-                Section("Today") {
-                    if let brief = model.brief {
-                        let week = brief.deadlines(withinDays: 7)
-                        Text("\(week.count) deadline\(week.count == 1 ? "" : "s") this week").font(.callout)
-                        Text("\(brief.today.count) on the calendar").font(.callout)
-                        if brief.unansweredCount > 0 { Text("\(brief.unansweredCount) mail waiting").font(.callout) }
-                        Text("from Atlas, \(brief.builtAt.suffix(5))").font(.caption).foregroundStyle(.secondary)
-                    } else {
-                        Text(model.atlas.available ? "reading Atlas…" : "Atlas not found").font(.callout).foregroundStyle(.secondary)
-                    }
-                    Text("\(model.today.turns) turns, " + String(format: "$%.2f", model.today.costUSD)).font(.caption).foregroundStyle(.secondary)
-                }
-                Section("Permissions") {
-                    permissionRow("Microphone", model.permissions.microphone) { Permissions.requestMicrophone { _ in model.reload() }; Permissions.openSettings(.microphone) }
-                    permissionRow("Screen Recording", model.permissions.screenRecording) { Permissions.requestScreenRecording(); Permissions.openSettings(.screenRecording) }
-                    permissionRow("Accessibility", model.permissions.accessibility) { Permissions.requestAccessibility(); Permissions.openSettings(.accessibility) }
-                }
-            }
-            .navigationSplitViewColumnWidth(min: 200, ideal: 230)
-            .toolbar {
-                Button { showingNew = true } label: { Label("New agent", systemImage: "plus") }
-            }
-        } detail: {
-            VStack(spacing: 0) {
-                Picker("", selection: $tab) {
-                    Text("Agent").tag(0)
-                    Text("Day").tag(1)
-                }
-                .pickerStyle(.segmented)
-                .frame(width: 220)
-                .padding(.top, 10)
-                if tab == 1 {
-                    dayView
-                } else if let agent = model.selected {
-                    detail(agent)
                 } else {
-                    Spacer()
-                    Text("No agent selected").foregroundStyle(.secondary)
-                    Spacer()
+                    VStack { Spacer(); Text("No agent yet. Make one, or hold control+option and say \"agent, …\".").foregroundStyle(.secondary); Spacer() }
+                        .frame(maxWidth: .infinity)
                 }
+            case .day: dayView
+            case .settings: settingsView
             }
         }
         .sheet(isPresented: $showingNew) { newAgentSheet }
-        .frame(minWidth: 760, minHeight: 480)
+        .sheet(item: $model.renaming) { agent in renameSheet(agent) }
+        .frame(minWidth: 900, minHeight: 560)
+        .onAppear { model.reload() }
     }
 
-    private func permissionRow(_ name: String, _ granted: Bool, action: @escaping () -> Void) -> some View {
-        HStack {
-            Image(systemName: granted ? "checkmark.circle.fill" : "exclamationmark.circle").foregroundStyle(granted ? .green : .orange)
-            Text(name).font(.callout)
-            Spacer()
-            if !granted { Button("Grant", action: action).controlSize(.small) }
+    // MARK: Rail
+
+    private var rail: some View {
+        VStack(spacing: 0) {
+            HStack(spacing: 8) {
+                Circle().fill(accent).frame(width: 10, height: 10).shadow(color: accent.opacity(0.7), radius: 4)
+                Text("Dot").font(.system(size: 15, weight: .semibold))
+                Spacer()
+                Button { showingNew = true } label: { Image(systemName: "plus") }.buttonStyle(.plain).help("New agent")
+            }
+            .padding(.horizontal, 14).padding(.top, 36).padding(.bottom, 8)
+            TextField("Search agents", text: $model.filter)
+                .textFieldStyle(.roundedBorder).controlSize(.small)
+                .padding(.horizontal, 12).padding(.bottom, 6)
+            ScrollView {
+                LazyVStack(spacing: 2) {
+                    ForEach(model.railAgents) { agent in railRow(agent) }
+                }
+                .padding(.horizontal, 8)
+            }
+            Divider().padding(.vertical, 4)
+            pageRow("Day", icon: "sun.max", page: .day, detail: model.brief.map { "\($0.today.count) today · \($0.deadlines(withinDays: 7).count) due" })
+            pageRow("Settings", icon: "slider.horizontal.3", page: .settings, detail: nil)
+            HStack(spacing: 8) {
+                usageRing
+                VStack(alignment: .leading, spacing: 1) {
+                    Text("\(model.today.turns) turns today").font(.system(size: 11, weight: .medium))
+                    Text(String(format: "$%.2f", model.today.costUSD)).font(.system(size: 10.5)).foregroundStyle(.secondary)
+                }
+                Spacer()
+                if !model.permissions.allGranted {
+                    Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.orange).help("A permission is missing; see Settings")
+                        .onTapGesture { model.page = .settings }
+                }
+            }
+            .padding(.horizontal, 14).padding(.vertical, 10)
         }
+        .background(Color(nsColor: .windowBackgroundColor))
+    }
+
+    private var usageRing: some View {
+        ZStack {
+            Circle().stroke(Color.primary.opacity(0.1), lineWidth: 3)
+            Circle().trim(from: 0, to: min(CGFloat(model.today.turns) / 60, 1)).stroke(accent, style: .init(lineWidth: 3, lineCap: .round)).rotationEffect(.degrees(-90))
+        }
+        .frame(width: 22, height: 22)
+    }
+
+    private func pageRow(_ title: String, icon: String, page: HomeModel.Page, detail: String?) -> some View {
+        Button { model.page = page } label: {
+            HStack(spacing: 10) {
+                Image(systemName: icon).frame(width: 18).foregroundStyle(model.page == page ? accent : .secondary)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(title).font(.system(size: 13, weight: .medium))
+                    if let detail { Text(detail).font(.system(size: 11)).foregroundStyle(.secondary).lineLimit(1) }
+                }
+                Spacer()
+            }
+            .padding(.horizontal, 10).padding(.vertical, 6)
+            .background(model.page == page ? Color.primary.opacity(0.07) : .clear, in: RoundedRectangle(cornerRadius: 8))
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .padding(.horizontal, 8)
+    }
+
+    private func railRow(_ agent: AgentManager.Agent) -> some View {
+        let selected = model.page == .agent && model.selected?.slug == agent.slug
+        let running = model.running.contains(agent.slug)
+        return Button {
+            model.page = .agent
+            model.select(agent)
+        } label: {
+            HStack(spacing: 10) {
+                ZStack(alignment: .bottomTrailing) {
+                    Circle().fill(accent.opacity(0.18)).frame(width: 32, height: 32)
+                        .overlay(Text(String(agent.name.prefix(1)).uppercased()).font(.system(size: 14, weight: .semibold)).foregroundStyle(accent))
+                    if running {
+                        Circle().fill(Color.orange).frame(width: 9, height: 9).overlay(Circle().stroke(Color(nsColor: .windowBackgroundColor), lineWidth: 2))
+                    }
+                }
+                VStack(alignment: .leading, spacing: 2) {
+                    HStack(spacing: 4) {
+                        Text(agent.name).font(.system(size: 13, weight: .semibold)).lineLimit(1)
+                        if model.pinned.contains(agent.slug) { Image(systemName: "pin.fill").font(.system(size: 8)).foregroundStyle(.secondary) }
+                        Spacer()
+                        if let time = model.lastActivity[agent.slug], time > .distantPast {
+                            Text(Self.relative(time)).font(.system(size: 10.5)).foregroundStyle(.secondary)
+                        }
+                    }
+                    Text(running ? "working…" : (model.lastLines[agent.slug] ?? "nothing yet"))
+                        .font(.system(size: 11.5)).foregroundStyle(running ? accent : .secondary).lineLimit(1)
+                }
+                if model.unread.contains(agent.slug) {
+                    Circle().fill(accent).frame(width: 7, height: 7)
+                }
+            }
+            .padding(.horizontal, 8).padding(.vertical, 6)
+            .background(selected ? Color.primary.opacity(0.08) : .clear, in: RoundedRectangle(cornerRadius: 9))
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .contextMenu {
+            Button(model.pinned.contains(agent.slug) ? "Unpin" : "Pin to the top") { model.togglePin(agent) }
+            Button("Rename…") { model.renameText = agent.name; model.renaming = agent }
+            Button("Open folder") { NSWorkspace.shared.open(agent.folder) }
+            Button("Open output folder") { NSWorkspace.shared.open(agent.outputFolder) }
+            Divider()
+            if running { Button("Stop") { model.stop(agent) } }
+            if agent.slug != "dot" { Button("Archive") { model.archive(agent) } }
+        }
+    }
+
+    static func relative(_ date: Date) -> String {
+        let s = Int(Date().timeIntervalSince(date))
+        if s < 60 { return "now" }
+        if s < 3600 { return "\(s / 60)m" }
+        if s < 86400 { return "\(s / 3600)h" }
+        return "\(s / 86400)d"
+    }
+
+    // MARK: Thread
+
+    private func thread(_ agent: AgentManager.Agent) -> some View {
+        let running = model.running.contains(agent.slug)
+        return VStack(spacing: 0) {
+            HStack(spacing: 10) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(agent.name).font(.system(size: 17, weight: .semibold))
+                    HStack(spacing: 6) {
+                        if running {
+                            BreathingDot(color: accent)
+                            Text("working").font(.system(size: 11.5)).foregroundStyle(accent)
+                        } else {
+                            Text("idle").font(.system(size: 11.5)).foregroundStyle(.secondary)
+                        }
+                        Text(agent.folder.path.replacingOccurrences(of: NSHomeDirectory(), with: "~")).font(.system(size: 11)).foregroundStyle(.tertiary).lineLimit(1)
+                    }
+                }
+                Spacer()
+                if running { Button("Stop") { model.stop(agent) }.controlSize(.small) }
+                Toggle(isOn: $model.showCLAUDEMD) { Image(systemName: "doc.text") }.toggleStyle(.button).controlSize(.small).help("Identity (CLAUDE.md)")
+                Toggle(isOn: $model.showOutputs) { Image(systemName: "sidebar.right") }.toggleStyle(.button).controlSize(.small).help("Outputs")
+            }
+            .padding(.horizontal, 18).padding(.top, 34).padding(.bottom, 8)
+            Divider()
+            if model.showCLAUDEMD {
+                ScrollView {
+                    Text(model.claudeMD).font(.system(.callout, design: .monospaced)).textSelection(.enabled)
+                        .frame(maxWidth: .infinity, alignment: .leading).padding(18)
+                }
+            } else {
+                transcript(agent, running: running)
+            }
+            Divider()
+            composer(agent)
+        }
+    }
+
+    private func transcript(_ agent: AgentManager.Agent, running: Bool) -> some View {
+        ScrollViewReader { proxy in
+            ScrollView {
+                LazyVStack(alignment: .leading, spacing: 10) {
+                    if model.entries.isEmpty {
+                        Text("Nothing yet. Say \"agent, …\" with the key held, or type below.").font(.callout).foregroundStyle(.secondary).padding(.top, 20)
+                    }
+                    ForEach(model.entries) { entry in entryView(entry) }
+                    if running {
+                        HStack(spacing: 8) {
+                            BreathingDot(color: accent)
+                            Text(model.lastLines[agent.slug].map { "working: \($0)" } ?? "working").font(.system(size: 12)).foregroundStyle(.secondary).lineLimit(1)
+                        }
+                        .padding(.leading, 4)
+                    } else if let next = model.nextAction {
+                        Button {
+                            model.composer = next
+                            model.send()
+                        } label: {
+                            HStack(spacing: 6) {
+                                Image(systemName: "arrow.turn.down.right").font(.system(size: 10, weight: .bold))
+                                Text(next).font(.system(size: 12, weight: .semibold))
+                            }
+                            .padding(.horizontal, 12).padding(.vertical, 6)
+                            .background(accent.opacity(0.18), in: Capsule())
+                            .overlay(Capsule().stroke(accent.opacity(0.5), lineWidth: 1))
+                        }
+                        .buttonStyle(.plain)
+                    }
+                    Color.clear.frame(height: 1).id("end")
+                }
+                .padding(.horizontal, 18).padding(.vertical, 12)
+            }
+            .onChange(of: model.entries.count) { _, _ in withAnimation { proxy.scrollTo("end") } }
+            .onAppear { proxy.scrollTo("end") }
+        }
+    }
+
+    @ViewBuilder
+    private func entryView(_ entry: TranscriptEntry) -> some View {
+        switch entry.role {
+        case "user":
+            HStack(alignment: .bottom) {
+                Spacer(minLength: 80)
+                VStack(alignment: .trailing, spacing: 3) {
+                    Text(entry.text).font(.system(size: 13)).textSelection(.enabled)
+                        .padding(.horizontal, 12).padding(.vertical, 8)
+                        .background(accent.opacity(0.2), in: RoundedRectangle(cornerRadius: 14))
+                    if let time = entry.time { Text(time, style: .time).font(.system(size: 10)).foregroundStyle(.tertiary) }
+                }
+            }
+        case "assistant":
+            HStack(alignment: .top) {
+                Text(Self.markdown(AgentResult.parse(entry.text).body)).font(.system(size: 13)).textSelection(.enabled)
+                    .padding(.horizontal, 12).padding(.vertical, 8)
+                    .background(Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 14))
+                Spacer(minLength: 60)
+            }
+        case "result":
+            HStack(spacing: 6) {
+                Image(systemName: entry.text.hasPrefix("success") ? "checkmark.circle.fill" : "exclamationmark.circle").font(.system(size: 10)).foregroundStyle(entry.text.hasPrefix("success") ? .green : .orange)
+                Text(entry.text).font(.system(size: 10.5)).foregroundStyle(.secondary)
+                Spacer()
+            }
+            .padding(.leading, 4)
+        case "tool":
+            HStack(alignment: .top, spacing: 8) {
+                Image(systemName: Self.stepIcon(entry.text)).font(.system(size: 10)).foregroundStyle(.secondary).frame(width: 14)
+                Text(entry.text).font(.system(size: 11.5, design: .monospaced)).foregroundStyle(.secondary).lineLimit(2).textSelection(.enabled)
+                Spacer()
+            }
+            .padding(.leading, 6)
+        default:
+            HStack(alignment: .top, spacing: 8) {
+                Image(systemName: "hand.raised").font(.system(size: 10)).foregroundStyle(.orange).frame(width: 14)
+                Text("\(entry.role): \(entry.text)").font(.system(size: 11.5)).foregroundStyle(.secondary).lineLimit(2)
+                Spacer()
+            }
+            .padding(.leading, 6)
+        }
+    }
+
+    static func stepIcon(_ line: String) -> String {
+        let l = line.lowercased()
+        if l.hasPrefix("reading") || l.hasPrefix("looking at") { return "doc.text.magnifyingglass" }
+        if l.hasPrefix("writing") || l.hasPrefix("editing") || l.hasPrefix("saving") { return "pencil.line" }
+        if l.hasPrefix("searching") || l.contains("web") || l.contains("http") { return "globe" }
+        if l.contains("atlas") { return "circle.hexagongrid" }
+        if l.hasPrefix("running") || l.hasPrefix("$") { return "terminal" }
+        if l.contains("click") || l.contains("window") || l.contains("screen") { return "cursorarrow.click" }
+        return "circle.dotted"
+    }
+
+    static func markdown(_ text: String) -> AttributedString {
+        (try? AttributedString(markdown: text, options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace))) ?? AttributedString(text)
+    }
+
+    private func composer(_ agent: AgentManager.Agent) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            if !model.attachments.isEmpty {
+                HStack(spacing: 6) {
+                    ForEach(model.attachments, id: \.self) { url in
+                        HStack(spacing: 4) {
+                            Image(systemName: "paperclip").font(.system(size: 9))
+                            Text(url.lastPathComponent).font(.system(size: 11)).lineLimit(1)
+                            Button { model.attachments.removeAll { $0 == url } } label: { Image(systemName: "xmark").font(.system(size: 8, weight: .bold)) }.buttonStyle(.plain)
+                        }
+                        .padding(.horizontal, 8).padding(.vertical, 4)
+                        .background(Color.primary.opacity(0.07), in: Capsule())
+                    }
+                    Spacer()
+                }
+            }
+            HStack(alignment: .bottom, spacing: 8) {
+                TextField("Message \(agent.name)… (drop files here to attach)", text: $model.composer, axis: .vertical)
+                    .lineLimit(1...6)
+                    .textFieldStyle(.plain)
+                    .font(.system(size: 13))
+                    .padding(.horizontal, 12).padding(.vertical, 9)
+                    .background(Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 12))
+                    .onSubmit { model.send() }
+                Button {
+                    model.send()
+                } label: {
+                    Image(systemName: "arrow.up").font(.system(size: 12, weight: .bold)).frame(width: 30, height: 30)
+                        .background(accent, in: Circle()).foregroundStyle(.black)
+                }
+                .buttonStyle(.plain)
+                .keyboardShortcut(.return, modifiers: .command)
+                .disabled(model.composer.trimmingCharacters(in: .whitespaces).isEmpty && model.attachments.isEmpty)
+            }
+            Text("return to send · drop a file to attach it · a card asks you before anything sends or submits").font(.system(size: 10.5)).foregroundStyle(.tertiary)
+        }
+        .padding(.horizontal, 18).padding(.vertical, 10)
+        .onDrop(of: [.fileURL], isTargeted: nil) { providers in
+            for provider in providers {
+                provider.loadItem(forTypeIdentifier: UTType.fileURL.identifier) { item, _ in
+                    guard let data = item as? Data, let url = URL(dataRepresentation: data, relativeTo: nil) else { return }
+                    Task { @MainActor in if !model.attachments.contains(url) { model.attachments.append(url) } }
+                }
+            }
+            return true
+        }
+    }
+
+    // MARK: Outputs
+
+    private func outputsColumn(_ agent: AgentManager.Agent) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Text("Outputs").font(.system(size: 13, weight: .semibold))
+                Spacer()
+                Button { NSWorkspace.shared.open(agent.outputFolder) } label: { Image(systemName: "folder") }.buttonStyle(.plain).foregroundStyle(.secondary)
+            }
+            .padding(.top, 36)
+            if let url = model.previewURL {
+                QuickLookPreview(url: url)
+                    .frame(maxWidth: .infinity, minHeight: 200, maxHeight: 320)
+                    .clipShape(RoundedRectangle(cornerRadius: 10))
+                    .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color.primary.opacity(0.1), lineWidth: 1))
+                HStack(spacing: 6) {
+                    Button("Open") { NSWorkspace.shared.open(url) }.controlSize(.small)
+                    Button("Reveal") { NSWorkspace.shared.activateFileViewerSelecting([url]) }.controlSize(.small)
+                    Button("Copy path") { NSPasteboard.general.clearContents(); NSPasteboard.general.setString(url.path, forType: .string) }.controlSize(.small)
+                }
+            } else {
+                Text("Nothing in output/ yet.").font(.callout).foregroundStyle(.secondary)
+            }
+            ScrollView {
+                LazyVStack(spacing: 2) {
+                    ForEach(model.outputs.prefix(40), id: \.self) { url in
+                        Button { model.previewURL = url } label: {
+                            HStack(spacing: 8) {
+                                Image(systemName: Self.fileIcon(url)).foregroundStyle(.secondary).frame(width: 16)
+                                VStack(alignment: .leading, spacing: 1) {
+                                    Text(url.lastPathComponent).font(.system(size: 12)).lineLimit(1)
+                                    Text(Self.fileMeta(url)).font(.system(size: 10)).foregroundStyle(.secondary)
+                                }
+                                Spacer()
+                            }
+                            .padding(.horizontal, 8).padding(.vertical, 5)
+                            .background(model.previewURL == url ? Color.primary.opacity(0.08) : .clear, in: RoundedRectangle(cornerRadius: 7))
+                            .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .contextMenu {
+                            Button("Open") { NSWorkspace.shared.open(url) }
+                            Button("Reveal in Finder") { NSWorkspace.shared.activateFileViewerSelecting([url]) }
+                            Button("Copy to Desktop") {
+                                let dest = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Desktop").appendingPathComponent(url.lastPathComponent)
+                                try? FileManager.default.copyItem(at: url, to: dest)
+                            }
+                        }
+                    }
+                }
+            }
+            if !model.runs.isEmpty {
+                Divider()
+                Text("Runs").font(.system(size: 12, weight: .semibold))
+                ForEach(model.runs.prefix(5)) { row in
+                    HStack {
+                        Text(row.timestamp, style: .time).font(.system(size: 10.5)).foregroundStyle(.secondary)
+                        Text(row.summary).font(.system(size: 10.5)).lineLimit(1)
+                        Spacer()
+                        Text(String(format: "$%.2f", row.costUSD)).font(.system(size: 10.5, design: .monospaced)).foregroundStyle(.secondary)
+                    }
+                }
+            }
+        }
+        .padding(.horizontal, 14).padding(.bottom, 12)
+    }
+
+    static func fileIcon(_ url: URL) -> String {
+        switch url.pathExtension.lowercased() {
+        case "pdf": return "doc.richtext"
+        case "png", "jpg", "jpeg", "gif", "heic": return "photo"
+        case "html", "htm": return "globe"
+        case "pptx", "key": return "rectangle.on.rectangle"
+        case "xlsx", "csv": return "tablecells"
+        case "md", "txt": return "doc.text"
+        default: return "doc"
+        }
+    }
+
+    static func fileMeta(_ url: URL) -> String {
+        let values = try? url.resourceValues(forKeys: [.fileSizeKey, .contentModificationDateKey])
+        let size = values?.fileSize.map { ByteCountFormatter.string(fromByteCount: Int64($0), countStyle: .file) } ?? ""
+        let when = values?.contentModificationDate.map { Self.relative($0) } ?? ""
+        return [size, when].filter { !$0.isEmpty }.joined(separator: " · ")
     }
 
     // MARK: Day
@@ -193,6 +668,7 @@ struct HomeView: View {
     private var dayView: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
+                Text("Your day").font(.title2.weight(.semibold)).padding(.top, 30)
                 if let brief = model.brief {
                     daySection("Deadlines", brief.deadlines)
                     daySection("Today", brief.today)
@@ -202,6 +678,7 @@ struct HomeView: View {
                     daySection("Mail waiting (\(brief.unansweredCount))", brief.unanswered)
                     daySection("Priorities", brief.priorities)
                     daySection("Waiting on a decision", brief.waiting)
+                    daySection("How he likes things", brief.preferences)
                     HStack {
                         Text("Read from Atlas at \(brief.builtAt.suffix(5))").font(.caption).foregroundStyle(.secondary)
                         Button("Refresh") { model.atlas.refresh(reason: "home") }.controlSize(.small)
@@ -211,7 +688,7 @@ struct HomeView: View {
                         .foregroundStyle(.secondary)
                 }
             }
-            .padding(16)
+            .padding(.horizontal, 24).padding(.bottom, 24)
             .frame(maxWidth: .infinity, alignment: .leading)
         }
     }
@@ -228,115 +705,80 @@ struct HomeView: View {
         }
     }
 
-    // MARK: Agent
+    // MARK: Settings
 
-    private func detail(_ agent: AgentManager.Agent) -> some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack {
-                VStack(alignment: .leading) {
-                    Text(agent.name).font(.title2.weight(.semibold))
-                    Text(agent.folder.path.replacingOccurrences(of: NSHomeDirectory(), with: "~")).font(.caption).foregroundStyle(.secondary)
+    private var settingsView: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 18) {
+                Text("Settings").font(.title2.weight(.semibold)).padding(.top, 30)
+                settingsGroup("Talking") {
+                    Toggle("Dot sits in the notch when idle", isOn: $model.settings.notchPresence)
+                    Toggle("Speak the first sentence while the rest is still coming", isOn: $model.settings.eagerSpeech)
+                    Toggle("Good-morning line once a day", isOn: $model.settings.morningGreeting)
+                    HStack { Text("Voice speed"); Slider(value: $model.settings.ttsSpeed, in: 0.7...1.4, step: 0.05).frame(width: 200); Text(String(format: "%.2fx", model.settings.ttsSpeed)).font(.caption.monospaced()) }
                 }
-                Spacer()
-                Toggle("CLAUDE.md", isOn: $model.showingCLAUDEMD).toggleStyle(.button)
-                Button("Open folder") { NSWorkspace.shared.open(agent.folder) }
-            }
-            HSplitView {
-                chat
-                    .frame(minWidth: 380)
-                VStack(alignment: .leading, spacing: 8) {
-                    if model.showingCLAUDEMD {
-                        Text("CLAUDE.md").font(.headline)
-                        ScrollView { Text(model.claudeMD).font(.system(.callout, design: .monospaced)).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading) }
-                    } else {
-                        Text("Output").font(.headline)
-                        if model.outputs.isEmpty {
-                            Text("Nothing in output/ yet.").font(.callout).foregroundStyle(.secondary)
-                        }
-                        ForEach(model.outputs.prefix(12), id: \.self) { url in
-                            HStack {
-                                Image(systemName: "doc").foregroundStyle(.secondary)
-                                Text(url.lastPathComponent).font(.callout).lineLimit(1)
-                                Spacer()
-                                Button("Open") { NSWorkspace.shared.open(url) }.controlSize(.small)
-                                Button("Reveal") { NSWorkspace.shared.activateFileViewerSelecting([url]) }.controlSize(.small)
-                            }
-                        }
-                        Spacer(minLength: 8)
-                        Text("Recent runs").font(.headline)
-                        ForEach(model.runs.prefix(8)) { row in
-                            HStack {
-                                Text(row.timestamp, style: .time).font(.caption).foregroundStyle(.secondary)
-                                Text(row.summary).font(.caption).lineLimit(1)
-                                Spacer()
-                                Text(String(format: "$%.3f", row.costUSD)).font(.caption.monospaced()).foregroundStyle(.secondary)
-                            }
-                        }
+                settingsGroup("Agents") {
+                    Toggle("Say when an agent finishes", isOn: $model.settings.speakAgentResults)
+                    Toggle("Dot may move the cursor and click the ringed steps on \"do it\"", isOn: $model.settings.driveEnabled)
+                    HStack { Text("Close an idle agent after"); Stepper("\(model.settings.agentIdleMinutes) min", value: $model.settings.agentIdleMinutes, in: 1...120).frame(width: 130) }
+                }
+                settingsGroup("Models") {
+                    HStack { Text("Talk").frame(width: 60, alignment: .leading); TextField("sonnet", text: $model.settings.talkModel).frame(width: 160); Text("effort"); TextField("low", text: Binding(get: { model.settings.talkEffort ?? "" }, set: { model.settings.talkEffort = $0.isEmpty ? nil : $0 })).frame(width: 70) }
+                    HStack { Text("Think").frame(width: 60, alignment: .leading); TextField("opus", text: $model.settings.thinkModel).frame(width: 160) }
+                    HStack { Text("Agents").frame(width: 60, alignment: .leading); TextField("opus", text: $model.settings.agentModel).frame(width: 160); Text("effort"); TextField("", text: Binding(get: { model.settings.agentEffort ?? "" }, set: { model.settings.agentEffort = $0.isEmpty ? nil : $0 })).frame(width: 70) }
+                }
+                settingsGroup("What Dot knows") {
+                    Text("Markdown files in ~/Dot/talk/context ride along in every talk turn: a course map, a project brief, the names it should know.").font(.callout).foregroundStyle(.secondary)
+                    HStack {
+                        Button("Open context folder") {
+                            let dir = model.config.talkRootURL.appendingPathComponent("context")
+                            try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+                            NSWorkspace.shared.open(dir)
+                        }.controlSize(.small)
+                        Button("Open config.json") { NSWorkspace.shared.open(DotConfig.fileURL) }.controlSize(.small)
+                        Button("Open agents folder") { NSWorkspace.shared.open(model.config.agentsRootURL) }.controlSize(.small)
                     }
                 }
-                .frame(minWidth: 260)
-                .padding(.leading, 8)
-            }
-        }
-        .padding(16)
-    }
-
-    private var chat: some View {
-        VStack(spacing: 6) {
-            ScrollViewReader { proxy in
-                ScrollView {
-                    LazyVStack(alignment: .leading, spacing: 8) {
-                        ForEach(Array(model.transcript.enumerated()), id: \.offset) { _, entry in
-                            chatEntry(entry.role, entry.text)
-                        }
-                        Color.clear.frame(height: 1).id("end")
-                    }
-                    .padding(.vertical, 6)
+                settingsGroup("Permissions") {
+                    permissionRow("Microphone", model.permissions.microphone) { Permissions.requestMicrophone { _ in model.reload() }; Permissions.openSettings(.microphone) }
+                    permissionRow("Screen Recording", model.permissions.screenRecording) { Permissions.requestScreenRecording(); Permissions.openSettings(.screenRecording) }
+                    permissionRow("Accessibility", model.permissions.accessibility) { Permissions.requestAccessibility(); Permissions.openSettings(.accessibility) }
                 }
-                .onChange(of: model.transcript.count) { _, _ in proxy.scrollTo("end") }
-                .onAppear { proxy.scrollTo("end") }
+                HStack(spacing: 10) {
+                    Button("Save") { model.saveSettings() }.keyboardShortcut("s", modifiers: .command)
+                    if let note = model.settingsNote { Text(note).font(.caption).foregroundStyle(.secondary) }
+                }
             }
-            HStack {
-                TextField("Message \(model.selected?.name ?? "the agent")…", text: $model.composer, axis: .vertical)
-                    .lineLimit(1...4)
-                    .textFieldStyle(.roundedBorder)
-                    .onSubmit { model.send() }
-                Button("Send") { model.send() }.keyboardShortcut(.return, modifiers: .command)
-                    .disabled(model.composer.trimmingCharacters(in: .whitespaces).isEmpty)
-            }
+            .padding(.horizontal, 24).padding(.bottom, 24)
+            .frame(maxWidth: 640, alignment: .leading)
         }
     }
 
-    @ViewBuilder
-    private func chatEntry(_ role: String, _ text: String) -> some View {
-        switch role {
-        case "user":
-            HStack {
-                Spacer(minLength: 60)
-                Text(text).font(.callout).textSelection(.enabled)
-                    .padding(.horizontal, 12).padding(.vertical, 8)
-                    .background(Color.accentColor.opacity(0.18), in: RoundedRectangle(cornerRadius: 12))
-            }
-        case "assistant", "result":
-            HStack {
-                Text(text).font(.callout).textSelection(.enabled)
-                    .padding(.horizontal, 12).padding(.vertical, 8)
-                    .background(Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 12))
-                    .foregroundStyle(role == "result" ? .secondary : .primary)
-                Spacer(minLength: 60)
-            }
-        default:
-            HStack(alignment: .top, spacing: 6) {
-                Text(role).font(.caption2.monospaced()).foregroundStyle(.secondary).frame(width: 52, alignment: .trailing)
-                Text(text).font(.caption).foregroundStyle(.secondary).lineLimit(2)
-                Spacer()
-            }
+    private func settingsGroup<Content: View>(_ title: String, @ViewBuilder content: () -> Content) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(title).font(.headline)
+            content()
+        }
+        .padding(14)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color.primary.opacity(0.05), in: RoundedRectangle(cornerRadius: 12))
+    }
+
+    private func permissionRow(_ name: String, _ granted: Bool, action: @escaping () -> Void) -> some View {
+        HStack {
+            Image(systemName: granted ? "checkmark.circle.fill" : "exclamationmark.circle").foregroundStyle(granted ? .green : .orange)
+            Text(name).font(.callout)
+            Spacer()
+            if !granted { Button("Grant", action: action).controlSize(.small) }
         }
     }
+
+    // MARK: Sheets
 
     private var newAgentSheet: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("New agent").font(.title3.weight(.semibold))
+            Text("A named agent keeps its own folder, notes and conversation. Give it a job and it keeps that job.").font(.callout).foregroundStyle(.secondary)
             TextField("Name, like Recruiting or Notes", text: $model.newAgentName)
             TextField("First task or what it is for (optional)", text: $model.newAgentBrief, axis: .vertical).lineLimit(3...6)
             HStack {
@@ -347,6 +789,49 @@ struct HomeView: View {
             }
         }
         .padding(20)
-        .frame(width: 440)
+        .frame(width: 460)
+    }
+
+    private func renameSheet(_ agent: AgentManager.Agent) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Rename \(agent.name)").font(.title3.weight(.semibold))
+            TextField("Name", text: $model.renameText)
+            HStack {
+                Spacer()
+                Button("Cancel") { model.renaming = nil }
+                Button("Rename") { model.rename() }.keyboardShortcut(.defaultAction)
+            }
+        }
+        .padding(20)
+        .frame(width: 380)
+    }
+}
+
+struct BreathingDot: View {
+    let color: Color
+    @State private var on = false
+    var body: some View {
+        Circle().fill(color).frame(width: 8, height: 8)
+            .scaleEffect(on ? 1.25 : 0.85).opacity(on ? 1 : 0.55)
+            .animation(.easeInOut(duration: 0.9).repeatForever(autoreverses: true), value: on)
+            .onAppear { on = true }
+    }
+}
+
+/// QuickLook's own preview for an output: PDFs, images, html, decks.
+struct QuickLookPreview: NSViewRepresentable {
+    let url: URL
+    func makeNSView(context: Context) -> QLPreviewView {
+        let view = QLPreviewView(frame: NSRect(x: 0, y: 0, width: 280, height: 300), style: .normal) ?? QLPreviewView()
+        view.autostarts = true
+        view.shouldCloseWithWindow = false
+        view.previewItem = url as QLPreviewItem
+        return view
+    }
+    func updateNSView(_ view: QLPreviewView, context: Context) {
+        if (view.previewItem as? URL) != url {
+            view.previewItem = url as QLPreviewItem
+            view.refreshPreviewItem()
+        }
     }
 }

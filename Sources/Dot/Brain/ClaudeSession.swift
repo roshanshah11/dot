@@ -162,13 +162,23 @@ final class ClaudeSession {
         }
     }
 
-    private func dispatch(_ event: StreamEvent) {
+    /// Claude Code reports the session's running total; Dot wants the turn's own cost.
+    private var lastTotalCost = 0.0
+
+    private func dispatch(_ incoming: StreamEvent) {
         lastActivity = Date()
+        var event = incoming
         switch event {
         case .systemInit(let id, _):
             if !id.isEmpty { sessionId = id }
-        case .result:
+        case .result(let info):
             turnInFlight = false
+            let turnCost = max(0, info.costUSD - lastTotalCost)
+            lastTotalCost = max(lastTotalCost, info.costUSD)
+            event = .result(ResultInfo(sessionId: info.sessionId, subtype: info.subtype, isError: info.isError, costUSD: turnCost,
+                                       durationMs: info.durationMs, durationApiMs: info.durationApiMs, numTurns: info.numTurns,
+                                       inputTokens: info.inputTokens, outputTokens: info.outputTokens, cacheReadTokens: info.cacheReadTokens,
+                                       cacheCreationTokens: info.cacheCreationTokens, resultText: info.resultText))
         case .permissionRequest(let request):
             guard let handler = permissionHandler else {
                 answerPermission(requestId: request.requestId, allow: false, input: request.input, message: "Dot has no one to ask.")

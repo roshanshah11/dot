@@ -14,7 +14,7 @@ import Foundation
 /// Mouse clicks are also reported (listen-only, never swallowed) so a walkthrough can see
 /// the user click the ringed control.
 final class HotkeyMonitor {
-    enum Mode: Equatable { case talk, agent }
+    enum Mode: Equatable { case talk, agent, dictate }
 
     enum Event: Equatable {
         case pressed(Mode)
@@ -100,13 +100,16 @@ final class HotkeyMonitor {
         let option = flags.contains(.maskAlternate)
         let shift = flags.contains(.maskShift)
         let command = flags.contains(.maskCommand)
+        let fn = flags.contains(.maskSecondaryFn)
 
         switch type {
         case .flagsChanged:
-            let chord = control && option && !command
+            let talkChord = control && option && !command
+            let dictateChord = control && fn && !option && !command
+            let chord = talkChord || dictateChord
             if !held && chord {
                 held = true
-                mode = shift ? .agent : .talk
+                mode = dictateChord ? .dictate : (shift ? .agent : .talk)
                 pressedAt = Date()
                 dragStart = nil
                 dragging = false
@@ -118,7 +121,7 @@ final class HotkeyMonitor {
                     emit(.dragEnded(Self.rect(from: start, to: Self.appKitPoint(event.location))))
                 }
                 emit(.released(mode, heldFor: Date().timeIntervalSince(pressedAt)))
-            } else if held && chord {
+            } else if held && chord, mode != .dictate {
                 let newMode: Mode = shift ? .agent : .talk
                 if newMode != mode {
                     mode = newMode

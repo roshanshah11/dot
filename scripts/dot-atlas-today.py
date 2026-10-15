@@ -92,6 +92,18 @@ def main():
         head = state.split('\n', 1)[0]
         out['state_head'] = clip(strip_ids(head.strip('() ')), 300)
     out['priorities'] = priorities
+    # What an agent should know about him before it writes anything in his name: the pinned
+    # preferences first (Atlas sorts them first), then the newest facts.
+    fact_lines = [clip(strip_ids(l).lstrip('- '), 180) for l in facts if not l.startswith('- deadline')
+                  and not re.match(r'-\s*(\w*preference|prefer|style|dislikes|default_|constraint)', l)]
+    out['facts'] = fact_lines[:16]
+    about = ['[about him]']
+    if prefs: about += ['how he likes things:'] + [f'- {l}' for l in prefs[:6]]
+    if fact_lines: about += ['facts atlas holds (newest first):'] + [f'- {l}' for l in fact_lines[:12]]
+    if priorities: about += ['his priorities now:'] + [f'- {l}' for l in priorities[:3]]
+    if out.get('state_head'): about.append(f"where things stand: {out['state_head']}")
+    about.append('[/about him]')
+    out['profile_block'] = '\n'.join(about) if len(about) > 2 else ''
 
     # The prompt block: what a sharp assistant would know at a glance. Sections are ordered by
     # how often a voice question touches them; trimming drops from the end.

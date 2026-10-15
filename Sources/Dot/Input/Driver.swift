@@ -48,6 +48,20 @@ final class Driver {
     }
 
     /// Glide the real cursor to `target` (AppKit coordinates) and click it, or only rest there.
+    /// Command-V into the focused app, tagged as Dot's own so the abort tap ignores it.
+    @discardableResult
+    static func paste() -> Bool {
+        guard let down = CGEvent(keyboardEventSource: nil, virtualKey: 9, keyDown: true),
+              let up = CGEvent(keyboardEventSource: nil, virtualKey: 9, keyDown: false) else { return false }
+        for event in [down, up] {
+            event.flags = .maskCommand
+            event.setIntegerValueField(.eventSourceUserData, value: eventTag)
+        }
+        down.post(tap: .cghidEventTap)
+        up.post(tap: .cghidEventTap)
+        return true
+    }
+
     func go(to target: CGPoint, click: Bool, completion: @escaping (Bool) -> Void) {
         guard active else { completion(false); return }
         pending.forEach { $0.cancel() }

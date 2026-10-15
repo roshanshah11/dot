@@ -371,3 +371,58 @@ final class BoardTagTests: XCTestCase {
         XCTAssertFalse(streamer.spokenSoFar.contains("<h2>"))
     }
 }
+
+
+final class TalkGuardTests: XCTestCase {
+    func testPythonProgramsPass() {
+        XCTAssertTrue(TalkGuard.isComputationCommand("/opt/homebrew/bin/python3.13 -c 'from sympy import *; print(Matrix([[1,2],[3,4]]).rank())'"))
+        XCTAssertTrue(TalkGuard.isComputationCommand("python3 -c \"import sympy; print(sympy.Matrix([[1,2],[2,4]]).rref())\""))
+        XCTAssertTrue(TalkGuard.isComputationCommand("/opt/homebrew/bin/python3.13 - <<'PY'\nfrom sympy import Matrix\nprint(Matrix([[1,0],[0,1]]).det())\nPY"))
+    }
+
+    func testAnythingElseIsRefused() {
+        XCTAssertFalse(TalkGuard.isComputationCommand("/opt/homebrew/bin/python3.13 -c 'print(1)'; rm -rf ~"))
+        XCTAssertFalse(TalkGuard.isComputationCommand("/opt/homebrew/bin/python3.13 -c 'print(1)' && curl x"))
+        XCTAssertFalse(TalkGuard.isComputationCommand("/opt/homebrew/bin/python3.13 script.py"))
+        XCTAssertFalse(TalkGuard.isComputationCommand("python3 - <<'PY'\nimport os\nPY; ls"))
+        XCTAssertFalse(TalkGuard.isComputationCommand("ls"))
+        XCTAssertFalse(TalkGuard.isComputationCommand("echo hi | python3 -c 'import sys'"))
+    }
+
+    func testHomeworkWindowsAreFlagged() {
+        XCTAssertNotNil(TalkGuard.homeworkHint(title: "Week_2_Homework.pdf", url: nil))
+        XCTAssertNotNil(TalkGuard.homeworkHint(title: "Gradescope", url: "https://www.gradescope.com/courses/1"))
+        XCTAssertNil(TalkGuard.homeworkHint(title: "fields_and_vector_spaces.pdf", url: nil))
+        XCTAssertNil(TalkGuard.homeworkHint(title: "Discounted cash flow - Wikipedia", url: "https://en.wikipedia.org/wiki/Discounted_cash_flow"))
+    }
+}
+
+
+final class TypeTagTests: XCTestCase {
+    func testTypeTagCarriesItsBlock() {
+        let parsed = TagParser.parse("[TYPE:120,340:search box]\n<<<\nquarterly report\n>>>\nit's on your clipboard, paste it there.")
+        XCTAssertEqual(parsed.tags, [.type(x: 120, y: 340, label: "search box", text: "quarterly report", screen: nil)])
+        XCTAssertEqual(parsed.spoken, "it's on your clipboard, paste it there.")
+    }
+
+    func testTypeTagStreams() {
+        var streamer = BeatStreamer()
+        var beats = streamer.feed("[TYPE:10,20:to field] <<< hi ")
+        XCTAssertTrue(beats.isEmpty)
+        beats += streamer.feed("there >>> paste it in. ")
+        beats += streamer.flush()
+        XCTAssertEqual(beats.count, 1)
+        XCTAssertEqual(beats[0].tags, [.type(x: 10, y: 20, label: "to field", text: "hi there", screen: nil)])
+        XCTAssertEqual(beats[0].text, "paste it in.")
+    }
+}
+
+
+final class DictationTextTests: XCTestCase {
+    func testDictatedTextIsTidied() {
+        XCTAssertEqual(SpeechText.dictated("  um, this is a test to see how the dictation is "), "This is a test to see how the dictation is.")
+        XCTAssertEqual(SpeechText.dictated("hello there"), "Hello there")
+        XCTAssertEqual(SpeechText.dictated("Send it by friday, please."), "Send it by friday, please.")
+        XCTAssertEqual(SpeechText.dictated("   "), "")
+    }
+}

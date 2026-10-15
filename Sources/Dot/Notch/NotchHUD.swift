@@ -2,8 +2,10 @@ import AppKit
 import DotKit
 import SwiftUI
 
+/// One row of the task bar: an agent at work, a walkthrough in progress, a lesson on the board.
 struct AgentRow: Identifiable, Equatable {
     enum State: Equatable { case running, waiting, done, failed }
+    enum Kind: Equatable { case agent, walkthrough, lesson }
     let id: String
     var name: String
     var line: String
@@ -12,6 +14,11 @@ struct AgentRow: Identifiable, Equatable {
     var outputCount: Int = 0
     var outputs: [URL] = []
     var nextAction: String? = nil
+    var kind: Kind = .agent
+    /// The last few things it did, newest last: tool calls, a sentence it wrote, a step he took.
+    var steps: [String] = []
+    var canStop = false
+    var startedAt = Date()
 }
 
 struct ConsentCard: Identifiable {
@@ -49,10 +56,15 @@ final class HUDModel: ObservableObject {
     var onOpenAgent: ((String) -> Void)?
     var onReply: ((String, String) -> Void)?
     var onDismissAgent: ((String) -> Void)?
+    var onStopAgent: ((String) -> Void)?
+    /// Running tasks fold into pills on the idle tab after a while; a change or a hover unfolds them.
+    @Published var collapsed = false { didSet { if oldValue != collapsed { onCollapseChanged?() } } }
+    var onCollapseChanged: (() -> Void)?
 
     var hasContent: Bool {
-        phase != .hidden || !agents.isEmpty || consent != nil || showInput || status != nil || error != nil
+        phase != .hidden || (!agents.isEmpty && !collapsed) || consent != nil || showInput || status != nil || error != nil
     }
+    var foldedTasks: [AgentRow] { collapsed ? agents : [] }
 
     var showsPanel: Bool { hasContent || presence }
 }
@@ -65,6 +77,10 @@ final class NotchHUD {
     private var panel: NSPanel?
     private var statusWork: DispatchWorkItem?
     private var visible = false
+
+    init() {
+        model.onCollapseChanged = { [weak self] in self?.refreshVisibility() }
+    }
 
     init(accentHex: String) {
         if let color = Color(hex: accentHex) { model.accent = color }
@@ -137,20 +153,48 @@ final class NotchHUD {
         refreshVisibility()
     }
 
+    private var collapseWork: DispatchWorkItem?
+
     func upsertAgent(_ row: AgentRow) {
+        var changed = true
         if let index = model.agents.firstIndex(where: { $0.id == row.id }) {
+            changed = model.agents[index].state != row.state || model.agents[index].line != row.line
             model.agents[index] = row
             if row.state == .running, model.expanded == row.id { model.expanded = nil }
         } else {
             model.agents.append(row)
         }
+        // A new task or a finished one unfolds the panel; steady work folds back into pills.
+        if changed, row.state != .running || !model.agents.contains(where: { $0.id == row.id && $0.state == .running }) == false {
+            if row.state != .running || model.agents.count == 1 && !model.collapsed { model.collapsed = false }
+        }
+        scheduleCollapse()
         refreshVisibility()
     }
 
     func removeAgent(id: String) {
         model.agents.removeAll { $0.id == id }
         if model.expanded == id { model.expanded = nil }
+        if model.agents.isEmpty { model.collapsed = false }
         refreshVisibility()
+    }
+
+    /// Fold running tasks into the idle tab after 20 s of steady work; finished rows stay open.
+    private func scheduleCollapse() {
+        collapseWork?.cancel()
+        guard model.agents.contains(where: { $0.state == .running }),
+              !model.agents.contains(where: { $0.state == .done || $0.state == .failed || $0.state == .waiting }) else { return }
+        let work = DispatchWorkItem { [weak self] in
+            guard let self, !self.model.hovering, self.model.expanded == nil, self.model.phase == .hidden else { return }
+            self.model.collapsed = true
+        }
+        collapseWork = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 20, execute: work)
+    }
+
+    func unfoldTasks() {
+        model.collapsed = false
+        scheduleCollapse()
     }
 
     func present(_ card: ConsentCard) {
@@ -273,6 +317,11 @@ struct NotchHUDView: View {
                         Text("click to type, hold ⌃⌥ to talk").font(.system(size: 10)).foregroundStyle(text.opacity(0.4))
                     }
                     .padding(.horizontal, 14).padding(.bottom, 8)
+                } else if !model.foldedTasks.isEmpty {
+                    HStack(spacing: 8) {
+                        ForEach(model.foldedTasks.prefix(3)) { row in taskPill(row) }
+                    }
+                    .padding(.horizontal, 12).padding(.bottom, 6)
                 } else {
                     HStack(spacing: 5) {
                         Circle().fill(model.accent).frame(width: 5, height: 5).shadow(color: model.accent.opacity(0.8), radius: 3)
@@ -281,11 +330,13 @@ struct NotchHUDView: View {
                     .padding(.bottom, 2)
                 }
             }
-            .frame(width: model.hovering ? min(geometry.notchWidth + 220, 420) : geometry.notchWidth + 36, alignment: .center)
+            .frame(width: model.hovering ? min(geometry.notchWidth + 220, 420) : (model.foldedTasks.isEmpty ? geometry.notchWidth + 36 : min(geometry.notchWidth + 80 + CGFloat(min(model.foldedTasks.count, 3)) * 150, 560)), alignment: .center)
             .background(ground, in: UnevenRoundedRectangle(cornerRadii: .init(topLeading: 0, bottomLeading: 14, bottomTrailing: 14, topTrailing: 0)))
             .contentShape(Rectangle())
             .onHover { inside in withAnimation(.easeOut(duration: 0.15)) { model.hovering = inside } }
-            .onTapGesture { NotificationCenter.default.post(name: .dotShowInput, object: nil) }
+            .onTapGesture {
+                if !model.foldedTasks.isEmpty { model.collapsed = false } else { NotificationCenter.default.post(name: .dotShowInput, object: nil) }
+            }
             Spacer(minLength: 0)
         }
         .frame(width: NotchGeometry.panelWidth, height: NotchHUD.tallPanelHeight, alignment: .top)
@@ -348,8 +399,8 @@ struct NotchHUDView: View {
 
     private var headerText: String {
         switch model.phase {
-        case .hidden: return model.showInput ? "ask dot" : (model.agents.isEmpty ? "dot" : "agents")
-        case .listening: return model.mode == .agent ? "listening, for an agent" : "listening"
+        case .hidden: return model.showInput ? "ask dot" : (model.agents.isEmpty ? "dot" : (model.agents.count == 1 ? "one task" : "\(model.agents.count) tasks"))
+        case .listening: return model.mode == .agent ? "listening, for an agent" : (model.mode == .dictate ? "dictating" : "listening")
         case .transcribing: return "hearing you"
         case .thinking: return "thinking"
         case .speaking: return "dot"
@@ -414,19 +465,37 @@ struct NotchHUDView: View {
             HStack(spacing: 8) {
                 Group {
                     switch row.state {
-                    case .running: ProgressView().controlSize(.mini)
+                    case .running:
+                        switch row.kind {
+                        case .agent: ProgressView().controlSize(.mini)
+                        case .walkthrough: Image(systemName: "cursorarrow.click.2").foregroundStyle(model.accent)
+                        case .lesson: Image(systemName: "book.pages").foregroundStyle(model.accent)
+                        }
                     case .waiting: Image(systemName: "hand.raised.fill").foregroundStyle(model.accent)
                     case .done: Image(systemName: "checkmark.circle.fill").foregroundStyle(model.accent)
                     case .failed: Image(systemName: "xmark.circle.fill").foregroundStyle(.red)
                     }
                 }.frame(width: 14)
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(row.name).font(.system(size: 12, weight: .semibold)).foregroundStyle(text)
+                    HStack(spacing: 6) {
+                        Text(row.name).font(.system(size: 12, weight: .semibold)).foregroundStyle(text)
+                        if row.state == .running {
+                            Text(Self.elapsed(since: row.startedAt)).font(.system(size: 10.5, design: .monospaced)).foregroundStyle(text.opacity(0.4))
+                        }
+                    }
                     if model.expanded != row.id {
                         Text(row.line).font(.system(size: 12)).foregroundStyle(text.opacity(0.65)).lineLimit(2)
                     }
+                    if row.state == .running, !row.steps.isEmpty, model.expanded != row.id {
+                        ForEach(Array(row.steps.suffix(3).enumerated()), id: \.offset) { _, step in
+                            Text(step).font(.system(size: 11)).foregroundStyle(text.opacity(0.42)).lineLimit(1)
+                        }
+                    }
                 }
                 Spacer()
+                if row.state == .running, row.canStop {
+                    smallButton("stop") { model.onStopAgent?(row.id) }
+                }
                 if row.result != nil {
                     Image(systemName: model.expanded == row.id ? "chevron.up" : "chevron.down")
                         .font(.system(size: 10, weight: .bold)).foregroundStyle(text.opacity(0.5))
@@ -502,6 +571,25 @@ struct NotchHUDView: View {
         }
         .padding(10)
         .background(Color.white.opacity(0.05), in: RoundedRectangle(cornerRadius: 10))
+    }
+
+    private func taskPill(_ row: AgentRow) -> some View {
+        HStack(spacing: 5) {
+            switch row.kind {
+            case .agent: Circle().fill(model.accent).frame(width: 5, height: 5).shadow(color: model.accent.opacity(0.8), radius: 3)
+            case .walkthrough: Image(systemName: "cursorarrow.click.2").font(.system(size: 9)).foregroundStyle(model.accent)
+            case .lesson: Image(systemName: "book.pages").font(.system(size: 9)).foregroundStyle(model.accent)
+            }
+            Text(row.name).font(.system(size: 10.5, weight: .semibold)).foregroundStyle(text.opacity(0.85)).lineLimit(1)
+            Text(row.line).font(.system(size: 10.5)).foregroundStyle(text.opacity(0.5)).lineLimit(1).frame(maxWidth: 90, alignment: .leading)
+        }
+        .padding(.horizontal, 8).padding(.vertical, 3)
+        .background(Color.white.opacity(0.08), in: Capsule())
+    }
+
+    static func elapsed(since date: Date) -> String {
+        let s = Int(Date().timeIntervalSince(date))
+        return s < 60 ? "\(s)s" : "\(s / 60)m\(String(format: "%02d", s % 60))s"
     }
 
     private func smallButton(_ title: String, action: @escaping () -> Void) -> some View {

@@ -1,4 +1,5 @@
 import AppKit
+import DotKit
 import SwiftUI
 
 @MainActor
@@ -49,6 +50,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         hud.setPresence(config.notchPresence)
         home = HomeWindowController(agents: agents, ledger: ledger, config: config, atlas: atlas)
         let hudModel = hud.model
+        hudModel.onStopAgent = { [weak self] id in
+            Task { @MainActor in
+                guard let self else { return }
+                if id == "walkthrough" || id == "lesson" { self.talk.stopTask(id) } else { self.agents.stop(id) }
+            }
+        }
         atlas.onUpdate = { [weak self] brief in
             hudModel.todayLine = brief.hoverLine()
             self?.talk.todayArrived(brief)
@@ -56,11 +63,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // The countdown to the next meeting moves by the minute; the brief itself every ten.
         hoverTimer = Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { [weak self] _ in
             Task { @MainActor in
-                guard let brief = self?.atlas.brief else { return }
+                guard let self, let brief = self.atlas.brief else { return }
                 hudModel.todayLine = brief.hoverLine()
+                self.noticeMeeting(brief)
             }
         }
 
+        NotificationCenter.default.addObserver(forName: .dotAgentFinished, object: nil, queue: .main) { [weak self] note in
+            let failed = (note.userInfo?["failed"] as? Bool) ?? false
+            Task { @MainActor in self?.overlay.setMood(failed ? .puzzled : .happy, for: failed ? 3 : 2.5) }
+        }
         installStatusItem()
         AccessibilityContext.observeForegroundApp()
         hotkeys.onEvent = { [weak self] event in self?.talk.hotkey(event) }
@@ -68,6 +80,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         requestPermissionsThenStart()
         atlas.start()
         noticer.start()
+    }
+
+    private var noticedMeetings: Set<String> = []
+
+    /// Ten minutes before the next event, once: a line in the notch and, when he is not
+    /// mid-conversation, a short spoken heads-up. Configurable with `meetingNoticeMinutes`.
+    private func noticeMeeting(_ brief: TodayBrief) {
+        let minutes = config.meetingNoticeMinutes
+        guard minutes > 0, let next = brief.nextEvent(), next.startsIn > 0, next.startsIn <= minutes else { return }
+        let key = "\(brief.date) \(next.title)"
+        guard !noticedMeetings.contains(key) else { return }
+        noticedMeetings.insert(key)
+        let line = "\(next.title.lowercased()) in \(next.startsIn) min"
+        hud.flash(status: line, for: 20)
+        overlay.greet(line, for: 12)
+        if talk.isIdle, config.speakMeetingNotice {
+            speaker.speak("heads up, \(next.title.lowercased()) in \(next.startsIn) minutes.")
+        }
+        Log.info("notice: \(line)")
     }
 
     /// `Dot --ask ...` and `Dot --agent ...` from a shell reach the running app here.
@@ -95,6 +126,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         center.addObserver(forName: DotIPC.refresh, object: nil, queue: .main) { [weak self] _ in
             Task { @MainActor in self?.atlas.refresh(reason: "cli") }
+        }
+        // `Dot --type "text"`: the dictation insert path on whatever field has focus.
+        center.addObserver(forName: DotIPC.type, object: nil, queue: .main) { [weak self] note in
+            guard let text = note.userInfo?["text"] as? String else { return }
+            Task { @MainActor in
+                let method = TextInjection.insert(text)
+                self?.hud.flash(status: "inserted via \(method.rawValue)", for: 3)
+                Log.info("type: \(method.rawValue): \(Log.short(text, 80))")
+            }
+        }
+        // `Dot --stt file.wav`: feed a WAV through the streaming recognizer and log what it hears.
+        center.addObserver(forName: DotIPC.stt, object: nil, queue: .main) { [weak self] note in
+            guard let path = note.userInfo?["text"] as? String else { return }
+            Task { @MainActor in await self?.talk.streamingSelfTest(wavPath: path) }
         }
     }
 
@@ -199,4 +244,6 @@ enum DotIPC {
     static let home = Notification.Name("com.roshan.dot.home")
     static let stop = Notification.Name("com.roshan.dot.stop")
     static let refresh = Notification.Name("com.roshan.dot.refresh")
+    static let type = Notification.Name("com.roshan.dot.type")
+    static let stt = Notification.Name("com.roshan.dot.stt")
 }

@@ -50,11 +50,8 @@ public struct BeatStreamer {
                     continue
                 }
                 guard let match = TagParser.blockPattern.firstMatch(in: buffer, range: NSRange(location: 0, length: ns.length)) else { break }
-                let html = ns.substring(with: match.range(at: 1))
-                if case .card(let id, let rect, let title, _, let screen) = card {
-                    let filled = DotTag.card(id: id, rect: rect, title: title, html: html, screen: screen)
-                    place(filled)
-                }
+                let body = ns.substring(with: match.range(at: 1))
+                place(card.filled(with: body))
                 openCard = nil
                 buffer = ns.substring(from: match.range.location + match.range.length)
                 continue
@@ -68,7 +65,7 @@ public struct BeatStreamer {
                 let payload = payloadRange.location == NSNotFound ? "" : ns.substring(with: payloadRange)
                 buffer = ns.substring(from: match.range.location + match.range.length)
                 if let tag = TagParser.makeTag(kind: kind, payload: payload) {
-                    if case .card = tag { openCard = tag } else { place(tag) }
+                    if tag.hasBlock { openCard = tag } else { place(tag) }
                 }
                 continue
             }
@@ -111,15 +108,13 @@ public struct BeatStreamer {
     /// The stream ended: the last sentence, then any tags still waiting as a wordless beat.
     public mutating func flush() -> [Beat] {
         var beats = feed("")
-        if openCard != nil {
-            // The block never closed: whatever arrived is the card's html.
-            if case .card(let id, let rect, let title, _, let screen)? = openCard {
-                var html = buffer.trimmingCharacters(in: .whitespacesAndNewlines)
-                if html.hasPrefix("<<<") { html = String(html.dropFirst(3)) }
-                if html.hasSuffix(">>>") { html = String(html.dropLast(3)) }
-                if !html.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                    place(.card(id: id, rect: rect, title: title, html: html, screen: screen))
-                }
+        if let card = openCard {
+            // The block never closed: whatever arrived is the body.
+            var body = buffer.trimmingCharacters(in: .whitespacesAndNewlines)
+            if body.hasPrefix("<<<") { body = String(body.dropFirst(3)) }
+            if body.hasSuffix(">>>") { body = String(body.dropLast(3)) }
+            if !body.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                place(card.filled(with: body))
             }
             openCard = nil
             buffer = ""

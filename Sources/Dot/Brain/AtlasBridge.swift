@@ -94,6 +94,9 @@ final class AtlasBridge {
     }
 
     /// A few lines for an agent's context: enough to notice a collision, not the whole day.
+    /// What an agent should know about him before writing in his name (from Atlas facts and preferences).
+    func profileBlock() -> String { brief?.profileBlock ?? "" }
+
     func shortBlock() -> String {
         guard let brief else { return "" }
         var lines = ["[today] \(brief.weekday) \(brief.date)"]

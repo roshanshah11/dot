@@ -23,8 +23,13 @@ final class AgentManager {
         var lastBrief = ""
         var finalText = ""
         var buffer = ""
+        var steps: [String] = []
         var idleWork: DispatchWorkItem?
         init(agent: Agent, session: ClaudeSession) { self.agent = agent; self.session = session }
+        func step(_ line: String) { steps.append(line); if steps.count > 6 { steps.removeFirst(steps.count - 6) } }
+        func row(_ line: String, state: AgentRow.State = .running) -> AgentRow {
+            AgentRow(id: agent.slug, name: agent.name, line: line, state: state, steps: steps, canStop: state == .running, startedAt: startedAt)
+        }
     }
 
     private let config: DotConfig
@@ -71,6 +76,16 @@ final class AgentManager {
         hud.model.onDismissAgent = { [weak self] slug in
             Task { @MainActor in self?.hud.removeAgent(id: slug) }
         }
+    }
+
+    /// Stop from the task bar: the session ends now; the folder and notes stay.
+    func stop(_ slug: String) {
+        guard let run = runs[slug] else { return }
+        run.session.stop()
+        runs[slug] = nil
+        hud.upsertAgent(run.row("stopped", state: .failed))
+        appendTranscript(run.agent, role: "result", text: "stopped from the task bar")
+        Log.info("agent[\(slug)] stopped from the task bar")
     }
 
     /// A typed follow-up from the notch or Home continues the agent's own conversation.
@@ -144,10 +159,12 @@ final class AgentManager {
         run.buffer = ""
         run.lastLine = "starting"
         run.lastBrief = brief
-        hud.upsertAgent(AgentRow(id: agent.slug, name: agent.name, line: Log.short(brief, 90), state: .running))
+        run.steps = []
+        hud.upsertAgent(run.row(Log.short(brief, 90)))
 
         var text = brief
         var contextLines: [String] = []
+        if let about = atlas?.profileBlock(), !about.isEmpty { contextLines.append(about) }
         if let today = atlas?.shortBlock(), !today.isEmpty { contextLines.append(today) }
         if let context {
             if let app = context.appName { contextLines.append("Frontmost app when they asked: \(app)" + (context.windowTitle.map { ", window \"\($0)\"" } ?? "")) }
@@ -198,8 +215,8 @@ final class AgentManager {
         session.onExit = { [weak self, weak run] status in
             guard let self, let run else { return }
             if self.runs[run.agent.slug] === run { self.runs[run.agent.slug] = nil }
-            if status != 0 {
-                self.hud.upsertAgent(AgentRow(id: run.agent.slug, name: run.agent.name, line: "stopped (exit \(status))", state: .failed))
+            if status != 0, self.hud.model.agents.first(where: { $0.id == run.agent.slug })?.state == .running {
+                self.hud.upsertAgent(run.row("stopped (exit \(status))", state: .failed))
             }
         }
         do {
@@ -233,18 +250,20 @@ final class AgentManager {
             let line = run.buffer.split(separator: "\n").last.map(String.init) ?? run.buffer
             if line.count > 12 {
                 run.lastLine = Log.short(line, 90)
-                hud.upsertAgent(AgentRow(id: agent.slug, name: agent.name, line: run.lastLine, state: .running))
+                hud.upsertAgent(run.row(run.lastLine))
             }
         case .assistantText(let text):
             if !text.isEmpty {
                 run.finalText = text
                 run.buffer = ""
+                run.step(Log.short(Self.firstSentence(of: text), 90))
                 appendTranscript(agent, role: "assistant", text: text)
             }
         case .toolUse(_, let name, let input):
             let line = Self.describe(tool: name, input: input)
             run.lastLine = line
-            hud.upsertAgent(AgentRow(id: agent.slug, name: agent.name, line: line, state: .running))
+            run.step(Log.short(line, 90))
+            hud.upsertAgent(run.row(line))
             appendTranscript(agent, role: "tool", text: line)
         default:
             break
@@ -265,6 +284,7 @@ final class AgentManager {
                                  result: text, outputCount: outputs.count, outputs: Array(outputs.prefix(4)), nextAction: parsed.nextAction))
         appendTranscript(agent, role: "result", text: "\(result.subtype) in \(result.durationMs) ms, $\(String(format: "%.3f", result.costUSD))")
         NSSound(named: failed ? "Basso" : "Glass")?.play()
+        NotificationCenter.default.post(name: .dotAgentFinished, object: nil, userInfo: ["failed": failed])
         if config.speakAgentResults, !summary.isEmpty {
             let more = SpeechText.clean(text).count > summary.count + 40 ? " the rest is in the notch." : ""
             speaker.speak("\(agent.name) here. \(summary)\(more)")
@@ -404,6 +424,49 @@ final class AgentManager {
         }
     }
 
+    func hasTurnInFlight(_ agent: Agent) -> Bool { runs[agent.slug]?.session.turnInFlight ?? false }
+
+    /// Archive: the folder moves under `.archive/` with the date; the roster no longer lists it.
+    func archive(_ agent: Agent) {
+        if let run = runs[agent.slug] { run.session.stop(); runs[agent.slug] = nil }
+        let archive = config.agentsRootURL.appendingPathComponent(".archive", isDirectory: true)
+        try? FileManager.default.createDirectory(at: archive, withIntermediateDirectories: true)
+        let stamp = ISO8601DateFormatter().string(from: Date()).prefix(10)
+        let dest = archive.appendingPathComponent("\(agent.slug)-\(stamp)", isDirectory: true)
+        do {
+            try FileManager.default.moveItem(at: agent.folder, to: dest)
+            hud.removeAgent(id: agent.slug)
+            Log.info("agent[\(agent.slug)] archived to \(dest.path)")
+            onRosterChanged?()
+        } catch {
+            Log.error("agent[\(agent.slug)] archive failed: \(error)")
+        }
+    }
+
+    /// Rename: the first "# name" line of CLAUDE.md is the display name.
+    func rename(_ agent: Agent, to name: String) {
+        guard var text = try? String(contentsOf: agent.claudeMD, encoding: .utf8) else { return }
+        if let range = text.range(of: #"^# .*$"#, options: .regularExpression) {
+            text.replaceSubrange(range, with: "# \(name)")
+        } else {
+            text = "# \(name)\n\n" + text
+        }
+        try? text.write(to: agent.claudeMD, atomically: true, encoding: .utf8)
+        onRosterChanged?()
+    }
+
+    func transcriptEntries(for agent: Agent, limit: Int = 300) -> [TranscriptEntry] {
+        let url = agent.folder.appendingPathComponent(".dot/transcript.jsonl")
+        guard let content = try? String(contentsOf: url, encoding: .utf8) else { return [] }
+        let iso = ISO8601DateFormatter()
+        let lines = content.split(separator: "\n").suffix(limit)
+        return lines.enumerated().compactMap { index, line in
+            guard let data = line.data(using: .utf8), let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  let role = object["role"] as? String, let text = object["text"] as? String else { return nil }
+            return TranscriptEntry(id: index, role: role, text: text, time: (object["ts"] as? String).flatMap { iso.date(from: $0) })
+        }
+    }
+
     func transcript(for agent: Agent, limit: Int = 200) -> [(role: String, text: String)] {
         let url = agent.folder.appendingPathComponent(".dot/transcript.jsonl")
         guard let content = try? String(contentsOf: url, encoding: .utf8) else { return [] }
@@ -465,4 +528,8 @@ final class AgentManager {
             return name.lowercased()
         }
     }
+}
+
+extension Notification.Name {
+    static let dotAgentFinished = Notification.Name("com.roshan.dot.agentFinished")
 }
