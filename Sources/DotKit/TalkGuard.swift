@@ -20,13 +20,4 @@ public enum TalkGuard {
         }
         return false
     }
-
-    /// A homework window on screen: his syllabus bars AI help there, so the prompt is told.
-    public static func homeworkHint(title: String?, url: String?) -> String? {
-        let hay = ((title ?? "") + " " + (url ?? "")).lowercased()
-        let marks = ["homework", "gradescope", "problem set", "pset", "hw_", "hw ", " hw"]
-        guard marks.contains(where: { hay.contains($0) }) else { return nil }
-        let what = (title?.isEmpty == false ? title : url) ?? ""
-        return "policy: this window looks like homework (\(what)). his syllabus bars ai help with homework at every stage: teach the idea on a different problem or point to the notes instead."
-    }
 }

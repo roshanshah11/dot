@@ -389,12 +389,6 @@ final class TalkGuardTests: XCTestCase {
         XCTAssertFalse(TalkGuard.isComputationCommand("echo hi | python3 -c 'import sys'"))
     }
 
-    func testHomeworkWindowsAreFlagged() {
-        XCTAssertNotNil(TalkGuard.homeworkHint(title: "Week_2_Homework.pdf", url: nil))
-        XCTAssertNotNil(TalkGuard.homeworkHint(title: "Gradescope", url: "https://www.gradescope.com/courses/1"))
-        XCTAssertNil(TalkGuard.homeworkHint(title: "fields_and_vector_spaces.pdf", url: nil))
-        XCTAssertNil(TalkGuard.homeworkHint(title: "Discounted cash flow - Wikipedia", url: "https://en.wikipedia.org/wiki/Discounted_cash_flow"))
-    }
 }
 
 

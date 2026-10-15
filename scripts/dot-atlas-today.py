@@ -29,6 +29,7 @@ def main():
     ap.add_argument('--root', default=str(Path.home() / 'roshan'))
     ap.add_argument('--harness', default=None)
     ap.add_argument('--max-chars', type=int, default=3200)
+    ap.add_argument('--chat-prompt', action='store_true', help='also print Atlas\'s full chat system prompt for agents')
     args = ap.parse_args()
     root = Path(args.root).expanduser()
     sys.path.insert(0, str(Path(args.harness).expanduser() if args.harness else root / 'Atlas' / 'harness'))
@@ -131,6 +132,17 @@ def main():
         del lines[heads[-1]:-1]
         block = '\n'.join(lines)
     out['block'] = block
+    if args.chat_prompt:
+        # The same system prompt an Atlas chat gets (mandate, his facts, deadlines, calendar, journal), plus
+        # the vault's own rules, so a Dot agent can do everything an Atlas chat can.
+        try:
+            from atlas.mcp import chat_prompt
+            prompt = chat_prompt(store, session='dot-agent')
+            rules = (root / 'CLAUDE.md').read_text(encoding='utf-8') if (root / 'CLAUDE.md').exists() else ''
+            out['chat_prompt'] = prompt + ('\n\n# The vault and its rules (~/roshan/CLAUDE.md)\n' + rules if rules else '')
+        except Exception as e:
+            out['chat_prompt'] = ''
+            out['chat_prompt_error'] = str(e)[:200]
     out['elapsed_s'] = round(time.time() - t0, 2)
     json.dump(out, sys.stdout, ensure_ascii=False)
     print()

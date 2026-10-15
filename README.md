@@ -239,4 +239,10 @@ MIT. Built by Roshan Shah.
   he talks, happy when an agent finishes, puzzled when a turn fails.
 - **Meeting notice.** Ten minutes before the next calendar event, once: a line in the notch and
   a spoken heads-up when Dot is idle (`meetingNoticeMinutes`, `speakMeetingNotice`).
+- **Transcripts, always.** Every talk turn, typed question and dictation lands in
+  `~/Dot/transcripts/YYYY-MM-DD.md` (readable) and `transcripts.jsonl` (for tools) as it happens.
+- **Agents are Atlas chats.** Each agent runs with Atlas's own chat system prompt (the mandate,
+  his facts, deadlines, calendar, journal), the vault's rules, all 102 Atlas tools and the vault
+  added as a working directory, so it can do what any Atlas chat can; Dot's consent card still
+  covers sends, submits, payments and deletes.
 - Per-turn cost: Claude Code reports a session's running total; Dot now records the turn's own cost.

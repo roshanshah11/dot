@@ -211,7 +211,7 @@ struct DotConfig: Codable {
         guard FileManager.default.isExecutableFile(atPath: python),
               FileManager.default.fileExists(atPath: harness + "/atlas/mcp.py"),
               let script = Self.bundledScript("dot-atlas-today.py", fallback: "~/Projects/dot/scripts/dot-atlas-today.py") else { return nil }
-        return [python, script, "--root", Self.expand(atlasRoot), "--harness", harness]
+        return [python, script, "--root", Self.expand(atlasRoot), "--harness", harness, "--chat-prompt"]
     }
 
     static func bundledScript(_ name: String, fallback: String) -> String? {

@@ -5,6 +5,8 @@ bottom with the date. "His ask" quotes the message that created the item.
 
 ## Now
 
+- [x] 2026-10-15 Transcripts saved automatically (md per day + jsonl); the homework guard removed at his ask; agents run with Atlas's full chat prompt and the vault.
+
 - [ ] Math mode, round two: his feedback after the weekend of midterm prep; faster partials (chunk 2.5 s); a "what did I miss" review card from the math-miss memory.
 - [ ] Typed questions answered as a text surface in the notch (the response already shows there; make it the primary surface when he typed).
 

@@ -183,7 +183,12 @@ final class AgentManager {
 
     private func startRun(for agent: Agent) -> Run? {
         var options = ClaudeSession.Options(cwd: agent.folder, model: config.agentModel)
-        options.appendSystemPrompt = Prompts.agent(name: agent.name)
+        var appended = Prompts.agent(name: agent.name)
+        if let atlasPrompt = atlas?.chatPrompt(), !atlasPrompt.isEmpty {
+            appended += "\n\n# Atlas: the chief-of-staff prompt every Atlas chat runs with. You have the same tools and the same mandate; Dot's rules above say where files go and when to ask.\n" + atlasPrompt
+        }
+        options.appendSystemPrompt = appended
+        options.extraArguments = ["--add-dir", DotConfig.expand(config.atlasRoot)]
         options.permissionMode = "acceptEdits"
         options.permissionPromptOverStdio = true
         options.maxTurns = 200

@@ -97,6 +97,9 @@ final class AtlasBridge {
     /// What an agent should know about him before writing in his name (from Atlas facts and preferences).
     func profileBlock() -> String { brief?.profileBlock ?? "" }
 
+    /// Atlas's own chat system prompt, for agents that should be able to do everything an Atlas chat can.
+    func chatPrompt() -> String { brief?.chatPrompt ?? "" }
+
     func shortBlock() -> String {
         guard let brief else { return "" }
         var lines = ["[today] \(brief.weekday) \(brief.date)"]

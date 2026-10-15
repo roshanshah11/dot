@@ -18,13 +18,14 @@ public struct TodayBrief: Codable, Equatable {
     public var priorities: [String]
     public var facts: [String]
     public var profileBlock: String
+    public var chatPrompt: String
     public var stateHead: String?
     public var block: String
     public var elapsedS: Double?
 
     enum CodingKeys: String, CodingKey {
         case builtAt = "built_at", weekday, date, deadlines, today, tomorrow, commitments, todo, waiting, unanswered
-        case unansweredCount = "unanswered_count", preferences, priorities, facts, profileBlock = "profile_block", stateHead = "state_head", block, elapsedS = "elapsed_s"
+        case unansweredCount = "unanswered_count", preferences, priorities, facts, profileBlock = "profile_block", chatPrompt = "chat_prompt", stateHead = "state_head", block, elapsedS = "elapsed_s"
     }
 
     public init(from decoder: Decoder) throws {
@@ -44,6 +45,7 @@ public struct TodayBrief: Codable, Equatable {
         priorities = try c.decodeIfPresent([String].self, forKey: .priorities) ?? []
         facts = try c.decodeIfPresent([String].self, forKey: .facts) ?? []
         profileBlock = try c.decodeIfPresent(String.self, forKey: .profileBlock) ?? ""
+        chatPrompt = try c.decodeIfPresent(String.self, forKey: .chatPrompt) ?? ""
         stateHead = try c.decodeIfPresent(String.self, forKey: .stateHead)
         block = try c.decodeIfPresent(String.self, forKey: .block) ?? ""
         elapsedS = try c.decodeIfPresent(Double.self, forKey: .elapsedS)

@@ -327,6 +327,7 @@ final class Talk {
     }
 
     var isIdle: Bool { phase == .idle && walkthrough == nil }
+    private var lastAskWasTyped = false
 
     // MARK: Streaming transcription
 
@@ -485,12 +486,7 @@ final class Talk {
             }
             hud.set(phase: .hidden)
             Log.info("dictation (\(method.rawValue)): \(Log.short(cleaned, 120))")
-            let archive = config.talkRootURL.appendingPathComponent("dictation.jsonl")
-            let entry: [String: Any] = ["ts": ISO8601DateFormatter().string(from: Date()), "app": AccessibilityContext.frontmostAppName() ?? "", "text": cleaned, "via": method.rawValue]
-            if let data = try? JSONSerialization.data(withJSONObject: entry), let line = String(data: data, encoding: .utf8) {
-                if let handle = try? FileHandle(forWritingTo: archive) { _ = try? handle.seekToEnd(); try? handle.write(contentsOf: (line + "\n").data(using: .utf8)!); try? handle.close() }
-                else { try? (line + "\n").write(to: archive, atomically: true, encoding: .utf8) }
-            }
+            TranscriptLog.append(kind: .dictation, you: cleaned, dot: nil, app: AccessibilityContext.frontmostAppName(), extra: ["via": method.rawValue])
         }
     }
 
@@ -513,6 +509,7 @@ final class Talk {
     // MARK: Asking
 
     private func ask(_ text: String, typed: Bool) async {
+        lastAskWasTyped = typed
         if let captureTask {
             let captured = await captureTask.value
             shots = captured.shots
@@ -748,10 +745,6 @@ final class Talk {
         return TalkGuard.isComputationCommand(command)
     }
 
-    nonisolated static func homeworkHint(title: String?, url: String?) -> String? {
-        TalkGuard.homeworkHint(title: title, url: url)
-    }
-
     private func buildMessage(_ transcript: String, kind: SessionKind) -> (String, [(data: Data, mediaType: String)]) {
         var lines: [String] = []
         var images = shots.map { (data: $0.jpeg, mediaType: "image/jpeg") }
@@ -762,7 +755,6 @@ final class Talk {
         }
         if let title = context.windowTitle, !title.isEmpty { lines.append("window: \(title)") }
         if let url = context.url { lines.append("url: \(url)") }
-        if let hint = Self.homeworkHint(title: context.windowTitle, url: context.url) { lines.append(hint) }
         if let selected = context.selectedText, !selected.isEmpty {
             lines.append("selected text: \"\(Log.short(selected, 400))\"")
         }
@@ -945,6 +937,8 @@ final class Talk {
         if config.hudShowsResponse { hud.model.response = spoken }
         let kind = activeSession === thinkSession ? "think" : "talk"
         ledger.record(kind: kind, agent: nil, model: turnModel, result: result, summary: hud.model.transcript)
+        TranscriptLog.append(kind: lastAskWasTyped ? .typed : .talk, you: hud.model.transcript, dot: spoken, app: context.appName,
+                             extra: ["model": turnModel, "ms": String(result.durationMs)])
         Log.info("turn[\(kind)] done in \(result.durationMs) ms, $\(String(format: "%.4f", result.costUSD)), \(tags.filter { $0.isVisual }.count) visual beat(s), tags \(tags.map { "\($0)" }.joined(separator: " | "))")
         Log.info("turn[\(kind)] said: \(Log.short(spoken, 240))")
         if result.isError, spoken.isEmpty {
