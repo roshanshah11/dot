@@ -115,9 +115,10 @@ struct CompanionView: View {
                     .offset(x: rect.minX, y: rect.minY)
             }
             if let rect = model.highlight {
-                RoundedRectangle(cornerRadius: 8)
-                    .stroke(model.color, lineWidth: 2.5)
-                    .shadow(color: model.color.opacity(0.7), radius: 8)
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .stroke(model.color, style: StrokeStyle(lineWidth: 2, lineCap: .round, dash: [7, 5]))
+                    .background(model.color.opacity(0.06), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                    .shadow(color: model.color.opacity(0.35), radius: 3)
                     .frame(width: rect.width, height: rect.height)
                     .offset(x: rect.minX, y: rect.minY)
                 if let text = model.highlightLabel, !text.isEmpty, !(model.bubbleVisible && !model.bubbleText.isEmpty) {
@@ -163,7 +164,7 @@ struct CompanionView: View {
 
     /// Short answers get a snug bubble; long ones wrap at the max width. Measured, not guessed.
     private func bubbleWidth(for text: String, max maxWidth: CGFloat) -> CGFloat {
-        let font = NSFont.systemFont(ofSize: 13.5)
+        let font = NSFont.systemFont(ofSize: 13)
         let line = (text as NSString).size(withAttributes: [.font: font]).width
         return min(maxWidth, ceil(line) + 2)
     }
@@ -172,7 +173,7 @@ struct CompanionView: View {
     /// parked beside a target it opens to the right (or left near the edge) at Dot's height, so
     /// the thing being pointed at stays uncovered; following the cursor it hangs below.
     private var bubble: some View {
-        let maxWidth: CGFloat = model.motion == .parked ? 280 : 320
+        let maxWidth: CGFloat = model.motion == .parked ? 260 : 300
         let width = bubbleWidth(for: model.bubbleText, max: maxWidth)
         let parked = model.motion == .parked
         let roomRight = model.position.x + 24 + width + 28 <= model.screenSize.width - 12
@@ -181,24 +182,27 @@ struct CompanionView: View {
         let below = model.position.y + 180 < model.screenSize.height
         return VStack(alignment: .leading, spacing: 3) {
             if let label = model.bubbleLabel, !label.isEmpty {
-                Text(label)
-                    .font(.system(size: 11, weight: .semibold))
+                Text(label.uppercased())
+                    .font(.system(size: 10, weight: .semibold))
+                    .tracking(0.6)
                     .foregroundStyle(model.color)
                     .lineLimit(1)
             }
+            // One spoken sentence, three lines at most: a caption beside Dot, not a paragraph.
             Text(model.bubbleText)
-                .font(.system(size: 13.5, weight: .regular))
+                .font(.system(size: 13, weight: .regular))
                 .foregroundStyle(paper)
-                .lineSpacing(3)
-                .lineLimit(parked ? 6 : 10)
+                .lineSpacing(2.5)
+                .lineLimit(3)
+                .truncationMode(.tail)
         }
             .frame(width: width, alignment: .leading)
             .fixedSize(horizontal: false, vertical: true)
-            .padding(.horizontal, 14)
-            .padding(.vertical, 10)
-            .background(ink.opacity(0.94), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(Color.white.opacity(0.1), lineWidth: 1))
-            .shadow(color: .black.opacity(0.35), radius: 14, x: 0, y: 6)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+            .background(ink.opacity(0.92), in: RoundedRectangle(cornerRadius: 11, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 11, style: .continuous).stroke(Color.white.opacity(0.08), lineWidth: 1))
+            .shadow(color: .black.opacity(0.28), radius: 10, x: 0, y: 4)
             .alignmentGuide(.leading) { d in flip ? d[.trailing] - (model.position.x - 20) : -(model.position.x + 22) }
             .alignmentGuide(.top) { d in
                 if parked { return d[VerticalAlignment.center] - model.position.y }
@@ -208,14 +212,16 @@ struct CompanionView: View {
             .animation(.spring(response: 0.3, dampingFraction: 0.8), value: model.bubbleVisible)
     }
 
+    /// A solid label in the accent color with white text, the way HeyClicky's label chips read
+    /// against any page (measured from the 2026-10-15 session frames: 13 px semibold, 6 px corners).
     private func chip(_ text: String) -> some View {
         Text(text)
-            .font(.system(size: 12, weight: .medium))
-            .foregroundStyle(paper)
-            .padding(.horizontal, 9)
-            .padding(.vertical, 5)
-            .background(ink.opacity(0.92), in: RoundedRectangle(cornerRadius: 8))
-            .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.white.opacity(0.12)))
+            .font(.system(size: 12.5, weight: .semibold))
+            .foregroundStyle(.white)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 4)
+            .background(model.color, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+            .shadow(color: .black.opacity(0.25), radius: 4, x: 0, y: 2)
             .fixedSize()
     }
 }
@@ -231,11 +237,12 @@ private struct RingView: View {
             let pulse = CGFloat((sin(t * 2.4) + 1) / 2)
             ZStack {
                 Circle()
-                    .stroke(color.opacity(0.25 + 0.2 * (1 - pulse)), lineWidth: 2)
+                    .stroke(color.opacity(0.18 + 0.18 * (1 - pulse)), lineWidth: 1.5)
                     .frame(width: ring.radius * 2 + 10 + pulse * 14, height: ring.radius * 2 + 10 + pulse * 14)
+                // Dashed for a click, dotted for a hover: the target ring HeyClicky draws, in Dot's color.
                 Circle()
-                    .stroke(color, style: StrokeStyle(lineWidth: 2.5, dash: ring.hover ? [7, 5] : []))
-                    .shadow(color: color.opacity(0.8), radius: 6)
+                    .stroke(color, style: StrokeStyle(lineWidth: 2.2, lineCap: .round, dash: ring.hover ? [1, 6] : [7, 5]))
+                    .shadow(color: color.opacity(0.45), radius: 3)
                     .frame(width: ring.radius * 2, height: ring.radius * 2)
             }
             .position(ring.center)

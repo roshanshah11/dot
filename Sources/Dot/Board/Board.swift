@@ -28,12 +28,22 @@ final class BoardManager {
     /// Cards with steps still hidden: "next" by voice goes to them.
     var hasHiddenSteps: Bool { cards.values.contains { $0.shown < $0.total } }
 
+    /// Back, next and the dots on a stage: (card id, action "next" | "back" | "step", step).
+    var onNav: ((String, String, Int) -> Void)?
+
+    static func isStageHTML(_ html: String) -> Bool { html.contains("class=\"stage") || html.contains("class='stage") }
+    func isStage(_ id: String) -> Bool { cards[id]?.isStage ?? false }
+    func shown(of id: String) -> Int { cards[id]?.shown ?? 0 }
+    func total(of id: String) -> Int { cards[id]?.total ?? 0 }
+    var openStage: String? { order.first { cards[$0]?.isStage == true } }
+    func setWaiting(id: String, on: Bool) { cards[id]?.setWaiting(on) }
+
     /// One line per card for the model's context.
     func stateLines() -> [String] {
         order.compactMap { id -> String? in
             guard let card = cards[id] else { return nil }
             let steps = card.total > 0 ? ", \(card.shown) of \(card.total) steps shown" : ""
-            return "card \(id) \"\(card.title)\"\(steps)"
+            return "card \(id) \"\(card.title)\"\(card.isStage ? " (a stage, one step at a time)" : "")\(steps)"
         }
     }
 
@@ -42,21 +52,27 @@ final class BoardManager {
     /// Create or replace a card. `rect` is in AppKit screen coordinates; nil means "find room".
     func show(id: String, title: String, html: String, rect: CGRect?, on screenFrame: CGRect, avoiding window: CGRect?) {
         guard let resources else { return }
-        let size = CGSize(width: rect.map { $0.width > 80 ? $0.width : 440 } ?? 440, height: 120)
-        let origin = rect.map { CGPoint(x: $0.minX, y: $0.maxY - size.height) } ?? Self.room(for: size, on: screenFrame, avoiding: window, taken: cards.values.map(\.frame))
-        if let existing = cards[id] {
-            existing.load(title: title, html: html, resources: resources, accent: accentHex)
-            existing.setFrameTopLeft(origin: CGPoint(x: existing.frame.minX, y: existing.frame.maxY), width: size.width)
-            return
-        }
-        let card = CardPanel(id: id, accentHex: accentHex, screenFrame: screenFrame)
+        let stage = Self.isStageHTML(html)
+        // A stage is opaque and fixed: 720 by 440 points of picture, never a tower of text.
+        let size = stage ? CGSize(width: min(720, screenFrame.width * 0.5), height: min(470, screenFrame.height * 0.56))
+                         : CGSize(width: rect.map { $0.width > 80 ? $0.width : 440 } ?? 440, height: 120)
+        let taken = cards.values.filter { $0.cardID != id }.map(\.frame)
+        let origin = (stage ? nil : rect).map { CGPoint(x: $0.minX, y: $0.maxY - size.height) } ?? Self.room(for: size, on: screenFrame, avoiding: window, taken: taken)
+        let card = cards[id] ?? CardPanel(id: id, accentHex: accentHex, screenFrame: screenFrame)
+        let isNew = cards[id] == nil
         card.onClose = { [weak self] in self?.close(id: id) }
+        card.onNav = { [weak self] action, step in self?.onNav?(id, action, step) }
         card.load(title: title, html: html, resources: resources, accent: accentHex)
-        card.setFrameTopLeft(origin: CGPoint(x: origin.x, y: origin.y + size.height), width: size.width)
-        cards[id] = card
-        order.append(id)
+        if stage {
+            card.setStageFrame(isNew ? CGRect(origin: origin, size: size) : CGRect(x: card.frame.minX, y: card.frame.maxY - size.height, width: size.width, height: size.height))
+        } else if isNew {
+            card.setFrameTopLeft(origin: CGPoint(x: origin.x, y: origin.y + size.height), width: size.width)
+        } else {
+            card.setFrameTopLeft(origin: CGPoint(x: card.frame.minX, y: card.frame.maxY), width: size.width)
+        }
+        if isNew { cards[id] = card; order.append(id) }
         card.orderFrontRegardless()
-        Log.info("board: card \(id) \"\(title)\" (\(html.count) chars) at \(Int(origin.x)),\(Int(origin.y))")
+        Log.info("board: \(stage ? "stage" : "card") \(id) \"\(title)\" (\(html.count) chars) at \(Int(origin.x)),\(Int(origin.y))")
     }
 
     /// A live page in a card: the one card type that loads from the network.
@@ -122,6 +138,9 @@ final class CardPanel: NSPanel, WKNavigationDelegate {
     private(set) var shown = 0
     private(set) var total = 0
     var onClose: (() -> Void)?
+    var onNav: ((String, Int) -> Void)?
+    private(set) var isStage = false
+    private let relay: CardMessageRelay
     private let web: WKWebView
     private let strip = NSView()
     private let titleLabel = NSTextField(labelWithString: "")
@@ -138,7 +157,7 @@ final class CardPanel: NSPanel, WKNavigationDelegate {
         self.screenFrame = screenFrame
         let configuration = WKWebViewConfiguration()
         configuration.preferences.setValue(true, forKey: "allowFileAccessFromFileURLs")
-        let relay = CardMessageRelay(cardID: id)
+        relay = CardMessageRelay(cardID: id)
         configuration.userContentController.add(relay, name: "dot")
         web = WKWebView(frame: .zero, configuration: configuration)
         super.init(contentRect: CGRect(x: 0, y: 0, width: 440, height: 160), styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
@@ -183,11 +202,13 @@ final class CardPanel: NSPanel, WKNavigationDelegate {
         web.navigationDelegate = self
         container.addSubview(web)
         layoutViews()
+        relay.onNav = { [weak self] action, step in self?.onNav?(action, step) }
     }
 
     private var closeButton: NSButton?
 
-    override var canBecomeKey: Bool { false }
+    /// A stage takes the arrow keys once clicked; other cards never take the keyboard.
+    override var canBecomeKey: Bool { isStage }
     override var canBecomeMain: Bool { false }
 
     @objc private func closeTapped() { onClose?() }
@@ -219,6 +240,8 @@ final class CardPanel: NSPanel, WKNavigationDelegate {
     func load(title: String, html: String, resources: URL, accent: String) {
         self.title = title
         isWeb = false
+        isStage = BoardManager.isStageHTML(html)
+        container.layer?.backgroundColor = NSColor(calibratedRed: 0.05, green: 0.047, blue: 0.043, alpha: isStage ? 1.0 : 0.97).cgColor
         loaded = false
         shown = 0
         total = 0
@@ -232,6 +255,17 @@ final class CardPanel: NSPanel, WKNavigationDelegate {
             Log.warn("board: could not write the card page: \(error)")
             web.loadHTMLString(page, baseURL: resources)
         }
+    }
+
+    /// A stage has one fixed frame; nothing is measured.
+    func setStageFrame(_ rect: CGRect) {
+        setFrame(rect, display: true)
+        layoutViews()
+    }
+
+    func setWaiting(_ on: Bool) {
+        guard loaded else { return }
+        web.evaluateJavaScript("window.board && window.board.setWaiting && window.board.setWaiting(\(on))") { _, _ in }
     }
 
     /// Place the card by its top-left corner and width; the height follows the content.
@@ -248,6 +282,18 @@ final class CardPanel: NSPanel, WKNavigationDelegate {
             return
         }
         loaded = true
+        if isStage {
+            NSAnimationContext.runAnimationGroup { ctx in ctx.duration = 0.25; self.animator().alphaValue = 1 }
+            web.evaluateJavaScript("window.board ? window.board.stepCount() : 0") { [weak self] value, _ in
+                guard let self else { return }
+                self.total = (value as? Int) ?? 0
+                if let (step, completion) = self.pendingReveal {
+                    self.pendingReveal = nil
+                    self.reveal(step, completion: completion)
+                }
+            }
+            return
+        }
         // Fonts and typesetting settle a moment after load; measure again then.
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { [weak self] in self?.fitToContent {} }
         fitToContent { [weak self] in
@@ -290,6 +336,10 @@ final class CardPanel: NSPanel, WKNavigationDelegate {
             // The step unfolds over a third of a second; measure after, grow the card, then find the step.
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.42) { [weak self] in
                 guard let self else { completion(nil); return }
+                if self.isStage {
+                    self.stepRect(step, scrollIfNeeded: false, completion: completion)
+                    return
+                }
                 self.fitToContent {
                     self.stepRect(step, scrollIfNeeded: true, completion: completion)
                 }
@@ -331,11 +381,19 @@ extension NSColor {
     }
 }
 
-/// Errors and console output from a card, into Dot's log, so a broken drawing is visible.
+/// Errors and console output from a card into Dot's log, so a broken drawing is visible; and the
+/// stage's back, next and dots, which arrive as {type: "nav", action, step}.
 final class CardMessageRelay: NSObject, WKScriptMessageHandler {
     let cardID: String
+    var onNav: ((String, Int) -> Void)?
     init(cardID: String) { self.cardID = cardID }
     func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
+        if let object = message.body as? [String: Any], object["type"] as? String == "nav", let action = object["action"] as? String {
+            let step = (object["step"] as? Int) ?? Int((object["step"] as? Double) ?? 0)
+            Log.info("board[\(cardID)] nav \(action)\(step > 0 ? " \(step)" : "")")
+            DispatchQueue.main.async { [weak self] in self?.onNav?(action, step) }
+            return
+        }
         Log.warn("board[\(cardID)] \(Log.short("\(message.body)", 300))")
     }
 }

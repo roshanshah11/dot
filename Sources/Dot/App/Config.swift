@@ -69,6 +69,9 @@ struct DotConfig: Codable {
     /// A quiet line when the app he switches to touches a deadline Atlas knows about.
     var proactiveNotices = true
     var noticeCooldownMinutes = 20
+    /// A quiet offer beside the cursor when he opens a document Dot could help with ("want the gist of this?").
+    var suggestions = true
+    var suggestionCooldownMinutes = 10
     /// Keep a small black tab under the notch when idle, so Dot visibly lives there.
     var notchPresence = true
     /// When he says "do it" in a walkthrough, Dot moves the real cursor and clicks the steps itself
@@ -142,6 +145,8 @@ struct DotConfig: Codable {
         jevRouteThreshold = get(.jevRouteThreshold, d.jevRouteThreshold)
         proactiveNotices = get(.proactiveNotices, d.proactiveNotices)
         noticeCooldownMinutes = get(.noticeCooldownMinutes, d.noticeCooldownMinutes)
+        suggestions = get(.suggestions, d.suggestions)
+        suggestionCooldownMinutes = get(.suggestionCooldownMinutes, d.suggestionCooldownMinutes)
         notchPresence = get(.notchPresence, d.notchPresence)
         driveEnabled = get(.driveEnabled, d.driveEnabled)
         eagerSpeech = get(.eagerSpeech, d.eagerSpeech)

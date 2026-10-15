@@ -35,6 +35,17 @@ final class Talk {
     private var region: CGRect?
     private var lastMessage = ""
     private var lastImages: [(data: Data, mediaType: String)] = []
+    /// A turn that dies inside the CLI before the model is even called gets one more try.
+    private var retriedTurn = false
+
+    // MARK: Lesson pacing: a stage shows one step at a time and waits for him between steps
+    private var lessonCard: String?
+    private var lessonHeld: [Beat] = []
+    private var lessonHolding = false
+    private var lessonStep = 0
+    private var lessonSpokenMax = 0
+    private var lessonSaid: [Int: String] = [:]
+    private var turnRevealsEnqueued = 0
     private var streamer = BeatStreamer()
     private var activeSession: ClaudeSession?
     private var levelTimer: Timer?
@@ -95,6 +106,16 @@ final class Talk {
         (speaker as? CommandSpeaker)?.warm(Self.acks + Self.thinkAcks)
         self.speaker.onFinishedAll = { [weak self] in
             Task { @MainActor in self?.scheduleIdleCheck() }
+        }
+        board.onNav = { [weak self] id, action, step in
+            guard let self else { return }
+            if self.lessonCard != id, self.board.isStage(id) { self.resetLesson(); self.lessonCard = id }
+            switch action {
+            case "next": self.advanceLesson(); self.scheduleIdleCheck()
+            case "back": self.lessonBack()
+            case "step": self.jumpLesson(to: step)
+            default: break
+            }
         }
         hud.model.onSubmitInput = { [weak self] text in
             Task { @MainActor in
@@ -496,8 +517,11 @@ final class Talk {
             let shots = (try? await ScreenCapture.captureAll(maxDimension: config.screenshotMaxDimension, includeOtherScreens: false)) ?? []
             self.shots = shots
             context = AccessibilityContext.capture(maxElements: 10)
-            showCard(id: url.deletingPathExtension().lastPathComponent, rect: nil, title: title, html: html, screen: nil)
-            board.reveal(id: url.deletingPathExtension().lastPathComponent, step: 1) { _ in }
+            let id = url.deletingPathExtension().lastPathComponent
+            resetLesson()
+            if BoardManager.isStageHTML(html) { lessonCard = id }
+            showCard(id: id, rect: nil, title: title, html: html, screen: nil)
+            board.reveal(id: id, step: 1) { _ in }
         }
     }
 
@@ -602,6 +626,9 @@ final class Talk {
         }
     }
 
+    /// The typed-question field, the same one a tap of the hotkey opens.
+    func showTypedField() { hud.showInput() }
+
     func askTyped(_ text: String, quiet: Bool = false, drive: Bool = false) {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
@@ -620,8 +647,11 @@ final class Talk {
 
     // MARK: Asking
 
+    private var lastAskWasLecture = false
+
     private func ask(_ text: String, typed: Bool) async {
         lastAskWasTyped = typed
+        lastAskWasLecture = false
         lastAsked = text
         if let captureTask {
             let captured = await captureTask.value
@@ -654,6 +684,30 @@ final class Talk {
             speaker.speak("closed.")
             overlay.setBubble("closed.")
             scheduleIdleCheck()
+            return
+        case .lessonNext:
+            advanceLesson()
+            scheduleIdleCheck()
+            return
+        case .lessonBack:
+            lessonBack()
+            phase = .idle
+            settle()
+            scheduleIdleCheck()
+            return
+        case .lessonAgain:
+            lessonAgain()
+            return
+        case .lecture:
+            await askLecture(text)
+            return
+        case .suggestion(let askText):
+            await ask(askText, typed: typed)
+            return
+        case .dismiss:
+            overlay.hideBubble(after: 0)
+            phase = .idle
+            settle()
             return
         case .drive:
             startDriving()
@@ -706,6 +760,31 @@ final class Talk {
 
     /// He spoke while a card still has hidden steps ("next", an answer to a question, "why"):
     /// the model reveals the next step or responds, with the board's state in front of it.
+    /// What the key heard was the lecturer, not him (his ask 2026-10-15: "try to explain what was just
+    /// said, find the part in the paper he was talking about"). Dot reads the screen's words with
+    /// on-device OCR, hands them to the model with the screenshot, and explains the passage.
+    private func askLecture(_ heard: String) async {
+        guard let session = session(for: .talk) else { phase = .idle; settle(); return }
+        lastAskWasLecture = true
+        hud.flash(status: "lecture: finding it on screen", for: 4)
+        overlay.setPhase(.thinking)
+        let cursorShot = shots.first(where: { $0.isCursorScreen }) ?? shots.first
+        var screenText = ""
+        if let cursorShot { screenText = await TextRecognizer.recognize(jpeg: cursorShot.jpeg) }
+        if screenText.count > 3500 { screenText = String(screenText.prefix(3500)) + "…" }
+        Log.info("lecture: \(screenText.count) chars of screen text, heard \(heard.count) chars")
+        let message = """
+        [lecture] dot heard the lecturer (or a video), not a question from him: "\(heard)"
+        words on his screen, read top to bottom by ocr:
+        \(screenText.isEmpty ? "(nothing readable)" : screenText)
+        find the passage, figure, slide or formula the lecturer is on. if it is visible, highlight it with [HIGHLIGHT:x,y,w,h:label] (coordinates from the screenshot) and explain the concept in two or three sentences tied to that passage, in the lecturer's own terms. if the document has a url you can read, webfetch it and quote the line. if the passage is not on this page, say where in the document it is and still explain the idea. never say that it was not a question.
+        """
+        let (built, images) = buildMessage(message, kind: .talk)
+        lastMessage = built
+        lastImages = images
+        sendTurn(built, images: images, to: session, kind: .talk)
+    }
+
     private func continueBoard(said text: String) {
         guard let session = session(for: .talk) else { return }
         acknowledge()
@@ -716,7 +795,19 @@ final class Talk {
         sendTurn(built, images: images, to: session, kind: .talk)
     }
 
-    private enum Route { case answer, agent, think, followUp(String), continueWalkthrough, drive, closeBoard }
+    private enum Route { case answer, agent, think, followUp(String), continueWalkthrough, drive, closeBoard, lessonNext, lessonBack, lessonAgain, lecture, suggestion(String), dismiss }
+
+    private static let yesWords = try! NSRegularExpression(pattern: #"^(yes|yeah|yep|yup|sure|ok(ay)?|go( ahead)?|do it|please|yes please|sounds good)\W*$"#, options: .caseInsensitive)
+    private static let noWords = try! NSRegularExpression(pattern: #"^(no|nah|nope|not now|later|no thanks|skip|never mind|nevermind)\W*$"#, options: .caseInsensitive)
+
+    // MARK: Suggestions in context (from the noticer: "want the gist of this? say yes.")
+    private var pendingSuggestion: (Noticer.Suggestion, Date)?
+    func offerSuggestion(_ suggestion: Noticer.Suggestion) {
+        pendingSuggestion = (suggestion, Date().addingTimeInterval(45))
+    }
+
+    private static let backWords = try! NSRegularExpression(pattern: #"^(go )?(back|previous|one back|back one|back up)\W*$"#, options: .caseInsensitive)
+    private static let againWords = try! NSRegularExpression(pattern: #"^(again|say (that|it) again|repeat( that| it)?|one more time|once more|what\??)\W*$"#, options: .caseInsensitive)
 
     /// Said the instant a question is understood, before Claude's first word: no dead air.
     static let acks = ["mm-hm.", "okay.", "let me look.", "one sec.", "let me see.", "right."]
@@ -747,8 +838,23 @@ final class Talk {
         let inWalkthrough = walkthrough != nil
         let range = NSRange(location: 0, length: (text as NSString).length)
         if !board.isEmpty, Self.closeWords.firstMatch(in: text, range: range) != nil { return .closeBoard }
+        if let (suggestion, until) = pendingSuggestion {
+            pendingSuggestion = nil
+            if Date() < until {
+                if Self.yesWords.firstMatch(in: text, range: range) != nil { Noticer.record(kind: suggestion.kind, accepted: true); return .suggestion(suggestion.ask) }
+                if Self.noWords.firstMatch(in: text, range: range) != nil { Noticer.record(kind: suggestion.kind, accepted: false); return .dismiss }
+            }
+        }
         // Showing is Dot's own job: a page, a picture, a drawing or a card goes on the board, never to an agent.
         if Self.boardWords.firstMatch(in: text, range: range) != nil { return .answer }
+        // A lesson on a stage: next, back and again are Dot's own moves, no model needed.
+        if let id = lessonCard, board.isStage(id) {
+            if Self.againWords.firstMatch(in: text, range: range) != nil { return .lessonAgain }
+            if Self.backWords.firstMatch(in: text, range: range) != nil { return .lessonBack }
+            if !lessonHeld.isEmpty || board.shown(of: id) < lessonSpokenMax, Self.continueWords.firstMatch(in: text, range: range) != nil { return .lessonNext }
+        } else if lessonCard != nil {
+            resetLesson()
+        }
         if inWalkthrough || board.hasHiddenSteps, Self.continueWords.firstMatch(in: text, range: range) != nil {
             return .continueWalkthrough
         }
@@ -772,12 +878,17 @@ final class Talk {
         if let step = walkthrough {
             state["walkthrough_in_progress"] = ["last_instruction": "\(step.kind == .hover ? "rest on" : "click") \(step.label)", "steps_done": step.history]
         }
+        var routeCriteria = [
+            "answer": "answer out loud from the screen, the day's calendar and deadlines, or general knowledge, including a quick web lookup; or show something on the board: a card, a drawing, a picture, a live web page (the companion opens pages itself); no files, nothing to operate",
+            "agent": "real work in the background: looking something up properly across apps or sites, drafting or writing, making or changing files, going through mail, operating an app for a while, anything that sends or submits",
+            "think": "a hard reasoning question (a calculation, a tricky technical or finance judgment) that deserves a stronger model",
+        ]
+        if !lastAskWasTyped, text.count >= 40 {
+            // The held key in a lecture hall picks up the lecturer: statements, not a question to the companion.
+            routeCriteria["lecture"] = "the microphone picked up someone else speaking at length (a lecturer, a video, a conversation): statements about a subject, not a question or request addressed to the companion"
+        }
         var questions: [String: Jev.Question] = [
-            "route": .choice(instructions: "How should a voice companion that can see the screen handle what the user just said? Pick one.", criteria: [
-                "answer": "answer out loud from the screen, the day's calendar and deadlines, or general knowledge, including a quick web lookup; or show something on the board: a card, a drawing, a picture, a live web page (the companion opens pages itself); no files, nothing to operate",
-                "agent": "real work in the background: looking something up properly across apps or sites, drafting or writing, making or changing files, going through mail, operating an app for a while, anything that sends or submits",
-                "think": "a hard reasoning question (a calculation, a tricky technical or finance judgment) that deserves a stronger model",
-            ]),
+            "route": .choice(instructions: "How should a voice companion that can see the screen handle what the user just said? Pick one.", criteria: routeCriteria),
         ]
         if !running.isEmpty {
             questions["followup"] = .yesNo(instructions: "Is this a follow-up, a steer or a question for the agent that is already working, rather than a new request?", yes: "it continues the agent's current task", no: "a new request or a question about the screen")
@@ -822,6 +933,7 @@ final class Talk {
             Log.info("jev: pre-pointing at \(hit.role) \"\(hit.title)\" (\(String(format: "%.2f", element.probability)))")
             overlay.point(at: CGPoint(x: hit.frame.midX, y: hit.frame.midY), label: String(hit.title.prefix(24)))
         }
+        if route.choice == "lecture", route.probability >= 0.6, route.confidence >= 0.5 { return .lecture }
         if route.choice == "agent", route.probability >= config.jevRouteThreshold, route.confidence >= 0.6 { return .agent }
         if route.choice == "think", route.probability >= 0.75, route.confidence >= 0.6 { return .think }
         return .answer
@@ -839,6 +951,7 @@ final class Talk {
         speechStarted = false
         bubbleGroup = ""
         bubbleLabel = nil
+        turnRevealsEnqueued = 0
         beatsFired = 0
         quietWork.forEach { $0.cancel() }
         quietWork = []
@@ -952,6 +1065,107 @@ final class Talk {
 
     /// Queue one beat: its words go to the voice, and its visuals fire the moment those words start.
     private func enqueue(_ beat: Beat) {
+        if holdForLesson(beat) { return }
+        play(beat)
+    }
+
+    private static func revealTag(_ beat: Beat) -> (String, Int)? {
+        for tag in beat.tags { if case .reveal(let id, let step) = tag { return (id, step) } }
+        return nil
+    }
+
+    /// A stage shows one step at a time. The card and its first step play as they arrive; from the
+    /// second [REVEAL] on, the beats wait in order until he says next, presses next, or the board
+    /// is cleared. A card or [CLEAR_BOARD] in a later turn drops whatever was still waiting.
+    private func holdForLesson(_ beat: Beat) -> Bool {
+        for tag in beat.tags {
+            if case .card(let id, _, _, let html, _) = tag {
+                resetLesson()
+                if BoardManager.isStageHTML(html) { lessonCard = id }
+                return false
+            }
+            if case .clearBoard = tag { resetLesson(); return false }
+        }
+        if let (id, step) = Self.revealTag(beat), id == lessonCard {
+            turnRevealsEnqueued += 1
+            // A second reveal in the same turn, for a step not yet spoken: hold from here on.
+            if turnRevealsEnqueued >= 2, step > lessonSpokenMax, !lessonHolding {
+                lessonHolding = true
+                Log.info("lesson[\(id)] holding from step \(step)")
+            } else if turnRevealsEnqueued == 1 {
+                // The model took the lesson back (a continuation or a re-explanation): leftovers go.
+                lessonHeld = []
+                lessonHolding = false
+            }
+        }
+        if lessonHolding { lessonHeld.append(beat); return true }
+        return false
+    }
+
+    private func resetLesson() {
+        lessonCard = nil
+        lessonHeld = []
+        lessonHolding = false
+        lessonStep = 0
+        lessonSpokenMax = 0
+        lessonSaid = [:]
+    }
+
+    /// "next": the step he has not heard yet plays from the held beats; a step he went back over
+    /// comes forward again without a word; a card with nothing held just shows its next step.
+    private func advanceLesson() {
+        guard let id = lessonCard, board.isStage(id) else { return }
+        board.setWaiting(id: id, on: false)
+        let shown = board.shown(of: id)
+        if shown < lessonSpokenMax {
+            board.reveal(id: id, step: shown + 1) { _ in }
+            return
+        }
+        guard !lessonHeld.isEmpty else {
+            // Nothing written ahead (a hand-made card, or the model stopped to ask): the model narrates the next step.
+            if shown < board.total(of: id) { continueBoard(said: "next") }
+            else { clearBoard() }
+            return
+        }
+        var batch = [lessonHeld.removeFirst()]
+        while let next = lessonHeld.first, Self.revealTag(next) == nil { batch.append(lessonHeld.removeFirst()) }
+        Log.info("lesson[\(id)] next: \(batch.count) beat(s), \(lessonHeld.count) still held")
+        stopSpeaking()
+        for beat in batch { play(beat) }
+        scheduleIdleCheck()
+    }
+
+    private func lessonBack() {
+        guard let id = lessonCard, board.isStage(id) else { return }
+        let shown = board.shown(of: id)
+        guard shown > 1 else { return }
+        stopSpeaking()
+        overlay.hideBubble(after: 0)
+        board.reveal(id: id, step: shown - 1) { _ in }
+    }
+
+    private func lessonAgain() {
+        guard let id = lessonCard, board.isStage(id) else { return }
+        let step = board.shown(of: id)
+        guard let text = lessonSaid[step]?.trimmingCharacters(in: .whitespaces), !text.isEmpty else { return }
+        stopSpeaking()
+        phase = .speaking
+        overlay.setPhase(.speaking)
+        speaker.speak(text)
+        scheduleIdleCheck()
+    }
+
+    private func jumpLesson(to step: Int) {
+        guard let id = lessonCard, board.isStage(id), step >= 1 else { return }
+        if step <= lessonSpokenMax || lessonHeld.isEmpty {
+            stopSpeaking()
+            board.reveal(id: id, step: min(step, max(board.total(of: id), 1))) { _ in }
+        } else {
+            advanceLesson()
+        }
+    }
+
+    private func play(_ beat: Beat) {
         let visuals = beat.tags.filter { $0.isVisual }
         guard !beat.text.isEmpty || !visuals.isEmpty else { return }
         if quietTurn {
@@ -1028,6 +1242,7 @@ final class Talk {
                 showCard(id: id, rect: rect, title: title, html: html, screen: screen)
                 label = label ?? title
             case .reveal(let id, let step):
+                if id == lessonCard { lessonStep = step; lessonSpokenMax = max(lessonSpokenMax, step) }
                 board.reveal(id: id, step: step) { [weak self] rect in
                     guard let self, let rect else { return }
                     let tail = CGPoint(x: rect.minX + 4, y: rect.midY)
@@ -1043,19 +1258,35 @@ final class Talk {
                 break
             }
         }
-        guard config.bubbleText else { return }
-        if beat.hasVisual || bubbleGroup.count > 240 {
-            bubbleGroup = beat.text
-            bubbleLabel = label.map { String($0.prefix(40)) }
-        } else {
-            bubbleGroup = (bubbleGroup + " " + beat.text).trimmingCharacters(in: .whitespaces)
+        if lessonCard != nil, !beat.text.isEmpty {
+            lessonSaid[lessonStep, default: ""] += (lessonSaid[lessonStep, default: ""].isEmpty ? "" : " ") + beat.text
         }
+        guard config.bubbleText else { return }
+        // One sentence beside Dot, never a paragraph (2026-10-15, "this looks bad"); a stage carries
+        // its own caption and the words are spoken, so no bubble over a lesson.
+        if let id = lessonCard, board.isStage(id) { overlay.hideBubble(after: 0); return }
+        if beat.hasVisual { bubbleLabel = label.map { String($0.prefix(32)) } }
+        bubbleGroup = Self.bubbleLine(beat.text)
         if !bubbleGroup.isEmpty { overlay.setBubble(bubbleGroup, label: bubbleLabel) }
+    }
+
+    /// The bubble holds one spoken sentence, cut at a word when it runs long.
+    static func bubbleLine(_ text: String, limit: Int = 110) -> String {
+        let line = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard line.count > limit else { return line }
+        let head = String(line.prefix(limit))
+        if let space = head.lastIndex(of: " "), head.distance(from: head.startIndex, to: space) > limit / 2 {
+            return String(head[..<space]) + "…"
+        }
+        return head + "…"
     }
 
     private func finishTurn(_ result: ResultInfo) {
         for beat in streamer.flush() { enqueue(beat) }
-        if streamer.spokenSoFar.isEmpty, streamer.allTags.isEmpty, let text = result.resultText, !text.isEmpty {
+        // A failed turn's result is the CLI's diagnostic ("[ede_diagnostic] ..." was spoken aloud on
+        // 2026-10-15 13:22), never words for him.
+        if !result.isError, streamer.spokenSoFar.isEmpty, streamer.allTags.isEmpty, let text = result.resultText, !text.isEmpty,
+           !text.hasPrefix("[ede_diagnostic]") {
             for beat in streamer.feed(text) { enqueue(beat) }
             for beat in streamer.flush() { enqueue(beat) }
         }
@@ -1064,11 +1295,25 @@ final class Talk {
         if config.hudShowsResponse { hud.model.response = spoken }
         let kind = activeSession === thinkSession ? "think" : "talk"
         ledger.record(kind: kind, agent: nil, model: turnModel, result: result, summary: hud.model.transcript)
-        TranscriptLog.append(kind: lastAskWasTyped ? .typed : .talk, you: lastAsked, dot: spoken, app: context.appName,
+        TranscriptLog.append(kind: lastAskWasTyped ? .typed : (lastAskWasLecture ? .lecture : .talk), you: lastAsked, dot: spoken, app: context.appName,
                              extra: ["model": turnModel, "ms": String(result.durationMs)])
         Log.info("turn[\(kind)] done in \(result.durationMs) ms, $\(String(format: "%.4f", result.costUSD)), \(tags.filter { $0.isVisual }.count) visual beat(s), tags \(tags.map { "\($0)" }.joined(separator: " | "))")
         Log.info("turn[\(kind)] said: \(Log.short(spoken, 240))")
+        if !result.isError { retriedTurn = false }
         if result.isError, spoken.isEmpty {
+            // 2026-10-15: two turns in class failed with error_during_execution in 44 and 413 ms, nothing
+            // said and nothing spent: the CLI dropped them before the model saw them. One retry covers that.
+            if result.subtype == "error_during_execution", result.durationMs < 2000, !retriedTurn, !lastMessage.isEmpty,
+               let session = activeSession {
+                retriedTurn = true
+                Log.warn("turn[\(kind)] failed in \(result.durationMs) ms with nothing said: \(Log.short(result.resultText ?? "no detail", 200)); sending it once more")
+                let message = lastMessage, images = lastImages
+                let sessionKind: SessionKind = kind == "think" ? .think : .talk
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { [weak self] in
+                    self?.sendTurn(message, images: images, to: session, kind: sessionKind)
+                }
+                return
+            }
             hud.flash(error: Log.short(result.resultText ?? "the turn failed", 160))
             overlay.setMood(.puzzled, for: 3)
             Log.error("turn[\(kind)] failed: \(result.subtype) \(Log.short(result.resultText ?? "", 300))")
@@ -1119,6 +1364,7 @@ final class Talk {
                 self.phase = .idle
                 self.overlay.setPhase(.idle)
                 self.hud.set(phase: .done)
+                if let id = self.lessonCard, !self.lessonHeld.isEmpty { self.board.setWaiting(id: id, on: true) }
                 self.idleTimer?.invalidate()
                 self.idleTimer = Timer.scheduledTimer(withTimeInterval: 1.6, repeats: false) { [weak self] _ in
                     Task { @MainActor in
@@ -1391,6 +1637,7 @@ final class Talk {
     private var lessonStartedAt: Date?
 
     private func clearBoard() {
+        resetLesson()
         board.clear()
         lessonStartedAt = nil
         hud.removeAgent(id: "lesson")

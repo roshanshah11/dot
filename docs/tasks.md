@@ -5,6 +5,15 @@ bottom with the date. "His ask" quotes the message that created the item.
 
 ## Now
 
+- [ ] 2026-10-15 Round three, his plan ("dot is okay, but needs to be and can be a lot better"; bar: beyond HeyClicky, parity on the parts that matter):
+      1. [x] the lesson stage: one thing at a time, spoken not printed, opaque fixed card, back/next/dots, a conversation not a quiz (Resources/board, Board.swift, Talk.lessonHeld); his verdict pending;
+      2. [x] lecture companion: when the held key hears a lecture (Jev "lecture"), Dot reads the screen with OCR, finds the passage and explains it; untested by voice;
+      3. [x] suggestions in context: a new document in front gets one quiet offer ("want the gist of this? say yes"), yes/no remembered, three declines retire a kind (Noticer.pollDocument); untested live;
+      4. [x] design pass, first cut: marks and label chips in HeyClicky's grammar (dashed rings and boxes, solid chips), the bubble as a caption; Home and card type untouched;
+      5. [x] the audit: docs/heyclicky-coverage.md (169 components: 37 built, 48 partial, 63 missing, 21 n/a).
+      Out: routines (his other systems), always-on voice, paid realtime voice, onboarding, character editor.
+- [x] 2026-10-15 The typed field takes keystrokes (the borderless notch panel could never become key); a turn the CLI drops in under 2 s is sent once more; `Dot --input` opens the field.
+- [x] 2026-10-15 The bubble is one sentence, three lines, a small label; none over a lesson. His words: "this looks bad bro".
 - [x] 2026-10-15 Visual board: bundled libraries, explain-by-figure pattern, live web cards, web lookups in talk, the biotech course map, the circled-region action bar. His asks: "use real JS libraries, animate it", "bring in real media online", "bio explanations", "research properly", "circle a region, hand it to an agent".
 - [ ] Test by hand: control+fn dictation, the circled-region bar, the meeting notice.
 - [ ] Board round two: his verdict on the first real lessons (DNA, PCR, fields); a video piece (.figure with <video>); cards that ask him to drag or click (interactive quizzes).

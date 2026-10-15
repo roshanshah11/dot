@@ -47,6 +47,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         agents.jev = jev
         talk = Talk(config: config, hud: hud, overlay: overlay, speaker: speaker, transcriber: transcriber, agents: agents, ledger: ledger, atlas: atlas, jev: jev)
         noticer = Noticer(config: config, atlas: atlas, overlay: overlay, jev: jev)
+        noticer.onSuggest = { [weak self] suggestion in Task { @MainActor in self?.talk.offerSuggestion(suggestion) } }
         hud.setPresence(config.notchPresence)
         home = HomeWindowController(agents: agents, ledger: ledger, config: config, atlas: atlas)
         let hudModel = hud.model
@@ -120,6 +121,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         center.addObserver(forName: DotIPC.home, object: nil, queue: .main) { [weak self] _ in
             Task { @MainActor in self?.home.show() }
+        }
+        // `Dot --input`: open the typed-question field under the notch, as a tap of the hotkey does.
+        center.addObserver(forName: DotIPC.input, object: nil, queue: .main) { [weak self] _ in
+            Task { @MainActor in self?.talk.showTypedField() }
         }
         center.addObserver(forName: DotIPC.stop, object: nil, queue: .main) { [weak self] _ in
             Task { @MainActor in self?.talk.interrupt() }
@@ -252,4 +257,5 @@ enum DotIPC {
     static let type = Notification.Name("com.roshan.dot.type")
     static let stt = Notification.Name("com.roshan.dot.stt")
     static let card = Notification.Name("com.roshan.dot.card")
+    static let input = Notification.Name("com.roshan.dot.input")
 }

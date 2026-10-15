@@ -20,7 +20,7 @@ case "--help", "-h":
       Dot --ask --quiet <q>   same, with no voice (beats pace themselves)
       Dot --ask --drive <q>   a walkthrough Dot clicks through itself (tests; by voice say "do it")
       Dot --home        open the Dot window              Dot --stop            stop talking
-      Dot --refresh     re-read today from Atlas
+      Dot --refresh     re-read today from Atlas         Dot --input           open the typed-question field
       Dot --version
 
     Hold control+option and talk; drag while holding to draw a box to ask about.
@@ -92,8 +92,8 @@ case "--type", "--stt", "--card":
     DistributedNotificationCenter.default().postNotificationName(name, object: nil, userInfo: ["text": text], deliverImmediately: true)
     print("sent to Dot")
     exit(0)
-case "--home", "--stop", "--refresh":
-    let name = arguments.first == "--home" ? DotIPC.home : (arguments.first == "--stop" ? DotIPC.stop : DotIPC.refresh)
+case "--home", "--stop", "--refresh", "--input":
+    let name = arguments.first == "--home" ? DotIPC.home : (arguments.first == "--stop" ? DotIPC.stop : (arguments.first == "--input" ? DotIPC.input : DotIPC.refresh))
     DistributedNotificationCenter.default().postNotificationName(name, object: nil, userInfo: nil, deliverImmediately: true)
     exit(0)
 default:

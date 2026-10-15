@@ -74,9 +74,104 @@
     }
   }
 
+  // ---- the stage: one thing at a time ---------------------------------------------------
+  // A lesson card is <div class="stage process|derivation|compare|concept"> holding one figure
+  // whose parts carry data-step, plus one short .caption per step. Process and concept replace:
+  // on step n only the parts tagged n show, untagged parts are the scaffold. Derivation and
+  // compare accumulate: earlier lines stay and dim. The bar at the bottom (back, dots, next)
+  // and the arrow keys talk to Dot, which keeps the words in step with the picture.
+  var stage = null, stageMode = "replace", stageCurrent = 0;
+  function partSteps(el) {
+    return String(el.dataset.step).split(",").map(function (v) { return parseInt(v, 10); }).filter(function (v) { return !isNaN(v); });
+  }
+  function stageParts() { return Array.from(stage.querySelectorAll("[data-step]")); }
+  function stageTotal() {
+    return stageParts().reduce(function (m, el) { var st = partSteps(el); return st.length ? Math.max(m, Math.max.apply(null, st)) : m; }, 0);
+  }
+  function nav(action, step) {
+    try { window.webkit.messageHandlers.dot.postMessage({type: "nav", action: action, step: step || 0}); } catch (e) {}
+  }
+  function setupStage() {
+    stage = document.querySelector(".stage");
+    if (!stage) return;
+    document.body.classList.add("stage-page");
+    document.documentElement.classList.add("stage-page");
+    // The panel's strip carries the title; a heading above or inside the stage would push the bar off the card.
+    Array.from(document.body.children).forEach(function (el) { if (el !== stage && /^H[1-3]$/.test(el.tagName)) el.remove(); });
+    stageMode = (stage.classList.contains("derivation") || stage.classList.contains("accumulate") || stage.classList.contains("compare")) ? "accumulate" : "replace";
+    var area = document.createElement("div"); area.className = "area";
+    var lines = document.createElement("div"); lines.className = stage.classList.contains("compare") ? "lines sides" : "lines stack";
+    var captions = document.createElement("div"); captions.className = "captions";
+    var scripts = [];
+    Array.from(stage.childNodes).forEach(function (node) {
+      if (node.nodeType !== 1) { if (node.nodeType === 3 && node.textContent.trim()) area.appendChild(node); return; }
+      if (node.matches("h1,h2,h3")) { node.remove(); return; }
+      if (node.matches(".caption")) captions.appendChild(node);
+      else if (node.matches(".line, .side")) lines.appendChild(node);
+      else if (node.tagName === "SCRIPT") scripts.push(node);
+      else area.appendChild(node);
+    });
+    stage.innerHTML = "";
+    if (area.childElementCount) stage.appendChild(area);
+    if (lines.childElementCount) stage.appendChild(lines);
+    if (captions.childElementCount) stage.appendChild(captions);
+    var bar = document.createElement("div"); bar.className = "stagebar";
+    bar.innerHTML = '<button class="back" type="button">back</button><div class="dots"></div><span class="count"></span><button class="next" type="button">next</button>';
+    stage.appendChild(bar);
+    scripts.forEach(function (sc) { stage.appendChild(sc); });
+    var total = stageTotal(), dots = bar.querySelector(".dots");
+    for (var i = 1; i <= total; i++) {
+      var d = document.createElement("i"); d.dataset.n = i;
+      d.addEventListener("click", function (e) { nav("step", +e.currentTarget.dataset.n); });
+      dots.appendChild(d);
+    }
+    bar.querySelector(".back").addEventListener("click", function () { nav("back"); });
+    bar.querySelector(".next").addEventListener("click", function () { nav("next"); });
+    document.addEventListener("keydown", function (e) {
+      if (e.key === "ArrowRight" || e.key === " " || e.key === "Enter") { e.preventDefault(); nav("next"); }
+      else if (e.key === "ArrowLeft") { e.preventDefault(); nav("back"); }
+    });
+    stageParts().forEach(function (el) { el.classList.add("off"); });
+  }
+  function revealStage(n) {
+    var total = stageTotal();
+    n = Math.max(1, Math.min(n, total || 1));
+    stageCurrent = n;
+    stageParts().forEach(function (el) {
+      var st = partSteps(el), has = st.indexOf(n) >= 0;
+      var on = stageMode === "replace" ? has : (st.length ? Math.min.apply(null, st) <= n : true);
+      var was = el.classList.contains("on");
+      el.classList.toggle("on", on); el.classList.toggle("off", !on);
+      el.classList.toggle("focus", on && has); el.classList.toggle("dim", on && !has);
+      if (on && !was) {
+        drawAll(el.parentNode || el); typeset(el);
+        if (el.matches("[data-animate]")) { el.dataset.animated = ""; runAnimation(el); }
+        el.querySelectorAll("[data-animate]").forEach(function (a) { a.dataset.animated = ""; runAnimation(a); });
+      }
+    });
+    var bar = stage.querySelector(".stagebar");
+    if (bar) {
+      bar.querySelectorAll(".dots i").forEach(function (d, i) { d.classList.toggle("cur", i + 1 === n); d.classList.toggle("done", i + 1 < n); });
+      bar.querySelector(".count").textContent = n + " of " + total;
+      bar.querySelector(".back").disabled = n <= 1;
+      bar.querySelector(".next").textContent = n >= total ? "done" : "next";
+    }
+    var cap = stage.querySelector(".captions .caption.on");
+    if (cap) cap.scrollIntoView({block: "nearest"});
+    document.dispatchEvent(new CustomEvent("board:reveal", {detail: {step: n}}));
+    return JSON.stringify({shown: n, total: total});
+  }
+  function setWaiting(on) { var b = stage && stage.querySelector(".stagebar .next"); if (b) b.classList.toggle("waiting", !!on); }
+  function stageRect(n) {
+    var el = stage.querySelector(".captions .caption.on") || stage.querySelector(".lines [data-step].focus") || stage.querySelector(".area") || stage;
+    var r = el.getBoundingClientRect();
+    return JSON.stringify({x: r.left, y: r.top, w: r.width, h: r.height, viewH: window.innerHeight});
+  }
+
   // ---- steps ---------------------------------------------------------------------------
   function steps() { return Array.from(document.querySelectorAll(".step")); }
   function reveal(n) {
+    if (stage) return revealStage(n);
     var all = steps();
     all.forEach(function (s, i) {
       var was = s.classList.contains("shown");
@@ -105,6 +200,7 @@
     return JSON.stringify({shown: Math.min(n, all.length), total: all.length});
   }
   function stepRect(n) {
+    if (stage) return stageRect(n);
     var cur = steps()[n - 1];
     if (!cur) return null;
     var r = cur.getBoundingClientRect();
@@ -112,8 +208,8 @@
   }
   function scrollToStep(n) { var cur = steps()[n - 1]; if (cur) cur.scrollIntoView({block: "nearest"}); return stepRect(n); }
   function height() { return document.documentElement.scrollHeight; }
-  function stepCount() { return steps().length; }
-  function shownCount() { return document.querySelectorAll(".step.shown").length; }
+  function stepCount() { return stage ? stageTotal() : steps().length; }
+  function shownCount() { return stage ? stageCurrent : document.querySelectorAll(".step.shown").length; }
 
   // ---- small animations by attribute ------------------------------------------------------
   // data-animate="fade|rise|pop|draw|count" on any element; "draw" strokes an svg path,
@@ -321,7 +417,11 @@
       (function frame() { group.rotation.y += 0.006; controls.update(); renderer.render(scene, camera); requestAnimationFrame(frame); })();
     }).catch(function (e) { div.textContent = "3d: " + e.message; });
   }
-  function hidden(el) { var s = el.closest(".step"); return s && !s.classList.contains("shown"); }
+  function hidden(el) {
+    var s = el.closest(".step");
+    if (s && !s.classList.contains("shown")) return true;
+    return !!el.closest("[data-step].off");
+  }
   function each(root, selector, fn) {
     root.querySelectorAll(selector).forEach(function (el) {
       if (el.dataset.drawn || hidden(el)) return;
@@ -353,8 +453,10 @@
   window.addEventListener("unhandledrejection", function (e) { report("rejection", String(e.reason && e.reason.message || e.reason)); });
   var nativeError = console.error; console.error = function () { report("console", Array.prototype.slice.call(arguments).join(" ")); nativeError.apply(console, arguments); };
   window.Board = {need: need, typeset: typeset, draw: drawAll, animate: runAnimation, report: report};
-  window.board = {reveal: reveal, stepRect: stepRect, scrollToStep: scrollToStep, height: height, stepCount: stepCount, shownCount: shownCount};
+  window.board = {reveal: reveal, stepRect: stepRect, scrollToStep: scrollToStep, height: height, stepCount: stepCount, shownCount: shownCount,
+                  setWaiting: setWaiting, isStage: function () { return !!stage; }};
   document.addEventListener("DOMContentLoaded", function () {
+    setupStage();
     drawAll(); typeset();
     if (window.anime) anime({targets: "body > *:not(script)", opacity: [0, 1], translateY: [8, 0], delay: anime.stagger(60), duration: 480, easing: "easeOutCubic"});
   });

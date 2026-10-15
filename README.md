@@ -214,8 +214,8 @@ MIT. Built by Roshan Shah.
   rules), cites results by number, starts every proof with his attempt, grades a written proof
   for the gaps a proof course marks, checks numbers with python and sympy before saying them
   (the one shell command talk mode may run, `TalkGuard.isComputationCommand`), drills with
-  quiz cards and remembers misses in Atlas. Homework is off limits by his syllabus: a homework
-  window on screen is flagged in the context and Dot teaches the idea on another problem.
+  quiz cards and remembers misses in Atlas. (A homework guard shipped that afternoon and was
+  removed the same day at his ask; Dot tutors whatever is on screen.)
 - **Task bar.** Every running task sits under the notch: agents with their last steps and a
   stop button, a walkthrough with its step, a lesson on the board. Steady work folds into pills
   on the idle tab after twenty seconds; a change or a hover unfolds it.
@@ -267,3 +267,38 @@ copy text, look it up) with on-device OCR, and an agent hand-off carries the cro
 every talk turn and dictation is saved under `~/Dot/transcripts/`; agents run with Atlas's own
 chat prompt, the vault's rules and all of its tools; a BIOS 11140 course map joined the math one
 in `~/Dot/talk/context/`.
+
+## Round three (2026-10-15, early afternoon)
+
+The typed field works: a borderless `NSPanel` refuses to become the key window, so keystrokes
+never reached it; `KeyablePanel` in `NotchHUD.swift` fixes that, the field focuses itself, Escape
+closes it, and `Dot --input` opens it for tests. A turn the CLI drops in under two seconds (an
+`error_during_execution` with nothing said, or a result that is only `[ede_diagnostic]`) is sent
+once more and never spoken.
+
+**The stage.** A lesson is one thing at a time. The model writes `<div class="stage process">`
+(or `derivation`, `compare`, `concept`) holding one figure whose parts carry `data-step`, plus one
+short `.caption` per step and nothing else; the explanation is spoken, not printed (Mayer's
+redundancy and segmenting principles). Process and concept stages replace the frame on each
+step, derivations accumulate lines and dim the earlier ones, comparisons reveal one side at a
+time. The card is opaque and fixed (720 by 470 points), carries a back/dots/next bar and takes
+the arrow keys once clicked. Dot speaks step one and holds the rest (`Talk.lessonHeld`) until
+"next", the button, or a question; "back" and "again" are local; a question mid-lesson goes to
+the model with the card's state and the board stays as it is. No check questions unless asked:
+it is a conversation. `~/Dot/talk/cards/stage-pcr.html` is a hand-made example.
+
+**Lecture companion.** When the held key picks up the lecturer rather than him (Jev's route
+says "lecture"), Dot reads the screen with on-device OCR, hands the words and the screenshot to
+the model, highlights the passage the lecturer is on and explains the concept in two or three
+sentences. Transcripts of those turns are saved as `lecture` rows.
+
+**Suggestions in context.** A new document in front (a pdf, slides, a problem set, a paper, by
+window title or url) gets one quiet offer beside the cursor ("want the gist of this? say yes."),
+chosen by Jev among gist, find today's part, and quiz; "yes" runs it, "no" is remembered, and a
+kind turned down three times stops being offered. Ten minutes between offers.
+
+**Design.** The bubble is one sentence, three lines, with a small label. Marks follow
+HeyClicky's grammar in Dot's own color: dashed rings for clicks, dotted for hovers, dashed
+boxes for highlights, solid label chips with white text (measured from the recorded session).
+`docs/heyclicky-coverage.md` maps every one of HeyClicky's 169 components (its source-file
+names, recovered from the binary) to a Dot owner and a status.

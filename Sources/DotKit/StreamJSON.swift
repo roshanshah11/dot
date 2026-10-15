@@ -139,7 +139,7 @@ public enum StreamJSON {
             return .result(ResultInfo(
                 sessionId: object["session_id"] as? String,
                 subtype: object["subtype"] as? String ?? "",
-                isError: object["is_error"] as? Bool ?? false,
+                isError: (object["is_error"] as? Bool ?? false) || ((object["result"] as? String)?.hasPrefix("[ede_diagnostic]") ?? false),
                 costUSD: object["total_cost_usd"] as? Double ?? 0,
                 durationMs: object["duration_ms"] as? Int ?? 0,
                 durationApiMs: object["duration_api_ms"] as? Int ?? 0,
@@ -148,7 +148,7 @@ public enum StreamJSON {
                 outputTokens: usage["output_tokens"] as? Int ?? 0,
                 cacheReadTokens: usage["cache_read_input_tokens"] as? Int ?? 0,
                 cacheCreationTokens: usage["cache_creation_input_tokens"] as? Int ?? 0,
-                resultText: object["result"] as? String
+                resultText: object["result"] as? String ?? (object["errors"] as? [String]).flatMap { $0.isEmpty ? nil : $0.joined(separator: "; ") }
             ))
         case "rate_limit_event":
             let info = object["rate_limit_info"] as? [String: Any] ?? [:]

@@ -77,3 +77,45 @@ canvas.smiles { display: block; margin: 8px auto; }
 [data-step].focus { opacity: 1; transition: opacity 0.4s; }
 svg [data-step].focus { filter: drop-shadow(0 0 6px rgba(255,107,44,0.9)); }
 .sequence { background: rgba(255,255,255,0.04); color: inherit; padding: 6px; }
+
+
+/* the stage: one thing at a time, opaque, fixed size, a bar of back / dots / next */
+html.stage-page, body.stage-page { height: 100%; }
+body.stage-page { padding: 0; max-width: none; overflow: hidden; }
+.stage { display: flex; flex-direction: column; height: 100%; min-height: 0; }
+.stage .area { position: relative; flex: 1 1 auto; min-height: 0; margin: 10px 14px 0; }
+.stage .area > * { max-width: 100%; }
+.stage .area > .frame { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; }
+.stage .area > .frame > svg, .stage .area > svg { width: 100%; height: 100%; max-height: 100%; display: block; }
+.stage .area > .frame > .molecule, .stage .area > .frame > .helix, .stage .area > .frame > .jsx, .stage .area > .frame > .chart,
+.stage .area > .frame > .plot, .stage .area > .frame > .figure, .stage .area > .frame > .mermaid { width: 100%; height: 100%; margin: 0; }
+.stage .area > .frame > .figure img, .stage .area > .frame > .figure video { max-height: 100%; height: 100%; width: auto; margin: 0 auto; }
+.stage [data-step] { transition: opacity 0.35s ease; }
+.stage [data-step].off { opacity: 0; visibility: hidden; pointer-events: none; transition: opacity 0.35s ease, visibility 0s linear 0.35s; }
+.stage [data-step].on { opacity: 1; visibility: visible; }
+.stage [data-step].dim { opacity: 0.42; filter: none; }
+.stage svg [data-step].focus { filter: none; }
+.stage .lines { flex: 1 1 auto; min-height: 0; overflow: auto; padding: 12px 20px 4px; }
+.stage .lines.stack .line { margin: 8px 0; padding: 6px 12px; border-left: 2px solid transparent; font-size: 17px; line-height: 1.5; }
+.stage .lines.stack .line.focus { border-left-color: var(--accent); background: rgba(255,107,44,0.07); border-radius: 0 8px 8px 0; }
+.stage .lines.stack .line .katex-display { margin: 4px 0; }
+.stage .lines.sides { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; align-content: start; }
+.stage .lines.sides .side { padding: 12px 14px; border-radius: 12px; background: rgba(255,255,255,0.05); border: 1px solid var(--line); }
+.stage .lines.sides .side[data-step="3"], .stage .lines.sides .side.verdict { grid-column: 1 / -1; }
+.stage .lines.sides .side h4 { margin: 0 0 6px; font-size: 14px; color: var(--accent); }
+.stage .captions { position: relative; min-height: 30px; margin: 6px 16px 0; text-align: center; }
+.stage .captions .caption { position: absolute; left: 0; right: 0; top: 0; margin: 0; font-size: 16.5px; font-weight: 600; color: var(--paper); line-height: 1.3; }
+.stage .captions .caption.off { visibility: hidden; }
+.stagebar { display: flex; align-items: center; gap: 10px; padding: 8px 14px 10px; border-top: 1px solid var(--line); margin-top: 6px; }
+.stagebar button { background: rgba(255,255,255,0.07); border: 1px solid var(--line); color: var(--paper); border-radius: 999px; padding: 4px 13px;
+                   font: 600 13px -apple-system, "SF Pro Text", sans-serif; cursor: pointer; }
+.stagebar button:hover { background: rgba(255,255,255,0.12); }
+.stagebar button:disabled { opacity: 0.35; cursor: default; }
+.stagebar button.next { border-color: rgba(255,107,44,0.5); background: rgba(255,107,44,0.14); }
+.stagebar button.next.waiting { animation: stage-pulse 1.6s ease-in-out infinite; }
+@keyframes stage-pulse { 0%, 100% { box-shadow: 0 0 0 0 rgba(255,107,44,0.0); } 50% { box-shadow: 0 0 0 5px rgba(255,107,44,0.28); } }
+.stagebar .dots { display: flex; gap: 7px; flex: 1; justify-content: center; }
+.stagebar .dots i { width: 8px; height: 8px; border-radius: 50%; background: rgba(255,255,255,0.18); cursor: pointer; transition: background 0.3s; }
+.stagebar .dots i.done { background: rgba(255,107,44,0.5); }
+.stagebar .dots i.cur { background: var(--accent); box-shadow: 0 0 0 3px rgba(255,107,44,0.25); }
+.stagebar .count { color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; min-width: 44px; text-align: right; }

@@ -137,6 +137,7 @@ final class NotchHUD {
         // A non-activating panel takes the keyboard without making Dot the frontmost app,
         // so the user's window keeps focus and the next screenshot still shows it active.
         panel?.makeKeyAndOrderFront(nil)
+        Log.info("input: field shown, panel key \(panel?.isKeyWindow == true)")
         // An untouched field goes away on its own, so a stray tap does not pin the HUD open.
         inputTimeout?.cancel()
         let work = DispatchWorkItem { [weak self] in
@@ -214,7 +215,7 @@ final class NotchHUD {
 
     private func ensurePanel() -> NSPanel {
         if let panel { return panel }
-        let panel = NSPanel(contentRect: .zero, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
+        let panel = KeyablePanel(contentRect: .zero, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
         panel.isOpaque = false
         panel.backgroundColor = .clear
         panel.hasShadow = false
@@ -295,6 +296,7 @@ struct NotchHUDView: View {
     @ObservedObject var model: HUDModel
     let geometry: NotchGeometry
     let onClose: () -> Void
+    @FocusState private var inputFocused: Bool
 
     private let ground = Color(red: 0.051, green: 0.047, blue: 0.043)
     private let text = Color(red: 0.925, green: 0.91, blue: 0.882)
@@ -428,6 +430,15 @@ struct NotchHUDView: View {
                 .textFieldStyle(.plain)
                 .font(.system(size: 14))
                 .foregroundStyle(text)
+                .focused($inputFocused)
+                .onAppear {
+                    // The panel becomes key first; the field takes the cursor a beat later.
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.08) { inputFocused = true }
+                }
+                .onExitCommand {
+                    model.inputText = ""
+                    onClose()
+                }
                 .onSubmit {
                     let value = model.inputText
                     model.inputText = ""
@@ -606,4 +617,12 @@ struct NotchHUDView: View {
 
 extension Notification.Name {
     static let dotShowInput = Notification.Name("com.roshan.dot.showInput")
+}
+
+/// A borderless panel refuses to become the key window by default, so keystrokes never reached the
+/// typed-question field. This one accepts the keyboard without ever becoming the main window or
+/// activating Dot, which keeps the user's app frontmost for the next screenshot.
+final class KeyablePanel: NSPanel {
+    override var canBecomeKey: Bool { true }
+    override var canBecomeMain: Bool { false }
 }
