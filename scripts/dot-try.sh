@@ -6,10 +6,11 @@
 #
 # Screenshots go to $DOT_TRY_DIR (default /tmp/dot-try) as <stamp>-<n>.png.
 set -u
-QUIET=""; SHOTS=3; EVERY=3
+QUIET=""; DRIVE=""; SHOTS=3; EVERY=3
 while [[ $# -gt 1 ]]; do
   case "$1" in
     --quiet) QUIET="--quiet"; shift ;;
+    --drive) DRIVE="--drive"; shift ;;
     --shots) SHOTS=$2; shift 2 ;;
     --every) EVERY=$2; shift 2 ;;
     *) break ;;
@@ -21,7 +22,7 @@ DIR=${DOT_TRY_DIR:-/tmp/dot-try}
 mkdir -p "$DIR"
 STAMP=$(date +%H%M%S)
 MARK=$(wc -l < "$LOG")
-~/Applications/Dot.app/Contents/MacOS/Dot --ask $QUIET "$Q" >/dev/null
+~/Applications/Dot.app/Contents/MacOS/Dot --ask $QUIET $DRIVE "$Q" >/dev/null
 for i in {1..120}; do
   sleep 1
   if tail -n +$((MARK+1)) "$LOG" | grep -qE 'turn\[(talk|think)\] done|jev: follow-up|handoff|turn\[talk\] .*error'; then break; fi
@@ -32,5 +33,5 @@ for n in $(seq 1 $SHOTS); do
   screencapture -x "$DIR/$STAMP-$n.png"
 done
 echo "--- log"
-tail -n +$((MARK+1)) "$LOG" | grep -E 'jev\[route|turn\[|beat |talk: tool|walkthrough|agent|error|warn' | sed 's/^[0-9-]* //' | cut -c1-260
+tail -n +$((MARK+1)) "$LOG" | grep -E 'jev\[route|turn\[|beat |talk: tool|walkthrough|drive|agent|error|warn' | sed 's/^[0-9-]* //' | cut -c1-260
 echo "--- shots: $DIR/$STAMP-{1..$SHOTS}.png"

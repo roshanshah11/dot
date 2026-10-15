@@ -18,6 +18,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var noticer: Noticer!
     private let hotkeys = HotkeyMonitor()
     private var permissionTimer: Timer?
+    private var hoverTimer: Timer?
     private var presenceItem: NSMenuItem?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -49,8 +50,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         home = HomeWindowController(agents: agents, ledger: ledger, config: config, atlas: atlas)
         let hudModel = hud.model
         atlas.onUpdate = { [weak self] brief in
-            hudModel.todayLine = "today: " + brief.morningLine()
+            hudModel.todayLine = brief.hoverLine()
             self?.talk.todayArrived(brief)
+        }
+        // The countdown to the next meeting moves by the minute; the brief itself every ten.
+        hoverTimer = Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { [weak self] _ in
+            Task { @MainActor in
+                guard let brief = self?.atlas.brief else { return }
+                hudModel.todayLine = brief.hoverLine()
+            }
         }
 
         installStatusItem()

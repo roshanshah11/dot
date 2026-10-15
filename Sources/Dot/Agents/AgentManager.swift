@@ -307,10 +307,10 @@ final class AgentManager {
                     "agent_folder": run.agent.folder.path, "task": Log.short(run.lastBrief, 200),
                 ]
                 jev.evaluate("consent", state: state, questions: [
-                    "risky": .yesNo(instructions: "Would running this shell command send, post, submit, pay, delete or overwrite anything, change files outside the agent's own folder or /tmp, install software system-wide, control another app, or otherwise need the user's say-so? Reading, computing, and writing inside the agent folder are not risky.", yes: "yes, it could act outside the agent's folder or needs the user's judgment", no: "no, plainly harmless"),
+                    "risky": .yesNo(instructions: "Would running this shell command send a message or mail, submit or post something, pay for something, delete or overwrite the user's own files outside the agent's folder, or install or change something system-wide? Reading, computing, writing files under the user's home, opening apps and pages, and driving an app to look at it are not risky.", yes: "yes, it goes outward or cannot be undone", no: "no, it stays on this Mac and can be undone"),
                 ]) { [weak self] answers in
                     guard let self else { completion(false, "Dot is gone."); return }
-                    if let p = answers?["risky"]?.probability, p <= 0.08 {
+                    if let p = answers?["risky"]?.probability, p <= 0.4 {
                         Log.info("consent: jev cleared `\(Log.short(command, 80))` (risk \(String(format: "%.2f", p)))")
                         self.appendTranscript(run.agent, role: "cleared", text: "\(request.toolName): \(reason)")
                         completion(true, nil)
@@ -349,12 +349,9 @@ final class AgentManager {
     func consentPolicy(for agent: Agent) -> ConsentPolicy {
         var allow = Set(config.allowTools)
         var prefixes = config.allowToolPrefixes
-        // Observation tools of the computer-use server pass silently; input tools ask.
-        for name in ["get_window_state", "get_desktop_state", "get_screen_size", "list_apps", "list_windows", "screenshot", "wait", "end_session"] {
-            allow.insert("mcp__cua-driver__\(name)")
-            allow.insert("mcp__cua-computer-use__\(name)")
-            allow.insert("mcp__computer-use__\(name)")
-        }
+        // Computer use passes, observation and input alike; a click whose input names a send,
+        // a purchase or a delete still asks (ConsentPolicy.mentionsCommit).
+        prefixes.append(contentsOf: ["mcp__cua-driver__", "mcp__cua-computer-use__", "mcp__computer-use__", "mcp__cmux-cua__"])
         // Atlas read tools, when Atlas is configured for agents.
         if config.mcpToolNames(config.agentMCPConfig).contains("mcp__atlas__") {
             for name in ["search", "get", "calendar", "calendars", "mail", "messages", "messages_thread", "contacts", "people", "facts", "history",
@@ -365,13 +362,16 @@ final class AgentManager {
                 allow.insert("mcp__atlas__\(name)")
             }
         }
-        // Google connectors through Claude Code: reads pass, sends and edits ask.
-        prefixes.append(contentsOf: ["mcp__claude_ai_Gmail__search", "mcp__claude_ai_Gmail__get", "mcp__claude_ai_Gmail__list",
-                                     "mcp__claude_ai_Google_Calendar__list", "mcp__claude_ai_Google_Calendar__get", "mcp__claude_ai_Google_Calendar__search",
-                                     "mcp__claude_ai_Google_Drive__search", "mcp__claude_ai_Google_Drive__read", "mcp__claude_ai_Google_Drive__get",
-                                     "mcp__claude_ai_Google_Drive__list", "mcp__claude_ai_Google_Drive__download"])
-        let writable = [agent.folder.path, config.dotHome.path, FileManager.default.temporaryDirectory.path, "/private/tmp", "/tmp"]
-        return ConsentPolicy(allowTools: allow, allowToolPrefixes: prefixes, denyTools: Set(config.denyTools), writableRoots: writable)
+        // Google connectors through Claude Code: reads, drafts, labels and his own calendar pass;
+        // send, reply, forward, trash and delete ask (ConsentPolicy.outwardToolWords).
+        prefixes.append(contentsOf: ["mcp__claude_ai_Gmail__", "mcp__claude_ai_Google_Calendar__", "mcp__claude_ai_Google_Drive__"])
+        prefixes.removeAll { $0.hasSuffix("send") }
+        let home = NSHomeDirectory()
+        let writable = [agent.folder.path, config.dotHome.path, FileManager.default.temporaryDirectory.path, "/private/tmp", "/tmp", home]
+        let protected = ["\(home)/roshan/Atlas/private", "\(home)/roshan/Atlas/objects", "\(home)/roshan/Atlas/qmd-state", "\(home)/.ssh",
+                         "\(home)/.claude", "\(home)/.claude-1", "\(home)/.claude-2", "\(home)/.config", "\(home)/Library/Keychains",
+                         "\(home)/Library/Application Support", "\(home)/Library/Preferences", "\(home)/Projects/browser-agent/.env"]
+        return ConsentPolicy(allowTools: allow, allowToolPrefixes: prefixes, denyTools: Set(config.denyTools), writableRoots: writable, protectedRoots: protected)
     }
 
     static func consentTitle(_ request: PermissionRequest) -> String {

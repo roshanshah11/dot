@@ -79,7 +79,8 @@ final class SentenceSplitterTests: XCTestCase {
 
 final class ConsentPolicyTests: XCTestCase {
     let policy = ConsentPolicy(allowTools: ["mcp__atlas__facts"], allowToolPrefixes: ["mcp__cua-driver__get_"],
-                               denyTools: ["mcp__atlas__send_email"], writableRoots: ["/Users/me/Dot/agents/dot"])
+                               denyTools: ["mcp__atlas__send_email"], writableRoots: ["/Users/me/Dot/agents/dot", "/Users/me", NSHomeDirectory()],
+                               protectedRoots: ["/Users/me/.ssh", NSHomeDirectory() + "/.ssh"])
 
     func request(_ tool: String, _ input: [String: Any] = [:], description: String? = nil) -> ToolRequest {
         ToolRequest(toolName: tool, input: AnyCodableValue.object(from: input), description: description)
@@ -92,25 +93,48 @@ final class ConsentPolicyTests: XCTestCase {
         XCTAssertEqual(policy.decide(request("mcp__cua-driver__get_window_state")), .allow)
     }
 
-    func testWritesInsideAgentFolderPassOutsideAsk() {
+    func testWritesUnderHomePassProtectedAsk() {
         XCTAssertEqual(policy.decide(request("Write", ["file_path": "/Users/me/Dot/agents/dot/output/a.md"])), .allow)
-        XCTAssertEqual(policy.decide(request("Write", ["file_path": "/Users/me/Desktop/a.md"])), .ask(reason: "Write /Users/me/Desktop/a.md"))
+        XCTAssertEqual(policy.decide(request("Write", ["file_path": "/Users/me/Desktop/a.md"])), .allow)
+        XCTAssertEqual(policy.decide(request("Write", ["file_path": "/Users/me/.ssh/config"])).isAsk, true)
+        XCTAssertEqual(policy.decide(request("Write", ["file_path": NSHomeDirectory() + "/.ssh/config"])).isAsk, true)
+        XCTAssertEqual(policy.decide(request("Write", ["file_path": "/etc/hosts"])).isAsk, true)
     }
 
-    func testShellReadsPassWritesAsk() {
+    func testShellOnlyOutwardAndIrreversibleAsk() {
         XCTAssertEqual(policy.decide(request("Bash", ["command": "ls -la | head -5"])), .allow)
         XCTAssertEqual(policy.decide(request("Bash", ["command": "git status && git log -3"])), .allow)
+        XCTAssertEqual(policy.decide(request("Bash", ["command": "echo hi > out.txt"])), .allow)
+        XCTAssertEqual(policy.decide(request("Bash", ["command": "python3 build.py"])), .allow)
+        XCTAssertEqual(policy.decide(request("Bash", ["command": "mkdir -p ~/Desktop/x && cp a.md ~/Desktop/x/"])), .allow)
+        XCTAssertEqual(policy.decide(request("Bash", ["command": "open -a Notes"])), .allow)
+        XCTAssertEqual(policy.decide(request("Bash", ["command": "osascript -e 'tell application \"Notes\" to make new note'"])), .allow)
+        XCTAssertEqual(policy.decide(request("Bash", ["command": "hb open https://example.com && hb get text"])), .allow)
+        XCTAssertEqual(policy.decide(request("Bash", ["command": "git commit -m 'draft'"])), .allow)
         XCTAssertEqual(policy.decide(request("Bash", ["command": "rm -rf build"], description: "Clean")), .ask(reason: "Clean"))
         XCTAssertEqual(policy.decide(request("Bash", ["command": "git push origin main"])), .ask(reason: "git push origin main"))
         XCTAssertEqual(policy.decide(request("Bash", ["command": "imsg send +1555 'hi'"])), .ask(reason: "imsg send +1555 'hi'"))
-        XCTAssertEqual(policy.decide(request("Bash", ["command": "echo hi > out.txt"])), .ask(reason: "echo hi > out.txt"))
-        XCTAssertEqual(policy.decide(request("Bash", ["command": "python3 build.py"])), .ask(reason: "python3 build.py"))
+        XCTAssertEqual(policy.decide(request("Bash", ["command": "hb click 'Submit application'"])), .ask(reason: "hb click 'Submit application'"))
+        XCTAssertEqual(policy.decide(request("Bash", ["command": "osascript -e 'tell application \"Mail\" to send msg'"])).isAsk, true)
+        XCTAssertEqual(policy.decide(request("Bash", ["command": "brew install jq"])), .ask(reason: "brew install jq"))
+        XCTAssertEqual(policy.decide(request("Bash", ["command": "cat ~/.ssh/id_ed25519"])), .ask(reason: "cat ~/.ssh/id_ed25519"))
     }
 
-    func testInputToolsAskAndDenyListDenies() {
-        XCTAssertEqual(policy.decide(request("mcp__cua-driver__click", description: "Click Save")), .ask(reason: "cua-driver: Click Save"))
+    func testToolsPassUnlessOutward() {
+        XCTAssertEqual(policy.decide(request("mcp__cua-driver__click", ["element_index": 4], description: "Click Save")), .allow)
+        XCTAssertEqual(policy.decide(request("mcp__cua-driver__click", ["element_index": 4, "label": "Send message"])), .ask(reason: "cua-driver: click"))
+        XCTAssertEqual(policy.decide(request("mcp__cua-driver__type_text", ["text": "hello there"])), .allow)
+        XCTAssertEqual(policy.decide(request("mcp__atlas__draft_email", ["to": "a@b.c"])), .allow)
+        XCTAssertEqual(policy.decide(request("mcp__atlas__reply", ["id": "m1"])), .ask(reason: "atlas: reply"))
+        XCTAssertEqual(policy.decide(request("mcp__claude_ai_Gmail__create_draft")), .allow)
+        XCTAssertEqual(policy.decide(request("mcp__claude_ai_Gmail__send_message")), .ask(reason: "claude_ai_Gmail: send_message"))
+        XCTAssertEqual(policy.decide(request("mcp__claude_ai_Gmail__trash_thread")), .ask(reason: "claude_ai_Gmail: trash_thread"))
         XCTAssertEqual(policy.decide(request("mcp__atlas__send_email")), .deny(reason: "mcp__atlas__send_email is on the deny list"))
     }
+}
+
+extension ConsentDecision {
+    var isAsk: Bool { if case .ask = self { return true } else { return false } }
 }
 
 final class StreamJSONTests: XCTestCase {
@@ -218,9 +242,32 @@ final class AlwaysAskTests: XCTestCase {
         XCTAssertTrue(ConsentPolicy.isAlwaysAsk("rm -rf ~/Dot"))
         XCTAssertTrue(ConsentPolicy.isAlwaysAsk("git push origin main"))
         XCTAssertTrue(ConsentPolicy.isAlwaysAsk("imsg send +1555 hi"))
-        XCTAssertTrue(ConsentPolicy.isAlwaysAsk("echo hi > ~/notes.txt"))
+        XCTAssertFalse(ConsentPolicy.isAlwaysAsk("echo hi > ~/notes.txt"))   // writes under his home run on their own (2026-10-15)
         XCTAssertFalse(ConsentPolicy.isAlwaysAsk("sips -s format png in.icns --out tmp/out.png"))
         XCTAssertFalse(ConsentPolicy.isAlwaysAsk("python3 tmp/build_report.py"))
+    }
+}
+
+final class HoverLineTests: XCTestCase {
+    func testNextEventAndHoverLine() throws {
+        var brief = TodayBrief.parse(Data("""
+        {"built_at":"2026-10-15T01:00","weekday":"Thursday","date":"2026-10-15","deadlines":[],"today":["Thu 10-15 08:30–09:30 Intern Weekly Meeting","Thu 10-15 10:00–10:15 Call: Radha Gupta (MTS) (at Phone (her cell))","Thu 10-15 10:15–10:50 MATH 20250: terminology"],"tomorrow":[],"commitments":[],"todo":[],"waiting":[],"unanswered":[],"unanswered_count":3,"preferences":[],"priorities":[],"block":""}
+        """.utf8))
+        let unwrapped = try XCTUnwrap(brief)
+        brief = unwrapped
+        var components = DateComponents(); components.year = 2026; components.month = 10; components.day = 15; components.hour = 9; components.minute = 40
+        let at940 = Calendar.current.date(from: components)!
+        let next = try XCTUnwrap(unwrapped.nextEvent(from: at940))
+        XCTAssertEqual(next.title, "Call: Radha Gupta (MTS)")
+        XCTAssertEqual(next.startsIn, 20)
+        XCTAssertEqual(next.endsIn, 35)
+        XCTAssertEqual(unwrapped.hoverLine(from: at940), "next: call: radha gupta (mts) in 20 min · 3 on the calendar today · 3 mail waiting")
+        components.hour = 9; components.minute = 0
+        let during = unwrapped.nextEvent(from: Calendar.current.date(from: components)!)
+        XCTAssertEqual(during?.title, "Intern Weekly Meeting")
+        XCTAssertEqual(during?.startsIn, -30)
+        components.hour = 23
+        XCTAssertNil(unwrapped.nextEvent(from: Calendar.current.date(from: components)!))
     }
 }
 

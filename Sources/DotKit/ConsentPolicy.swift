@@ -28,17 +28,34 @@ public enum ConsentDecision: Equatable {
     case deny(reason: String)
 }
 
-/// Decides which agent tool calls pass silently and which need his tap.
-/// Mirrors HeyClicky's rule that observation is free and input needs consent,
-/// and his standing rule that nothing is sent on its own.
+/// Decides which agent tool calls pass silently and which need his tap. His rule
+/// (2026-10-15, "it asks me for everything"): agents run on their own and the card appears
+/// only for what goes outward or cannot be undone: a send, a submit, a post, a payment, a
+/// delete outside their own folder, a push, a system-wide install, a click on a control
+/// whose label reads like one of those. Reads, writes under his home, scripts, opening
+/// apps and pages, and driving an app to look at it all pass silently.
 public struct ConsentPolicy: Equatable {
     public var allowTools: Set<String>
     public var allowToolPrefixes: [String]
     public var denyTools: Set<String>
     /// Absolute paths (expanded) that agents may write under without asking.
     public var writableRoots: [String]
+    /// Paths under a writable root that still ask (his vault's private store, keys, settings).
+    public var protectedRoots: [String]
     public var safeCommands: Set<String>
     public var safeGitSubcommands: Set<String>
+
+    /// Words in a control's label, a script or a tool's input that mean "this commits something".
+    public static let commitWords = try! NSRegularExpression(
+        pattern: #"\b(send|submit|pay|buy|purchase|checkout|place order|publish|post it|tweet|transfer|sign and|apply now|unsubscribe|delete|erase|empty trash|shut ?down|log ?out|sign ?out)\b"#,
+        options: .caseInsensitive)
+
+    public static func mentionsCommit(_ text: String) -> Bool {
+        commitWords.firstMatch(in: text, range: NSRange(location: 0, length: (text as NSString).length)) != nil
+    }
+
+    /// Tool names (any server) that commit something outward and always ask.
+    static let outwardToolWords = try! NSRegularExpression(pattern: #"(^|_)(send|reply|forward|submit|apply|post|publish|pay|purchase|delete|trash|remove|revoke|grant|rewrite|rollback|forget)(_|$)"#, options: .caseInsensitive)
 
     public static let readOnlyTools: Set<String> = [
         "Read", "Glob", "Grep", "LS", "WebSearch", "WebFetch", "TodoWrite", "Task", "Agent",
@@ -51,32 +68,41 @@ public struct ConsentPolicy: Equatable {
         "which", "whoami", "date", "uname", "stat", "file", "du", "df", "env", "printenv", "true",
         "sort", "uniq", "cut", "tr", "awk", "sed", "jq", "yq", "diff", "cmp", "md5", "shasum", "sha256sum",
         "basename", "dirname", "realpath", "readlink", "test", "[", "xargs", "tee", "column", "less", "more",
-        "git", "python3", "swift", "node", "npx", "uv", "pip", "pip3", "brew", "mkdir", "touch", "cp", "mv",
-        "open", "say", "osascript", "cd", "export", "source", "sleep", "time", "curl", "wget",
+        "git", "python3", "python", "swift", "node", "npx", "npm", "uv", "pip", "pip3", "brew", "mkdir", "touch", "cp", "mv", "rm", "ln",
+        "open", "say", "osascript", "cd", "export", "source", "sleep", "time", "curl", "wget", "zip", "unzip", "tar", "gzip",
+        "hb", "rba", "cb", "cbg", "gmail", "outlook", "imsg", "linkedin", "cliclick", "cua-driver", "screencapture", "pbcopy", "pbpaste",
+        "ffmpeg", "ffprobe", "pdftotext", "qlmanage", "sips", "textutil", "mdfind", "mdls", "defaults", "plutil", "sqlite3", "make",
+        "cargo", "go", "ruby", "perl", "bash", "zsh", "sh", "env", "nohup", "caffeinate", "chmod", "atlasctl", "./atlasctl", "claude",
     ]
 
-    /// Commands that are safe only as reads; writes with them still ask.
-    static let readOnlyIfNoWriteFlags: Set<String> = ["git", "brew", "python3", "swift", "node", "npx", "uv", "pip", "pip3", "curl", "wget"]
+    /// Package managers and the system: only these still ask.
+    static let readOnlyIfNoWriteFlags: Set<String> = ["brew"]
 
     public static let defaultSafeGitSubcommands: Set<String> = [
         "status", "log", "diff", "show", "branch", "remote", "rev-parse", "ls-files", "blame", "describe", "tag", "stash",
+        "add", "commit", "checkout", "switch", "restore", "fetch", "pull", "merge", "rebase", "init", "clone", "mv", "rm",
     ]
 
-    /// Anything matching these always asks, even if the command word is safe.
+    /// Anything matching these always asks, even if the command word is safe: it goes outward,
+    /// touches the system, or cannot be undone.
     static let alwaysAskPatterns: [String] = [
         #"\bsudo\b"#, #"\brm\s+-[a-zA-Z]*r"#, #"\brm\s+-[a-zA-Z]*f"#, #"\bgit\s+push\b"#, #"\bgit\s+reset\s+--hard"#,
-        #"\bgit\s+commit\b"#, #"\bosascript\b"#, #"\bopen\b"#, #"\bsay\b"#, #"\bkill(all)?\b"#, #"\blaunchctl\b"#,
-        #"\bdefaults\s+write\b"#, #"\bcurl\b.*\s-(X|d|F|T)\b"#, #"\bcurl\b.*--(data|upload-file|form)\b"#,
-        #"\bnpm\s+publish\b"#, #"\bpip3?\s+install\b"#, #"\buv\s+pip\s+install\b"#, #"\bbrew\s+(install|uninstall|upgrade)\b"#,
-        #">\s*\S"#, #"\bmv\b"#, #"\bcp\b"#, #"\bmkdir\b"#, #"\btouch\b"#, #"\bchmod\b"#, #"\bchown\b"#, #"\bssh\b"#, #"\bscp\b"#,
-        #"\bimsg\s+send\b"#, #"\bgmail\s+send\b"#, #"\boutlook\s+send\b"#, #"\bhb\b"#, #"\brba\b"#, #"\bcbg?\b"#,
+        #"\bkill(all)?\b"#, #"\blaunchctl\b"#, #"\bdefaults\s+write\b"#, #"\bchown\b"#, #"\bdiskutil\b"#, #"\bmkfs\b"#,
+        #"\bnpm\s+publish\b"#, #"\bbrew\s+(install|uninstall|upgrade|remove)\b"#, #"\bssh\b"#, #"\bscp\b"#,
+        #"\bimsg\s+send\b"#, #"\bgmail\s+(send|reply|forward)\b"#, #"\boutlook\s+(send|reply|forward)\b"#,
+        #"\brba\b.*--authorize\b"#, #"\bhandshake_submit\b"#, #"\bshutdown\b"#, #"\breboot\b"#,
     ]
+
+    /// Commands that drive his apps or browser: fine on their own, but a send, submit, post,
+    /// payment or delete inside them asks.
+    static let driverWords: Set<String> = ["osascript", "hb", "rba", "cb", "cbg", "cliclick", "cua-driver", "gmail", "outlook", "imsg", "linkedin"]
 
     public init(
         allowTools: Set<String> = [],
         allowToolPrefixes: [String] = [],
         denyTools: Set<String> = [],
         writableRoots: [String] = [],
+        protectedRoots: [String] = [],
         safeCommands: Set<String> = ConsentPolicy.defaultSafeCommands,
         safeGitSubcommands: Set<String> = ConsentPolicy.defaultSafeGitSubcommands
     ) {
@@ -84,6 +110,7 @@ public struct ConsentPolicy: Equatable {
         self.allowToolPrefixes = allowToolPrefixes
         self.denyTools = denyTools
         self.writableRoots = writableRoots
+        self.protectedRoots = protectedRoots
         self.safeCommands = safeCommands
         self.safeGitSubcommands = safeGitSubcommands
     }
@@ -108,18 +135,40 @@ public struct ConsentPolicy: Equatable {
         }
 
         if name.hasPrefix("mcp__") {
-            return .ask(reason: Self.describeMCP(name, request: request))
+            let parts = name.split(separator: "__").map(String.init)
+            let tool = parts.count > 2 ? parts[2...].joined(separator: "_") : name
+            if Self.outwardToolWords.firstMatch(in: tool, range: NSRange(location: 0, length: (tool as NSString).length)) != nil {
+                return .ask(reason: Self.describeMCP(name, request: request))
+            }
+            // A click, a keystroke or a value that names a send, a purchase or a delete asks; the rest runs.
+            if Self.mentionsCommit(Self.flatten(request.input)) {
+                return .ask(reason: Self.describeMCP(name, request: request))
+            }
+            return .allow
         }
         return .ask(reason: request.description ?? name)
+    }
+
+    static func flatten(_ input: [String: AnyCodableValue]) -> String {
+        input.values.map { value -> String in
+            switch value {
+            case .string(let s): return s
+            case .array(let a): return a.map { "\($0.json)" }.joined(separator: " ")
+            case .object(let o): return flatten(o)
+            default: return ""
+            }
+        }.joined(separator: " ")
     }
 
     func isWritable(_ path: String) -> Bool {
         guard !path.isEmpty else { return false }
         let standardized = (path as NSString).standardizingPath
-        return writableRoots.contains { root in
+        func under(_ root: String) -> Bool {
             let r = (root as NSString).standardizingPath
             return standardized == r || standardized.hasPrefix(r.hasSuffix("/") ? r : r + "/")
         }
+        if protectedRoots.contains(where: under) { return false }
+        return writableRoots.contains(where: under)
     }
 
     /// True when the command matches a pattern that always asks (sudo, rm -rf, sends, pushes...).
@@ -136,6 +185,15 @@ public struct ConsentPolicy: Equatable {
             if trimmed.range(of: pattern, options: .regularExpression) != nil {
                 return .ask(reason: Self.shellReason(trimmed, description: description))
             }
+        }
+        // Driving an app or his browser is fine; a send, submit, post, payment or delete inside it asks.
+        let lower = trimmed.lowercased()
+        if Self.driverWords.contains(where: { lower.range(of: "\\b\($0)\\b", options: .regularExpression) != nil }), Self.mentionsCommit(trimmed) {
+            return .ask(reason: Self.shellReason(trimmed, description: description))
+        }
+        // Writes under a protected root ask however they are spelled.
+        for root in protectedRoots where trimmed.contains((root as NSString).standardizingPath) || trimmed.contains(Self.shortPath(root)) {
+            return .ask(reason: Self.shellReason(trimmed, description: description))
         }
         // Every pipeline segment must start with a safe command.
         let segments = trimmed.components(separatedBy: CharacterSet(charactersIn: "|;&\n"))
@@ -154,12 +212,11 @@ public struct ConsentPolicy: Equatable {
                     return .ask(reason: Self.shellReason(trimmed, description: description))
                 }
             }
-            if Self.readOnlyIfNoWriteFlags.contains(word) && word != "git" {
-                // Interpreters and package managers: only version/help style reads pass silently.
+            if Self.readOnlyIfNoWriteFlags.contains(word) {
+                // brew: only reads pass silently; installs are on the always-ask list.
                 let rest = words.dropFirst().joined(separator: " ")
-                let readish = rest.isEmpty || rest.hasPrefix("--version") || rest.hasPrefix("-V") || rest.hasPrefix("--help")
-                    || rest.hasPrefix("-c \"print") || rest.hasPrefix("-c 'print") || rest.hasPrefix("list") || rest.hasPrefix("show")
-                    || rest.hasPrefix("-sS") || rest.hasPrefix("-s ") || rest.hasPrefix("-I ")
+                let readish = rest.isEmpty || rest.hasPrefix("--version") || rest.hasPrefix("--help") || rest.hasPrefix("list")
+                    || rest.hasPrefix("info") || rest.hasPrefix("search") || rest.hasPrefix("--prefix") || rest.hasPrefix("outdated")
                 if !readish {
                     return .ask(reason: Self.shellReason(trimmed, description: description))
                 }

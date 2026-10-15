@@ -115,7 +115,7 @@ struct CompanionView: View {
                     .shadow(color: model.color.opacity(0.7), radius: 8)
                     .frame(width: rect.width, height: rect.height)
                     .offset(x: rect.minX, y: rect.minY)
-                if let text = model.highlightLabel, !text.isEmpty {
+                if let text = model.highlightLabel, !text.isEmpty, !(model.bubbleVisible && !model.bubbleText.isEmpty) {
                     chip(text).offset(x: rect.minX, y: max(4, rect.minY - 30))
                 }
             }

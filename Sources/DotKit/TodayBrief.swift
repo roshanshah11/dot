@@ -62,6 +62,48 @@ public struct TodayBrief: Codable, Equatable {
         }
     }
 
+    /// The event happening now or the next one today, from lines like
+    /// "Thu 10-15 10:00–10:15 Call: Radha Gupta (at Phone)". Returns the title and minutes until it
+    /// starts (negative while it is on) and minutes until it ends.
+    public func nextEvent(from date: Date = Date()) -> (title: String, startsIn: Int, endsIn: Int)? {
+        let pattern = try! NSRegularExpression(pattern: #"^\w{3} \d{2}-\d{2} (\d{1,2}):(\d{2})[–-](\d{1,2}):(\d{2}) (.+)$"#)
+        let calendar = Calendar.current
+        let minuteOfDay = calendar.component(.hour, from: date) * 60 + calendar.component(.minute, from: date)
+        var best: (String, Int, Int)?
+        for line in today {
+            let ns = line as NSString
+            guard let m = pattern.firstMatch(in: line, range: NSRange(location: 0, length: ns.length)),
+                  let sh = Int(ns.substring(with: m.range(at: 1))), let sm = Int(ns.substring(with: m.range(at: 2))),
+                  let eh = Int(ns.substring(with: m.range(at: 3))), let em = Int(ns.substring(with: m.range(at: 4))) else { continue }
+            let start = sh * 60 + sm, end = eh * 60 + em
+            guard end > minuteOfDay else { continue }
+            var title = ns.substring(with: m.range(at: 5))
+            if let paren = title.range(of: " (at ") { title = String(title[..<paren.lowerBound]) }
+            let candidate = (String(title.prefix(48)), start - minuteOfDay, end - minuteOfDay)
+            if best == nil || candidate.1 < best!.1 { best = candidate }
+        }
+        return best
+    }
+
+    /// The notch tab's hover line: what is on now or next, the day's count, the mail waiting.
+    public func hoverLine(from date: Date = Date()) -> String {
+        var parts: [String] = []
+        if let event = nextEvent(from: date) {
+            if event.startsIn <= 0 {
+                parts.append("now: \(event.title.lowercased()), \(event.endsIn) min left")
+            } else if event.startsIn < 60 {
+                parts.append("next: \(event.title.lowercased()) in \(event.startsIn) min")
+            } else {
+                parts.append("next: \(event.title.lowercased()) in \(event.startsIn / 60) h \(event.startsIn % 60) min")
+            }
+        }
+        if !today.isEmpty { parts.append("\(today.count) on the calendar today") }
+        let week = deadlines(withinDays: 7, from: date)
+        if !week.isEmpty { parts.append("\(week.count) deadline\(week.count == 1 ? "" : "s") this week") }
+        if unansweredCount > 0 { parts.append("\(unansweredCount) mail waiting") }
+        return parts.joined(separator: " · ")
+    }
+
     /// One quiet line for the morning bubble, like "3 deadlines this week, first centerview by 6 pm. 2 mail waiting."
     public func morningLine(from date: Date = Date()) -> String {
         var parts: [String] = []

@@ -456,6 +456,9 @@ final class Talk {
         for (index, element) in context.elements.prefix(40).enumerated() where !element.title.isEmpty {
             elementCriteria["e\(index)"] = String(element.title.prefix(60))
         }
+        if config.driveEnabled, driveRequested, !inWalkthrough {
+            questions["on_screen"] = .yesNo(instructions: "Is the user asking to operate something visible in the frontmost window right now, in a few clicks (a dialog, a button, a menu, a setting), rather than a longer task done elsewhere?", yes: "a few clicks on what is on screen now", no: "a longer task: research, writing, files, another app or site")
+        }
         if elementCriteria.count >= 2, !inWalkthrough {
             elementCriteria["none"] = "the user is not asking about one specific element on screen"
             questions["element"] = .choice(instructions: "If the user is asking where something is, how to do something here, or about one specific control, which on-screen element do they mean?", criteria: elementCriteria)
@@ -469,6 +472,10 @@ final class Talk {
             endWalkthrough(reason: "new question")
         }
         guard let answers, let route = answers["route"]?.choice else { return .answer }
+        if driveRequested, let onScreen = answers["on_screen"]?.probability, onScreen >= 0.55 {
+            Log.info("jev: on-screen task (\(String(format: "%.2f", onScreen))); dot will click it through")
+            return .answer
+        }
         if let follow = answers["followup"]?.probability, follow >= 0.7, let live = running.first {
             Log.info("jev: follow-up for \(live.name) (\(String(format: "%.2f", follow)))")
             return .followUp(live.slug)

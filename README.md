@@ -18,26 +18,44 @@ Clicky and from Murmur.
 
 | You | Dot |
 |---|---|
-| Hold **control + option** and talk | Looks at your screen, answers aloud in a sentence or two (and in a bubble beside the orb), points at the element you asked about |
-| Drag while holding | Draws a box; Dot answers about what is inside it (the region is cropped and enlarged for the model) |
-| Ask "how do I..." | One step at a time: Dot rings the control to click, sees your click, and gives the next step |
+| Hold **control + option** and talk | Looks at your screen, answers aloud in beats: each sentence lands beside the thing it is about, in a short bubble, as the orb flies there |
+| Ask "show me around" or "what is all this" | A tour: three to six beats, each pointing at, outlining or circling one part of the page with one sentence about it |
+| Drag while holding | Draws in ink around something; Dot answers about what you circled (the region is cropped and enlarged for the model) |
+| Ask "how do I..." | One step at a time: Dot rings the control to click (or to rest on, for hover menus), sees you do it, and gives the next step. Say "next" or "done" to move on, or ask about the step |
+| Say "do it" or "you click it" in a walkthrough | Dot glides the real cursor to each ringed step and clicks it while you watch. Anything that reads like a send, a purchase or a delete stays yours. Move the mouse or press a key and it stops |
 | Hold **control + option + shift** and talk | Hands the request to a background agent and tells you when it is done |
 | Tap **control + option**, or click the tab under the notch | A text field for a typed question |
 | Press **escape** | Stops Dot talking |
 | Say "go do it", or ask for real work | The request goes to an agent on its own; a confident route skips the talk model entirely |
 | Switch to an app that touches a deadline | One quiet line beside the cursor ("heads up: wells fargo coffee chat, due today") |
 
-Every talk turn carries a `[today]` block read straight from Atlas (deadlines, calendar,
-open commitments, mail waiting, priorities, preferences; no model call, a few seconds in the
-background every ten minutes), and a dozen Atlas tools (search, facts, people, calendar,
-commitments, canvas, remember, deadline_add, commit) so "what's due", "who is she" and
-"remember that" work by voice.
+Every talk turn carries the date and time and 56 Atlas tools: everything that reads
+(search, facts, people, calendar, free, commitments, mail, messages, canvas, docs, SEC
+filings, a finance calculator), remembers (remember, deadline_add, commit, todo, reminder,
+journal) or drafts (draft_email, write_note, calendar_create). Nothing that sends. So "what's
+due", "who is she", "what did he say", "remember that" and "draft a reply" work by voice, and
+Dot asks Atlas only when the question needs it. The notch tab's hover line and the morning
+greeting still come from a direct read of Atlas every ten minutes, with no model call.
+
+### Beats
+
+The model writes its answer as beats: a visual tag first on a line, then the sentence that
+goes with it. `[POINT:x,y:label]` flies the orb to a spot, `[HIGHLIGHT:x,y,w,h:label]`
+outlines a region, `[SHAPE:arrow:x1,y1;x2,y2:label]` draws an arrow (also line, curve, circle,
+polygon), `[TARGET:x,y,r:label]` rings the control to click next, `[HOVER:x,y,r:label]` rings
+one to rest on. Dot queues each beat's words with the voice and fires its visual the moment
+those words start playing, so a tour reads as the orb moving through the page while it talks,
+and the bubble shows one beat at a time instead of a wall of text. The grammar follows what
+HeyClicky's binary reveals (see `docs/heyclicky-abilities.md`); the code and the prompt are Dot's.
 
 Agents live in `~/Dot/agents/<name>/`, each with a `CLAUDE.md` that is its identity and
 notes, an `output/` folder for deliverables, and a transcript. They run as Claude Code
-sessions on Opus with your skills, your MCP servers, and your settings. Reads happen
-silently. Clicks, keystrokes, sends and writes outside the agent's folder show an Allow / Not
-now card in the notch. When an agent finishes, its row in the notch opens into a card: the
+sessions on Opus with your skills, your MCP servers, and your settings. They work on their
+own: reads, writes anywhere under your home, scripts, opening apps and pages, and driving an
+app to look at it all pass silently. The Allow / Not now card in the notch appears only for
+what goes outward or cannot be undone: a send, a submit, a post, a payment, a delete outside
+the agent's folder, a push, a system-wide install, or a click on a control whose label reads
+like one of those. Your vault's private store, your keys and your settings stay off limits. When an agent finishes, its row in the notch opens into a card: the
 full answer, its files, a "Next: ..." button it suggested, and a reply field. The Dot window
 has the same chat with a composer, plus a Day tab with everything Atlas knows about today.
 
@@ -163,10 +181,18 @@ Dot --check           # permissions and paths
 tail -f ~/Library/Logs/Dot/dot.log
 ```
 
+## Testing it without a voice
+
+`Dot --ask --quiet "show me around this page"` runs a turn with the bubble and the marks but
+no speech (beats pace themselves), and `Dot --ask --drive "how do i ..."` lets Dot click the
+walkthrough's steps itself. `scripts/dot-try.sh` wraps an ask: it waits for the turn, prints
+the route, tool, beat and tag lines from the log, and takes screenshots as the beats land.
+
 ## Not yet
 
-Hands-free always-on voice, guided multi-step walkthroughs that watch for your click,
-draw-to-ask region selection, a `drive_until` fast lane for computer use, and embedding
-cua-driver inside Dot.app. Dictation is left to [Murmur](https://github.com/roshanshah11/murmur).
+Hands-free always-on voice and sub-second speech (HeyClicky's Realtime feel), typing a step
+for you, a `drive_until` fast lane for agents' computer use, routines on a schedule, a
+meeting countdown in the notch, an onboarding tour, and embedding cua-driver inside Dot.app.
+Dictation is left to [Murmur](https://github.com/roshanshah11/murmur).
 
 MIT. Built by Roshan Shah.
