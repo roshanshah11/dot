@@ -10,6 +10,9 @@ import Foundation
 ///   [TARGET:x,y,r:label]           ring the thing to click next and wait for the click (a walkthrough step)
 ///   [HOVER:x,y,r:label]            ring the thing to hover; the step completes when the cursor rests inside
 ///   [SHAPE:arrow:x1,y1;x2,y2:label] draw a line, arrow, circle (center;edge), curve or polygon through the points
+///   [CARD:id:x,y,w,h:title] <<< html >>>  put a card on the board (x,y,w,h in screenshot pixels, or "auto")
+///   [REVEAL:id:n]                  show step n of a card and point at it
+///   [CLEAR_BOARD]                  take every card down
 ///   [AGENT:brief]                  hand the task to a background agent
 ///   [NEW_AGENT:name:brief]         create a named agent for this kind of work, then hand off
 ///   [THINK]                        the question deserves the stronger model; Dot re-asks it
@@ -20,12 +23,24 @@ public enum DotTag: Equatable {
     case target(x: Int, y: Int, radius: Int, label: String, screen: Int?)
     case hover(x: Int, y: Int, radius: Int, label: String, screen: Int?)
     case shape(kind: ShapeKind, points: [ShapePoint], label: String, screen: Int?)
+    case card(id: String, rect: CardRect?, title: String, html: String, screen: Int?)
+    case reveal(id: String, step: Int)
+    case clearBoard
     case agent(brief: String)
     case newAgent(name: String, brief: String)
     case think
 }
 
 public enum ShapeKind: String, Equatable, Sendable { case line, arrow, circle, curve, polygon }
+
+/// Where a card goes, in screenshot pixels (top-left origin).
+public struct CardRect: Equatable, Sendable {
+    public let x: Int
+    public let y: Int
+    public let width: Int
+    public let height: Int
+    public init(x: Int, y: Int, width: Int, height: Int) { self.x = x; self.y = y; self.width = width; self.height = height }
+}
 
 public struct ShapePoint: Equatable {
     public let x: Int
@@ -37,7 +52,7 @@ public extension DotTag {
     /// Tags that draw or move something on screen (as opposed to handing off or escalating).
     var isVisual: Bool {
         switch self {
-        case .point, .highlight, .target, .hover, .shape: return true
+        case .point, .highlight, .target, .hover, .shape, .card, .reveal, .clearBoard: return true
         case .pointNone, .agent, .newAgent, .think: return false
         }
     }
@@ -55,13 +70,16 @@ public struct ParsedResponse: Equatable {
 }
 
 public enum TagParser {
-    static let tagNames = ["POINT", "HIGHLIGHT", "TARGET", "HOVER", "SHAPE", "AGENT", "NEW_AGENT", "THINK"]
+    static let tagNames = ["POINT", "HIGHLIGHT", "TARGET", "HOVER", "SHAPE", "CARD", "REVEAL", "CLEAR_BOARD", "AGENT", "NEW_AGENT", "THINK"]
 
     // swiftlint:disable:next force_try
     static let pattern = try! NSRegularExpression(
-        pattern: #"\[(POINT|HIGHLIGHT|TARGET|HOVER|SHAPE|AGENT|NEW_AGENT|THINK)(?::([^\]]*))?\]"#,
+        pattern: #"\[(POINT|HIGHLIGHT|TARGET|HOVER|SHAPE|CARD|REVEAL|CLEAR_BOARD|AGENT|NEW_AGENT|THINK)(?::([^\]]*))?\]"#,
         options: []
     )
+
+    /// The content block that follows a CARD tag: `<<<` on its own, the html, `>>>` on its own.
+    static let blockPattern = try! NSRegularExpression(pattern: #"^\s*<<<[ \t]*\n?([\s\S]*?)\n?[ \t]*>>>"#, options: [])
 
     public static func parse(_ text: String) -> ParsedResponse {
         let ns = text as NSString
@@ -69,14 +87,22 @@ public enum TagParser {
         var spoken = ""
         var cursor = 0
         for match in pattern.matches(in: text, range: NSRange(location: 0, length: ns.length)) {
+            guard match.range.location >= cursor else { continue }   // inside a card block already consumed
             spoken += ns.substring(with: NSRange(location: cursor, length: match.range.location - cursor))
             cursor = match.range.location + match.range.length
             let kind = ns.substring(with: match.range(at: 1))
             let payloadRange = match.range(at: 2)
             let payload = payloadRange.location == NSNotFound ? "" : ns.substring(with: payloadRange)
-            if let tag = makeTag(kind: kind, payload: payload) {
-                tags.append(tag)
+            guard var tag = makeTag(kind: kind, payload: payload) else { continue }
+            if case .card(let id, let rect, let title, _, let screen) = tag {
+                let rest = ns.substring(from: cursor)
+                if let block = blockPattern.firstMatch(in: rest, range: NSRange(location: 0, length: (rest as NSString).length)) {
+                    let html = (rest as NSString).substring(with: block.range(at: 1))
+                    tag = .card(id: id, rect: rect, title: title, html: html, screen: screen)
+                    cursor += block.range.location + block.range.length
+                }
             }
+            tags.append(tag)
         }
         spoken += ns.substring(from: cursor)
         return ParsedResponse(spoken: tidy(spoken), tags: tags)
@@ -103,6 +129,30 @@ public enum TagParser {
         switch kind {
         case "THINK":
             return .think
+        case "CLEAR_BOARD":
+            return .clearBoard
+        case "REVEAL":
+            let parts = splitPayload(payload)
+            guard parts.count >= 1, !parts[0].isEmpty else { return nil }
+            let step = parts.count >= 2 ? Int(parts[1].filter { $0.isNumber }) ?? 1 : 1
+            return .reveal(id: parts[0], step: max(step, 1))
+        case "CARD":
+            // id : x,y,w,h | auto : title [: screenN]
+            var parts = splitPayload(payload)
+            guard parts.count >= 2, !parts[0].isEmpty else { return nil }
+            let id = parts.removeFirst()
+            let screen = takeScreen(&parts)
+            var rect: CardRect?
+            let place = parts.first ?? ""
+            let numbers = integers(in: place)
+            if numbers.count == 4, numbers[2] > 0, numbers[3] > 0 {
+                rect = CardRect(x: numbers[0], y: numbers[1], width: numbers[2], height: numbers[3])
+                parts.removeFirst()
+            } else if place.lowercased() == "auto" || numbers.count == 2 {
+                if numbers.count == 2 { rect = CardRect(x: numbers[0], y: numbers[1], width: 0, height: 0) }
+                parts.removeFirst()
+            }
+            return .card(id: id, rect: rect, title: parts.joined(separator: ":"), html: "", screen: screen)
         case "AGENT":
             let brief = payload.trimmingCharacters(in: .whitespacesAndNewlines)
             return brief.isEmpty ? nil : .agent(brief: brief)

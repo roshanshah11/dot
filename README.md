@@ -181,6 +181,16 @@ Dot --check           # permissions and paths
 tail -f ~/Library/Logs/Dot/dot.log
 ```
 
+### The board
+
+Ask for a worked problem, a formula, a comparison or a quiz and Dot teaches from a card it
+puts over your screen: math typeset locally (KaTeX, bundled), steps revealed one at a time as
+it explains, plots, number lines, tables and hand-drawn diagrams. In a worked problem it asks
+you to try the next step before showing it and grades what you say. "next" reveals, "close it"
+or escape clears, and the orb perches on the card's edge pointing at the step it is on. Cards
+are small floating panels Dot owns; the model writes them as `[CARD:id:auto:title]` followed by
+a `<<< ... >>>` html block, then `[REVEAL:id:n]` before each step. Nothing is fetched.
+
 ## Testing it without a voice
 
 `Dot --ask --quiet "show me around this page"` runs a turn with the bubble and the marks but

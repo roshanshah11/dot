@@ -19,6 +19,7 @@ final class Talk {
     private let atlas: AtlasBridge
     private let jev: Jev?
     private let driver = Driver()
+    let board: BoardManager
 
     private let recorder = AudioRecorder()
     private var talkSession: ClaudeSession?
@@ -88,6 +89,8 @@ final class Talk {
         self.ledger = ledger
         self.atlas = atlas
         self.jev = jev
+        self.board = BoardManager(accentHex: config.pointerColorHex)
+        (speaker as? CommandSpeaker)?.warm(Self.acks + Self.thinkAcks)
         self.speaker.onFinishedAll = { [weak self] in
             Task { @MainActor in self?.scheduleIdleCheck() }
         }
@@ -212,6 +215,7 @@ final class Talk {
         guard phase == .idle || phase == .speaking || phase == .thinking else { return }
         if phase == .speaking || phase == .thinking { stopSpeaking(); activeSession?.interrupt() }
         self.mode = mode
+        quietTurn = false   // a spoken question is always answered aloud, whatever the last test turn was
         idleTimer?.invalidate()
         overlay.clearMarks(keepRing: walkthrough != nil)
         overlay.hideBubble(after: 0)
@@ -349,7 +353,15 @@ final class Talk {
         let route = await self.route(text)
         switch route {
         case .continueWalkthrough:
-            continueWalkthrough(said: text)
+            if walkthrough != nil { continueWalkthrough(said: text) } else { continueBoard(said: text) }
+            return
+        case .closeBoard:
+            board.clear()
+            phase = .idle
+            overlay.setPhase(.speaking)
+            speaker.speak("closed.")
+            overlay.setBubble("closed.")
+            scheduleIdleCheck()
             return
         case .drive:
             startDriving()
@@ -393,13 +405,40 @@ final class Talk {
             settle()
             return
         }
+        acknowledge()
         let (message, images) = buildMessage(text, kind: .talk)
         lastMessage = message
         lastImages = images
         sendTurn(message, images: images, to: session, kind: .talk)
     }
 
-    private enum Route { case answer, agent, think, followUp(String), continueWalkthrough, drive }
+    /// He spoke while a card still has hidden steps ("next", an answer to a question, "why"):
+    /// the model reveals the next step or responds, with the board's state in front of it.
+    private func continueBoard(said text: String) {
+        guard let session = session(for: .talk) else { return }
+        acknowledge()
+        let message = "[board] he said: \"\(text)\". if that answers a question you asked, grade it in a sentence first. then reveal the next step with [REVEAL:id:n] and explain it, or answer what he asked and keep the board as it is; when the card is done, say so."
+        let (built, images) = buildMessage(message, kind: .talk)
+        lastMessage = built
+        lastImages = images
+        sendTurn(built, images: images, to: session, kind: .talk)
+    }
+
+    private enum Route { case answer, agent, think, followUp(String), continueWalkthrough, drive, closeBoard }
+
+    /// Said the instant a question is understood, before Claude's first word: no dead air.
+    static let acks = ["mm-hm.", "okay.", "let me look.", "one sec.", "let me see.", "right."]
+    static let thinkAcks = ["let me think about that for a second."]
+    private var ackIndex = 0
+
+    private func acknowledge() {
+        guard !quietTurn else { return }
+        let line = Self.acks[ackIndex % Self.acks.count]
+        ackIndex += 1
+        speaker.speak(line)
+    }
+
+    private static let closeWords = try! NSRegularExpression(pattern: #"^(close|clear|hide|dismiss) (it|that|this|them|the (board|cards?|card))\W*$"#, options: .caseInsensitive)
 
     private func saysDrive(_ text: String) -> Bool {
         Self.driveWords.firstMatch(in: text, range: NSRange(location: 0, length: (text as NSString).length)) != nil
@@ -413,7 +452,9 @@ final class Talk {
     /// and "done" continue it instead of starting over.
     private func route(_ text: String) async -> Route {
         let inWalkthrough = walkthrough != nil
-        if inWalkthrough, Self.continueWords.firstMatch(in: text, range: NSRange(location: 0, length: (text as NSString).length)) != nil {
+        let range = NSRange(location: 0, length: (text as NSString).length)
+        if !board.isEmpty, Self.closeWords.firstMatch(in: text, range: range) != nil { return .closeBoard }
+        if inWalkthrough || board.hasHiddenSteps, Self.continueWords.firstMatch(in: text, range: range) != nil {
             return .continueWalkthrough
         }
         if config.driveEnabled, saysDrive(text) {
@@ -563,6 +604,9 @@ final class Talk {
                 lines.append("\(count). \(role) \"\(element.title)\" \(Int(pixel.x)),\(Int(pixel.y))\(inBox ? " (in box)" : "")")
             }
         }
+        if !board.isEmpty {
+            lines.append("board: " + board.stateLines().joined(separator: "; "))
+        }
         if let step = walkthrough {
             let left = max(config.walkthroughMaxSteps - step.step, 0)
             lines.append("walkthrough: step \(step.step) was \"\(step.kind == .hover ? "rest on" : "click") \(step.label)\"; \(left) click-to-advance steps left" +
@@ -655,6 +699,21 @@ final class Talk {
             case .hover(let x, let y, let radius, let text, let screen):
                 _ = target(pixel: CGPoint(x: x, y: y), radius: CGFloat(radius), label: text, screen: screen, hover: true)
                 label = label ?? text
+            case .card(let id, let rect, let title, let html, let screen):
+                showCard(id: id, rect: rect, title: title, html: html, screen: screen)
+                label = label ?? title
+            case .reveal(let id, let step):
+                board.reveal(id: id, step: step) { [weak self] rect in
+                    guard let self, let rect else { return }
+                    let tail = CGPoint(x: rect.minX + 4, y: rect.midY)
+                    let frame = self.board.frame(of: id) ?? rect
+                    let seat = CGPoint(x: frame.minX - 22, y: rect.midY - 4)
+                    self.overlay.point(at: tail, label: "", seat: seat)
+                    self.overlay.bringToFront()
+                }
+                label = label ?? "step \(step)"
+            case .clearBoard:
+                board.clear()
             default:
                 break
             }
@@ -745,8 +804,9 @@ final class Talk {
     /// Bubble fades, marks clear and Dot returns to the cursor, unless a walkthrough is waiting for a click.
     private func settle() {
         overlay.setPhase(.idle)
-        overlay.hideBubble(after: walkthrough == nil ? 4.0 : 14.0)
-        if walkthrough == nil {
+        let teaching = walkthrough != nil || board.hasHiddenSteps
+        overlay.hideBubble(after: teaching ? 14.0 : 4.0)
+        if !teaching {
             overlay.release(after: 2.5)
             overlay.releaseTransient(after: 5.0)
         }
@@ -785,6 +845,28 @@ final class Talk {
             rect = element.frame
         }
         overlay.highlight(rect.intersection(shot.frame.displayFrame), label: label)
+    }
+
+    private func showCard(id: String, rect: CardRect?, title: String, html: String, screen: Int?) {
+        guard board.available, !html.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+        let shot = shot(forScreen: screen)
+        let screenFrame = shot?.frame.displayFrame ?? NSScreen.main?.frame ?? CGRect(x: 0, y: 0, width: 1440, height: 900)
+        var placed: CGRect?
+        if let rect, let shot {
+            if rect.width > 0, rect.height > 0 {
+                placed = Coordinates.screenRect(fromPixel: CGRect(x: rect.x, y: rect.y, width: rect.width, height: rect.height), in: shot.frame)
+            } else {
+                let corner = Coordinates.screenPoint(fromPixel: CGPoint(x: rect.x, y: rect.y), in: shot.frame)
+                placed = CGRect(x: corner.x, y: corner.y - 120, width: 440, height: 120)
+            }
+        }
+        board.show(id: id, title: title, html: html, rect: placed, on: screenFrame, avoiding: context.windowFrame)
+        overlay.bringToFront()
+        if let frame = board.frame(of: id) {
+            let edge = CGPoint(x: frame.minX + 4, y: frame.maxY - 16)
+            overlay.point(at: edge, label: "", seat: CGPoint(x: frame.minX - 22, y: frame.maxY - 20))
+            overlay.bringToFront()
+        }
     }
 
     private func shape(kind: ShapeKind, pixels: [CGPoint], label: String, screen: Int?) {
@@ -1005,6 +1087,7 @@ final class Talk {
         levelTimer?.invalidate()
         phase = .idle
         endWalkthrough(reason: "escape")
+        board.clear()
         overlay.clearMarks()
         overlay.hideBubble(after: 0)
         overlay.setPhase(.idle)

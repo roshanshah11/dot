@@ -69,6 +69,8 @@ final class CompanionModel: ObservableObject {
     @Published var bubbleText = ""
     @Published var bubbleLabel: String?
     @Published var bubbleVisible = false
+    /// Force the bubble to open on one side (true = to the left), while Dot sits beside a card.
+    @Published var bubbleFlip: Bool?
     @Published var chip: String?
     @Published var tailTo: CGPoint?
     @Published var ring: Ring?
@@ -171,7 +173,8 @@ struct CompanionView: View {
         let width = bubbleWidth(for: model.bubbleText, max: maxWidth)
         let parked = model.motion == .parked
         let roomRight = model.position.x + 24 + width + 28 <= model.screenSize.width - 12
-        let flip = !roomRight
+        let roomLeft = model.position.x - 20 - width - 28 >= 12
+        let flip = model.bubbleFlip.map { $0 ? roomLeft : !roomRight } ?? !roomRight
         let below = model.position.y + 180 < model.screenSize.height
         return VStack(alignment: .leading, spacing: 3) {
             if let label = model.bubbleLabel, !label.isEmpty {
@@ -554,14 +557,22 @@ final class OverlayManager {
         windows.firstIndex(where: { $0.screenFrame.contains(point) }) ?? windows.indices.first
     }
 
-    /// Fly to a spot and sit beside it with a label and a tail to the exact point.
-    func point(at screenPoint: CGPoint, label: String) {
+    /// The overlay (orb, bubble, marks) above everything Dot owns, including board cards.
+    func bringToFront() {
+        for window in windows where window.alphaValue > 0 { window.orderFrontRegardless() }
+    }
+
+    /// Fly to a spot and sit beside it with a label and a tail to the exact point. `seat` puts
+    /// Dot somewhere else than just below-right of the point (beside a card's edge, say).
+    func point(at screenPoint: CGPoint, label: String, seat seatPoint: CGPoint? = nil) {
         guard let index = screenIndex(containing: screenPoint) else { return }
         showTransient()
         returnWork?.cancel()
         let model = models[index]
         let target = Coordinates.overlayPoint(fromScreen: screenPoint, screenFrame: windows[index].screenFrame)
-        let seat = clampToScreen(CGPoint(x: target.x + 14, y: target.y + 18), model: model)
+        let seat = clampToScreen(seatPoint.map { Coordinates.overlayPoint(fromScreen: $0, screenFrame: windows[index].screenFrame) }
+                                 ?? CGPoint(x: target.x + 14, y: target.y + 18), model: model)
+        model.bubbleFlip = seatPoint.map { $0.x < screenPoint.x }
         park(on: index)
         model.chip = nil
         model.tailTo = nil
@@ -674,6 +685,7 @@ final class OverlayManager {
                 model.drawRect = nil
                 model.stroke = []
                 model.shapes = []
+                model.bubbleFlip = nil
             }
             self.returnToCursor()
         }
@@ -696,6 +708,7 @@ final class OverlayManager {
             model.stroke = []
             model.shapes = []
             model.scale = 1
+            model.bubbleFlip = nil
             model.motion = .following
         }
         parkedScreen = nil

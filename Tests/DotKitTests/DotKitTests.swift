@@ -341,3 +341,33 @@ final class BeatTests: XCTestCase {
         XCTAssertEqual(streamer.partial, "second is still goi")
     }
 }
+
+final class BoardTagTests: XCTestCase {
+    func testCardBlockIsParsedAndNeverSpoken() {
+        let text = "[CARD:p1:auto:quadratic] <<<\n<h2>solve $x^2-5x+6=0$</h2>\n<section class=\"step\">factor: $(x-2)(x-3)=0$</section>\n>>>\nhere's the problem laid out. [REVEAL:p1:1] first, factor it."
+        let parsed = TagParser.parse(text)
+        XCTAssertEqual(parsed.spoken, "here's the problem laid out. first, factor it.")
+        XCTAssertEqual(parsed.tags.count, 2)
+        guard case .card(let id, let rect, let title, let html, _) = parsed.tags[0] else { return XCTFail("no card") }
+        XCTAssertEqual(id, "p1"); XCTAssertNil(rect); XCTAssertEqual(title, "quadratic")
+        XCTAssertTrue(html.contains("<section class=\"step\">"))
+        XCTAssertEqual(parsed.tags[1], .reveal(id: "p1", step: 1))
+        guard case .card(_, let placed, _, _, _) = TagParser.parse("[CARD:c:700,120,420,300:comps] <<<x>>>").tags[0] else { return XCTFail() }
+        XCTAssertEqual(placed, CardRect(x: 700, y: 120, width: 420, height: 300))
+        XCTAssertEqual(TagParser.parse("done. [CLEAR_BOARD]").tags, [.clearBoard])
+    }
+
+    func testCardBlockStreamsAcrossDeltas() {
+        var streamer = BeatStreamer()
+        var beats: [Beat] = []
+        for delta in ["[CARD:p1:auto:fields] <<", "<\n<h2>a field</h2>\n<section class=\"ste", "p\">closure</section>\n>>", ">\nhere's what a field is. ", "[REVEAL:p1:1] first, closure."] {
+            beats += streamer.feed(delta)
+        }
+        beats += streamer.flush()
+        XCTAssertEqual(beats.map(\.text), ["here's what a field is.", "first, closure."])
+        guard case .card(_, _, _, let html, _)? = beats[0].tags.first else { return XCTFail("card missing on beat 1") }
+        XCTAssertEqual(html, "<h2>a field</h2>\n<section class=\"step\">closure</section>")
+        XCTAssertEqual(beats[1].tags, [.reveal(id: "p1", step: 1)])
+        XCTAssertFalse(streamer.spokenSoFar.contains("<h2>"))
+    }
+}

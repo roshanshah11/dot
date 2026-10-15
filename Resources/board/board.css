@@ -1,0 +1,44 @@
+:root { --ink: #0d0c0b; --paper: #ece8e1; --dim: #a9a39a; --accent: #ff6b2c; }
+* { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; background: transparent; }
+body { color: var(--paper); font: 14.5px/1.5 -apple-system, "SF Pro Text", Helvetica, sans-serif; padding: 12px 16px 14px; -webkit-font-smoothing: antialiased; overflow: hidden; }
+h1, h2, h3 { margin: 0 0 8px; font-weight: 600; letter-spacing: -0.01em; }
+h2 { font-size: 15.5px; color: var(--paper); }
+h3 { font-size: 13.5px; color: var(--dim); font-weight: 500; }
+p { margin: 0 0 8px; }
+.step { opacity: 0; max-height: 0; overflow: hidden; margin: 0; padding: 0 10px; border-left: 2px solid transparent; transition: opacity .35s ease, max-height .35s ease, padding .35s ease; }
+.step.shown { opacity: 1; max-height: 600px; padding: 6px 10px; margin: 2px 0 6px; border-left-color: rgba(255,255,255,0.12); }
+.step.current { border-left-color: var(--accent); background: rgba(255,107,44,0.08); border-radius: 0 6px 6px 0; }
+.step .why { color: var(--dim); font-size: 13px; margin-top: 4px; }
+.step .rule { color: var(--accent); font-size: 12px; text-transform: lowercase; letter-spacing: .02em; }
+.katex { font-size: 1.08em; }
+.katex-display { margin: 6px 0; }
+table { border-collapse: collapse; width: 100%; margin: 6px 0 8px; font-size: 13.5px; }
+th, td { text-align: left; padding: 5px 8px; border-bottom: 1px solid rgba(255,255,255,0.1); vertical-align: top; }
+th { color: var(--dim); font-weight: 500; font-size: 12.5px; }
+td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+.plot, .numberline { margin: 6px 0 10px; }
+.plot svg, .numberline svg { width: 100%; height: auto; display: block; }
+.plot svg { max-height: 170px; } .numberline svg { max-height: 60px; }
+body.scrolls { overflow-y: auto; }
+.ax { stroke: rgba(255,255,255,0.28); stroke-width: 1; }
+.grid { stroke: rgba(255,255,255,0.07); stroke-width: 1; }
+.curve { fill: none; stroke: var(--accent); stroke-width: 2.2; stroke-linejoin: round; }
+.curve.second { stroke: #6cc5ff; }
+.pt { fill: var(--accent); }
+.tick { fill: var(--dim); font-size: 10px; }
+.mark { fill: var(--accent); }
+.mark-label { fill: var(--paper); font-size: 11px; }
+.quiz .q { font-weight: 600; margin-bottom: 6px; }
+.quiz .choices { margin: 0; padding-left: 18px; }
+.quiz .choices li { margin: 2px 0; }
+.good { color: #7bd389; } .bad { color: #ff8a80; }
+.tag { display: inline-block; padding: 1px 7px; border-radius: 6px; background: rgba(255,255,255,0.08); color: var(--dim); font-size: 12px; }
+ul, ol { margin: 4px 0 8px; padding-left: 20px; }
+li { margin: 2px 0; }
+code { font: 13px ui-monospace, Menlo, monospace; background: rgba(255,255,255,0.08); padding: 1px 5px; border-radius: 4px; }
+pre { font: 12.5px/1.45 ui-monospace, Menlo, monospace; background: rgba(255,255,255,0.06); padding: 8px 10px; border-radius: 8px; overflow-x: auto; margin: 6px 0 8px; }
+.diagram svg { width: 100%; height: auto; display: block; }
+.box { stroke: var(--paper); stroke-width: 1.2; fill: rgba(255,255,255,0.04); rx: 8; }
+.arrow { stroke: var(--accent); stroke-width: 2; fill: none; marker-end: url(#arrowhead); }
+.label { fill: var(--paper); font-size: 12px; }

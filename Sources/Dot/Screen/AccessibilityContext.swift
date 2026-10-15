@@ -16,6 +16,8 @@ struct ScreenContext {
     var windowTitle: String?
     var selectedText: String?
     var url: String?
+    /// The frontmost window's frame in AppKit screen coordinates, when known.
+    var windowFrame: CGRect?
     var elements: [AXElementInfo] = []
 
     static let empty = ScreenContext()
@@ -74,6 +76,7 @@ enum AccessibilityContext {
 
         let primaryHeight = NSScreen.screens.first?.frame.height ?? 0
         let windowFrame = frame(of: window).map { Coordinates.appKitRect(fromCG: $0, primaryHeight: primaryHeight) }
+        context.windowFrame = windowFrame
         let deadline = Date().addingTimeInterval(timeBudget)
         var queue: [(AXUIElement, Int)] = [(window, 0)]
         var visited = 0

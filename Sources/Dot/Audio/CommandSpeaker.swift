@@ -26,6 +26,8 @@ final class CommandSpeaker: NSObject, TTSProvider, AVAudioPlayerDelegate {
         init(text: String, onStart: (() -> Void)?) { self.text = text; self.onStart = onStart }
     }
     private var items: [Item] = []
+    /// Audio for short phrases ("mm-hm.", "one sec.") kept after the first synthesis.
+    private var cache: [String: URL] = [:]
     private var player: AVAudioPlayer?
     private var generation = 0
     private(set) var ready = false
@@ -104,13 +106,39 @@ final class CommandSpeaker: NSObject, TTSProvider, AVAudioPlayerDelegate {
         }
         let item = Item(text: text, onStart: onStart)
         items.append(item)
+        if let cached = cache[text], FileManager.default.fileExists(atPath: cached.path) {
+            item.url = cached
+            item.ready = true
+            playNextIfIdle()
+            return
+        }
         let myGeneration = generation
         request(text) { [weak self] url in
             DispatchQueue.main.async {
                 guard let self, myGeneration == self.generation else { return }
+                if let url, text.count <= 28 {
+                    let kept = url.deletingLastPathComponent().appendingPathComponent("dot-keep-\(abs(text.hashValue)).wav")
+                    try? FileManager.default.removeItem(at: kept)
+                    if (try? FileManager.default.copyItem(at: url, to: kept)) != nil { self.cache[text] = kept }
+                }
                 item.url = url
                 item.ready = true
                 self.playNextIfIdle()
+            }
+        }
+    }
+
+    /// Synthesize short phrases ahead of time so they play the instant they are needed.
+    func warm(_ phrases: [String]) {
+        for phrase in phrases where cache[phrase] == nil {
+            let text = SpeechText.clean(phrase)
+            request(text) { [weak self] url in
+                DispatchQueue.main.async {
+                    guard let self, let url else { return }
+                    let kept = url.deletingLastPathComponent().appendingPathComponent("dot-keep-\(abs(text.hashValue)).wav")
+                    try? FileManager.default.removeItem(at: kept)
+                    if (try? FileManager.default.moveItem(at: url, to: kept)) != nil { self.cache[text] = kept }
+                }
             }
         }
     }
@@ -193,7 +221,7 @@ final class CommandSpeaker: NSObject, TTSProvider, AVAudioPlayerDelegate {
     }
 
     func audioPlayerDidFinishPlaying(_ player: AVAudioPlayer, successfully flag: Bool) {
-        if let url = player.url { try? FileManager.default.removeItem(at: url) }
+        if let url = player.url, !cache.values.contains(url) { try? FileManager.default.removeItem(at: url) }
         self.player = nil
         playNextIfIdle()
     }

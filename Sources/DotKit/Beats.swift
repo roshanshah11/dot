@@ -31,10 +31,34 @@ public struct BeatStreamer {
     public init(eagerFirst: Bool = false) { splitter = SentenceSplitter(eagerFirst: eagerFirst) }
 
     /// Feed a delta; returns every beat whose sentence is now complete, in order.
+    /// A CARD tag whose `<<< html >>>` block has not closed yet.
+    private var openCard: DotTag?
+
     public mutating func feed(_ delta: String) -> [Beat] {
         buffer += delta
         var beats: [Beat] = []
         while true {
+            if let card = openCard {
+                // Wait for the block to close; nothing in it is spoken.
+                let ns = buffer as NSString
+                let lead = buffer.prefix(while: { $0 == " " || $0 == "\n" || $0 == "\t" })
+                let afterLead = String(buffer.dropFirst(lead.count))
+                if afterLead.isEmpty || "<<<".hasPrefix(String(afterLead.prefix(3))) && afterLead.count < 3 { break }
+                guard afterLead.hasPrefix("<<<") else {
+                    // No block followed: the card has no content and is dropped.
+                    openCard = nil
+                    continue
+                }
+                guard let match = TagParser.blockPattern.firstMatch(in: buffer, range: NSRange(location: 0, length: ns.length)) else { break }
+                let html = ns.substring(with: match.range(at: 1))
+                if case .card(let id, let rect, let title, _, let screen) = card {
+                    let filled = DotTag.card(id: id, rect: rect, title: title, html: html, screen: screen)
+                    place(filled)
+                }
+                openCard = nil
+                buffer = ns.substring(from: match.range.location + match.range.length)
+                continue
+            }
             let ns = buffer as NSString
             if let match = TagParser.pattern.firstMatch(in: buffer, range: NSRange(location: 0, length: ns.length)) {
                 let before = ns.substring(to: match.range.location)
@@ -42,15 +66,10 @@ public struct BeatStreamer {
                 let kind = ns.substring(with: match.range(at: 1))
                 let payloadRange = match.range(at: 2)
                 let payload = payloadRange.location == NSNotFound ? "" : ns.substring(with: payloadRange)
-                if let tag = TagParser.makeTag(kind: kind, payload: payload) {
-                    allTags.append(tag)
-                    if splitter.pending.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                        leadingTags.append(tag)
-                    } else {
-                        inlineTags.append(tag)
-                    }
-                }
                 buffer = ns.substring(from: match.range.location + match.range.length)
+                if let tag = TagParser.makeTag(kind: kind, payload: payload) {
+                    if case .card = tag { openCard = tag } else { place(tag) }
+                }
                 continue
             }
             // No complete tag: everything before a possible unfinished "[TAG" is safe to split.
@@ -60,6 +79,15 @@ public struct BeatStreamer {
             break
         }
         return beats
+    }
+
+    private mutating func place(_ tag: DotTag) {
+        allTags.append(tag)
+        if splitter.pending.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            leadingTags.append(tag)
+        } else {
+            inlineTags.append(tag)
+        }
     }
 
     private mutating func consume(text: String) -> [Beat] {
@@ -83,6 +111,19 @@ public struct BeatStreamer {
     /// The stream ended: the last sentence, then any tags still waiting as a wordless beat.
     public mutating func flush() -> [Beat] {
         var beats = feed("")
+        if openCard != nil {
+            // The block never closed: whatever arrived is the card's html.
+            if case .card(let id, let rect, let title, _, let screen)? = openCard {
+                var html = buffer.trimmingCharacters(in: .whitespacesAndNewlines)
+                if html.hasPrefix("<<<") { html = String(html.dropFirst(3)) }
+                if html.hasSuffix(">>>") { html = String(html.dropLast(3)) }
+                if !html.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    place(.card(id: id, rect: rect, title: title, html: html, screen: screen))
+                }
+            }
+            openCard = nil
+            buffer = ""
+        }
         let pending = splitter.flush() ?? ""
         let rest = (pending + buffer).trimmingCharacters(in: .whitespacesAndNewlines)
         buffer = ""
