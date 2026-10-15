@@ -33,9 +33,9 @@ abilities Dot is built against, in Dot's own code and words.
 |---|---|---|
 | Hold a key and talk; release to send | O ("Hold to talk to HeyClicky. Release to send.") | built (control+option) |
 | Tap to type instead | O ("Press to type to HeyClicky instead of talking.") | built (tap opens the notch field) |
-| Realtime voice: sub-second, interruptible, synced with the visuals | O (`RealtimeWalkthroughSync`, `beatFractions`, "[walkthrough-sync]"); I: OpenAI Realtime | not matched: Dot is key, then Claude, then Kokoro (about two seconds to the first word) |
+| Realtime voice: a one-second filler, then 5 to 20 s to the real content on screen turns; interruptible; synced with the visuals | O (gpt-realtime-2.1 in its log; measured 2026-10-15, docs/heyclicky-session-2026-10-15.md) | Dot: instant acknowledgment, 2 to 4 s to the first visual; voice quality is the remaining gap |
 | Always-on voice mode (no key) | O (`always_on_voice_mode_enabled`) | not built |
-| Dictation: hold or toggle, inserts at the cursor, language auto-detect, a 50-word dictionary, paste verification | O (settings copy, `dictation_*` events) | not built |
+| Dictation: hold or toggle, inserts at the cursor, language auto-detect, a 50-word dictionary, paste verification; observed: clipboard fallback with a notch notice when no field can be captured, transcript archive per day | O (settings copy, `dictation_*` events; session 2026-10-15) | not built |
 | Voice picker and speed, microphone picker, languages | O (settings pages) | config keys only |
 | Short "one sec" preamble when a slow tool is needed | O (prompt fragment) | built via Jev routing ("on it") |
 
@@ -55,7 +55,7 @@ abilities Dot is built against, in Dot's own code and words.
 |---|---|---|
 | Tags: `[POINT:x,y:label[:screenN]]`, `[HIGHLIGHT:...]`, `[TARGET:x,y,r:label]`, `[HOVER:x,y,r:label]`, `[SHAPE:line\|arrow\|circle\|curve\|polygon:x,y;x,y...:label]`, `[TYPE:x,y:label] <<< text >>>` | O (regexes in the binary) | POINT, HIGHLIGHT, TARGET, HOVER, SHAPE built; TYPE not built |
 | Beats: the answer is tag-first lines, each visual lands when its words are spoken | O ("tag-first beat lines", "parsed beats=... visuals=...", beat fractions) | built 2026-10-15: BeatStreamer, speech-synced visuals, one beat per bubble |
-| Tours: "look around my screen and draw attention to something interesting", 2 or 3 beats, enclosing circle or polygon | O (tutorial draw-demo prompt) | built: "show me around" walks the page in three to six beats |
+| Tours: "look around my screen and draw attention to something interesting", 2 or 3 beats, enclosing circle or polygon; observed: 6 dashed-box beats on a Wikipedia article, first beat 19 s after release | O (tutorial draw-demo prompt; session 2026-10-15) | built: "show me around" walks the page in three to six beats |
 | Guided walkthrough: one target per turn; click-to-advance budget; hover targets complete when the cursor rests; reveal vs commit (don't re-ring an opener); never ask to repeat a done step | O (guided prompt fragments, `completed_by_hover_rest`, "remaining click-to-advance turns") | built 2026-10-15 |
 | Step-away (user switched app): step back, no nag; off-target clicks end the guide quietly | O ("Guided walkthrough step-away", "off-target click ... ending guide (no nag)") | built |
 | Freshness: user acted while the next step was being computed | O ("user_acted_while_waiting", "Important freshness update") | built |
@@ -81,7 +81,7 @@ abilities Dot is built against, in Dot's own code and words.
 
 | Ability | Evidence | Dot |
 |---|---|---|
-| A computer-use daemon inside the app (Cua) with a per-turn consent card; "Always allow" | O (skills/cua-driver/SKILL.md, `cua-driver-policy.yaml`) | agents carry the cua-driver MCP; CuaDriver.app still waits on permissions |
+| A computer-use daemon inside the app (Cua) with a per-turn consent card; "Always allow" | O (skills/cua-driver/SKILL.md, `cua-driver-policy.yaml`) | built: agents carry the cua-driver MCP; CuaDriver.app has Accessibility and Screen Recording (checked 2026-10-15 with `cua-driver permissions status`) |
 | Jev fast lane: `drive_until` clicks through a window at about half a second a step | O ("Fast computer use (Jev)") | not built; Jev used for routing, element picks, consent, notices |
 | Work in the background, own browser window, user's windows read-only | O | agent rules |
 
@@ -107,6 +107,12 @@ abilities Dot is built against, in Dot's own code and words.
 | Intro video, hatch flight, hands-on tour (say hi, draw demo, Home tour beats), interview | O (`IntroHatchFlightOverlay`, tutorial prompts) | not built |
 | Home: chat composer with attachments, voice input, settings pages, shortcut help, developer model picker | O | Dot window with chat and composer |
 | Sign-in, plans, extra usage, referrals, Sparkle updates, analytics | O | n/a |
+
+## Observed 2026-10-15
+
+A recorded session on his Mac (docs/heyclicky-session-2026-10-15.md) measured the timing, the
+marks it draws, the walkthrough loop, the typed and dictation paths, the Agent HUD and the Home
+pages. The task list that came out of it is docs/tasks.md.
 
 ## What this means for Dot's order of work
 
