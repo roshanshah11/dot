@@ -85,10 +85,10 @@ case "--ask", "--agent":
     DistributedNotificationCenter.default().postNotificationName(name, object: nil, userInfo: ["text": text, "quiet": quiet, "drive": drive], deliverImmediately: true)
     print("sent to Dot")
     exit(0)
-case "--type", "--stt":
+case "--type", "--stt", "--card":
     let text = arguments.dropFirst().joined(separator: " ")
     guard !text.isEmpty else { print("usage: Dot --type \"text\" | Dot --stt file.wav"); exit(2) }
-    let name = arguments.first == "--type" ? DotIPC.type : DotIPC.stt
+    let name = arguments.first == "--type" ? DotIPC.type : (arguments.first == "--stt" ? DotIPC.stt : DotIPC.card)
     DistributedNotificationCenter.default().postNotificationName(name, object: nil, userInfo: ["text": text], deliverImmediately: true)
     print("sent to Dot")
     exit(0)

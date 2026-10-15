@@ -140,7 +140,8 @@ final class AgentManager {
 
     // MARK: Handoff
 
-    func handoff(brief: String, agentName: String?, context: ScreenContext?, shots: [ScreenShot]?) {
+    func handoff(brief: String, agentName: String?, context: ScreenContext?, shots: [ScreenShot]?,
+                 extraImages: [(data: Data, mediaType: String)] = [], note: String? = nil) {
         let agent = ensureAgent(named: agentName ?? "Dot")
         let run: Run
         if let live = runs[agent.slug], live.session.isRunning, !live.session.turnInFlight {
@@ -172,10 +173,11 @@ final class AgentManager {
             if let selected = context.selectedText, !selected.isEmpty { contextLines.append("Selected text: \"\(Log.short(selected, 600))\"") }
         }
         if let shots, !shots.isEmpty { contextLines.append("A screenshot of their screen at the time is attached; it is context, not the task.") }
+        if let note, !note.isEmpty { contextLines.append(note) }
         if !contextLines.isEmpty {
             text += "\n\n[context]\n" + contextLines.joined(separator: "\n") + "\n[/context]"
         }
-        let images = (shots ?? []).filter { $0.isCursorScreen }.prefix(1).map { (data: $0.jpeg, mediaType: "image/jpeg") }
+        let images = (shots ?? []).filter { $0.isCursorScreen }.prefix(1).map { (data: $0.jpeg, mediaType: "image/jpeg") } + extraImages
         appendTranscript(agent, role: "user", text: brief)
         run.session.send(text: text, images: Array(images))
         Log.info("agent[\(agent.slug)] handoff: \(Log.short(brief))")

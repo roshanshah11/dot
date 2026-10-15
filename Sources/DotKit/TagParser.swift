@@ -26,6 +26,8 @@ public enum DotTag: Equatable {
     case card(id: String, rect: CardRect?, title: String, html: String, screen: Int?)
     /// Text for him to put into a field at x,y: Dot copies it and points; in drive mode it pastes.
     case type(x: Int, y: Int, label: String, text: String, screen: Int?)
+    /// A live web page in a card on the board.
+    case web(url: String, title: String)
     case reveal(id: String, step: Int)
     case clearBoard
     case agent(brief: String)
@@ -54,7 +56,7 @@ public extension DotTag {
     /// Tags that draw or move something on screen (as opposed to handing off or escalating).
     var isVisual: Bool {
         switch self {
-        case .point, .highlight, .target, .hover, .shape, .card, .reveal, .clearBoard, .type: return true
+        case .point, .highlight, .target, .hover, .shape, .card, .reveal, .clearBoard, .type, .web: return true
         case .pointNone, .agent, .newAgent, .think: return false
         }
     }
@@ -89,11 +91,11 @@ public struct ParsedResponse: Equatable {
 }
 
 public enum TagParser {
-    static let tagNames = ["POINT", "HIGHLIGHT", "TARGET", "HOVER", "SHAPE", "CARD", "REVEAL", "CLEAR_BOARD", "TYPE", "AGENT", "NEW_AGENT", "THINK"]
+    static let tagNames = ["POINT", "HIGHLIGHT", "TARGET", "HOVER", "SHAPE", "CARD", "REVEAL", "CLEAR_BOARD", "TYPE", "WEB", "AGENT", "NEW_AGENT", "THINK"]
 
     // swiftlint:disable:next force_try
     static let pattern = try! NSRegularExpression(
-        pattern: #"\[(POINT|HIGHLIGHT|TARGET|HOVER|SHAPE|CARD|REVEAL|CLEAR_BOARD|TYPE|AGENT|NEW_AGENT|THINK)(?::([^\]]*))?\]"#,
+        pattern: #"\[(POINT|HIGHLIGHT|TARGET|HOVER|SHAPE|CARD|REVEAL|CLEAR_BOARD|TYPE|WEB|AGENT|NEW_AGENT|THINK)(?::([^\]]*))?\]"#,
         options: []
     )
 
@@ -213,6 +215,18 @@ public enum TagParser {
             guard points.count >= minimum else { return nil }
             let screen = takeScreen(&parts)
             return .shape(kind: shapeKind, points: points, label: parts.joined(separator: ":"), screen: screen)
+        case "WEB":
+            let text = payload.trimmingCharacters(in: .whitespaces)
+            guard let match = try? NSRegularExpression(pattern: #"^(https?://[^\s:]+(?::\d+)?[^\s]*?)(?::(.*))?$"#).firstMatch(in: text, range: NSRange(location: 0, length: (text as NSString).length)) else { return nil }
+            let ns = text as NSString
+            var url = ns.substring(with: match.range(at: 1))
+            var title = match.range(at: 2).location == NSNotFound ? "" : ns.substring(with: match.range(at: 2))
+            // "https://a.b/c:title" splits at the last colon that is not part of the url's scheme or port.
+            if title.isEmpty, let colon = text.range(of: ":", options: .backwards), !text[colon.upperBound...].contains("/"), text.distance(from: text.startIndex, to: colon.lowerBound) > 8 {
+                url = String(text[..<colon.lowerBound]); title = String(text[colon.upperBound...])
+            }
+            guard url.hasPrefix("http") else { return nil }
+            return .web(url: url.trimmingCharacters(in: .whitespaces), title: title.trimmingCharacters(in: .whitespaces))
         case "TYPE":
             var parts = splitPayload(payload)
             guard let coords = parts.first else { return nil }

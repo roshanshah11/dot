@@ -246,3 +246,24 @@ MIT. Built by Roshan Shah.
   added as a working directory, so it can do what any Atlas chat can; Dot's consent card still
   covers sends, submits, payments and deletes.
 - Per-turn cost: Claude Code reports a session's running total; Dot now records the turn's own cost.
+
+## The visual board (2026-10-15, afternoon)
+
+Cards are real web pages. `Resources/board/vendor` bundles D3, anime.js, Chart.js, three.js
+(classic build) with OrbitControls, 3Dmol.js, Mermaid, JSXGraph, smiles-drawer and matter.js, all
+MIT or BSD, loaded on demand by `Board.need(...)`; KaTeX typesets math. Ready-made pieces are
+classes on a div (`.plot`, `.chart`, `.mermaid`, `.helix`, `.molecule` with a PDB id fetched from
+RCSB, `.sequence`, `canvas.smiles`, `.jsx`, `.diagram`, `.timeline`, `.compare`, `.grid`,
+`.callout`, `.quiz`, `.annot`, `.figure`), and a card may carry its own script for anything else.
+The pattern that teaches: one figure whose parts carry `data-step="n"`, then one step per idea;
+as Dot reveals and narrates step n, those parts light up and the rest dims. `[WEB:url:title]`
+opens a live page in a card. Talk mode can run WebSearch and WebFetch for facts and media,
+and hands real research to an agent running the research skill. Errors inside a card reach
+`dot.log` as `board[id]` lines. `Dot --card file.html` renders a card from a file for testing;
+`~/Dot/talk/cards/` holds a gallery and a teaching example.
+
+Also that afternoon: a circled region with nothing said shows an action bar (ask, to an agent,
+copy text, look it up) with on-device OCR, and an agent hand-off carries the crop and its text;
+every talk turn and dictation is saved under `~/Dot/transcripts/`; agents run with Atlas's own
+chat prompt, the vault's rules and all of its tools; a BIOS 11140 course map joined the math one
+in `~/Dot/talk/context/`.

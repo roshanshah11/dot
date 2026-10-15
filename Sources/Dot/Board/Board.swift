@@ -59,6 +59,19 @@ final class BoardManager {
         Log.info("board: card \(id) \"\(title)\" (\(html.count) chars) at \(Int(origin.x)),\(Int(origin.y))")
     }
 
+    /// A live page in a card: the one card type that loads from the network.
+    func showWeb(id: String, url: URL, title: String, on screenFrame: CGRect, avoiding window: CGRect?) {
+        let size = CGSize(width: min(760, screenFrame.width * 0.46), height: min(560, screenFrame.height * 0.62))
+        let origin = Self.room(for: size, on: screenFrame, avoiding: window, taken: cards.values.filter { $0.cardID != id }.map(\.frame))
+        let card = cards[id] ?? CardPanel(id: id, accentHex: accentHex, screenFrame: screenFrame)
+        card.onClose = { [weak self] in self?.close(id: id) }
+        card.load(url: url, title: title.isEmpty ? (url.host ?? "page") : title)
+        card.setWebFrame(CGRect(x: origin.x, y: origin.y, width: size.width, height: size.height))
+        if cards[id] == nil { cards[id] = card; order.append(id) }
+        card.orderFrontRegardless()
+        Log.info("board: web card \(id) \(url.absoluteString)")
+    }
+
     /// Reveal step n of a card; the completion gets the step's screen rect (AppKit) once laid out.
     func reveal(id: String, step: Int, completion: @escaping (CGRect?) -> Void) {
         guard let card = cards[id] ?? cards.values.first else { completion(nil); return }
@@ -125,6 +138,8 @@ final class CardPanel: NSPanel, WKNavigationDelegate {
         self.screenFrame = screenFrame
         let configuration = WKWebViewConfiguration()
         configuration.preferences.setValue(true, forKey: "allowFileAccessFromFileURLs")
+        let relay = CardMessageRelay(cardID: id)
+        configuration.userContentController.add(relay, name: "dot")
         web = WKWebView(frame: .zero, configuration: configuration)
         super.init(contentRect: CGRect(x: 0, y: 0, width: 440, height: 160), styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
         isOpaque = false
@@ -185,8 +200,25 @@ final class CardPanel: NSPanel, WKNavigationDelegate {
         web.frame = CGRect(x: 0, y: 0, width: bounds.width, height: bounds.height - stripHeight)
     }
 
+    private(set) var isWeb = false
+
+    func load(url: URL, title: String) {
+        self.title = title
+        isWeb = true
+        loaded = false
+        shown = 0
+        total = 0
+        web.load(URLRequest(url: url))
+    }
+
+    func setWebFrame(_ rect: CGRect) {
+        setFrame(rect, display: true)
+        layoutViews()
+    }
+
     func load(title: String, html: String, resources: URL, accent: String) {
         self.title = title
+        isWeb = false
         loaded = false
         shown = 0
         total = 0
@@ -210,6 +242,11 @@ final class CardPanel: NSPanel, WKNavigationDelegate {
     }
 
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+        if isWeb {
+            loaded = true
+            NSAnimationContext.runAnimationGroup { context in context.duration = 0.25; animator().alphaValue = 1 }
+            return
+        }
         loaded = true
         // Fonts and typesetting settle a moment after load; measure again then.
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { [weak self] in self?.fitToContent {} }
@@ -291,5 +328,14 @@ extension NSColor {
         if text.hasPrefix("#") { text.removeFirst() }
         guard text.count == 6, let value = UInt32(text, radix: 16) else { return nil }
         self.init(calibratedRed: CGFloat((value >> 16) & 0xFF) / 255, green: CGFloat((value >> 8) & 0xFF) / 255, blue: CGFloat(value & 0xFF) / 255, alpha: 1)
+    }
+}
+
+/// Errors and console output from a card, into Dot's log, so a broken drawing is visible.
+final class CardMessageRelay: NSObject, WKScriptMessageHandler {
+    let cardID: String
+    init(cardID: String) { self.cardID = cardID }
+    func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
+        Log.warn("board[\(cardID)] \(Log.short("\(message.body)", 300))")
     }
 }

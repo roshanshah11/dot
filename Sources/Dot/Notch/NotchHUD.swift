@@ -44,6 +44,8 @@ final class HUDModel: ObservableObject {
     @Published var consent: ConsentCard?
     @Published var showInput = false
     @Published var inputText = ""
+    /// What the field asks for; cleared after a submit.
+    @Published var inputPrompt: String?
     @Published var accent = Color(red: 1.0, green: 0.42, blue: 0.17)
     /// The agent whose result card is open to read.
     @Published var expanded: String?
@@ -422,7 +424,7 @@ struct NotchHUDView: View {
 
     private var inputField: some View {
         HStack {
-            TextField("type a question about your screen", text: $model.inputText)
+            TextField(model.inputPrompt ?? "type a question about your screen", text: $model.inputText)
                 .textFieldStyle(.plain)
                 .font(.system(size: 14))
                 .foregroundStyle(text)
@@ -430,6 +432,7 @@ struct NotchHUDView: View {
                     let value = model.inputText
                     model.inputText = ""
                     model.showInput = false
+                    model.inputPrompt = nil
                     model.onSubmitInput?(value)
                 }
             Text("return").font(.system(size: 10)).foregroundStyle(text.opacity(0.35))

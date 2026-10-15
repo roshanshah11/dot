@@ -97,7 +97,10 @@ final class Talk {
             Task { @MainActor in self?.scheduleIdleCheck() }
         }
         hud.model.onSubmitInput = { [weak self] text in
-            Task { @MainActor in self?.askTyped(text) }
+            Task { @MainActor in
+                guard let self else { return }
+                if self.pendingRegionAgent { self.pendingRegionAgent = false; self.handRegionToAgent(text) } else { self.askTyped(text) }
+            }
         }
         driver.onAbort = { [weak self] what in
             guard let self else { return }
@@ -157,7 +160,7 @@ final class Talk {
     private func makeSession(kind: SessionKind) -> ClaudeSession? {
         var options = ClaudeSession.Options(cwd: config.talkRootURL, model: kind == .talk ? config.talkModel : config.thinkModel)
         options.systemPrompt = (kind == .talk ? Prompts.talk : Prompts.think) + Prompts.contextFiles(in: config.talkRootURL)
-        options.tools = ["Bash"]
+        options.tools = ["Bash", "WebSearch", "WebFetch"]
         options.maxTurns = 6
         options.settingSources = ""
         options.permissionMode = "default"
@@ -170,7 +173,7 @@ final class Talk {
             guard let self, let session, self.activeSession === session else { return }
             self.handle(event)
         }
-        let allowed = Set(config.talkAllowedTools)
+        let allowed = Set(config.talkAllowedTools + ["WebSearch", "WebFetch"])
         session.permissionHandler = { request, completion in
             if allowed.contains(request.toolName) || Talk.isComputation(request) {
                 completion(true, nil)
@@ -311,8 +314,7 @@ final class Talk {
             try? FileManager.default.removeItem(at: stopped.url)
             let spoken = text.trimmingCharacters(in: .whitespacesAndNewlines)
             if spoken.count < 2, region != nil {
-                hud.model.transcript = "what's this?"
-                await ask("what is in the box i drew? tell me what matters here.", typed: false)
+                showRegionBar()
                 return
             }
             guard spoken.count >= 2 else {
@@ -327,6 +329,101 @@ final class Talk {
     }
 
     var isIdle: Bool { phase == .idle && walkthrough == nil }
+
+    // MARK: A circled region with nothing said
+
+    private var pendingRegionAgent = false
+    private var regionTextCache: String?
+
+    /// He drew around something and let go without a word: offer what to do with it.
+    private func showRegionBar() {
+        guard let region else { return }
+        phase = .idle
+        hud.set(phase: .hidden)
+        overlay.setPhase(.idle)
+        regionTextCache = nil
+        let accent = hud.model.accent
+        ActionBarPanel.show(near: region, accent: accent, actions: [
+            .init(title: "ask", icon: "bubble.left") { [weak self] in
+                ActionBarPanel.dismiss()
+                self?.hud.model.inputPrompt = "what about it?"
+                self?.hud.showInput()
+            },
+            .init(title: "to an agent", icon: "person.badge.clock") { [weak self] in
+                ActionBarPanel.dismiss()
+                self?.pendingRegionAgent = true
+                self?.hud.model.inputPrompt = "what should the agent do with it?"
+                self?.hud.showInput()
+            },
+            .init(title: "copy text", icon: "doc.on.doc") { [weak self] in
+                ActionBarPanel.dismiss()
+                Task { @MainActor in
+                    guard let self else { return }
+                    let text = await self.regionText()
+                    NSPasteboard.general.clearContents()
+                    NSPasteboard.general.setString(text, forType: .string)
+                    let words = text.split(whereSeparator: { $0.isWhitespace }).count
+                    self.hud.flash(status: words == 0 ? "no text in there" : "copied \(words) word\(words == 1 ? "" : "s")", for: 3)
+                    self.clearRegion()
+                }
+            },
+            .init(title: "look it up", icon: "magnifyingglass") { [weak self] in
+                ActionBarPanel.dismiss()
+                Task { @MainActor in
+                    guard let self else { return }
+                    let text = await self.regionText()
+                    let head = String(text.replacingOccurrences(of: "\n", with: " ").prefix(240))
+                    self.askTyped(head.isEmpty ? "look up what i circled and tell me what it is." : "look this up and tell me what it is: \(head)")
+                }
+            }
+        ]) { [weak self] in self?.clearRegion() }
+        hud.flash(status: "circled it: ask, hand it off, copy its text, or look it up", for: 6)
+    }
+
+    private func clearRegion() {
+        region = nil
+        pendingRegionAgent = false
+        overlay.setDrawRect(nil)
+        settle()
+    }
+
+    /// The circled region cut from the cursor screen's screenshot.
+    private func regionCrop() async -> (data: Data, width: Int, height: Int)? {
+        if let captureTask {
+            let captured = await captureTask.value
+            shots = captured.shots
+            context = captured.context
+            self.captureTask = nil
+        }
+        guard let region, let shot = shots.first(where: { $0.isCursorScreen }) ?? shots.first else { return nil }
+        let pixels = Coordinates.pixelRect(fromScreen: region, in: shot.frame)
+        guard pixels.width > 2, pixels.height > 2 else { return nil }
+        return ImageCrop.crop(jpeg: shot.jpeg, pixelRect: pixels)
+    }
+
+    private func regionText() async -> String {
+        if let regionTextCache { return regionTextCache }
+        guard let crop = await regionCrop() else { return "" }
+        let text = await TextRecognizer.recognize(jpeg: crop.data)
+        regionTextCache = text
+        return text
+    }
+
+    /// The region, its text and his brief go to an agent together.
+    private func handRegionToAgent(_ brief: String) {
+        let trimmed = brief.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { clearRegion(); return }
+        Task { @MainActor in
+            let crop = await regionCrop()
+            let text = await regionText()
+            var note = "He circled a region of his screen while asking this; the last attached image is that region, enlarged."
+            if !text.isEmpty { note += " Its text reads:\n" + text }
+            speaker.speak("on it.")
+            agents.handoff(brief: trimmed, agentName: nil, context: context, shots: shots,
+                           extraImages: crop.map { [(data: $0.data, mediaType: "image/jpeg")] } ?? [], note: note)
+            clearRegion()
+        }
+    }
     private var lastAskWasTyped = false
     private var lastAsked = ""
 
@@ -388,6 +485,20 @@ final class Talk {
             liveStream = nil
         }
         return try await transcriber.transcribe(wavURL: wavURL)
+    }
+
+    /// A card from a file on disk, for `Dot --card file.html`: the file's first <h2> is the title.
+    func showCardFile(_ path: String) {
+        let url = URL(fileURLWithPath: (path as NSString).expandingTildeInPath)
+        guard let html = try? String(contentsOf: url, encoding: .utf8) else { Log.error("card: cannot read \(url.path)"); return }
+        let title = html.range(of: #"<h2[^>]*>([^<]*)</h2>"#, options: .regularExpression).map { String(html[$0]).replacingOccurrences(of: #"<[^>]+>"#, with: "", options: .regularExpression) } ?? url.deletingPathExtension().lastPathComponent
+        Task { @MainActor in
+            let shots = (try? await ScreenCapture.captureAll(maxDimension: config.screenshotMaxDimension, includeOtherScreens: false)) ?? []
+            self.shots = shots
+            context = AccessibilityContext.capture(maxElements: 10)
+            showCard(id: url.deletingPathExtension().lastPathComponent, rect: nil, title: title, html: html, screen: nil)
+            board.reveal(id: url.deletingPathExtension().lastPathComponent, step: 1) { _ in }
+        }
     }
 
     /// Pushes a WAV through the streaming recognizer the way the microphone would, logging each
@@ -620,6 +731,7 @@ final class Talk {
     }
 
     private static let closeWords = try! NSRegularExpression(pattern: #"^(close|clear|hide|dismiss) (it|that|this|them|the (board|cards?|card))\W*$"#, options: .caseInsensitive)
+    static let boardWords = try! NSRegularExpression(pattern: #"(?i)\b(on the board|on my screen|put (it|this|that|them) up|pull up|draw (it|me|this|that|a|the)|open (the|a|that|this) (page|site|article|link|wikipedia)|show me (the|a|that|this)? ?(page|site|article|picture|photo|image|diagram|figure|structure|molecule))\b"#)
 
     private func saysDrive(_ text: String) -> Bool {
         Self.driveWords.firstMatch(in: text, range: NSRange(location: 0, length: (text as NSString).length)) != nil
@@ -635,6 +747,8 @@ final class Talk {
         let inWalkthrough = walkthrough != nil
         let range = NSRange(location: 0, length: (text as NSString).length)
         if !board.isEmpty, Self.closeWords.firstMatch(in: text, range: range) != nil { return .closeBoard }
+        // Showing is Dot's own job: a page, a picture, a drawing or a card goes on the board, never to an agent.
+        if Self.boardWords.firstMatch(in: text, range: range) != nil { return .answer }
         if inWalkthrough || board.hasHiddenSteps, Self.continueWords.firstMatch(in: text, range: range) != nil {
             return .continueWalkthrough
         }
@@ -660,7 +774,7 @@ final class Talk {
         }
         var questions: [String: Jev.Question] = [
             "route": .choice(instructions: "How should a voice companion that can see the screen handle what the user just said? Pick one.", criteria: [
-                "answer": "answer out loud in a sentence or two from the screen, the day's calendar and deadlines, or general knowledge; no files, no browsing, nothing to operate",
+                "answer": "answer out loud from the screen, the day's calendar and deadlines, or general knowledge, including a quick web lookup; or show something on the board: a card, a drawing, a picture, a live web page (the companion opens pages itself); no files, nothing to operate",
                 "agent": "real work in the background: looking something up properly across apps or sites, drafting or writing, making or changing files, going through mail, operating an app for a while, anything that sends or submits",
                 "think": "a hard reasoning question (a calculation, a tricky technical or finance judgment) that deserves a stronger model",
             ]),
@@ -899,6 +1013,17 @@ final class Talk {
                     }
                 }
                 label = label ?? (text.isEmpty ? "paste" : text)
+            case .web(let urlText, let title):
+                if let url = URL(string: urlText) {
+                    let shot = shot(forScreen: nil)
+                    let screenFrame = shot?.frame.displayFrame ?? NSScreen.main?.frame ?? CGRect(x: 0, y: 0, width: 1440, height: 900)
+                    board.showWeb(id: "web", url: url, title: title, on: screenFrame, avoiding: context.windowFrame)
+                    hud.upsertAgent(AgentRow(id: "lesson", name: title.isEmpty ? (url.host ?? "page") : title, line: "a page on the board; say close it when done",
+                                             state: .running, kind: .lesson, canStop: true, startedAt: lessonStartedAt ?? Date()))
+                    if lessonStartedAt == nil { lessonStartedAt = Date() }
+                    overlay.bringToFront()
+                }
+                label = label ?? title
             case .card(let id, let rect, let title, let html, let screen):
                 showCard(id: id, rect: rect, title: title, html: html, screen: screen)
                 label = label ?? title
@@ -959,7 +1084,10 @@ final class Talk {
             case .think:
                 if kind == "talk", let think = session(for: .think) {
                     escalated = true
-                    let (message, images) = buildMessage(hud.model.transcript, kind: .think)
+                    let question = lastAsked.isEmpty ? hud.model.transcript : lastAsked
+                    let said = spoken.trimmingCharacters(in: .whitespacesAndNewlines)
+                    let handed = "[escalated] he asked: \"\(question)\". the quick model already said \"\(Log.short(said, 240))\" and handed the rest to you: answer the question itself now, and if a card or figure was promised, build it in full."
+                    let (message, images) = buildMessage(handed, kind: .think)
                     // Let the "let me think" sentence finish, then ask the stronger model.
                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { [weak self] in
                         guard let self else { return }
@@ -1310,6 +1438,7 @@ final class Talk {
     // MARK: Interrupt
 
     func interrupt() {
+        ActionBarPanel.dismiss()
         let wasBusy = phase != .idle || speaker.isSpeaking || walkthrough != nil
         stopSpeaking()
         activeSession?.interrupt()

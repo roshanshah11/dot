@@ -136,6 +136,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 Log.info("type: \(method.rawValue): \(Log.short(text, 80))")
             }
         }
+        // `Dot --card file.html`: put a card on the board from a file, to test rendering.
+        center.addObserver(forName: DotIPC.card, object: nil, queue: .main) { [weak self] note in
+            guard let path = note.userInfo?["text"] as? String else { return }
+            Task { @MainActor in self?.talk.showCardFile(path) }
+        }
         // `Dot --stt file.wav`: feed a WAV through the streaming recognizer and log what it hears.
         center.addObserver(forName: DotIPC.stt, object: nil, queue: .main) { [weak self] note in
             guard let path = note.userInfo?["text"] as? String else { return }
@@ -246,4 +251,5 @@ enum DotIPC {
     static let refresh = Notification.Name("com.roshan.dot.refresh")
     static let type = Notification.Name("com.roshan.dot.type")
     static let stt = Notification.Name("com.roshan.dot.stt")
+    static let card = Notification.Name("com.roshan.dot.card")
 }

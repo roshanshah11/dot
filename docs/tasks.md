@@ -5,6 +5,10 @@ bottom with the date. "His ask" quotes the message that created the item.
 
 ## Now
 
+- [x] 2026-10-15 Visual board: bundled libraries, explain-by-figure pattern, live web cards, web lookups in talk, the biotech course map, the circled-region action bar. His asks: "use real JS libraries, animate it", "bring in real media online", "bio explanations", "research properly", "circle a region, hand it to an agent".
+- [ ] Test by hand: control+fn dictation, the circled-region bar, the meeting notice.
+- [ ] Board round two: his verdict on the first real lessons (DNA, PCR, fields); a video piece (.figure with <video>); cards that ask him to drag or click (interactive quizzes).
+
 - [x] 2026-10-15 Transcripts saved automatically (md per day + jsonl); the homework guard removed at his ask; agents run with Atlas's full chat prompt and the vault.
 
 - [ ] Math mode, round two: his feedback after the weekend of midterm prep; faster partials (chunk 2.5 s); a "what did I miss" review card from the math-miss memory.
@@ -34,14 +38,12 @@ bottom with the date. "His ask" quotes the message that created the item.
 - [ ] Typed-question surface: a text answer in the notch when he types instead of talks.
 - [x] 2026-10-15 Dictation: hold-to-dictate into the focused field, clipboard fallback with a notch
       notice, a transcript archive.
-- [ ] Board cards for stock quotes, places and image strips (the response-card widgets
-      HeyClicky has but did not show).
+- [ ] Board cards for stock quotes and places (the chart piece covers quotes; a place card needs a map).
 
 ## Next
 
 - [x] 2026-10-15 Meeting-in-ten-minutes notice (hover line exists; the proactive line does not).
 - [x] 2026-10-15 TYPE step: Dot puts the text on the clipboard or types it for him.
-- [ ] Drawn region handed to an agent with a post-drag action bar.
 - [ ] Browser research flow through agents (hb headless by default, visible on "show me").
 - [ ] Morning suggestions card with yes/no history.
 - [ ] Routines (scheduled agent runs, pause, log).
