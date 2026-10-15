@@ -1,0 +1,347 @@
+import AppKit
+import DotKit
+import SwiftUI
+
+struct AgentRow: Identifiable, Equatable {
+    enum State: Equatable { case running, waiting, done, failed }
+    let id: String
+    var name: String
+    var line: String
+    var state: State
+}
+
+struct ConsentCard: Identifiable {
+    let id = UUID()
+    let agent: String
+    let title: String
+    let detail: String
+    let onAllow: () -> Void
+    let onDeny: () -> Void
+}
+
+final class HUDModel: ObservableObject {
+    enum Phase: Equatable { case hidden, listening, transcribing, thinking, speaking, done }
+
+    @Published var phase: Phase = .hidden
+    @Published var mode: HotkeyMonitor.Mode = .talk
+    @Published var transcript = ""
+    @Published var response = ""
+    @Published var level: Float = 0
+    @Published var status: String?
+    @Published var error: String?
+    @Published var agents: [AgentRow] = []
+    @Published var consent: ConsentCard?
+    @Published var showInput = false
+    @Published var inputText = ""
+    @Published var accent = Color(red: 1.0, green: 0.42, blue: 0.17)
+    var onSubmitInput: ((String) -> Void)?
+    var onOpenAgent: ((String) -> Void)?
+
+    var hasContent: Bool {
+        phase != .hidden || !agents.isEmpty || consent != nil || showInput || status != nil || error != nil
+    }
+}
+
+/// The black panel hanging from the notch: state, what he said, what Dot answered,
+/// agent progress, the consent card, and a text field for typed questions.
+@MainActor
+final class NotchHUD {
+    let model = HUDModel()
+    private var panel: NSPanel?
+    private var statusWork: DispatchWorkItem?
+    private var visible = false
+
+    init(accentHex: String) {
+        if let color = Color(hex: accentHex) { model.accent = color }
+        NotificationCenter.default.addObserver(forName: NSApplication.didChangeScreenParametersNotification, object: nil, queue: .main) { [weak self] _ in
+            Task { @MainActor in self?.reposition() }
+        }
+        model.onOpenAgent = nil
+    }
+
+    // MARK: State
+
+    func set(phase: HUDModel.Phase) {
+        model.phase = phase
+        if phase == .hidden {
+            model.showInput = false
+            model.transcript = ""
+            model.response = ""
+        }
+        refreshVisibility()
+    }
+
+    func flash(status: String, for seconds: TimeInterval = 2.5) {
+        model.status = status
+        refreshVisibility()
+        statusWork?.cancel()
+        let work = DispatchWorkItem { [weak self] in
+            self?.model.status = nil
+            self?.refreshVisibility()
+        }
+        statusWork = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + seconds, execute: work)
+    }
+
+    func flash(error: String) {
+        Log.error(error)
+        model.error = error
+        refreshVisibility()
+        DispatchQueue.main.asyncAfter(deadline: .now() + 6) { [weak self] in
+            if self?.model.error == error { self?.model.error = nil; self?.refreshVisibility() }
+        }
+    }
+
+    func showInput() {
+        model.showInput = true
+        model.phase = .hidden
+        refreshVisibility()
+        panel?.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
+    }
+
+    func hideInput() {
+        model.showInput = false
+        model.inputText = ""
+        refreshVisibility()
+    }
+
+    func upsertAgent(_ row: AgentRow) {
+        if let index = model.agents.firstIndex(where: { $0.id == row.id }) {
+            model.agents[index] = row
+        } else {
+            model.agents.append(row)
+        }
+        refreshVisibility()
+    }
+
+    func removeAgent(id: String) {
+        model.agents.removeAll { $0.id == id }
+        refreshVisibility()
+    }
+
+    func present(_ card: ConsentCard) {
+        model.consent = card
+        refreshVisibility()
+        NSSound(named: "Tink")?.play()
+    }
+
+    func dismissConsent() {
+        model.consent = nil
+        refreshVisibility()
+    }
+
+    // MARK: Panel
+
+    private func ensurePanel() -> NSPanel {
+        if let panel { return panel }
+        let panel = NSPanel(contentRect: .zero, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
+        panel.isOpaque = false
+        panel.backgroundColor = .clear
+        panel.hasShadow = false
+        panel.level = .statusBar
+        panel.collectionBehavior = [.canJoinAllSpaces, .stationary, .fullScreenAuxiliary]
+        panel.isFloatingPanel = true
+        panel.becomesKeyOnlyIfNeeded = true
+        panel.hidesOnDeactivate = false
+        panel.isReleasedWhenClosed = false
+        panel.contentView = NSHostingView(rootView: NotchHUDView(model: model, geometry: currentGeometry(), onClose: { [weak self] in
+            self?.hideInput()
+            self?.set(phase: .hidden)
+        }))
+        self.panel = panel
+        reposition()
+        return panel
+    }
+
+    private func currentGeometry() -> NotchGeometry {
+        let notched = NSScreen.screens.first(where: { $0.safeAreaInsets.top > 0 })
+        let screen = notched ?? NSScreen.main ?? NSScreen.screens.first
+        guard let screen else {
+            return NotchGeometry(centerX: 400, topY: 800, notchWidth: 215, notchHeight: 0, hasNotch: false)
+        }
+        return NotchGeometry.measure(frame: screen.frame, safeAreaTop: screen.safeAreaInsets.top,
+                                     auxLeft: screen.auxiliaryTopLeftArea, auxRight: screen.auxiliaryTopRightArea)
+    }
+
+    private func reposition() {
+        guard let panel else { return }
+        let geometry = currentGeometry()
+        panel.setFrame(geometry.panelFrame, display: true)
+        if let hosting = panel.contentView as? NSHostingView<NotchHUDView> {
+            hosting.rootView = NotchHUDView(model: model, geometry: geometry, onClose: { [weak self] in
+                self?.hideInput()
+                self?.set(phase: .hidden)
+            })
+        }
+    }
+
+    private func refreshVisibility() {
+        let panel = ensurePanel()
+        if model.hasContent {
+            if !visible {
+                visible = true
+                panel.alphaValue = 0
+                panel.orderFrontRegardless()
+                NSAnimationContext.runAnimationGroup { ctx in
+                    ctx.duration = 0.2
+                    panel.animator().alphaValue = 1
+                }
+            }
+        } else if visible {
+            visible = false
+            NSAnimationContext.runAnimationGroup({ ctx in
+                ctx.duration = 0.25
+                panel.animator().alphaValue = 0
+            }, completionHandler: { [weak self] in
+                if self?.visible == false { panel.orderOut(nil) }
+            })
+        }
+    }
+}
+
+// MARK: - View
+
+struct NotchHUDView: View {
+    @ObservedObject var model: HUDModel
+    let geometry: NotchGeometry
+    let onClose: () -> Void
+
+    private let ground = Color(red: 0.051, green: 0.047, blue: 0.043)
+    private let text = Color(red: 0.925, green: 0.91, blue: 0.882)
+
+    var body: some View {
+        VStack(spacing: 0) {
+            VStack(alignment: .leading, spacing: 8) {
+                // Keep the notch itself black so the panel reads as one shape with it.
+                Color.clear.frame(height: max(geometry.notchHeight - 6, 0))
+                header
+                if let error = model.error {
+                    Text(error).font(.system(size: 12)).foregroundStyle(Color(red: 1, green: 0.5, blue: 0.4)).lineLimit(3)
+                }
+                if !model.transcript.isEmpty {
+                    Text(model.transcript).font(.system(size: 12.5)).foregroundStyle(text.opacity(0.55)).lineLimit(2)
+                }
+                if !model.response.isEmpty {
+                    Text(model.response).font(.system(size: 14)).foregroundStyle(text).lineLimit(6)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                if model.showInput { inputField }
+                if let card = model.consent { consent(card) }
+                ForEach(model.agents) { row in agentRow(row) }
+                if let status = model.status, model.phase == .hidden || model.response.isEmpty {
+                    Text(status).font(.system(size: 12)).foregroundStyle(text.opacity(0.6))
+                }
+            }
+            .padding(.horizontal, 18)
+            .padding(.bottom, 14)
+            .frame(width: min(NotchGeometry.panelWidth - 40, max(geometry.notchWidth + 220, 440)), alignment: .leading)
+            .background(ground, in: UnevenRoundedRectangle(cornerRadii: .init(topLeading: 0, bottomLeading: 22, bottomTrailing: 22, topTrailing: 0)))
+            .overlay(UnevenRoundedRectangle(cornerRadii: .init(topLeading: 0, bottomLeading: 22, bottomTrailing: 22, topTrailing: 0))
+                .stroke(Color.white.opacity(0.08), lineWidth: 1))
+            Spacer(minLength: 0)
+        }
+        .frame(width: NotchGeometry.panelWidth, height: NotchGeometry.panelHeight, alignment: .top)
+    }
+
+    private var header: some View {
+        HStack(spacing: 10) {
+            Circle().fill(model.accent).frame(width: 9, height: 9)
+                .shadow(color: model.accent.opacity(0.8), radius: 4)
+                .scaleEffect(model.phase == .listening ? 1 + CGFloat(model.level) * 0.9 : 1)
+                .animation(.easeOut(duration: 0.1), value: model.level)
+            Text(headerText).font(.system(size: 12, weight: .medium)).foregroundStyle(text.opacity(0.8))
+            if model.phase == .listening { waveform }
+            Spacer()
+            if model.showInput {
+                Button(action: onClose) { Image(systemName: "xmark").font(.system(size: 10, weight: .bold)) }
+                    .buttonStyle(.plain).foregroundStyle(text.opacity(0.5))
+            }
+        }
+    }
+
+    private var headerText: String {
+        switch model.phase {
+        case .hidden: return model.showInput ? "ask dot" : (model.agents.isEmpty ? "dot" : "agents")
+        case .listening: return model.mode == .agent ? "listening, for an agent" : "listening"
+        case .transcribing: return "hearing you"
+        case .thinking: return "thinking"
+        case .speaking: return "dot"
+        case .done: return "dot"
+        }
+    }
+
+    private var waveform: some View {
+        HStack(spacing: 2) {
+            ForEach(0..<5, id: \.self) { i in
+                let profile: [CGFloat] = [0.4, 0.7, 1.0, 0.7, 0.4]
+                RoundedRectangle(cornerRadius: 1.5)
+                    .fill(model.accent)
+                    .frame(width: 3, height: 4 + CGFloat(model.level) * 14 * profile[i])
+            }
+        }
+        .frame(height: 18)
+    }
+
+    private var inputField: some View {
+        HStack {
+            TextField("type a question about your screen", text: $model.inputText)
+                .textFieldStyle(.plain)
+                .font(.system(size: 14))
+                .foregroundStyle(text)
+                .onSubmit {
+                    let value = model.inputText
+                    model.inputText = ""
+                    model.showInput = false
+                    model.onSubmitInput?(value)
+                }
+            Text("return").font(.system(size: 10)).foregroundStyle(text.opacity(0.35))
+        }
+        .padding(.horizontal, 12).padding(.vertical, 8)
+        .background(Color.white.opacity(0.07), in: RoundedRectangle(cornerRadius: 10))
+    }
+
+    private func consent(_ card: ConsentCard) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("\(card.agent) wants to \(card.title)").font(.system(size: 13, weight: .semibold)).foregroundStyle(text)
+            if !card.detail.isEmpty {
+                Text(card.detail).font(.system(size: 12, design: .monospaced)).foregroundStyle(text.opacity(0.65)).lineLimit(3)
+            }
+            HStack(spacing: 8) {
+                Button(action: card.onAllow) {
+                    Text("Allow").font(.system(size: 12, weight: .semibold)).padding(.horizontal, 14).padding(.vertical, 6)
+                        .background(model.accent, in: Capsule()).foregroundStyle(.black)
+                }.buttonStyle(.plain)
+                Button(action: card.onDeny) {
+                    Text("Not now").font(.system(size: 12, weight: .medium)).padding(.horizontal, 14).padding(.vertical, 6)
+                        .background(Color.white.opacity(0.1), in: Capsule()).foregroundStyle(text)
+                }.buttonStyle(.plain)
+            }
+        }
+        .padding(12)
+        .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 12))
+        .overlay(RoundedRectangle(cornerRadius: 12).stroke(model.accent.opacity(0.6), lineWidth: 1))
+    }
+
+    private func agentRow(_ row: AgentRow) -> some View {
+        HStack(spacing: 8) {
+            Group {
+                switch row.state {
+                case .running: ProgressView().controlSize(.mini)
+                case .waiting: Image(systemName: "hand.raised.fill").foregroundStyle(model.accent)
+                case .done: Image(systemName: "checkmark.circle.fill").foregroundStyle(model.accent)
+                case .failed: Image(systemName: "xmark.circle.fill").foregroundStyle(.red)
+                }
+            }.frame(width: 14)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(row.name).font(.system(size: 12, weight: .semibold)).foregroundStyle(text)
+                Text(row.line).font(.system(size: 12)).foregroundStyle(text.opacity(0.65)).lineLimit(2)
+            }
+            Spacer()
+            if row.state == .done || row.state == .failed {
+                Button("open") { model.onOpenAgent?(row.id) }
+                    .buttonStyle(.plain).font(.system(size: 11)).foregroundStyle(model.accent)
+            }
+        }
+    }
+}

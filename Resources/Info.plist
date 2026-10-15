@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CFBundleDevelopmentRegion</key>
+	<string>en</string>
+	<key>CFBundleDisplayName</key>
+	<string>Dot</string>
+	<key>CFBundleExecutable</key>
+	<string>Dot</string>
+	<key>CFBundleIconFile</key>
+	<string>AppIcon</string>
+	<key>CFBundleIdentifier</key>
+	<string>com.roshan.dot</string>
+	<key>CFBundleInfoDictionaryVersion</key>
+	<string>6.0</string>
+	<key>CFBundleName</key>
+	<string>Dot</string>
+	<key>CFBundlePackageType</key>
+	<string>APPL</string>
+	<key>CFBundleShortVersionString</key>
+	<string>0.1.0</string>
+	<key>CFBundleVersion</key>
+	<string>1</string>
+	<key>LSApplicationCategoryType</key>
+	<string>public.app-category.productivity</string>
+	<key>LSMinimumSystemVersion</key>
+	<string>14.2</string>
+	<key>LSUIElement</key>
+	<true/>
+	<key>NSHighResolutionCapable</key>
+	<true/>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Dot listens while you hold control+option. Speech is transcribed on this Mac.</string>
+	<key>NSScreenCaptureUsageDescription</key>
+	<string>Dot looks at your screen when you ask it something, so it can answer about what you see and point at it.</string>
+	<key>NSSpeechRecognitionUsageDescription</key>
+	<string>Dot transcribes your voice on this Mac.</string>
+	<key>NSAppleEventsUsageDescription</key>
+	<string>Dot's agents may drive other apps only after you allow each action.</string>
+</dict>
+</plist>
