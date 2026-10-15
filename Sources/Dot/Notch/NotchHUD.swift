@@ -8,6 +8,8 @@ struct AgentRow: Identifiable, Equatable {
     var name: String
     var line: String
     var state: State
+    var result: String? = nil
+    var outputCount: Int = 0
 }
 
 struct ConsentCard: Identifiable {
@@ -34,8 +36,14 @@ final class HUDModel: ObservableObject {
     @Published var showInput = false
     @Published var inputText = ""
     @Published var accent = Color(red: 1.0, green: 0.42, blue: 0.17)
+    /// The agent whose result card is open to read.
+    @Published var expanded: String?
+    @Published var replyText = ""
+    @Published var todayLine: String?
     var onSubmitInput: ((String) -> Void)?
     var onOpenAgent: ((String) -> Void)?
+    var onReply: ((String, String) -> Void)?
+    var onDismissAgent: ((String) -> Void)?
 
     var hasContent: Bool {
         phase != .hidden || !agents.isEmpty || consent != nil || showInput || status != nil || error != nil
@@ -122,6 +130,7 @@ final class NotchHUD {
     func upsertAgent(_ row: AgentRow) {
         if let index = model.agents.firstIndex(where: { $0.id == row.id }) {
             model.agents[index] = row
+            if row.state == .running, model.expanded == row.id { model.expanded = nil }
         } else {
             model.agents.append(row)
         }
@@ -130,6 +139,7 @@ final class NotchHUD {
 
     func removeAgent(id: String) {
         model.agents.removeAll { $0.id == id }
+        if model.expanded == id { model.expanded = nil }
         refreshVisibility()
     }
 
@@ -177,10 +187,15 @@ final class NotchHUD {
                                      auxLeft: screen.auxiliaryTopLeftArea, auxRight: screen.auxiliaryTopRightArea)
     }
 
+    static let tallPanelHeight: CGFloat = 620
+
     private func reposition() {
         guard let panel else { return }
         let geometry = currentGeometry()
-        panel.setFrame(geometry.panelFrame, display: true)
+        var frame = geometry.panelFrame
+        frame.origin.y -= Self.tallPanelHeight - frame.height
+        frame.size.height = Self.tallPanelHeight
+        panel.setFrame(frame, display: true)
         if let hosting = panel.contentView as? NSHostingView<NotchHUDView> {
             hosting.rootView = NotchHUDView(model: model, geometry: geometry, onClose: { [weak self] in
                 self?.hideInput()
@@ -239,7 +254,12 @@ struct NotchHUDView: View {
                     Text(model.response).font(.system(size: 14)).foregroundStyle(text).lineLimit(6)
                         .fixedSize(horizontal: false, vertical: true)
                 }
-                if model.showInput { inputField }
+                if model.showInput {
+                    inputField
+                    if let today = model.todayLine, !today.isEmpty {
+                        Text(today).font(.system(size: 11.5)).foregroundStyle(text.opacity(0.5)).lineLimit(2)
+                    }
+                }
                 if let card = model.consent { consent(card) }
                 ForEach(model.agents) { row in agentRow(row) }
                 if let status = model.status, model.phase == .hidden || model.response.isEmpty {
@@ -254,7 +274,7 @@ struct NotchHUDView: View {
                 .stroke(Color.white.opacity(0.08), lineWidth: 1))
             Spacer(minLength: 0)
         }
-        .frame(width: NotchGeometry.panelWidth, height: NotchGeometry.panelHeight, alignment: .top)
+        .frame(width: NotchGeometry.panelWidth, height: NotchHUD.tallPanelHeight, alignment: .top)
     }
 
     private var header: some View {
@@ -337,24 +357,87 @@ struct NotchHUDView: View {
     }
 
     private func agentRow(_ row: AgentRow) -> some View {
-        HStack(spacing: 8) {
-            Group {
-                switch row.state {
-                case .running: ProgressView().controlSize(.mini)
-                case .waiting: Image(systemName: "hand.raised.fill").foregroundStyle(model.accent)
-                case .done: Image(systemName: "checkmark.circle.fill").foregroundStyle(model.accent)
-                case .failed: Image(systemName: "xmark.circle.fill").foregroundStyle(.red)
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 8) {
+                Group {
+                    switch row.state {
+                    case .running: ProgressView().controlSize(.mini)
+                    case .waiting: Image(systemName: "hand.raised.fill").foregroundStyle(model.accent)
+                    case .done: Image(systemName: "checkmark.circle.fill").foregroundStyle(model.accent)
+                    case .failed: Image(systemName: "xmark.circle.fill").foregroundStyle(.red)
+                    }
+                }.frame(width: 14)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(row.name).font(.system(size: 12, weight: .semibold)).foregroundStyle(text)
+                    if model.expanded != row.id {
+                        Text(row.line).font(.system(size: 12)).foregroundStyle(text.opacity(0.65)).lineLimit(2)
+                    }
                 }
-            }.frame(width: 14)
-            VStack(alignment: .leading, spacing: 2) {
-                Text(row.name).font(.system(size: 12, weight: .semibold)).foregroundStyle(text)
-                Text(row.line).font(.system(size: 12)).foregroundStyle(text.opacity(0.65)).lineLimit(2)
+                Spacer()
+                if row.result != nil {
+                    Image(systemName: model.expanded == row.id ? "chevron.up" : "chevron.down")
+                        .font(.system(size: 10, weight: .bold)).foregroundStyle(text.opacity(0.5))
+                }
+                if row.state == .done || row.state == .failed {
+                    Button { model.onDismissAgent?(row.id) } label: { Image(systemName: "xmark").font(.system(size: 9, weight: .bold)) }
+                        .buttonStyle(.plain).foregroundStyle(text.opacity(0.4))
+                }
             }
-            Spacer()
-            if row.state == .done || row.state == .failed {
-                Button("open") { model.onOpenAgent?(row.id) }
-                    .buttonStyle(.plain).font(.system(size: 11)).foregroundStyle(model.accent)
+            .contentShape(Rectangle())
+            .onTapGesture {
+                guard row.result != nil else { return }
+                withAnimation(.easeOut(duration: 0.18)) { model.expanded = model.expanded == row.id ? nil : row.id }
+            }
+            if model.expanded == row.id, let result = row.result {
+                resultCard(row, result: result)
             }
         }
+    }
+
+    private func resultCard(_ row: AgentRow, result: String) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            ScrollView {
+                Text(result)
+                    .font(.system(size: 12.5))
+                    .foregroundStyle(text.opacity(0.9))
+                    .textSelection(.enabled)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .frame(maxHeight: 220)
+            HStack(spacing: 8) {
+                smallButton("copy") {
+                    NSPasteboard.general.clearContents()
+                    NSPasteboard.general.setString(result, forType: .string)
+                }
+                if row.outputCount > 0 {
+                    smallButton("open output (\(row.outputCount))") { model.onOpenAgent?(row.id) }
+                }
+                Spacer()
+            }
+            HStack {
+                TextField("reply to \(row.name.lowercased())", text: $model.replyText)
+                    .textFieldStyle(.plain)
+                    .font(.system(size: 13))
+                    .foregroundStyle(text)
+                    .onSubmit {
+                        let value = model.replyText
+                        model.replyText = ""
+                        model.expanded = nil
+                        model.onReply?(row.id, value)
+                    }
+                Text("return").font(.system(size: 10)).foregroundStyle(text.opacity(0.35))
+            }
+            .padding(.horizontal, 10).padding(.vertical, 6)
+            .background(Color.white.opacity(0.07), in: RoundedRectangle(cornerRadius: 8))
+        }
+        .padding(10)
+        .background(Color.white.opacity(0.05), in: RoundedRectangle(cornerRadius: 10))
+    }
+
+    private func smallButton(_ title: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Text(title).font(.system(size: 11, weight: .medium)).padding(.horizontal, 10).padding(.vertical, 4)
+                .background(Color.white.opacity(0.1), in: Capsule()).foregroundStyle(text)
+        }.buttonStyle(.plain)
     }
 }

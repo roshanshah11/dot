@@ -18,6 +18,14 @@ final class TagParserTests: XCTestCase {
         XCTAssertEqual(TagParser.parse("let me think about that for a second [THINK]").tags, [.think])
     }
 
+    func testTargetTag() {
+        let parsed = TagParser.parse("click add modifier to open the list. [TARGET:120,210,40:add modifier]")
+        XCTAssertEqual(parsed.spoken, "click add modifier to open the list.")
+        XCTAssertEqual(parsed.tags, [.target(x: 120, y: 210, radius: 40, label: "add modifier", screen: nil)])
+        let defaulted = TagParser.parse("now hit save. [TARGET:900,40:save:screen2]")
+        XCTAssertEqual(defaulted.tags, [.target(x: 900, y: 40, radius: 28, label: "save", screen: 2)])
+    }
+
     func testHighlight() {
         let parsed = TagParser.parse("look at this block. [HIGHLIGHT:10,20,300,40:the toolbar]")
         XCTAssertEqual(parsed.tags, [.highlight(x: 10, y: 20, width: 300, height: 40, label: "the toolbar", screen: nil)])
@@ -163,5 +171,32 @@ final class CoordinatesTests: XCTestCase {
         XCTAssertEqual(geometry.centerX, 756)
         XCTAssertEqual(geometry.notchWidth, 212)
         XCTAssertEqual(geometry.panelFrame.maxY, 982)
+    }
+}
+
+
+final class TodayBriefTests: XCTestCase {
+    func testParsesAndSummarises() throws {
+        let formatter = DateFormatter(); formatter.dateFormat = "yyyy-MM-dd"; formatter.locale = Locale(identifier: "en_US_POSIX")
+        let tomorrow = formatter.string(from: Calendar.current.date(byAdding: .day, value: 1, to: Date())!)
+        let farAway = formatter.string(from: Calendar.current.date(byAdding: .day, value: 20, to: Date())!)
+        let json = """
+        {"built_at":"2026-10-14T22:18","weekday":"Wednesday","date":"2026-10-14",
+         "deadlines":["\(tomorrow) Centerview Coffee Chats: email resume by 6 PM CT","\(farAway) Something later"],
+         "today":["Wed 10-14 09:30–10:20 Mechanics"],"tomorrow":[],"commitments":[],"todo":[],"waiting":[],
+         "unanswered":["a@b.co: hi"],"unanswered_count":3,"preferences":[],"priorities":[],"block":"[today]\\n[/today]"}
+        """
+        let brief = try XCTUnwrap(TodayBrief.parse(Data(json.utf8)))
+        XCTAssertEqual(brief.deadlines(withinDays: 7).count, 1)
+        XCTAssertEqual(brief.unansweredCount, 3)
+        XCTAssertEqual(brief.morningLine(), "1 deadline this week, first centerview coffee chats. 1 on the calendar today. 3 mail waiting")
+        XCTAssertTrue(brief.block.hasPrefix("[today]"))
+    }
+
+    func testMissingKeysDecodeToDefaults() throws {
+        let brief = try XCTUnwrap(TodayBrief.parse(Data("{\"block\":\"x\"}".utf8)))
+        XCTAssertEqual(brief.block, "x")
+        XCTAssertEqual(brief.deadlines, [])
+        XCTAssertEqual(brief.morningLine(), "")
     }
 }

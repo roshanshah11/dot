@@ -13,13 +13,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var agents: AgentManager!
     private var talk: Talk!
     private var home: HomeWindowController!
+    private var atlas: AtlasBridge!
     private let hotkeys = HotkeyMonitor()
     private var permissionTimer: Timer?
+    private var presenceItem: NSMenuItem?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         Log.info("Dot \(Version.string) launching; config \(DotConfig.fileURL.path)")
         hud = NotchHUD(accentHex: config.pointerColorHex)
-        overlay = OverlayManager(colorHex: config.pointerColorHex)
+        overlay = OverlayManager(colorHex: config.pointerColorHex, presence: config.showCompanion)
+        atlas = AtlasBridge(config: config)
         let apple = AppleSpeaker(voiceIdentifier: config.voiceIdentifier, rate: config.speechRate)
         if let command = config.resolvedTTSCommand() {
             let worker = CommandSpeaker(command: command, fallback: apple)
@@ -34,14 +37,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             Task { @MainActor in hud.flash(status: "downloading speech model \(Int(progress * 100))%", for: 3) }
         })
         agents = AgentManager(config: config, hud: hud, speaker: speaker, ledger: ledger)
-        talk = Talk(config: config, hud: hud, overlay: overlay, speaker: speaker, transcriber: transcriber, agents: agents, ledger: ledger)
-        home = HomeWindowController(agents: agents, ledger: ledger, config: config)
+        agents.atlas = atlas
+        talk = Talk(config: config, hud: hud, overlay: overlay, speaker: speaker, transcriber: transcriber, agents: agents, ledger: ledger, atlas: atlas)
+        home = HomeWindowController(agents: agents, ledger: ledger, config: config, atlas: atlas)
+        let hudModel = hud.model
+        atlas.onUpdate = { [weak self] brief in
+            hudModel.todayLine = "today: " + brief.morningLine()
+            self?.talk.todayArrived(brief)
+        }
 
         installStatusItem()
         AccessibilityContext.observeForegroundApp()
         hotkeys.onEvent = { [weak self] event in self?.talk.hotkey(event) }
         installIPC()
         requestPermissionsThenStart()
+        atlas.start()
     }
 
     /// `Dot --ask ...` and `Dot --agent ...` from a shell reach the running app here.
@@ -64,6 +74,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         center.addObserver(forName: DotIPC.stop, object: nil, queue: .main) { [weak self] _ in
             Task { @MainActor in self?.talk.interrupt() }
+        }
+        center.addObserver(forName: DotIPC.refresh, object: nil, queue: .main) { [weak self] _ in
+            Task { @MainActor in self?.atlas.refresh(reason: "cli") }
         }
     }
 
@@ -125,8 +138,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let menu = NSMenu()
         menu.addItem(withTitle: "Ask by typing", action: #selector(askByTyping), keyEquivalent: "")
         menu.addItem(withTitle: "Open Dot", action: #selector(openHome), keyEquivalent: "")
+        let presence = NSMenuItem(title: "Dot beside the cursor", action: #selector(togglePresence), keyEquivalent: "")
+        presence.state = config.showCompanion ? .on : .off
+        menu.addItem(presence)
+        presenceItem = presence
         menu.addItem(.separator())
         menu.addItem(withTitle: "Stop talking", action: #selector(interrupt), keyEquivalent: "")
+        menu.addItem(withTitle: "Refresh today from Atlas", action: #selector(refreshToday), keyEquivalent: "")
         menu.addItem(withTitle: "Open config file", action: #selector(openConfig), keyEquivalent: "")
         menu.addItem(withTitle: "Open log", action: #selector(openLog), keyEquivalent: "")
         menu.addItem(.separator())
@@ -139,6 +157,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     @objc private func askByTyping() { hud.showInput() }
     @objc private func openHome() { home.show() }
     @objc private func interrupt() { talk.interrupt() }
+    @objc private func refreshToday() { atlas.refresh(reason: "menu"); hud.flash(status: "reading atlas") }
+    @objc private func togglePresence() {
+        config.showCompanion.toggle()
+        config.save()
+        presenceItem?.state = config.showCompanion ? .on : .off
+        overlay.setPresence(config.showCompanion)
+    }
     @objc private func openConfig() { NSWorkspace.shared.open(DotConfig.fileURL) }
     @objc private func openLog() {
         NSWorkspace.shared.open(URL(fileURLWithPath: NSHomeDirectory()).appendingPathComponent("Library/Logs/Dot/dot.log"))
@@ -147,7 +172,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 }
 
 enum Version {
-    static let string = "0.1.0"
+    static let string = "0.2.0"
 }
 
 enum DotIPC {
@@ -155,4 +180,5 @@ enum DotIPC {
     static let agent = Notification.Name("com.roshan.dot.agent")
     static let home = Notification.Name("com.roshan.dot.home")
     static let stop = Notification.Name("com.roshan.dot.stop")
+    static let refresh = Notification.Name("com.roshan.dot.refresh")
 }

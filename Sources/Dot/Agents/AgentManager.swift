@@ -32,8 +32,13 @@ final class AgentManager {
     private let ledger: Ledger
     private var runs: [String: Run] = [:]
     private var pendingConsent: [UUID: (String, Bool, String?) -> Void] = [:]
+    /// Set after init: Atlas's view of his day rides along with every brief.
+    var atlas: AtlasBridge?
+    /// The last final text of each agent, for the notch card and Home.
+    private(set) var lastResults: [String: String] = [:]
 
     var onRosterChanged: (() -> Void)?
+    var onRunFinished: ((Agent) -> Void)?
 
     init(config: DotConfig, hud: NotchHUD, speaker: TTSProvider, ledger: Ledger) {
         self.config = config
@@ -46,9 +51,32 @@ final class AgentManager {
             Task { @MainActor in
                 guard let self, let agent = self.roster().first(where: { $0.slug == slug }) else { return }
                 NSWorkspace.shared.open(agent.outputFolder)
-                self.hud.removeAgent(id: slug)
             }
         }
+        hud.model.onReply = { [weak self] slug, text in
+            Task { @MainActor in self?.reply(to: slug, text: text) }
+        }
+        hud.model.onDismissAgent = { [weak self] slug in
+            Task { @MainActor in self?.hud.removeAgent(id: slug) }
+        }
+    }
+
+    /// A typed follow-up from the notch or Home continues the agent's own conversation.
+    func reply(to slug: String, text: String) {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, let agent = roster().first(where: { $0.slug == slug }) else { return }
+        handoff(brief: trimmed, agentName: agent.name, context: nil, shots: nil)
+    }
+
+    func outputFiles(for agent: Agent) -> [URL] {
+        let fm = FileManager.default
+        guard let items = try? fm.contentsOfDirectory(at: agent.outputFolder, includingPropertiesForKeys: [.contentModificationDateKey]) else { return [] }
+        return items.filter { !$0.lastPathComponent.hasPrefix(".") }
+            .sorted { (a, b) in
+                let da = (try? a.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? .distantPast
+                let db = (try? b.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? .distantPast
+                return da > db
+            }
     }
 
     // MARK: Roster
@@ -107,6 +135,7 @@ final class AgentManager {
 
         var text = brief
         var contextLines: [String] = []
+        if let today = atlas?.shortBlock(), !today.isEmpty { contextLines.append(today) }
         if let context {
             if let app = context.appName { contextLines.append("Frontmost app when they asked: \(app)" + (context.windowTitle.map { ", window \"\($0)\"" } ?? "")) }
             if let url = context.url { contextLines.append("Page: \(url)") }
@@ -134,10 +163,14 @@ final class AgentManager {
         options.effort = config.agentEffort
         options.includePartialMessages = true
         let sessionFile = agent.folder.appendingPathComponent(".dot/session-id")
-        if let saved = try? String(contentsOf: sessionFile, encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines),
+        let touched = (try? FileManager.default.attributesOfItem(atPath: sessionFile.path)[.modificationDate] as? Date) ?? .distantPast
+        let fresh = Date().timeIntervalSince(touched) < 12 * 3600
+        if fresh, let saved = try? String(contentsOf: sessionFile, encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines),
            UUID(uuidString: saved) != nil, Self.conversationExists(saved) {
             options.sessionId = saved
             options.resume = true
+        } else if !fresh {
+            Log.info("agent[\(agent.slug)] thread is older than 12 h; starting a fresh conversation (notes in CLAUDE.md carry over)")
         }
         let session = ClaudeSession(label: "agent:\(agent.slug)", claudePath: config.claudeExecutable, options: options)
         let run = Run(agent: agent, session: session)
@@ -175,6 +208,13 @@ final class AgentManager {
             if !id.isEmpty {
                 try? id.write(to: agent.folder.appendingPathComponent(".dot/session-id"), atomically: true, encoding: .utf8)
             }
+        case .result:
+            try? FileManager.default.setAttributes([.modificationDate: Date()], ofItemAtPath: agent.folder.appendingPathComponent(".dot/session-id").path)
+            finished(run, result: {
+                if case .result(let result) = event { return result }
+                fatalError("unreachable")
+            }())
+            return
         case .textDelta(let delta):
             run.buffer += delta
             let line = run.buffer.split(separator: "\n").last.map(String.init) ?? run.buffer
@@ -193,8 +233,6 @@ final class AgentManager {
             run.lastLine = line
             hud.upsertAgent(AgentRow(id: agent.slug, name: agent.name, line: line, state: .running))
             appendTranscript(agent, role: "tool", text: line)
-        case .result(let result):
-            finished(run, result: result)
         default:
             break
         }
@@ -206,13 +244,19 @@ final class AgentManager {
         ledger.record(kind: "agent", agent: agent.slug, model: config.agentModel, result: result, summary: Log.short(text, 200))
         let summary = Self.firstSentence(of: text)
         let failed = result.isError
-        hud.upsertAgent(AgentRow(id: agent.slug, name: agent.name, line: failed ? "failed: \(summary)" : summary, state: failed ? .failed : .done))
+        lastResults[agent.slug] = text
+        let outputs = outputFiles(for: agent)
+        hud.upsertAgent(AgentRow(id: agent.slug, name: agent.name, line: failed ? "failed: \(summary)" : summary, state: failed ? .failed : .done,
+                                 result: text, outputCount: outputs.count))
         appendTranscript(agent, role: "result", text: "\(result.subtype) in \(result.durationMs) ms, $\(String(format: "%.3f", result.costUSD))")
         NSSound(named: failed ? "Basso" : "Glass")?.play()
         if config.speakAgentResults, !summary.isEmpty {
-            speaker.speak("\(agent.name) here. \(summary)")
+            let more = SpeechText.clean(text).count > summary.count + 40 ? " the rest is in the notch." : ""
+            speaker.speak("\(agent.name) here. \(summary)\(more)")
         }
-        Log.info("agent[\(agent.slug)] finished \(result.subtype) in \(result.durationMs) ms")
+        Log.info("agent[\(agent.slug)] finished \(result.subtype) in \(result.durationMs) ms, \(outputs.count) output file(s)")
+        atlas?.refreshSoon()
+        onRunFinished?(agent)
 
         run.idleWork?.cancel()
         let work = DispatchWorkItem { [weak self, weak run] in
@@ -223,8 +267,9 @@ final class AgentManager {
         }
         run.idleWork = work
         DispatchQueue.main.asyncAfter(deadline: .now() + Double(max(config.agentIdleMinutes, 1)) * 60, execute: work)
-        DispatchQueue.main.asyncAfter(deadline: .now() + 45) { [weak self] in
-            guard let self, self.runs[agent.slug]?.session.turnInFlight != true else { return }
+        // A finished row stays two minutes, or as long as he has it open to read.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 120) { [weak self] in
+            guard let self, self.runs[agent.slug]?.session.turnInFlight != true, self.hud.model.expanded != agent.slug else { return }
             if self.hud.model.agents.first(where: { $0.id == agent.slug })?.state == .done { self.hud.removeAgent(id: agent.slug) }
         }
     }

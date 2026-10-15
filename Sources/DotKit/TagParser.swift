@@ -7,6 +7,7 @@ import Foundation
 ///   [POINT:x,y:label:screen2]      ...on another screen (numbered as in the image labels)
 ///   [POINT:none]                   nothing worth pointing at
 ///   [HIGHLIGHT:x,y,w,h:label]      draw a box around a region (same coordinate rules)
+///   [TARGET:x,y,r:label]           ring the thing to click next and wait for the click (a walkthrough step)
 ///   [AGENT:brief]                  hand the task to a background agent
 ///   [NEW_AGENT:name:brief]         create a named agent for this kind of work, then hand off
 ///   [THINK]                        the question deserves the stronger model; Dot re-asks it
@@ -14,6 +15,7 @@ public enum DotTag: Equatable {
     case point(x: Int, y: Int, label: String, screen: Int?)
     case pointNone
     case highlight(x: Int, y: Int, width: Int, height: Int, label: String, screen: Int?)
+    case target(x: Int, y: Int, radius: Int, label: String, screen: Int?)
     case agent(brief: String)
     case newAgent(name: String, brief: String)
     case think
@@ -31,11 +33,11 @@ public struct ParsedResponse: Equatable {
 }
 
 public enum TagParser {
-    static let tagNames = ["POINT", "HIGHLIGHT", "AGENT", "NEW_AGENT", "THINK"]
+    static let tagNames = ["POINT", "HIGHLIGHT", "TARGET", "AGENT", "NEW_AGENT", "THINK"]
 
     // swiftlint:disable:next force_try
     static let pattern = try! NSRegularExpression(
-        pattern: #"\[(POINT|HIGHLIGHT|AGENT|NEW_AGENT|THINK)(?::([^\]]*))?\]"#,
+        pattern: #"\[(POINT|HIGHLIGHT|TARGET|AGENT|NEW_AGENT|THINK)(?::([^\]]*))?\]"#,
         options: []
     )
 
@@ -96,6 +98,15 @@ public enum TagParser {
             parts.removeFirst()
             let screen = takeScreen(&parts)
             return .point(x: numbers[0], y: numbers[1], label: parts.joined(separator: ":"), screen: screen)
+        case "TARGET":
+            var parts = splitPayload(payload)
+            guard let coords = parts.first else { return nil }
+            let numbers = integers(in: coords)
+            guard numbers.count == 2 || numbers.count == 3 else { return nil }
+            parts.removeFirst()
+            let screen = takeScreen(&parts)
+            let radius = numbers.count == 3 ? max(numbers[2], 10) : 28
+            return .target(x: numbers[0], y: numbers[1], radius: radius, label: parts.joined(separator: ":"), screen: screen)
         case "HIGHLIGHT":
             var parts = splitPayload(payload)
             guard let coords = parts.first else { return nil }

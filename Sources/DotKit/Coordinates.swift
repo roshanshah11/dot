@@ -38,6 +38,15 @@ public enum Coordinates {
         return CGPoint(x: x.rounded(), y: y.rounded())
     }
 
+    /// AppKit screen rect to a screenshot pixel rect (top-left origin), clamped to the image.
+    public static func pixelRect(fromScreen r: CGRect, in capture: CaptureFrame) -> CGRect {
+        let clipped = r.intersection(capture.displayFrame)
+        guard !clipped.isNull, clipped.width > 0, clipped.height > 0 else { return .zero }
+        let x = (clipped.minX - capture.displayFrame.minX) / capture.scaleX
+        let y = (capture.displayFrame.maxY - clipped.maxY) / capture.scaleY
+        return CGRect(x: x.rounded(), y: y.rounded(), width: (clipped.width / capture.scaleX).rounded(), height: (clipped.height / capture.scaleY).rounded())
+    }
+
     /// AppKit screen point to a top-left-origin point inside an overlay that covers `screenFrame`.
     public static func overlayPoint(fromScreen p: CGPoint, screenFrame: CGRect) -> CGPoint {
         CGPoint(x: p.x - screenFrame.minX, y: screenFrame.maxY - p.y)

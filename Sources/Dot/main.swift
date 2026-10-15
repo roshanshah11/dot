@@ -1,4 +1,5 @@
 import AppKit
+import DotKit
 import Foundation
 
 let arguments = CommandLine.arguments.dropFirst()
@@ -14,10 +15,15 @@ case "--help", "-h":
       Dot               launch the menu bar app
       Dot --check       print permission status and paths
       Dot --voices      list installed English voices (set voiceIdentifier in config)
+      Dot --today       print the [today] block Dot reads from Atlas
+      Dot --ask <q>     ask the running Dot by text      Dot --agent <brief>   hand a job to an agent
+      Dot --home        open the Dot window              Dot --stop            stop talking
+      Dot --refresh     re-read today from Atlas
       Dot --version
 
-    Hold control+option and talk. Hold control+option+shift to hand the request to an agent.
-    Tap control+option to type a question. Escape stops Dot talking.
+    Hold control+option and talk; drag while holding to draw a box to ask about.
+    Hold control+option+shift to hand the request to an agent. Tap control+option to type.
+    Escape stops Dot talking. Dot lives beside the cursor; toggle that from the menu bar.
     Config: ~/.config/dot/config.json   Agents: ~/Dot/agents   Log: ~/Library/Logs/Dot/dot.log
     """)
     exit(0)
@@ -32,7 +38,31 @@ case "--check":
     print("agents:            \(config.agentsRootURL.path)")
     print("agent mcp config:  \(config.mcpConfigPath(config.agentMCPConfig) ?? "none")")
     print("talk mcp config:   \(config.mcpConfigPath(config.talkMCPConfig) ?? "none")")
+    print("atlas today:       \(config.resolvedTodayCommand()?.joined(separator: " ") ?? "not available")")
+    print("tts:               \(config.resolvedTTSCommand()?.joined(separator: " ") ?? "apple speech")")
     exit(status.allGranted ? 0 : 1)
+case "--today":
+    let config = DotConfig.load()
+    guard let command = config.resolvedTodayCommand() else { print("atlas today helper not available"); exit(1) }
+    let process = Process()
+    process.executableURL = URL(fileURLWithPath: command[0])
+    process.arguments = Array(command.dropFirst())
+    var env = ProcessInfo.processInfo.environment
+    env["PYTHONPATH"] = DotConfig.expand(config.atlasHarness)
+    process.environment = env
+    let pipe = Pipe()
+    process.standardOutput = pipe
+    try? process.run()
+    let data = pipe.fileHandleForReading.readDataToEndOfFile()
+    process.waitUntilExit()
+    if let brief = TodayBrief.parse(data) {
+        print(brief.block)
+        print("\nmorning line: \(brief.morningLine())")
+    } else {
+        print("could not parse the helper's output")
+        exit(1)
+    }
+    exit(0)
 case "--voices":
     for voice in AppleSpeaker.availableVoices() {
         print("\(voice.quality.padding(toLength: 9, withPad: " ", startingAt: 0)) \(voice.name)\n          \(voice.id)")
@@ -46,8 +76,8 @@ case "--ask", "--agent":
     DistributedNotificationCenter.default().postNotificationName(name, object: nil, userInfo: ["text": text], deliverImmediately: true)
     print("sent to Dot")
     exit(0)
-case "--home", "--stop":
-    let name = arguments.first == "--home" ? DotIPC.home : DotIPC.stop
+case "--home", "--stop", "--refresh":
+    let name = arguments.first == "--home" ? DotIPC.home : (arguments.first == "--stop" ? DotIPC.stop : DotIPC.refresh)
     DistributedNotificationCenter.default().postNotificationName(name, object: nil, userInfo: nil, deliverImmediately: true)
     exit(0)
 default:

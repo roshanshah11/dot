@@ -8,7 +8,11 @@ import Foundation
 ///   hold control+option          talk to Dot
 ///   hold control+option+shift    hand the request to an agent
 ///   tap control+option           typed question (released within `tapWindow`, said nothing)
+///   drag while holding           draw a box to ask about
 ///   escape                       stop speaking / interrupt
+///
+/// Mouse clicks are also reported (listen-only, never swallowed) so a walkthrough can see
+/// the user click the ringed control.
 final class HotkeyMonitor {
     enum Mode: Equatable { case talk, agent }
 
@@ -17,6 +21,10 @@ final class HotkeyMonitor {
         case modeChanged(Mode)
         case released(Mode, heldFor: TimeInterval)
         case escape
+        /// AppKit screen coordinates (bottom-left origin).
+        case mouseDown(CGPoint)
+        case dragChanged(CGRect)
+        case dragEnded(CGRect)
     }
 
     var onEvent: ((Event) -> Void)?
@@ -26,6 +34,8 @@ final class HotkeyMonitor {
     private var held = false
     private var mode: Mode = .talk
     private var pressedAt = Date.distantPast
+    private var dragStart: CGPoint?
+    private var dragging = false
 
     var isRunning: Bool { tap != nil }
     var isHeld: Bool { held }
@@ -35,7 +45,7 @@ final class HotkeyMonitor {
     @discardableResult
     func start() -> Bool {
         guard tap == nil else { return true }
-        let types: [CGEventType] = [.flagsChanged, .keyDown, .keyUp]
+        let types: [CGEventType] = [.flagsChanged, .keyDown, .keyUp, .leftMouseDown, .leftMouseDragged, .leftMouseUp]
         let mask = types.reduce(CGEventMask(0)) { $0 | (CGEventMask(1) << $1.rawValue) }
 
         let callback: CGEventTapCallBack = { _, type, event, userInfo in
@@ -71,6 +81,12 @@ final class HotkeyMonitor {
         tap = nil
     }
 
+    /// CGEvent locations have the origin at the top left of the primary display; AppKit's is bottom left.
+    private static func appKitPoint(_ cg: CGPoint) -> CGPoint {
+        let primaryHeight = NSScreen.screens.first?.frame.height ?? 0
+        return CGPoint(x: cg.x, y: primaryHeight - cg.y)
+    }
+
     private func handle(type: CGEventType, event: CGEvent) {
         if type == .tapDisabledByTimeout || type == .tapDisabledByUserInput {
             if let tap { CGEvent.tapEnable(tap: tap, enable: true) }
@@ -89,9 +105,15 @@ final class HotkeyMonitor {
                 held = true
                 mode = shift ? .agent : .talk
                 pressedAt = Date()
+                dragStart = nil
+                dragging = false
                 emit(.pressed(mode))
             } else if held && !chord {
                 held = false
+                if dragging, let start = dragStart {
+                    dragging = false
+                    emit(.dragEnded(Self.rect(from: start, to: Self.appKitPoint(event.location))))
+                }
                 emit(.released(mode, heldFor: Date().timeIntervalSince(pressedAt)))
             } else if held && chord {
                 let newMode: Mode = shift ? .agent : .talk
@@ -105,9 +127,36 @@ final class HotkeyMonitor {
             if keyCode == 53, !held { // escape
                 emit(.escape)
             }
+        case .leftMouseDown:
+            let point = Self.appKitPoint(event.location)
+            if held {
+                dragStart = point
+                dragging = false
+            } else {
+                emit(.mouseDown(point))
+            }
+        case .leftMouseDragged:
+            guard held, let start = dragStart else { return }
+            let rect = Self.rect(from: start, to: Self.appKitPoint(event.location))
+            if rect.width > 6 || rect.height > 6 {
+                dragging = true
+                emit(.dragChanged(rect))
+            }
+        case .leftMouseUp:
+            guard held, let start = dragStart else { return }
+            let rect = Self.rect(from: start, to: Self.appKitPoint(event.location))
+            dragStart = nil
+            if dragging {
+                dragging = false
+                if rect.width > 12 || rect.height > 12 { emit(.dragEnded(rect)) } else { emit(.dragChanged(.null)) }
+            }
         default:
             break
         }
+    }
+
+    private static func rect(from a: CGPoint, to b: CGPoint) -> CGRect {
+        CGRect(x: min(a.x, b.x), y: min(a.y, b.y), width: abs(a.x - b.x), height: abs(a.y - b.y))
     }
 
     private func emit(_ event: Event) {

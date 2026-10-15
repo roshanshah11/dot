@@ -36,6 +36,7 @@ cp "$BIN" "$APP/Contents/MacOS/Dot"
 cp Resources/Info.plist "$APP/Contents/Info.plist"
 [[ -f Resources/AppIcon.icns ]] && cp Resources/AppIcon.icns "$APP/Contents/Resources/AppIcon.icns"
 cp scripts/dot-tts-kokoro.py "$APP/Contents/Resources/dot-tts-kokoro.py"
+cp scripts/dot-atlas-today.py "$APP/Contents/Resources/dot-atlas-today.py"
 # SwiftPM resource bundles (FluidAudio ships none today; copy whatever exists).
 for bundle in .build/$CONFIG/*.bundle(N); do
   cp -R "$bundle" "$APP/Contents/Resources/"
