@@ -55,6 +55,9 @@ struct DotConfig: Codable {
     var dictionaryFile = "~/.config/dot/dictionary.txt"
     /// Where Murmur keeps its dictation history, read for "what did i say in the meeting".
     var murmurHistoryFile = "~/Library/Application Support/Murmur/history.jsonl"
+    /// Murmur's log folder; Dot's notch mirrors its recording state from there (one notch for both apps).
+    var murmurLogDirectory = "~/Library/Logs/Murmur"
+    var mirrorMurmur = true
     /// Longest wait for the screen to stop changing after a walkthrough click, in seconds.
     var walkthroughSettleSeconds = 2.5
     /// Also keep the answer text in the notch panel.
@@ -147,6 +150,8 @@ struct DotConfig: Codable {
         quietOnCalls = get(.quietOnCalls, d.quietOnCalls)
         dictionaryFile = get(.dictionaryFile, d.dictionaryFile)
         murmurHistoryFile = get(.murmurHistoryFile, d.murmurHistoryFile)
+        murmurLogDirectory = get(.murmurLogDirectory, d.murmurLogDirectory)
+        mirrorMurmur = get(.mirrorMurmur, d.mirrorMurmur)
         walkthroughSettleSeconds = get(.walkthroughSettleSeconds, d.walkthroughSettleSeconds)
         hudShowsResponse = get(.hudShowsResponse, d.hudShowsResponse)
         morningGreeting = get(.morningGreeting, d.morningGreeting)

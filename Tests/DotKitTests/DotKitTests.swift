@@ -513,3 +513,28 @@ final class DocumentSearchTests: XCTestCase {
         XCTAssertTrue(parts.allSatisfy { $0.split(separator: " ").count <= 90 })
     }
 }
+
+final class MurmurEventTests: XCTestCase {
+    func testParsesMurmurLogLines() {
+        let started = MurmurEvents.parse(line: #"{"path":"dictation-1.wav","state":"recording_started","ts":"2026-10-10T15:02:46.832Z"}"#)
+        guard case .recordingStarted(let at)? = started else { return XCTFail("recording_started") }
+        XCTAssertEqual(Int(at.timeIntervalSince1970), 1791644566)
+        guard case .transcribing(let seconds, let when)? = MurmurEvents.parse(line: #"{"frontmost_app":"Comet","recorded_ms":"3533369","state":"pipeline_started","ts":"2026-10-10T16:01:40.202Z"}"#) else { return XCTFail("pipeline_started") }
+        XCTAssertEqual(seconds, 3533)
+        XCTAssertEqual(Int(when.timeIntervalSince1970), 1791648100)
+        guard case .pasted(let chars, let app, _)? = MurmurEvents.parse(line: #"{"chars":"41025","state":"paste_dispatched","target_app":"Terminal","target_bundle":"com.apple.Terminal","ts":"2026-10-10T16:01:50.353Z"}"#) else { return XCTFail("paste") }
+        XCTAssertEqual(chars, 41025); XCTAssertEqual(app, "Terminal")
+        guard case .notice(let body, _)? = MurmurEvents.parse(line: #"{"body":"Copied to clipboard — empty text","state":"notify","title":"Murmur","ts":"2026-10-02T13:26:54.885Z"}"#) else { return XCTFail("notify") }
+        XCTAssertEqual(MurmurEvents.line(forNotice: body), "murmur heard nothing")
+        XCTAssertEqual(MurmurEvents.line(forNotice: "Pasted into Comet"), "murmur pasted into comet")
+        XCTAssertNil(MurmurEvents.parse(line: #"{"state":"volume_muted","ts":"2026-10-10T15:02:47.339Z"}"#))
+        XCTAssertNil(MurmurEvents.parse(line: "not json"))
+        guard case .idle? = MurmurEvents.parse(line: #"{"from":"pasting","state":"state_transition","to":"idle","ts":"2026-10-10T16:01:50.353Z"}"#) else { return XCTFail("idle") }
+    }
+
+    func testClockAndLogName() {
+        XCTAssertEqual(MurmurEvents.clock(83), "1:23")
+        XCTAssertEqual(MurmurEvents.clock(3723), "1:02:03")
+        XCTAssertTrue(MurmurEvents.logName(for: Date()).hasPrefix("murmur-20"))
+    }
+}

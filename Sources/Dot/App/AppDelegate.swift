@@ -17,6 +17,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var atlas: AtlasBridge!
     private var jev: Jev?
     private var noticer: Noticer!
+    private var murmur: MurmurWatcher?
     private let hotkeys = HotkeyMonitor()
     private var permissionTimer: Timer?
     private var hoverTimer: Timer?
@@ -88,6 +89,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         requestPermissionsThenStart()
         atlas.start()
         noticer.start()
+        if config.mirrorMurmur {
+            murmur = MurmurWatcher(directory: config.murmurLogDirectory, hud: hud)
+            murmur?.start()
+        }
     }
 
     private var noticedMeetings: Set<String> = []

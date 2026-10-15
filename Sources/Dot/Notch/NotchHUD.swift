@@ -61,6 +61,8 @@ final class HUDModel: ObservableObject {
     @Published var meetingLine: String?
     /// "listening to the lecture, 12 min" while Dot's ear is on.
     @Published var listeningLine: String?
+    /// "recording 1:23" while Murmur records (one notch for both apps), then "murmur transcribing".
+    @Published var recordingLine: String?
     /// A small black tab under the notch when there is nothing else to show.
     @Published var presence = false
     @Published var hovering = false
@@ -368,7 +370,7 @@ struct NotchHUDView: View {
                 if model.hovering {
                     VStack(spacing: 3) {
                         Text(model.todayLine ?? "hold control and option and talk").font(.system(size: 11.5)).foregroundStyle(text.opacity(0.75)).lineLimit(2)
-                        Text("click to type, hold ⌃⌥ to talk").font(.system(size: 10)).foregroundStyle(text.opacity(0.4))
+                        Text("click to type, hold ⌃⌥ to talk, double-tap fn to record").font(.system(size: 10)).foregroundStyle(text.opacity(0.4))
                     }
                     .padding(.horizontal, 14).padding(.bottom, 8)
                 } else if !model.foldedTasks.isEmpty {
@@ -376,15 +378,18 @@ struct NotchHUDView: View {
                         ForEach(model.foldedTasks.prefix(3)) { row in taskPill(row) }
                     }
                     .padding(.horizontal, 12).padding(.bottom, 6)
-                } else if let line = model.listeningLine ?? model.meetingLine {
-                    // The ear is on, or a meeting is close: a quiet line on the tab, after HeyClicky's notch countdown.
+                } else if let line = model.recordingLine ?? model.listeningLine ?? model.meetingLine {
+                    // Murmur recording, the ear on, or a meeting close: a quiet line on the tab (one notch for both apps).
                     HStack(spacing: 6) {
-                        if model.listeningLine != nil {
+                        if model.recordingLine != nil {
+                            BreathingDot(color: Color(red: 0.95, green: 0.3, blue: 0.28))
+                        } else if model.listeningLine != nil {
                             BreathingDot(color: model.accent)
                         } else {
                             Image(systemName: "calendar").font(.system(size: 9.5)).foregroundStyle(model.accent)
                         }
                         Text(line).font(.system(size: 10.5, weight: .medium)).foregroundStyle(text.opacity(0.8)).lineLimit(1)
+                            .monospacedDigit()
                     }
                     .padding(.horizontal, 12).padding(.bottom, 5)
                 } else {
@@ -395,7 +400,7 @@ struct NotchHUDView: View {
                     .padding(.bottom, 2)
                 }
             }
-            .frame(width: model.hovering ? min(geometry.notchWidth + 220, 420) : (model.foldedTasks.isEmpty ? ((model.listeningLine ?? model.meetingLine) == nil ? geometry.notchWidth + 36 : geometry.notchWidth + 120) : min(geometry.notchWidth + 80 + CGFloat(min(model.foldedTasks.count, 3)) * 150, 560)), alignment: .center)
+            .frame(width: model.hovering ? min(geometry.notchWidth + 220, 420) : (model.foldedTasks.isEmpty ? ((model.recordingLine ?? model.listeningLine ?? model.meetingLine) == nil ? geometry.notchWidth + 36 : geometry.notchWidth + 120) : min(geometry.notchWidth + 80 + CGFloat(min(model.foldedTasks.count, 3)) * 150, 560)), alignment: .center)
             .background(ground, in: UnevenRoundedRectangle(cornerRadii: .init(topLeading: 0, bottomLeading: 14, bottomTrailing: 14, topTrailing: 0)))
             .contentShape(Rectangle())
             .onHover { inside in withAnimation(.easeOut(duration: 0.15)) { model.hovering = inside } }
@@ -415,6 +420,12 @@ struct NotchHUDView: View {
                 header
                 if let error = model.error {
                     Text(error).font(.system(size: 12)).foregroundStyle(Color(red: 1, green: 0.5, blue: 0.4)).lineLimit(3)
+                }
+                if let recording = model.recordingLine {
+                    HStack(spacing: 6) {
+                        BreathingDot(color: Color(red: 0.95, green: 0.3, blue: 0.28))
+                        Text(recording).font(.system(size: 11.5, weight: .medium)).foregroundStyle(text.opacity(0.75)).monospacedDigit()
+                    }
                 }
                 if !model.transcript.isEmpty, model.answer == nil {
                     Text(model.transcript).font(.system(size: 12.5)).foregroundStyle(text.opacity(0.55)).lineLimit(2)
