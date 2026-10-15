@@ -188,6 +188,7 @@ final class AgentManager {
             appended += "\n\n# Atlas: the chief-of-staff prompt every Atlas chat runs with. You have the same tools and the same mandate; Dot's rules above say where files go and when to ask.\n" + atlasPrompt
         }
         options.appendSystemPrompt = appended
+        Log.info("agent[\(agent.slug)] system prompt \(appended.count) chars (atlas chat prompt \(atlas?.chatPrompt().count ?? 0))")
         options.extraArguments = ["--add-dir", DotConfig.expand(config.atlasRoot)]
         options.permissionMode = "acceptEdits"
         options.permissionPromptOverStdio = true

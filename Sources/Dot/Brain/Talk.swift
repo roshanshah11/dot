@@ -328,6 +328,7 @@ final class Talk {
 
     var isIdle: Bool { phase == .idle && walkthrough == nil }
     private var lastAskWasTyped = false
+    private var lastAsked = ""
 
     // MARK: Streaming transcription
 
@@ -510,6 +511,7 @@ final class Talk {
 
     private func ask(_ text: String, typed: Bool) async {
         lastAskWasTyped = typed
+        lastAsked = text
         if let captureTask {
             let captured = await captureTask.value
             shots = captured.shots
@@ -937,7 +939,7 @@ final class Talk {
         if config.hudShowsResponse { hud.model.response = spoken }
         let kind = activeSession === thinkSession ? "think" : "talk"
         ledger.record(kind: kind, agent: nil, model: turnModel, result: result, summary: hud.model.transcript)
-        TranscriptLog.append(kind: lastAskWasTyped ? .typed : .talk, you: hud.model.transcript, dot: spoken, app: context.appName,
+        TranscriptLog.append(kind: lastAskWasTyped ? .typed : .talk, you: lastAsked, dot: spoken, app: context.appName,
                              extra: ["model": turnModel, "ms": String(result.durationMs)])
         Log.info("turn[\(kind)] done in \(result.durationMs) ms, $\(String(format: "%.4f", result.costUSD)), \(tags.filter { $0.isVisual }.count) visual beat(s), tags \(tags.map { "\($0)" }.joined(separator: " | "))")
         Log.info("turn[\(kind)] said: \(Log.short(spoken, 240))")
