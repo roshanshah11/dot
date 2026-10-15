@@ -59,6 +59,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 self.agents.handoff(brief: text, agentName: nil, context: context, shots: nil)
             }
         }
+        center.addObserver(forName: DotIPC.home, object: nil, queue: .main) { [weak self] _ in
+            Task { @MainActor in self?.home.show() }
+        }
+        center.addObserver(forName: DotIPC.stop, object: nil, queue: .main) { [weak self] _ in
+            Task { @MainActor in self?.talk.interrupt() }
+        }
     }
 
     func applicationWillTerminate(_ notification: Notification) {
@@ -147,4 +153,6 @@ enum Version {
 enum DotIPC {
     static let ask = Notification.Name("com.roshan.dot.ask")
     static let agent = Notification.Name("com.roshan.dot.agent")
+    static let home = Notification.Name("com.roshan.dot.home")
+    static let stop = Notification.Name("com.roshan.dot.stop")
 }

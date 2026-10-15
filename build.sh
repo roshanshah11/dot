@@ -14,10 +14,12 @@ cd "${0:A:h}"
 
 CONFIG=release
 LAUNCH=1
+INSTALL=1
 for arg in "$@"; do
   case "$arg" in
     --debug) CONFIG=debug ;;
     --no-launch) LAUNCH=0 ;;
+    --no-install) INSTALL=0; LAUNCH=0 ;;   # build and sign build/Dot.app only; leave the running app alone
   esac
 done
 
@@ -52,6 +54,10 @@ else
   codesign --force --deep --sign - "$APP"
 fi
 codesign --verify --deep --strict "$APP"
+if (( ! INSTALL )); then
+  echo "built and signed $APP (not installed)"
+  exit 0
+fi
 
 mkdir -p ~/Applications
 INSTALLED=~/Applications/Dot.app

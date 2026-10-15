@@ -46,6 +46,10 @@ case "--ask", "--agent":
     DistributedNotificationCenter.default().postNotificationName(name, object: nil, userInfo: ["text": text], deliverImmediately: true)
     print("sent to Dot")
     exit(0)
+case "--home", "--stop":
+    let name = arguments.first == "--home" ? DotIPC.home : DotIPC.stop
+    DistributedNotificationCenter.default().postNotificationName(name, object: nil, userInfo: nil, deliverImmediately: true)
+    exit(0)
 default:
     break
 }
