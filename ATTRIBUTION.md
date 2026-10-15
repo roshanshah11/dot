@@ -17,6 +17,10 @@ Dot is MIT licensed. Parts of it are ported from, or modelled on, other MIT work
   downloaded by FluidAudio at first use).
 - **cua-driver** by trycua, https://github.com/trycua/cua (MIT), installed separately as
   the optional computer-use MCP server for agents. Nothing from it is bundled.
+- **Kokoro-82M** by hexgrad (Apache 2.0 weights, https://huggingface.co/hexgrad/Kokoro-82M),
+  the MLX conversion by mlx-community, run through **mlx-audio** by Blaizzy (MIT,
+  https://github.com/Blaizzy/mlx-audio) with **misaki** (Apache 2.0) for phonemes. All
+  installed into `~/Dot/tts` by `scripts/install-tts.sh`; nothing is bundled.
 
 HeyClicky (the commercial product that grew out of Clicky) was studied from its public
 download to understand its architecture: its notch HUD, named agents with a workspace
