@@ -92,17 +92,30 @@ final class NotchHUD {
         }
     }
 
+    private var inputTimeout: DispatchWorkItem?
+
     func showInput() {
         model.showInput = true
         model.phase = .hidden
         refreshVisibility()
+        // A non-activating panel takes the keyboard without making Dot the frontmost app,
+        // so the user's window keeps focus and the next screenshot still shows it active.
         panel?.makeKeyAndOrderFront(nil)
-        NSApp.activate(ignoringOtherApps: true)
+        // An untouched field goes away on its own, so a stray tap does not pin the HUD open.
+        inputTimeout?.cancel()
+        let work = DispatchWorkItem { [weak self] in
+            guard let self, self.model.showInput, self.model.inputText.isEmpty else { return }
+            self.hideInput()
+        }
+        inputTimeout = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 12, execute: work)
     }
 
     func hideInput() {
+        inputTimeout?.cancel()
         model.showInput = false
         model.inputText = ""
+        if panel?.isKeyWindow == true { panel?.resignKey() }
         refreshVisibility()
     }
 
@@ -142,7 +155,7 @@ final class NotchHUD {
         panel.level = .statusBar
         panel.collectionBehavior = [.canJoinAllSpaces, .stationary, .fullScreenAuxiliary]
         panel.isFloatingPanel = true
-        panel.becomesKeyOnlyIfNeeded = true
+        panel.becomesKeyOnlyIfNeeded = false
         panel.hidesOnDeactivate = false
         panel.isReleasedWhenClosed = false
         panel.contentView = NSHostingView(rootView: NotchHUDView(model: model, geometry: currentGeometry(), onClose: { [weak self] in

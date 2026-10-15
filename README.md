@@ -42,8 +42,10 @@ to the first spoken word on an M3. Hard questions escalate to Opus on their own.
 - **Pointing** uses the Accessibility tree first: Dot sends the model a numbered list of
   on-screen elements with exact coordinates, and snaps the dot to the matching element's
   frame. The model's own screenshot coordinates are the fallback.
-- **Speech output** is Apple's on-device synthesizer behind a small provider protocol,
-  so ElevenLabs or Kokoro can be added without touching the rest.
+- **Speech output** is Kokoro-82M (Apache 2.0) on the Neural Engine through mlx-audio,
+  a calm, even voice that synthesizes a sentence in about half a second on an M3. It runs
+  as a worker process speaking a three-line JSON protocol, so Piper or any other engine
+  can replace it; Apple's on-device synthesizer is the fallback when no worker is set up.
 - **Computer use** for agents is [cua-driver](https://github.com/trycua/cua) (MIT) as a
   stdio MCP server, when you install it. Observation calls pass; input calls ask.
 
@@ -63,8 +65,21 @@ first Apple Development identity (or ad-hoc), installs a login agent, and launch
 first launch, grant Microphone, Screen Recording, and Accessibility when macOS asks; the
 Dot window lists what is still missing. Then hold control+option and talk.
 
-The speech model (about 460 MB) downloads on first use into
+The speech-recognition model (about 460 MB) downloads on first use into
 `~/Library/Application Support/FluidAudio/Models`. If you run Murmur, it is already there.
+
+### The voice
+
+```bash
+scripts/install-tts.sh     # Kokoro in ~/Dot/tts (needs uv; about 1.2 GB with spaCy and mlx)
+```
+
+Dot switches to Kokoro on its next launch. `ttsVoice` in the config picks the voice
+(`af_heart` is the default; `af_bella`, `am_michael`, `bf_emma` are good too) and
+`ttsSpeed` the pace. Without the worker Dot uses Apple's best installed voice; download
+an enhanced one in System Settings > Accessibility > Spoken Content if you stay there.
+Any other engine works through `ttsCommand`: a process that reads `{"text": ...}` lines
+and answers `{"wav": "/path"}` lines, as `scripts/dot-tts-kokoro.py` does.
 
 ### Configuration
 

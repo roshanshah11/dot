@@ -233,6 +233,7 @@ final class Talk {
             context = captured.context
         }
         captureTask = nil
+        Log.info("context: app \(context.appName ?? "?") window \(Log.short(context.windowTitle ?? "", 60)) url \(context.url != nil) selected \(context.selectedText?.count ?? 0) elements \(context.elements.count) shots \(shots.count)")
 
         if mode == .agent {
             phase = .idle
@@ -254,6 +255,12 @@ final class Talk {
     }
 
     private func sendTurn(_ message: String, to session: ClaudeSession, kind: SessionKind) {
+        // A new question supersedes the one still being answered, like talking over someone.
+        if let active = activeSession, active.turnInFlight {
+            active.interrupt()
+            stopSpeaking()
+        }
+        hud.hideInput()
         activeSession = session
         responseBuffer = ""
         heldBack = ""
@@ -339,7 +346,8 @@ final class Talk {
         hud.model.response = parsed.spoken
         let kind = activeSession === thinkSession ? "think" : "talk"
         ledger.record(kind: kind, agent: nil, model: turnModel, result: result, summary: hud.model.transcript)
-        Log.info("turn[\(kind)] done in \(result.durationMs) ms, $\(String(format: "%.4f", result.costUSD)), tags \(parsed.tags.count)")
+        Log.info("turn[\(kind)] done in \(result.durationMs) ms, $\(String(format: "%.4f", result.costUSD)), tags \(parsed.tags.map { "\($0)" }.joined(separator: " | "))")
+        Log.info("turn[\(kind)] said: \(Log.short(parsed.spoken, 240))")
 
         var escalated = false
         for tag in parsed.tags {
@@ -366,23 +374,38 @@ final class Talk {
                 }
             }
         }
+        responseBuffer = ""
+        heldBack = ""
         if escalated { return }
-        if phase != .speaking || !speaker.isSpeaking {
-            speakingFinished()
-        }
+        scheduleIdleCheck()
     }
 
+    /// Called by the speaker when its queue drains, and polled after a result: when nothing
+    /// is speaking and no turn is in flight, settle back to idle and hide after a beat.
     private func speakingFinished() {
-        guard phase == .speaking || phase == .thinking else { return }
-        if activeSession?.turnInFlight == true { return }
-        phase = .idle
-        hud.set(phase: .done)
-        idleTimer?.invalidate()
-        idleTimer = Timer.scheduledTimer(withTimeInterval: 1.6, repeats: false) { [weak self] _ in
+        scheduleIdleCheck()
+    }
+
+    private var idleCheckTimer: Timer?
+
+    private func scheduleIdleCheck() {
+        idleCheckTimer?.invalidate()
+        idleCheckTimer = Timer.scheduledTimer(withTimeInterval: 0.4, repeats: true) { [weak self] timer in
             Task { @MainActor in
-                guard let self, self.phase == .idle else { return }
-                self.overlay.fadeOut(after: 0)
-                self.hud.set(phase: .hidden)
+                guard let self else { timer.invalidate(); return }
+                if self.phase == .listening || self.phase == .transcribing { timer.invalidate(); return }
+                if self.activeSession?.turnInFlight == true || self.speaker.isSpeaking { return }
+                timer.invalidate()
+                self.phase = .idle
+                self.hud.set(phase: .done)
+                self.idleTimer?.invalidate()
+                self.idleTimer = Timer.scheduledTimer(withTimeInterval: 1.6, repeats: false) { [weak self] _ in
+                    Task { @MainActor in
+                        guard let self, self.phase == .idle else { return }
+                        self.overlay.fadeOut(after: 0)
+                        self.hud.set(phase: .hidden)
+                    }
+                }
             }
         }
     }

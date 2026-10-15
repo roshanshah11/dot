@@ -8,7 +8,15 @@ struct DotConfig: Codable {
     var thinkModel = "opus"
     var agentModel = "opus"
     var agentEffort: String? = nil
-    /// `AVSpeechSynthesisVoice` identifier; nil picks the best installed English voice.
+    /// "auto": Kokoro through the worker in ~/Dot/tts when it is installed, else Apple speech.
+    /// "apple": Apple's synthesizer only. "command": always `ttsCommand`.
+    var ttsProvider = "auto"
+    /// A worker process speaking Dot's one-line JSON protocol (see scripts/dot-tts-kokoro.py).
+    var ttsCommand: [String] = []
+    /// Voice name handed to the worker (Kokoro: af_heart, af_bella, am_michael, bf_emma, ...).
+    var ttsVoice = "af_heart"
+    var ttsSpeed: Float = 1.0
+    /// `AVSpeechSynthesisVoice` identifier for Apple speech; nil picks the best installed English voice.
     var voiceIdentifier: String? = nil
     var speechRate: Float = 0.5
     var agentsRoot = "~/Dot/agents"
@@ -68,6 +76,26 @@ struct DotConfig: Codable {
     }
 
     var claudeExecutable: URL { URL(fileURLWithPath: Self.expand(claudePath)) }
+
+    /// The worker command for the configured provider, or nil for Apple speech.
+    func resolvedTTSCommand() -> [String]? {
+        switch ttsProvider {
+        case "apple":
+            return nil
+        case "command":
+            return ttsCommand.isEmpty ? nil : ttsCommand.map(Self.expand)
+        default:
+            if !ttsCommand.isEmpty { return ttsCommand.map(Self.expand) }
+            let python = Self.expand("~/Dot/tts/venv/bin/python")
+            let candidates = [
+                Bundle.main.resourceURL?.appendingPathComponent("dot-tts-kokoro.py").path,
+                Self.expand("~/Dot/tts/dot-tts-kokoro.py"),
+            ].compactMap { $0 }
+            guard FileManager.default.isExecutableFile(atPath: python),
+                  let script = candidates.first(where: { FileManager.default.fileExists(atPath: $0) }) else { return nil }
+            return [python, script, "--voice", ttsVoice, "--speed", String(ttsSpeed)]
+        }
+    }
     var agentsRootURL: URL { URL(fileURLWithPath: Self.expand(agentsRoot), isDirectory: true) }
     var talkRootURL: URL { URL(fileURLWithPath: Self.expand(talkRoot), isDirectory: true) }
     var dotHome: URL { agentsRootURL.deletingLastPathComponent() }

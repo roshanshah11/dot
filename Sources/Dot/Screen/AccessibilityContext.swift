@@ -39,9 +39,25 @@ enum AccessibilityContext {
         "AXRadioGroup", "AXUnknown", "AXGrid", "AXBusyIndicator",
     ]
 
-    static func capture(maxElements: Int, timeBudget: TimeInterval = 0.25) -> ScreenContext {
+    /// The last app other than Dot that was active; set by the AppDelegate's workspace observer.
+    /// When Dot's own HUD has the keyboard, this is the app the user is really looking at.
+    static var lastForegroundApp: NSRunningApplication?
+
+    static func observeForegroundApp() {
+        lastForegroundApp = NSWorkspace.shared.frontmostApplication
+        NSWorkspace.shared.notificationCenter.addObserver(forName: NSWorkspace.didActivateApplicationNotification, object: nil, queue: .main) { note in
+            guard let app = note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication,
+                  app.processIdentifier != ProcessInfo.processInfo.processIdentifier else { return }
+            lastForegroundApp = app
+        }
+    }
+
+    static func capture(maxElements: Int, timeBudget: TimeInterval = 0.6) -> ScreenContext {
         var context = ScreenContext()
-        guard AXIsProcessTrusted(), let app = NSWorkspace.shared.frontmostApplication else { return context }
+        guard AXIsProcessTrusted() else { return context }
+        var candidate = NSWorkspace.shared.frontmostApplication
+        if candidate?.processIdentifier == ProcessInfo.processInfo.processIdentifier { candidate = lastForegroundApp }
+        guard let app = candidate else { return context }
         context.appName = app.localizedName
         context.bundleIdentifier = app.bundleIdentifier
         let appElement = AXUIElementCreateApplication(app.processIdentifier)

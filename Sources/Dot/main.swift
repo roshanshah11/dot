@@ -38,6 +38,14 @@ case "--voices":
         print("\(voice.quality.padding(toLength: 9, withPad: " ", startingAt: 0)) \(voice.name)\n          \(voice.id)")
     }
     exit(0)
+case "--ask", "--agent":
+    // Talk to the running app: `Dot --ask "what's in front?"`, `Dot --agent "sort my downloads"`.
+    let text = arguments.dropFirst().joined(separator: " ").trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !text.isEmpty else { print("usage: Dot --ask <question> | Dot --agent <brief>"); exit(2) }
+    let name = arguments.first == "--ask" ? DotIPC.ask : DotIPC.agent
+    DistributedNotificationCenter.default().postNotificationName(name, object: nil, userInfo: ["text": text], deliverImmediately: true)
+    print("sent to Dot")
+    exit(0)
 default:
     break
 }

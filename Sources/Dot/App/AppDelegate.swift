@@ -7,7 +7,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var config = DotConfig.load()
     private var hud: NotchHUD!
     private var overlay: OverlayManager!
-    private var speaker: AppleSpeaker!
+    private var speaker: TTSProvider!
     private var transcriber: Transcriber!
     private var ledger: Ledger!
     private var agents: AgentManager!
@@ -20,7 +20,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         Log.info("Dot \(Version.string) launching; config \(DotConfig.fileURL.path)")
         hud = NotchHUD(accentHex: config.pointerColorHex)
         overlay = OverlayManager(colorHex: config.pointerColorHex)
-        speaker = AppleSpeaker(voiceIdentifier: config.voiceIdentifier, rate: config.speechRate)
+        let apple = AppleSpeaker(voiceIdentifier: config.voiceIdentifier, rate: config.speechRate)
+        if let command = config.resolvedTTSCommand() {
+            let worker = CommandSpeaker(command: command, fallback: apple)
+            worker.start()
+            speaker = worker
+        } else {
+            speaker = apple
+        }
         ledger = Ledger(url: config.dotHome.appendingPathComponent("ledger.sqlite"))
         let hud = self.hud!
         transcriber = Transcriber(onDownloadProgress: { progress in
@@ -31,8 +38,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         home = HomeWindowController(agents: agents, ledger: ledger, config: config)
 
         installStatusItem()
+        AccessibilityContext.observeForegroundApp()
         hotkeys.onEvent = { [weak self] event in self?.talk.hotkey(event) }
+        installIPC()
         requestPermissionsThenStart()
+    }
+
+    /// `Dot --ask ...` and `Dot --agent ...` from a shell reach the running app here.
+    private func installIPC() {
+        let center = DistributedNotificationCenter.default()
+        center.addObserver(forName: DotIPC.ask, object: nil, queue: .main) { [weak self] note in
+            guard let text = note.userInfo?["text"] as? String else { return }
+            Task { @MainActor in self?.talk.askTyped(text) }
+        }
+        center.addObserver(forName: DotIPC.agent, object: nil, queue: .main) { [weak self] note in
+            guard let text = note.userInfo?["text"] as? String else { return }
+            Task { @MainActor in
+                guard let self else { return }
+                let context = AccessibilityContext.capture(maxElements: 20)
+                self.agents.handoff(brief: text, agentName: nil, context: context, shots: nil)
+            }
+        }
     }
 
     func applicationWillTerminate(_ notification: Notification) {
@@ -116,4 +142,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
 enum Version {
     static let string = "0.1.0"
+}
+
+enum DotIPC {
+    static let ask = Notification.Name("com.roshan.dot.ask")
+    static let agent = Notification.Name("com.roshan.dot.agent")
 }

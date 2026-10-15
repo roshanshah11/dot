@@ -54,22 +54,44 @@ final class AppleSpeaker: NSObject, TTSProvider, AVSpeechSynthesizerDelegate {
 
     private func finishedOne() {
         queued = max(0, queued - 1)
-        if queued == 0, !synthesizer.isSpeaking {
-            onFinishedAll?()
+        guard queued == 0 else { return }
+        // `isSpeaking` can still read true inside the delegate callback for the last utterance;
+        // our own queue count is the truth, so report on the next run-loop turn.
+        DispatchQueue.main.async { [weak self] in
+            guard let self, self.queued == 0 else { return }
+            self.onFinishedAll?()
         }
     }
 
-    /// The configured voice, else the highest-quality installed English voice.
+    /// Apple's novelty and legacy voices (Albert, Zarvox, Fred...) are never picked on their own.
+    static let noveltyVoices: Set<String> = [
+        "Albert", "Bad News", "Bahh", "Bells", "Boing", "Bubbles", "Cellos", "Good News", "Jester", "Organ", "Superstar",
+        "Trinoids", "Whisper", "Wobble", "Zarvox", "Fred", "Junior", "Kathy", "Ralph", "Eddy", "Flo", "Grandma", "Grandpa",
+        "Reed", "Rocko", "Sandy", "Shelley",
+    ]
+
+    /// Preferred natural voices, best first, when no premium or enhanced voice is installed.
+    static let preferredCompact = ["Samantha", "Ava", "Zoe", "Allison", "Nicky", "Susan", "Evan", "Tom", "Alex", "Karen", "Daniel", "Moira", "Tessa", "Fiona"]
+
+    /// The configured voice, else the best installed English voice: premium, then enhanced,
+    /// then a known natural compact voice, never a novelty voice.
     static func pickVoice(preferred identifier: String?) -> AVSpeechSynthesisVoice? {
         if let identifier, let voice = AVSpeechSynthesisVoice(identifier: identifier) { return voice }
-        let english = AVSpeechSynthesisVoice.speechVoices().filter { $0.language.hasPrefix("en") }
-        let ranked = english.sorted { a, b in
-            if a.quality != b.quality { return a.quality.rawValue > b.quality.rawValue }
-            let aUS = a.language == "en-US", bUS = b.language == "en-US"
-            if aUS != bUS { return aUS }
-            return a.name < b.name
+        let english = AVSpeechSynthesisVoice.speechVoices().filter { $0.language.hasPrefix("en") && !noveltyVoices.contains($0.name) }
+        func rank(_ voice: AVSpeechSynthesisVoice) -> (Int, Int, Int, String) {
+            let quality: Int
+            switch voice.quality {
+            case .premium: quality = 0
+            case .enhanced: quality = 1
+            default: quality = 2
+            }
+            let preferredIndex = preferredCompact.firstIndex(where: { voice.name.hasPrefix($0) }) ?? preferredCompact.count
+            let region = voice.language == "en-US" ? 0 : 1
+            return (quality, preferredIndex, region, voice.name)
         }
-        return ranked.first ?? AVSpeechSynthesisVoice(language: "en-US")
+        let ranked = english.sorted { rank($0) < rank($1) }
+        if let best = ranked.first { return best }
+        return AVSpeechSynthesisVoice(language: "en-US")
     }
 
     static func availableVoices() -> [(id: String, name: String, quality: String)] {
