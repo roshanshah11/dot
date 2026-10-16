@@ -9,9 +9,9 @@ The binary names 212 Swift files. 42 are third-party (Sentry 19, PostHog 21, `re
 
 | Status | Components | What it means |
 |---|---|---|
-| built | 57 | Dot has a working counterpart, sometimes built a different way (noted in the row) |
-| partial | 37 | Dot covers part of it; the row says what is missing |
-| missing | 54 | Nothing in Dot does it |
+| built | 60 | Dot has a working counterpart, sometimes built a different way (noted in the row) |
+| partial | 36 | Dot covers part of it; the row says what is missing |
+| missing | 52 | Nothing in Dot does it |
 | n/a | 21 | Exists because HeyClicky is a hosted product (16: accounts, billing, referrals, paywall, analytics, remote config, the Codex runtime bridge, its OpenAI client), the hosted Composio catalog (3), a developer preview (1) and a release announcement (1). Dot runs on Claude Code and has no accounts |
 | total | 169 | |
 
@@ -37,7 +37,7 @@ Paths in the Dot owner column are relative to the repository root. "(inferred)" 
 
 | HeyClicky component | What it does | Dot owner | Status | Note |
 |---|---|---|---|---|
-| NotchWindowManager | the panel that hangs from the notch, per screen | `Sources/Dot/Notch/NotchHUD.swift` | built | one panel, on the notched (or main) screen |
+| NotchWindowManager | the panel that hangs from the notch, per screen | `Sources/Dot/Notch/NotchHUD.swift`, `Sources/DotKit/NotchGeometry.swift` | built | one panel, on the notched (or main) screen; since round six sized to its drawing (compact 221×42, larger only with a card up), after its compact, hover and expanded geometries |
 | NotchPresenter | decides which notch surface shows and reads the feature toggles (inferred) | `Sources/Dot/Notch/NotchHUD.swift` | built | |
 | NotchRootView | root view of the notch panel | `Sources/Dot/Notch/NotchHUD.swift` | built | |
 | NotchActivitySurface | state line: listening, thinking, speaking, dictating, with a waveform (observed) | `Sources/Dot/Notch/NotchHUD.swift` | built | the state in a word (listening, thinking, thinking deeper, speaking, dictating) with the bars (round five) |
@@ -120,7 +120,7 @@ The visual grammar has no files of its own in HeyClicky (it lives in the respons
 | CodexHomeSpaceCaches | on-disk thread cache and turn journal | `Sources/Dot/Agents/AgentManager.swift` | built | `.dot/transcript.jsonl` and a resumable session id |
 | CompanionManager+AgentNotifications | announces when a Clicky starts or finishes (inferred) | `Sources/Dot/Agents/AgentManager.swift` | built | |
 | CompanionManager+AgentCommentaryStream | feeds what background agents just did into the voice session as silent context | `Sources/Dot/Brain/Talk.swift` | built | an agents line in every talk turn: who is working, who finished, what they said (`AgentManager.recentRuns`) |
-| CompanionManager+ClickyOrganizer | founds named Clickys from earlier threads | `Sources/DotKit/TagParser.swift`, `Sources/Dot/Agents/AgentManager.swift` | partial | `[NEW_AGENT]` founds one per request; no sweep over history |
+| CompanionManager+ClickyOrganizer | founds named Clickys from earlier threads | `Sources/DotKit/TagParser.swift`, `Sources/Dot/Agents/AgentManager.swift` | partial | `[NEW_AGENT]` founds one per tag; the talk prompt now asks for one tag per agent (up to five) and two-word names; no sweep over earlier threads |
 | CompanionManager+HomeSpace | sends Home messages to a Clicky | `Sources/Dot/Home/HomeWindow.swift`, `Sources/Dot/Agents/AgentManager.swift` | built | |
 | ClickyRoster | the Clickys: created, archived, renamed, a portrait each | `Sources/Dot/Agents/AgentManager.swift` | built | no portraits |
 | ClickyAgentIconView | picks an agent's icon from words in its job | `Sources/Dot/Home/HomeWindow.swift` | partial | first-letter avatar |
@@ -177,8 +177,8 @@ The visual grammar has no files of its own in HeyClicky (it lives in the respons
 | ProactiveAgentsClient | fetches proactive agent suggestions | none | missing | no suggestion sweep |
 | HomeSpaceSuggestionsPage | suggestion cards with yes, no and "not now because", adjust, a daily sweep | `Sources/Dot/Home/LibraryPages.swift` | built | the Suggestions page: toggles, the yes/no history from ~/Dot/suggestions.json, resets (round five) |
 | NotchMorningSuggestionsSurface | morning card "I can do N things for you today" (observed) | `Sources/Dot/Brain/Talk.swift` | built | the morning card: show me lists deadlines, calls, mail and commitments with do it / skip; back twice at 20 min (round five) |
-| CompanionManager+ClickyRoutines | runs a Clicky's routine and reports what changed since the last run | none | missing | |
-| CompanionManager+AgentCrons | scheduled agent runs (a `ScheduledAgentCronsResponse` type) | none | missing | |
+| CompanionManager+ClickyRoutines | runs a Clicky's routine and reports what changed since the last run | `Sources/Dot/Agents/RoutineScheduler.swift`, `Sources/DotKit/Routines.swift` | built | round six: the brief says it is a scheduled run and asks for what changed; three failures pause |
+| CompanionManager+AgentCrons | scheduled agent runs (a `ScheduledAgentCronsResponse` type) | `Sources/Dot/Agents/RoutineScheduler.swift` | built | a 60 s tick; daily, weekdays, weekly, every N hours; ~/Dot/routines.json |
 
 ### Integrations and skills
 
@@ -249,7 +249,7 @@ Also in Resources with no Dot counterpart beyond his own Claude Code skills: `Cl
 
 | HeyClicky component | What it does | Dot owner | Status | Note |
 |---|---|---|---|---|
-| HomeSpaceSettingsPage | settings sidebar: Account, General, Voice, Microphone, Dictation, Shortcuts, Cursor, Agents, Integrations (observed) | `Sources/Dot/Home/HomeWindow.swift` | partial | one page: talking, agents, models, context folder, permissions |
+| HomeSpaceSettingsPage | settings sidebar: Account, General, Voice, Microphone, Dictation, Shortcuts, Cursor, Agents, Integrations (observed) | `Sources/Dot/Home/HomeWindow.swift`, `Sources/Dot/Home/SettingsPages.swift`, `Sources/Dot/Home/AgentPages.swift` | built | General, Voice, Microphone, Dictation, Shortcuts, Cursor, Skills, Suggestions and (round six) Agents: rules, helpers, routines, spend; no Account or Integrations page (no accounts; connectors through Claude Code) |
 | HomeSpaceSettingsContent | the controls on those pages | `Sources/Dot/Home/HomeWindow.swift`, `Sources/Dot/App/Config.swift` | partial | no mic, voice or language picker, dictionary, cursor color or recordings toggle; the rest lives in config.json |
 | ClickyHotkeyConfiguration | four shortcuts (talk, text, dictate, hands-free dictate) with reset | `Sources/Dot/Input/HotkeyMonitor.swift` | partial | fixed chords: control+option, plus shift for an agent, control+fn to dictate; hands-free long dictation is Murmur's (double-tap fn), by his decision 2026-10-15 |
 | ClickyHotkeyRecorder | records a new key combination | none | missing | |
@@ -296,7 +296,7 @@ The missing or partial rows that a student using Dot to be tutored, to dictate a
 5. ScreenAnnotationManager: tutoring on a proof needs two marks ("why does this line follow from this one"), and the model should know a line was crossed out rather than circled.
 6. CompanionManager+RealtimeVoice: a tutoring exchange runs back and forth; without interrupting by voice or an always-on mode, every reply costs a key press.
 7. RealtimeMicrophoneCapture: when headphones connect or the mic stalls, Dot hears nothing and shows "didn't catch that"; failover and a NotchMicrophoneTroubleSurface-style card would name the cause.
-8. CompanionManager+ClickyRoutines: recurring agent work (a weekly problem-set check, a daily recruiting news brief) has to be asked for every time; CompanionManager+AgentCrons is the scheduler.
+8. (built in round six) CompanionManager+ClickyRoutines and CompanionManager+AgentCrons: routines, scheduled by voice or from Home › Agents.
 9. CompanionManager+Annotation: a walkthrough step can land before the pane repaints; waiting until the screen settles is already on docs/tasks.md.
 10. HomeSpaceCoworkTranscript: checking an agent's work means reading one-line steps with no command output to open.
 11. MarkdownViewerContentView: agents write Markdown with tables, and Home shows it through QuickLook or as inline text (MarkdownViewerTableView is the table half).

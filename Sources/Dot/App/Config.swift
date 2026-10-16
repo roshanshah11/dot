@@ -109,6 +109,15 @@ struct DotConfig: Codable {
     /// The version that last showed its "what's new" line, so an update is announced once.
     var lastSeenVersion: String? = nil
 
+    // Round six: agents the way HeyClicky, dots and Muse manage them.
+    /// What agents do on their own, ask about, or leave to him, class by class (~/Dot/rules.json).
+    var agentRulesFile = "~/Dot/rules.json"
+    /// Routines: a standing agent's task on a schedule, run while Dot is open (~/Dot/routines.json).
+    var routines = true
+    var routinesFile = "~/Dot/routines.json"
+    /// An agent may hand independent parts to helpers (Claude Code subagents on Opus, two at most).
+    var agentHelpers = true
+
     /// Atlas tools a talk turn may call without asking: everything that reads, remembers or drafts.
     /// Sends, submits, posts and harness administration stay with agents and his yes.
     static let talkAtlasTools = [
@@ -191,6 +200,10 @@ struct DotConfig: Codable {
         morningSuggestions = get(.morningSuggestions, d.morningSuggestions)
         microphoneName = try? c.decodeIfPresent(String.self, forKey: .microphoneName)
         lastSeenVersion = try? c.decodeIfPresent(String.self, forKey: .lastSeenVersion)
+        agentRulesFile = get(.agentRulesFile, d.agentRulesFile)
+        routines = get(.routines, d.routines)
+        routinesFile = get(.routinesFile, d.routinesFile)
+        agentHelpers = get(.agentHelpers, d.agentHelpers)
     }
 
     static var directory: URL {
@@ -266,6 +279,8 @@ struct DotConfig: Codable {
 
     var agentsRootURL: URL { URL(fileURLWithPath: Self.expand(agentsRoot), isDirectory: true) }
     var talkRootURL: URL { URL(fileURLWithPath: Self.expand(talkRoot), isDirectory: true) }
+    var agentRulesURL: URL { URL(fileURLWithPath: Self.expand(agentRulesFile)) }
+    var routinesURL: URL { URL(fileURLWithPath: Self.expand(routinesFile)) }
     var dotHome: URL { agentsRootURL.deletingLastPathComponent() }
 
     /// nil when the configured file does not exist, so the CLI gets no `--mcp-config`.

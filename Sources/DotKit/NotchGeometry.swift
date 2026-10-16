@@ -24,10 +24,23 @@ public struct NotchGeometry: Equatable {
     public static let fallbackNotchWidth: CGFloat = 215
     public static let fallbackNotchHeight: CGFloat = 32
 
-    /// Fixed panel covering the notch and the area below it. Never resized while shown;
-    /// the SwiftUI content inside grows and shrinks.
+    /// The fixed canvas the snapshot harness renders into (`Dot --snapshot`). The live window is
+    /// sized by `frame(fitting:)` instead.
     public var panelFrame: CGRect {
         CGRect(x: centerX - Self.panelWidth / 2, y: topY - Self.panelHeight, width: Self.panelWidth, height: Self.panelHeight)
+    }
+
+    /// The resting tab: the notch and a small margin either side, a few points below it.
+    public var compactSize: CGSize { CGSize(width: notchWidth + 36, height: notchHeight + 10) }
+
+    /// A window the size of what it draws, hanging from the top edge and centred on the notch, never
+    /// smaller than the resting tab. HeyClicky's notch window works this way too (its compact, hover
+    /// and expanded geometries); a window larger than its drawing takes the clicks meant for whatever
+    /// sits under it: tabs, toolbars, the menu bar.
+    public func frame(fitting size: CGSize) -> CGRect {
+        let width = max(ceil(size.width), compactSize.width)
+        let height = max(ceil(size.height), compactSize.height)
+        return CGRect(x: (centerX - width / 2).rounded(), y: topY - height, width: width, height: height)
     }
 
     public static func measure(frame: CGRect, safeAreaTop: CGFloat, auxLeft: CGRect?, auxRight: CGRect?) -> NotchGeometry {

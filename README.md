@@ -268,6 +268,30 @@ every talk turn and dictation is saved under `~/Dot/transcripts/`; agents run wi
 chat prompt, the vault's rules and all of its tools; a BIOS 11140 course map joined the math one
 in `~/Dot/talk/context/`.
 
+## Round six: the notch out of the way, and agents he can control (2026-10-16)
+
+His asks: the bar at the top "is too big and covers a lot of stuff"; replicate HeyClicky's features; "how do i
+control agents, general agents, agent swarms, specific task agents", with the logic of OpenAI's dots and Meta's
+Muse. What changed:
+
+- **The notch takes only the space it draws.** The window hugs its content (221×42 at rest, larger only while a
+  card is up), the way HeyClicky's notch moves between compact, hover and expanded geometries. The old window was
+  an invisible 620×620 panel that swallowed every click under it. Escape clears the cards under the notch.
+- **Rules for agents** (`~/Dot/rules.json`, Home › Agents): five kinds of action (reading, writing, using apps,
+  sending and paying, changing the Mac) each get one of four behaviors: do it, only if I asked, ask first, leave it
+  to me. Defaults plus per-agent overrides; the shape is dots' Custom Rules. A consent card offers "Allow for this
+  task", HeyClicky's "your yes covers one conversation". Every decision is in the agent's transcript.
+- **Routines** (`~/Dot/routines.json`): "every morning at eight, have Email draft the replies" sets one by voice
+  (`[ROUTINE:agent:when:brief]`); the Agents page lists them with pause, resume, run now and delete. They run while
+  Dot is open and online, never on a call; a run missed while the Mac slept happens once; three failures pause one
+  with the reason; results land in the agent's thread with no chime.
+- **Helpers.** An agent may hand independent parts to up to two subagents and report once; the card and Home say
+  "with N helpers". Standing agents get two-word names that say the job; "make me three agents: …" founds up to five.
+- **Spend per agent** on the Agents page, from the ledger.
+- **From his chats:** the course-policy refusals are gone (a prompt rule; the refusal came from Atlas's course
+  facts, not Dot's code), a too-short tap no longer shows an error, and `docs/agents.md` holds the agent design with
+  its evidence. The research behind the round: `~/roshan/Learning/Research/2026-10-16-heyclicky-features/`.
+
 ## Round five: how it acts, and what it draws (2026-10-16)
 
 His ask: "build my clicky alternative, not just in the scaffold but in how it acts, plus a professional

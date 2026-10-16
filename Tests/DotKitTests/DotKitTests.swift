@@ -188,6 +188,25 @@ final class CoordinatesTests: XCTestCase {
         XCTAssertEqual(rect, CGRect(x: 100, y: 920, width: 200, height: 30))
     }
 
+    func testNotchWindowFitsItsDrawing() {
+        let geometry = NotchGeometry.measure(frame: CGRect(x: 0, y: 0, width: 1512, height: 982), safeAreaTop: 32,
+                                             auxLeft: CGRect(x: 0, y: 950, width: 656, height: 32), auxRight: CGRect(x: 856, y: 950, width: 656, height: 32))
+        // Resting: the notch plus a margin, hanging from the top edge, centred on the notch.
+        let compact = geometry.frame(fitting: .zero)
+        XCTAssertEqual(compact.size, geometry.compactSize)
+        XCTAssertEqual(compact.maxY, 982)
+        XCTAssertEqual(compact.midX, 756, accuracy: 0.5)
+        // A card: the window is exactly its size, never the old fixed canvas.
+        let card = geometry.frame(fitting: CGSize(width: 480.4, height: 212.2))
+        XCTAssertEqual(card.width, 481)
+        XCTAssertEqual(card.height, 213)
+        XCTAssertEqual(card.maxY, 982)
+        XCTAssertEqual(card.midX, 756, accuracy: 0.5)
+        XCTAssertLessThan(card.height, NotchGeometry.panelHeight)
+        // Never narrower than the tab, so the hover target around the notch stays.
+        XCTAssertEqual(geometry.frame(fitting: CGSize(width: 40, height: 4)).width, geometry.notchWidth + 36)
+    }
+
     func testNotchGeometry() {
         let geometry = NotchGeometry.measure(frame: CGRect(x: 0, y: 0, width: 1512, height: 982), safeAreaTop: 32,
                                              auxLeft: CGRect(x: 0, y: 950, width: 650, height: 32), auxRight: CGRect(x: 862, y: 950, width: 650, height: 32))
@@ -607,5 +626,129 @@ final class MorningPlannerTests: XCTestCase {
         XCTAssertFalse(rest.contains { declined.contains($0.key) })
         XCTAssertEqual(MorningPlanner.greeting(count: 1, hour: 9), "morning. i can do 1 thing for you today.")
         XCTAssertEqual(MorningPlanner.greeting(count: 3, hour: 14), "afternoon. i can do 3 things for you today.")
+    }
+}
+
+final class AgentRulesTests: XCTestCase {
+    func testClassifiesToolCalls() {
+        XCTAssertEqual(AgentRules.classify(toolName: "Read", command: nil, flattened: ""), .read)
+        XCTAssertEqual(AgentRules.classify(toolName: "Write", command: nil, flattened: "/Users/x/Dot/agents/dot/output/a.md"), .write)
+        XCTAssertEqual(AgentRules.classify(toolName: "Bash", command: "ls -la ~/Desktop", flattened: ""), .read)
+        XCTAssertEqual(AgentRules.classify(toolName: "Bash", command: "python3 -c 'print(2+2)'", flattened: ""), .read)
+        XCTAssertEqual(AgentRules.classify(toolName: "Bash", command: "mytool --go && ffmpeg -i in.wav out.mp3", flattened: ""), .write)
+        XCTAssertEqual(AgentRules.classify(toolName: "Bash", command: "git status", flattened: ""), .read)
+        XCTAssertEqual(AgentRules.classify(toolName: "Bash", command: "git push origin main", flattened: ""), .outward)
+        XCTAssertEqual(AgentRules.classify(toolName: "Bash", command: "brew install ffmpeg", flattened: ""), .system)
+        XCTAssertEqual(AgentRules.classify(toolName: "Bash", command: "sudo launchctl load x.plist", flattened: ""), .system)
+        XCTAssertEqual(AgentRules.classify(toolName: "Bash", command: "curl -X POST https://api.example.com/orders -d '{}'", flattened: ""), .outward)
+        XCTAssertEqual(AgentRules.classify(toolName: "mcp__claude_ai_Gmail__send_message", command: nil, flattened: ""), .outward)
+        XCTAssertEqual(AgentRules.classify(toolName: "mcp__claude_ai_Gmail__create_draft", command: nil, flattened: ""), .write)
+        XCTAssertEqual(AgentRules.classify(toolName: "mcp__claude_ai_Gmail__search_threads", command: nil, flattened: ""), .read)
+        XCTAssertEqual(AgentRules.classify(toolName: "mcp__cua-driver__click", command: nil, flattened: "{\"element\":\"Place order\"}"), .outward)
+        XCTAssertEqual(AgentRules.classify(toolName: "mcp__cua-driver__click", command: nil, flattened: "{\"element\":\"Next page\"}"), .computer)
+        XCTAssertEqual(AgentRules.classify(toolName: "mcp__atlas__search", command: nil, flattened: ""), .read)
+        XCTAssertEqual(AgentRules.classify(toolName: "Agent", command: nil, flattened: ""), .read)
+    }
+
+    func testDefaultsOverridesAndBriefLine() {
+        var rules = AgentRules.standard
+        XCTAssertEqual(rules.behavior(for: .read), .act)
+        XCTAssertEqual(rules.behavior(for: .outward), .ask)
+        rules.set(.mine, for: .outward, agent: "email")
+        rules.set(.ifAsked, for: .computer, agent: nil)
+        XCTAssertEqual(rules.behavior(for: .outward, agent: "email"), .mine)
+        XCTAssertEqual(rules.behavior(for: .outward, agent: "physics"), .ask)
+        XCTAssertEqual(rules.behavior(for: .computer, agent: "physics"), .ifAsked)
+        XCTAssertTrue(rules.hasOverrides(for: "email"))
+        rules.set(nil, for: .outward, agent: "email")
+        XCTAssertFalse(rules.hasOverrides(for: "email"))
+        rules.set(.mine, for: .system, agent: nil)
+        let line = rules.briefLine(for: "physics")
+        XCTAssertTrue(line.contains("his to do, never yours: changing the mac"))
+        XCTAssertTrue(line.contains("Dot shows him a card before: using apps, sending and paying"))
+    }
+
+    func testBriefAsks() {
+        XCTAssertTrue(AgentRules.briefAsks(for: .outward, brief: "send the reply to gabriel once it reads right"))
+        XCTAssertFalse(AgentRules.briefAsks(for: .outward, brief: "draft a reply to gabriel"))
+        XCTAssertTrue(AgentRules.briefAsks(for: .computer, brief: "open canvas and click through to the lab report"))
+        XCTAssertFalse(AgentRules.briefAsks(for: .system, brief: "summarize the paper"))
+    }
+
+    func testRoundTripsThroughJSON() throws {
+        var rules = AgentRules.standard
+        rules.set(.mine, for: .outward, agent: "email")
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("dot-rules-\(UUID().uuidString).json")
+        try rules.save(to: url)
+        XCTAssertEqual(AgentRules.load(from: url), rules)
+        XCTAssertEqual(AgentRules.load(from: url.appendingPathExtension("missing")), .standard)
+    }
+}
+
+final class RoutineTests: XCTestCase {
+    private var chicago: Calendar {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(identifier: "America/Chicago")!
+        return calendar
+    }
+
+    private func date(_ y: Int, _ mo: Int, _ d: Int, _ h: Int, _ mi: Int) -> Date {
+        chicago.date(from: DateComponents(year: y, month: mo, day: d, hour: h, minute: mi))!
+    }
+
+    func testParsesPlainSchedules() {
+        XCTAssertEqual(RoutineSchedule.parse("every morning at 8"), RoutineSchedule(kind: .daily, hour: 8))
+        XCTAssertEqual(RoutineSchedule.parse("every day at 7:30 am"), RoutineSchedule(kind: .daily, hour: 7, minute: 30))
+        XCTAssertEqual(RoutineSchedule.parse("weekdays at nine"), RoutineSchedule(kind: .weekdays, hour: 9))
+        XCTAssertEqual(RoutineSchedule.parse("every weekday at 9:30"), RoutineSchedule(kind: .weekdays, hour: 9, minute: 30))
+        XCTAssertEqual(RoutineSchedule.parse("every monday at 7 pm"), RoutineSchedule(kind: .weekly, hour: 19, weekday: 2))
+        XCTAssertEqual(RoutineSchedule.parse("Every Monday."), RoutineSchedule(kind: .weekly, hour: 9, weekday: 2))
+        XCTAssertEqual(RoutineSchedule.parse("every 3 hours"), RoutineSchedule(kind: .hours, everyHours: 3))
+        XCTAssertEqual(RoutineSchedule.parse("every few hours"), RoutineSchedule(kind: .hours, everyHours: 3))
+        XCTAssertEqual(RoutineSchedule.parse("hourly"), RoutineSchedule(kind: .hours, everyHours: 1))
+        XCTAssertEqual(RoutineSchedule.parse("each evening"), RoutineSchedule(kind: .daily, hour: 18))
+        XCTAssertEqual(RoutineSchedule.parse("every night at 10"), RoutineSchedule(kind: .daily, hour: 22))
+        XCTAssertEqual(RoutineSchedule.parse("every day at noon"), RoutineSchedule(kind: .daily, hour: 12))
+        XCTAssertEqual(RoutineSchedule.parse("at 8 every morning"), RoutineSchedule(kind: .daily, hour: 8))
+        XCTAssertNil(RoutineSchedule.parse("tomorrow"))
+        XCTAssertNil(RoutineSchedule.parse("whenever you can"))
+    }
+
+    func testNextRunRespectsKind() {
+        let friday = date(2026, 10, 16, 10, 0)
+        XCTAssertEqual(RoutineSchedule(kind: .daily, hour: 8).next(after: friday, calendar: chicago), date(2026, 10, 17, 8, 0))
+        XCTAssertEqual(RoutineSchedule(kind: .daily, hour: 14).next(after: friday, calendar: chicago), date(2026, 10, 16, 14, 0))
+        XCTAssertEqual(RoutineSchedule(kind: .weekdays, hour: 9).next(after: friday, calendar: chicago), date(2026, 10, 19, 9, 0))
+        XCTAssertEqual(RoutineSchedule(kind: .weekly, hour: 19, weekday: 2).next(after: friday, calendar: chicago), date(2026, 10, 19, 19, 0))
+        XCTAssertEqual(RoutineSchedule(kind: .hours, everyHours: 3).next(after: friday, calendar: chicago), date(2026, 10, 16, 13, 0))
+    }
+
+    func testWords() {
+        XCTAssertEqual(RoutineSchedule(kind: .daily, hour: 8).words, "every day at 8 am")
+        XCTAssertEqual(RoutineSchedule(kind: .weekdays, hour: 9, minute: 30).words, "weekdays at 9:30 am")
+        XCTAssertEqual(RoutineSchedule(kind: .weekly, hour: 19, weekday: 2).words, "mondays at 7 pm")
+        XCTAssertEqual(RoutineSchedule(kind: .hours, everyHours: 3).words, "every 3 hours")
+    }
+
+    func testDueStartedAndFailuresPause() {
+        let now = date(2026, 10, 16, 8, 0)
+        var book = RoutineBook(routines: [Routine(id: "a", agent: "email", agentName: "Email", brief: "draft replies", schedule: RoutineSchedule(kind: .daily, hour: 8), now: date(2026, 10, 15, 9, 0))])
+        XCTAssertEqual(book.due(at: now).map(\.id), ["a"])
+        book.markStarted("a", at: now)
+        XCTAssertEqual(book.routines[0].nextRun, date(2026, 10, 17, 8, 0))
+        XCTAssertTrue(book.due(at: now).isEmpty)
+        XCTAssertFalse(book.markFinished("a", failed: true, note: "no network"))
+        XCTAssertFalse(book.markFinished("a", failed: true, note: "no network"))
+        XCTAssertTrue(book.markFinished("a", failed: true, note: "no network"))
+        XCTAssertTrue(book.routines[0].paused)
+        XCTAssertEqual(book.routines[0].lastNote, "paused after 3 failed runs in a row: no network")
+        book.routines[0].paused = false
+        XCTAssertFalse(book.markFinished("a", failed: false, note: nil))
+        XCTAssertEqual(book.routines[0].failures, 0)
+    }
+
+    func testRoutineTagParses() {
+        let tags = TagParser.parse("every morning at eight, email drafts the replies. [ROUTINE:Email:every morning at 8:draft replies to anyone waiting on him]").tags
+        XCTAssertEqual(tags, [.routine(agent: "Email", when: "every morning at 8", brief: "draft replies to anyone waiting on him")])
     }
 }

@@ -149,7 +149,7 @@ public struct ConsentPolicy: Equatable {
         return .ask(reason: request.description ?? name)
     }
 
-    static func flatten(_ input: [String: AnyCodableValue]) -> String {
+    public static func flatten(_ input: [String: AnyCodableValue]) -> String {
         input.values.map { value -> String in
             switch value {
             case .string(let s): return s

@@ -19,7 +19,7 @@ metered (9 messages left this month) and its UI cannot be driven from a shell (n
 so the behavioral rows below rest on the recorded session plus static evidence, graded by hand. They
 are not a REA-signed result; the unknowns say what a capture would settle.
 
-Totals: 90 rows. 68 pass, 5 beyond HeyClicky, 11 fail (7 his call or cosmetic, 4 to build), 2 partial, 4 n/a; 11 points a live run would settle.
+Totals: 91 rows. 70 pass, 5 beyond HeyClicky, 10 fail (6 his call or cosmetic, 4 to build), 2 partial, 4 n/a; 8 residual unknowns (below, also recorded with REA on 2026-10-16).
 
 ## 1. The notch: surfaces and states
 
@@ -47,6 +47,7 @@ Totals: 90 rows. 68 pass, 5 beyond HeyClicky, 11 fail (7 his call or cosmetic, 4
 | 1.20 | Unread Clickys surface, skill-pinned surface | B NotchUnreadClickysSurface, NotchSkillPinnedSurface | unread dots live in Home's rail; agents finish with a spoken line and a card | pass, another place |
 | 1.21 | Hand-off surface and indicator chip | B NotchHandoffSurface, HandoffIndicatorChipView | the region bar's "hand to an agent" and the agent card | pass |
 | 1.22 | File drop onto the notch opens the composer | B NotchFileDropComposerOpenSource, `notch_file_drag_composer_opened` | nothing | fail |
+| 1.23 | The resting notch is small and takes no clicks beyond its drawing; the window moves between compact, hover and expanded sizes | B NotchWindowManager, notchCompact, notchHover, notchExpanded, NotchPillShape; changelog 1.0.52 ("you told us the notch got too big, so we made it smaller") | the window is sized to its content (221×42 at rest, measured live 16:54; it was 620×620 and swallowed the clicks under it: his report 10/16) | pass |
 | 1.23 | Use-case carousel, onboarding card, tutorial invite, signed-out placeholder | B NotchUseCaseCarousel, NotchOnboardingCardSurface, NotchTutorialInviteSurface, NotchSignedOutPlaceholder | n/a (no onboarding, no accounts) | n/a |
 | 1.24 | Agent HUD card: avatar, "Name • Working", live line, Stop and Open | S 09:57:14 (Research Buddy card); B CodexHUDWindow, CodexHUDView | the agent card: avatar on its own hue, name • working / done / needs you, elapsed, the live line with a slow ellipsis, stop and open (open shows its thread in Home) | pass |
 | 1.25 | The HUD card goes away after 30 s while the agent keeps working | S | running rows fold into pills on the idle tab after 20 s; a change unfolds them | pass |
@@ -127,7 +128,7 @@ Totals: 90 rows. 68 pass, 5 beyond HeyClicky, 11 fail (7 his call or cosmetic, 4
 | 6.5 | Settings pages: Voice, Microphone, Dictation, Shortcuts, Cursor, Agents | S (the sidebar) ; B HomeSpaceVoiceSettingsContent, HomeSpaceDictationSettingsContent, HomeSpaceCursorSettingsContent, HomeSpaceAgentsSettingsContent | General, Voice (Kokoro and Apple voices, preview, speed), Microphone (device picker), Dictation (dictionary editor), Shortcuts, Cursor (swatches, presence, recordings); saved settings apply live (SettingsPages.swift, LibraryPages.swift, AppDelegate.applySettings) | pass |
 | 6.6 | Skills library page with filter chips, 3 active slots, create a skill | B HomeSpaceSkillsLibraryPage, HomeSpaceSkillFilterChip, SkillLibraryCache.json | the Skills page lists his ~/.claude/skills with search; every skill is available to every agent, no slots; no creator | pass, minus creator |
 | 6.7 | Suggestions page with adjustment controls and history | B HomeSpaceSuggestionsPage, HomeSpaceSuggestionAdjustmentControls | the Suggestions page: toggles, the yes/no history, resets | pass |
-| 6.8 | Routines: scheduled runs, pause, a run marker in the thread | B `clicky_routine_*`, HomeSpaceRoutineRunMarkerView | nothing (his call: his other systems schedule) | fail, his call |
+| 6.8 | Routines: scheduled runs, pause, a run marker in the thread | B `clicky_routine_*`, HomeSpaceRoutineRunMarkerView; changelog 1.0.49 | round six: routines by voice ([ROUTINE]) or Home › Agents; pause, resume, run now, delete; three failures pause; a quiet result in the thread marked [routine] | pass |
 | 6.9 | Three starter agents from an onboarding interview | B HomeSpaceStarterAgent, HomeSpaceNewClickyInterview; S | nothing (his call) | fail, his call |
 | 6.10 | A usage ring on the rail | B (the plan window); S | the rail's usage ring from the ledger | pass |
 | 6.11 | Jev fast lane: drive_until through a window at half a second a step | B "Fast computer use (Jev)" | Jev routes, picks elements, clears commands; agents drive with cua-driver, no fast lane | fail |
@@ -153,25 +154,26 @@ Totals: 90 rows. 68 pass, 5 beyond HeyClicky, 11 fail (7 his call or cosmetic, 4
 
 ## What a capture would settle (the unknowns)
 
-- 4.12 voice quality: a listening test, side by side, same sentence.
-- 1.6 and 1.22: whether the dwell ring and the file drop are worth building; neither was seen in the session.
-- 2.1: how HeyClicky's character reads over a page next to Dot's orb; his verdict so far favors the orb's face.
-- 3.3: whether place photos matter to him (HeyClicky's carousel comes from its backend; Dot has Maps data only).
-- 5.6: whether he ever dictates in another language.
-- 6.11: whether the agents' cua-driver pace needs a fast lane; measure a real app-driving brief first.
-- 8.3: whether a small sound set helps or annoys; HeyClicky ships nine clips.
-- The morning card and the notices on his screen: rendered to PNG by `Dot --snapshot`, not yet seen live by him.
-- The place and picture cards on his screen: rendered to PNG; the model's use of [PLACE] and [IMAGES] not yet seen in a real turn.
-- The agent peek's drag-out: the tiles render; a real drag into another app not yet tried.
-- The settings pages: compiled and parser-tested; not yet clicked through.
+Recorded with REA `record_unknown` on 2026-10-16 (the ledger is per session; this list is the durable copy).
+
+- The content-sized notch window through a day's use: does it stay out of his way, does the hover peek still open reliably (medium; a CGWindowList sample plus his verdict).
+- Agent rules on real tool calls: no send treated as a read, no harmless script as a system change; "Allow for this task" carrying through a run (high; the agents' transcripts after a week).
+- A routine on a real morning: due on time, held offline or on a call, a quiet result, three failures pausing it (medium; dot.log and routines.json).
+- Helpers in a real agent run, the "with N helpers" line, two at most (low; a two-source brief).
+- Voice quality side by side with HeyClicky's realtime voice; timing is settled (medium; a listening test, one metered HeyClicky turn).
+- Whether the dwell ring and the file drop onto the notch are worth building (low; his call).
+- [PLACE] and [IMAGES] in a real turn, and "coffee near me" on his phrasing (low; the transcript file).
+- Whether a Jev fast lane for agents matters for his app-driving briefs (low; time one real brief).
+
+Settled since round five: the morning card showed on a real morning (he dismissed it on 10/16); the notch size was his complaint and is measured; the course-policy refusal was his chats' clearest fault and has a rule.
 
 ## Counting
 
 | Verdict | Rows |
 |---|---|
-| pass (including "another place" and "by Murmur") | 68 |
+| pass (including "another place" and "by Murmur") | 70 |
 | beyond HeyClicky | 5 |
-| fail | 11 (7 his call or cosmetic: 2.7, 2.12, 2.13, 4.13, 6.8, 6.9, 8.3; 4 to build: 1.6, 1.22, 5.6, 6.11) |
+| fail | 10 (6 his call or cosmetic: 2.7, 2.12, 2.13, 4.13, 6.9, 8.3; 4 to build: 1.6, 1.22, 5.6, 6.11) |
 | partial | 2 |
 | n/a | 4 |
-| unknown | 11 items above |
+| unknown | 8 items above |

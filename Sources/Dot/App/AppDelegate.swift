@@ -19,6 +19,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var noticer: Noticer!
     private var murmur: MurmurWatcher?
     private var morning: MorningSuggestions!
+    private var routines: RoutineScheduler!
     private let hotkeys = HotkeyMonitor()
     private var permissionTimer: Timer?
     private var hoverTimer: Timer?
@@ -55,6 +56,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         home = HomeWindowController(agents: agents, ledger: ledger, config: config, atlas: atlas)
         home.speakSample = { [weak self] text in self?.speaker.speak(text) }
         home.onSettingsChanged = { [weak self] changed in Task { @MainActor in self?.applySettings(changed) } }
+        routines = RoutineScheduler(config: config, agents: agents, hud: hud)
+        routines.canRun = { [weak self] in
+            guard let self else { return false }
+            return !(self.config.quietOnCalls && CallPresence.isOnCall())
+        }
+        talk.scheduler = routines
+        home.scheduler = routines
         morning = MorningSuggestions(config: config, atlas: atlas, hud: hud, agents: agents)
         morning.canShow = { [weak self] in
             guard let self else { return false }
@@ -111,6 +119,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             murmur?.start()
         }
         morning.start()
+        routines.start()
         announceUpdate()
     }
 

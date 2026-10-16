@@ -25,6 +25,12 @@ final class HomeWindowController {
         set { model.onSettingsChanged = newValue }
     }
 
+    /// The routine scheduler, for the Agents page.
+    var scheduler: RoutineScheduler? {
+        get { model.scheduler }
+        set { model.scheduler = newValue }
+    }
+
     init(agents: AgentManager, ledger: Ledger, config: DotConfig, atlas: AtlasBridge) {
         model = HomeModel(agents: agents, ledger: ledger, config: config, atlas: atlas)
         agents.onRosterChanged = { [weak self] in Task { @MainActor in self?.model.reload() } }
@@ -88,7 +94,7 @@ struct ThreadItem: Identifiable, Equatable {
 @MainActor
 final class HomeModel: ObservableObject {
     /// `settings` is the General page.
-    enum Page: Equatable { case agent, day, settings, voice, microphone, dictation, shortcuts, cursor, skills, suggestions }
+    enum Page: Equatable { case agent, day, settings, voice, microphone, dictation, shortcuts, cursor, skills, suggestions, agents }
 
     @Published var page: Page = .agent
     @Published var agents: [AgentManager.Agent] = []
@@ -118,6 +124,16 @@ final class HomeModel: ObservableObject {
     @Published var settingsNote: String?
     @Published var renaming: AgentManager.Agent?
     @Published var renameText = ""
+    /// Round six: rules, routines and spend for the Agents page.
+    @Published var rules = AgentRules.standard
+    @Published var routines: [Routine] = []
+    @Published var spend: [String: Double] = [:]
+    var scheduler: RoutineScheduler? {
+        didSet {
+            scheduler?.onChanged = { [weak self] in Task { @MainActor in self?.refreshRoutines() } }
+            refreshRoutines()
+        }
+    }
 
     let agentManager: AgentManager
     let ledger: Ledger
@@ -171,7 +187,39 @@ final class HomeModel: ObservableObject {
             }
     }
 
+    func refreshRoutines() {
+        routines = scheduler?.routines ?? []
+        rules = agentManager.rules
+        spend = ledger.spendByAgent(since: Date().addingTimeInterval(-7 * 86400))
+    }
+
+    func setRule(_ behavior: ActionBehavior?, for cls: ActionClass, agent slug: String?) {
+        agentManager.rules.set(behavior, for: cls, agent: slug)
+        agentManager.saveRules()
+        rules = agentManager.rules
+    }
+
+    func resetRules(scope slug: String?) {
+        if let slug { agentManager.rules.agents.removeValue(forKey: slug) } else { agentManager.rules.defaults = AgentRules.standard.defaults }
+        agentManager.saveRules()
+        rules = agentManager.rules
+    }
+
+    /// nil when the routine was added; else a line saying why not.
+    func addRoutine(agentSlug: String, when: String, brief: String) -> String? {
+        guard let scheduler else { return "routines are off" }
+        guard let agent = agents.first(where: { $0.slug == agentSlug }) else { return "pick an agent" }
+        guard scheduler.add(agentName: agent.name, when: when, brief: brief) != nil else { return "couldn't read when: try \"every morning at 8\" or \"weekdays at 9:30\"" }
+        refreshRoutines()
+        return nil
+    }
+
+    func setRoutinePaused(_ id: String, _ paused: Bool) { scheduler?.setPaused(id, paused); refreshRoutines() }
+    func runRoutineNow(_ id: String) { scheduler?.runNow(id); refreshRoutines(); refreshLive() }
+    func removeRoutine(_ id: String) { scheduler?.remove(id); refreshRoutines() }
+
     func reload() {
+        refreshRoutines()
         agents = agentManager.roster()
         if selected == nil || !agents.contains(where: { $0.slug == selected?.slug }) { selected = agents.first }
         refreshLive()
@@ -348,6 +396,7 @@ struct HomeView: View {
             case .cursor: CursorPage(model: model)
             case .skills: SkillsPage()
             case .suggestions: SuggestionsPage(model: model)
+            case .agents: AgentsPage(model: model)
             }
         }
         .sheet(isPresented: $showingNew) { newAgentSheet }
@@ -389,6 +438,7 @@ struct HomeView: View {
             railHeader("Work")
             pageRow("Skills", icon: "books.vertical", page: .skills, detail: nil)
             pageRow("Suggestions", icon: "lightbulb", page: .suggestions, detail: nil)
+            pageRow("Agents", icon: "person.2", page: .agents, detail: model.routines.isEmpty ? nil : "\(model.routines.filter { !$0.paused }.count) routine\(model.routines.filter { !$0.paused }.count == 1 ? "" : "s") on")
             HStack(spacing: 8) {
                 usageRing
                 VStack(alignment: .leading, spacing: 1) {
@@ -517,6 +567,8 @@ struct HomeView: View {
                 Toggle(isOn: $model.showOutputs) { Image(systemName: "sidebar.right") }.toggleStyle(.button).controlSize(.small).help("Outputs")
             }
             .padding(.horizontal, 18).padding(.top, 34).padding(.bottom, 8)
+            Divider()
+            AgentProfileStrip(model: model, agent: agent)
             Divider()
             if model.showCLAUDEMD {
                 ScrollView {

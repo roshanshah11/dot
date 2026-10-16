@@ -59,6 +59,8 @@ final class Talk {
     private var turnRevealsEnqueued = 0
     private var streamer = BeatStreamer()
     private var activeSession: ClaudeSession?
+    /// Routines (set by the app): a [ROUTINE] tag from the model lands here.
+    var scheduler: RoutineScheduler?
     private var levelTimer: Timer?
     private var idleTimer: Timer?
     private var idleCheckTimer: Timer?
@@ -703,7 +705,10 @@ final class Talk {
             defer { phase = .idle; overlay.setPhase(.idle); settle() }
             let text: String
             do { text = try await finalText(from: live, wavURL: stopped.url) } catch {
-                hud.flash(error: "didn't catch that: \(error.localizedDescription)"); return
+                // A tap too short to hold a word is not an error worth reading aloud (2026-10-16: the
+                // notch showed "Invalid audio data provided. Must be at least 300ms of 16kHz audio").
+                Log.warn("didn't catch that: \(error.localizedDescription)")
+                hud.flash(status: "didn't catch that"); return
             }
             try? FileManager.default.removeItem(at: stopped.url)
             loadDictionaryIfNeeded()
@@ -1778,6 +1783,17 @@ final class Talk {
                 agents.handoff(brief: brief, agentName: nil, context: context, shots: shots)
             case .newAgent(let name, let brief):
                 agents.handoff(brief: brief, agentName: name, context: context, shots: shots)
+            case .routine(let agentName, let when, let brief):
+                if let scheduler {
+                    if let routine = scheduler.add(agentName: agentName, when: when, brief: brief) {
+                        hud.notify(NotchNotice(id: "routine-\(routine.id)", icon: "clock.arrow.2.circlepath", title: "routine set: \(routine.schedule.words)",
+                                               detail: "\(routine.agentName): \(Log.short(brief, 90))", tone: .good,
+                                               actionTitle: "undo", action: { [weak scheduler] in scheduler?.remove(routine.id) }, seconds: 14))
+                    } else {
+                        hud.flash(error: "couldn't read when: \"\(when)\"")
+                        Log.warn("routine tag with an unreadable schedule: \(when)")
+                    }
+                }
             case .think:
                 if kind == "talk", let think = session(for: .think) {
                     escalated = true
@@ -2159,6 +2175,7 @@ final class Talk {
         endWalkthrough(reason: "escape")
         clearBoard()
         hud.dismissAnswer()
+        hud.escapeDismiss()
         overlay.clearMarks()
         overlay.hideBubble(after: 0)
         overlay.setPhase(.idle)

@@ -1,4 +1,5 @@
 import AppKit
+import Combine
 import DotKit
 import SwiftUI
 
@@ -28,6 +29,8 @@ struct ConsentCard: Identifiable {
     let detail: String
     let onAllow: () -> Void
     let onDeny: () -> Void
+    /// HeyClicky's "your yes covers one conversation": allow this kind of action for the rest of the task.
+    var onAlways: (() -> Void)? = nil
 }
 
 /// A typed notice under the notch, after HeyClicky's notch surfaces (dictation on the clipboard,
@@ -110,6 +113,8 @@ final class HUDModel: ObservableObject {
     /// A small black tab under the notch when there is nothing else to show.
     @Published var presence = false
     @Published var hovering = false
+    /// What the view draws, measured; the window is sized to it.
+    @Published var contentSize: CGSize = .zero
     var onSubmitInput: ((String) -> Void)?
     var onOpenAgent: ((String) -> Void)?
     /// "open" on an agent card: its thread in the Dot window.
@@ -142,13 +147,18 @@ final class NotchHUD {
     private var noticeWork: [String: DispatchWorkItem] = [:]
     private var glowWork: DispatchWorkItem?
     private var visible = false
+    private var contentSize: CGSize = .zero
+    private var shrinkWork: DispatchWorkItem?
+    private var sizeSink: AnyCancellable?
 
     init() {
         model.onCollapseChanged = { [weak self] in self?.refreshVisibility() }
+        observeContentSize()
     }
 
     init(accentHex: String) {
         if let color = Color(hex: accentHex) { model.accent = color }
+        observeContentSize()
         NotificationCenter.default.addObserver(forName: NSApplication.didChangeScreenParametersNotification, object: nil, queue: .main) { [weak self] _ in
             Task { @MainActor in self?.reposition() }
         }
@@ -382,6 +392,16 @@ final class NotchHUD {
         refreshVisibility()
     }
 
+    /// Escape, HeyClicky's way (1.0.50): the cards under the notch go away. A consent card stays,
+    /// since it needs a choice.
+    func escapeDismiss() {
+        for notice in model.notices { dismissNotice(id: notice.id) }
+        if model.morning != nil { dismissMorning() }
+        model.expanded = nil
+        if !model.agents.isEmpty, model.agents.allSatisfy({ $0.state != .waiting }) { model.collapsed = true }
+        refreshVisibility()
+    }
+
     // MARK: Panel
 
     private func ensurePanel() -> NSPanel {
@@ -416,15 +436,14 @@ final class NotchHUD {
                                      auxLeft: screen.auxiliaryTopLeftArea, auxRight: screen.auxiliaryTopRightArea)
     }
 
+    /// The canvas height the snapshot harness renders into; the live window is sized to its drawing.
     static let tallPanelHeight: CGFloat = 620
 
     private func reposition() {
         guard let panel else { return }
         let geometry = currentGeometry()
-        var frame = geometry.panelFrame
-        frame.origin.y -= Self.tallPanelHeight - frame.height
-        frame.size.height = Self.tallPanelHeight
-        panel.setFrame(frame, display: true)
+        shrinkWork?.cancel()
+        panel.setFrame(geometry.frame(fitting: contentSize == .zero ? geometry.compactSize : contentSize), display: true)
         if let hosting = panel.contentView as? NSHostingView<NotchHUDView> {
             hosting.rootView = NotchHUDView(model: model, geometry: geometry, onClose: { [weak self] in
                 self?.hideInput()
@@ -432,6 +451,38 @@ final class NotchHUD {
                 self?.set(phase: .hidden)
             })
         }
+    }
+
+    // MARK: Fit the window to its drawing
+
+    private func observeContentSize() {
+        sizeSink = model.$contentSize
+            .removeDuplicates()
+            .receive(on: RunLoop.main)
+            .sink { [weak self] size in self?.fit(to: size) }
+    }
+
+    /// The window hugs what is drawn, the way HeyClicky's notch window moves between its compact,
+    /// hover and expanded geometries. It grows at once, so nothing is clipped, and shrinks a moment
+    /// later, so a view on its way out is not cut off. Anything beyond the drawing would take the
+    /// clicks meant for the tabs and toolbars under it.
+    private func fit(to size: CGSize) {
+        guard size.width > 0, size.height > 0 else { return }
+        contentSize = size
+        guard let panel else { return }
+        let geometry = currentGeometry()
+        let target = geometry.frame(fitting: size)
+        let current = panel.frame
+        shrinkWork?.cancel()
+        let roomy = geometry.frame(fitting: CGSize(width: max(target.width, current.width), height: max(target.height, current.height)))
+        if roomy != current { panel.setFrame(roomy, display: true) }
+        guard target != roomy else { return }
+        let work = DispatchWorkItem { [weak self] in
+            guard let self, let panel = self.panel else { return }
+            panel.setFrame(self.currentGeometry().frame(fitting: self.contentSize), display: true)
+        }
+        shrinkWork = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.35, execute: work)
     }
 
     func setPresence(_ on: Bool) {
@@ -484,11 +535,19 @@ struct NotchHUDView: View {
     private let text = NotchInk.text
 
     var body: some View {
-        if !model.hasContent && model.presence {
-            idleStrip
-        } else {
-            panel
+        Group {
+            if !model.hasContent && model.presence {
+                idleStrip
+            } else {
+                panel
+            }
         }
+        // Measured so the window can be sized to the drawing and nothing more (see NotchHUD.fit).
+        .background(GeometryReader { proxy in
+            Color.clear.preference(key: NotchContentSizeKey.self, value: proxy.size)
+        })
+        .onPreferenceChange(NotchContentSizeKey.self) { size in model.contentSize = size }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
     }
 
     // MARK: The idle tab
@@ -536,9 +595,7 @@ struct NotchHUDView: View {
             .onTapGesture {
                 if !model.foldedTasks.isEmpty { model.collapsed = false } else { NotificationCenter.default.post(name: .dotShowInput, object: nil) }
             }
-            Spacer(minLength: 0)
         }
-        .frame(width: NotchGeometry.panelWidth, height: NotchHUD.tallPanelHeight, alignment: .top)
     }
 
     private var idleWidth: CGFloat {
@@ -648,9 +705,7 @@ struct NotchHUDView: View {
             .overlay(UnevenRoundedRectangle(cornerRadii: .init(topLeading: 0, bottomLeading: 22, bottomTrailing: 22, topTrailing: 0))
                 .stroke(Color.white.opacity(0.08), lineWidth: 1))
             .overlay(cornerGlow(radius: 22))
-            Spacer(minLength: 0)
         }
-        .frame(width: NotchGeometry.panelWidth, height: NotchHUD.tallPanelHeight, alignment: .top)
     }
 
     /// The accent runs along the bottom edge for a moment when something lands.
@@ -763,6 +818,7 @@ struct NotchHUDView: View {
             }
             HStack(spacing: 8) {
                 GelButton(title: "Allow", accent: model.accent, primary: true, action: card.onAllow)
+                if let always = card.onAlways { GelButton(title: "Allow for this task", accent: model.accent, primary: false, action: always) }
                 GelButton(title: "Not now", accent: model.accent, primary: false, action: card.onDeny)
             }
         }
@@ -1153,6 +1209,15 @@ extension Notification.Name {
 /// A borderless panel refuses to become the key window by default, so keystrokes never reached the
 /// typed-question field. This one accepts the keyboard without ever becoming the main window or
 /// activating Dot, which keeps the user's app frontmost for the next screenshot.
+/// The size of what the notch view draws, reported up so the window can be sized to it.
+struct NotchContentSizeKey: PreferenceKey {
+    static var defaultValue: CGSize = .zero
+    static func reduce(value: inout CGSize, nextValue: () -> CGSize) {
+        let next = nextValue()
+        if next != .zero { value = next }
+    }
+}
+
 final class KeyablePanel: NSPanel {
     override var canBecomeKey: Bool { true }
     override var canBecomeMain: Bool { false }

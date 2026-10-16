@@ -36,6 +36,8 @@ public enum DotTag: Equatable {
     case clearBoard
     case agent(brief: String)
     case newAgent(name: String, brief: String)
+    /// A standing agent's task on a schedule: the agent's name, when in plain words, the brief.
+    case routine(agent: String, when: String, brief: String)
     case think
     /// Dot finds the phrase in the document in front (its text, not the pixels), scrolls to it and highlights it.
     case find(phrase: String)
@@ -69,7 +71,7 @@ public extension DotTag {
     var isVisual: Bool {
         switch self {
         case .point, .highlight, .target, .hover, .shape, .card, .reveal, .clearBoard, .type, .web, .find, .stock, .place, .images: return true
-        case .pointNone, .agent, .newAgent, .think: return false
+        case .pointNone, .agent, .newAgent, .routine, .think: return false
         }
     }
 
@@ -103,11 +105,11 @@ public struct ParsedResponse: Equatable {
 }
 
 public enum TagParser {
-    static let tagNames = ["POINT", "HIGHLIGHT", "TARGET", "HOVER", "SHAPE", "CARD", "REVEAL", "CLEAR_BOARD", "TYPE", "WEB", "FIND", "STOCK", "PLACE", "IMAGES", "AGENT", "NEW_AGENT", "THINK"]
+    static let tagNames = ["POINT", "HIGHLIGHT", "TARGET", "HOVER", "SHAPE", "CARD", "REVEAL", "CLEAR_BOARD", "TYPE", "WEB", "FIND", "STOCK", "PLACE", "IMAGES", "AGENT", "NEW_AGENT", "ROUTINE", "THINK"]
 
     // swiftlint:disable:next force_try
     static let pattern = try! NSRegularExpression(
-        pattern: #"\[(POINT|HIGHLIGHT|TARGET|HOVER|SHAPE|CARD|REVEAL|CLEAR_BOARD|TYPE|WEB|FIND|STOCK|PLACE|IMAGES|AGENT|NEW_AGENT|THINK)(?::([^\]]*))?\]"#,
+        pattern: #"\[(POINT|HIGHLIGHT|TARGET|HOVER|SHAPE|CARD|REVEAL|CLEAR_BOARD|TYPE|WEB|FIND|STOCK|PLACE|IMAGES|AGENT|NEW_AGENT|ROUTINE|THINK)(?::([^\]]*))?\]"#,
         options: []
     )
 
@@ -205,6 +207,11 @@ public enum TagParser {
                 .map { String($0).trimmingCharacters(in: .whitespacesAndNewlines) }
             guard parts.count == 2, !parts[0].isEmpty, !parts[1].isEmpty else { return nil }
             return .newAgent(name: parts[0], brief: parts[1])
+        case "ROUTINE":
+            let parts = payload.split(separator: ":", maxSplits: 2, omittingEmptySubsequences: false)
+                .map { String($0).trimmingCharacters(in: .whitespacesAndNewlines) }
+            guard parts.count == 3, !parts[0].isEmpty, !parts[1].isEmpty, !parts[2].isEmpty else { return nil }
+            return .routine(agent: parts[0], when: parts[1], brief: parts[2])
         case "POINT":
             if payload.trimmingCharacters(in: .whitespaces).lowercased() == "none" { return .pointNone }
             var parts = splitPayload(payload)

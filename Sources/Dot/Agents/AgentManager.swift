@@ -25,10 +25,17 @@ final class AgentManager {
         var buffer = ""
         var steps: [String] = []
         var idleWork: DispatchWorkItem?
+        /// A scheduled run: quiet when it finishes, and its outcome goes back to the routine.
+        var isRoutine = false
+        /// Kinds of action he allowed for the rest of this task ("Allow for this task").
+        var allowances: Set<ActionClass> = []
+        /// Helpers (subagents) this brief has started.
+        var helpers = 0
         init(agent: Agent, session: ClaudeSession) { self.agent = agent; self.session = session }
         func step(_ line: String) { steps.append(line); if steps.count > 6 { steps.removeFirst(steps.count - 6) } }
         func row(_ line: String, state: AgentRow.State = .running) -> AgentRow {
-            AgentRow(id: agent.slug, name: agent.name, line: line, state: state, steps: steps, canStop: state == .running, startedAt: startedAt)
+            let shown = helpers > 0 && state == .running ? "with \(helpers) helper\(helpers == 1 ? "" : "s"): \(line)" : line
+            return AgentRow(id: agent.slug, name: agent.name, line: shown, state: state, steps: steps, canStop: state == .running, startedAt: startedAt)
         }
     }
 
@@ -42,6 +49,11 @@ final class AgentManager {
     var atlas: AtlasBridge?
     /// Set after init: clears unrecognised shell commands that are plainly harmless.
     var jev: Jev?
+    /// What agents do on their own, ask about, or leave to him (~/Dot/rules.json); Home edits it.
+    var rules: AgentRules
+    private let rulesURL: URL
+    /// A routine run finished: (agent slug, failed, a note); the scheduler listens.
+    var routineOutcome: ((String, Bool, String?) -> Void)?
 
     struct Running { let slug: String; let name: String; let task: String }
 
@@ -81,6 +93,8 @@ final class AgentManager {
         self.hud = hud
         self.speaker = speaker
         self.ledger = ledger
+        self.rulesURL = config.agentRulesURL
+        self.rules = AgentRules.load(from: rulesURL)
         try? FileManager.default.createDirectory(at: config.agentsRootURL, withIntermediateDirectories: true)
         _ = ensureAgent(named: "Dot")
         hud.model.onOpenAgent = { [weak self] slug in
@@ -159,8 +173,12 @@ final class AgentManager {
 
     // MARK: Handoff
 
+    func saveRules() {
+        do { try rules.save(to: rulesURL) } catch { Log.error("rules: could not save: \(error)") }
+    }
+
     func handoff(brief: String, agentName: String?, context: ScreenContext?, shots: [ScreenShot]?,
-                 extraImages: [(data: Data, mediaType: String)] = [], note: String? = nil) {
+                 extraImages: [(data: Data, mediaType: String)] = [], note: String? = nil, routine: Bool = false) {
         let agent = ensureAgent(named: agentName ?? "Dot")
         let run: Run
         if let live = runs[agent.slug], live.session.isRunning, !live.session.turnInFlight {
@@ -180,6 +198,8 @@ final class AgentManager {
         run.lastLine = "starting"
         run.lastBrief = brief
         run.steps = []
+        run.helpers = 0
+        run.isRoutine = routine
         hud.upsertAgent(run.row(Log.short(brief, 90)))
 
         var text = brief
@@ -204,7 +224,7 @@ final class AgentManager {
 
     private func startRun(for agent: Agent) -> Run? {
         var options = ClaudeSession.Options(cwd: agent.folder, model: config.agentModel)
-        var appended = Prompts.agent(name: agent.name)
+        var appended = Prompts.agent(name: agent.name) + Prompts.agentExtras(helpers: config.agentHelpers, rulesLine: rules.briefLine(for: agent.slug))
         if let atlasPrompt = atlas?.chatPrompt(), !atlasPrompt.isEmpty {
             appended += "\n\n# Atlas: the chief-of-staff prompt every Atlas chat runs with. You have the same tools and the same mandate; Dot's rules above say where files go and when to ask.\n" + atlasPrompt
         }
@@ -287,6 +307,7 @@ final class AgentManager {
                 appendTranscript(agent, role: "assistant", text: text)
             }
         case .toolUse(_, let name, let input):
+            if name == "Agent" || name == "Task" { run.helpers += 1 }
             let line = Self.describe(tool: name, input: input)
             run.lastLine = line
             run.step(Log.short(line, 90))
@@ -316,9 +337,12 @@ final class AgentManager {
         hud.upsertAgent(AgentRow(id: agent.slug, name: agent.name, line: failed ? "failed: \(summary)" : summary, state: failed ? .failed : .done,
                                  result: text, outputCount: outputs.count, outputs: Array(outputs.prefix(4)), nextAction: parsed.nextAction))
         appendTranscript(agent, role: "result", text: "\(result.subtype) in \(result.durationMs) ms, $\(String(format: "%.3f", result.costUSD))")
-        NSSound(named: failed ? "Basso" : "Glass")?.play()
+        let quiet = run.isRoutine   // a scheduled run lands in the thread without a chime or a word (HeyClicky's routines do the same)
+        run.isRoutine = false
+        if quiet { routineOutcome?(agent.slug, failed, failed ? summary : nil) }
+        if !quiet { NSSound(named: failed ? "Basso" : "Glass")?.play() }
         NotificationCenter.default.post(name: .dotAgentFinished, object: nil, userInfo: ["failed": failed])
-        if config.speakAgentResults, !summary.isEmpty {
+        if config.speakAgentResults, !summary.isEmpty, !quiet {
             let more = SpeechText.clean(text).count > summary.count + 40 ? " the rest is in the notch." : ""
             speaker.speak("\(agent.name) here. \(summary)\(more)")
         }
@@ -346,6 +370,36 @@ final class AgentManager {
 
     private func permission(_ request: PermissionRequest, run: Run, completion: @escaping (Bool, String?) -> Void) {
         let policy = consentPolicy(for: run.agent)
+        // His rules first (dots' custom rules): the class of the action decides whether it runs, asks or stays his.
+        let cls = AgentRules.classify(toolName: request.toolName, command: request.toolRequest.string("command"), flattened: ConsentPolicy.flatten(request.toolRequest.input))
+        let behavior = rules.behavior(for: cls, agent: run.agent.slug)
+        switch behavior {
+        case .mine:
+            appendTranscript(run.agent, role: "denied", text: "\(request.toolName): \(cls.title.lowercased()) is his to do")
+            hud.upsertAgent(run.row("left \(cls.title.lowercased()) to him"))
+            completion(false, "That step (\(cls.title.lowercased())) is Roshan's to do, by his rules: prepare everything for it, stop there, and say what is ready for him.")
+            return
+        case .ask, .ifAsked:
+            if run.allowances.contains(cls) {
+                appendTranscript(run.agent, role: "allowed", text: "\(request.toolName): allowed for this task")
+                completion(true, nil)
+                return
+            }
+            if behavior == .ifAsked, AgentRules.briefAsks(for: cls, brief: run.lastBrief) {
+                appendTranscript(run.agent, role: "allowed", text: "\(request.toolName): his brief asked for it")
+                completion(true, nil)
+                return
+            }
+            if case .deny(let reason) = policy.decide(request.toolRequest) {
+                appendTranscript(run.agent, role: "denied", text: "\(request.toolName): \(reason)")
+                completion(false, "Dot refused: \(reason)")
+                return
+            }
+            askCard(request, run: run, reason: "\(cls.title.lowercased()): \(Self.consentTitle(request))", cls: cls, completion: completion)
+            return
+        case .act:
+            break
+        }
         switch policy.decide(request.toolRequest) {
         case .allow:
             completion(true, nil)
@@ -368,20 +422,20 @@ final class AgentManager {
                         self.appendTranscript(run.agent, role: "cleared", text: "\(request.toolName): \(reason)")
                         completion(true, nil)
                     } else {
-                        self.askCard(request, run: run, reason: reason, completion: completion)
+                        self.askCard(request, run: run, reason: reason, cls: cls, completion: completion)
                     }
                 }
                 return
             }
-            askCard(request, run: run, reason: reason, completion: completion)
+            askCard(request, run: run, reason: reason, cls: cls, completion: completion)
         }
     }
 
-    private func askCard(_ request: PermissionRequest, run: Run, reason: String, completion: @escaping (Bool, String?) -> Void) {
+    private func askCard(_ request: PermissionRequest, run: Run, reason: String, cls: ActionClass?, completion: @escaping (Bool, String?) -> Void) {
         do {
             let title = Self.consentTitle(request)
             hud.upsertAgent(AgentRow(id: run.agent.slug, name: run.agent.name, line: "waiting for you: \(reason)", state: .waiting))
-            let card = ConsentCard(agent: run.agent.name, title: title, detail: reason, onAllow: { [weak self] in
+            var card = ConsentCard(agent: run.agent.name, title: title, detail: reason, onAllow: { [weak self] in
                 self?.hud.dismissConsent()
                 self?.hud.upsertAgent(AgentRow(id: run.agent.slug, name: run.agent.name, line: reason, state: .running))
                 self?.appendTranscript(run.agent, role: "allowed", text: "\(request.toolName): \(reason)")
@@ -392,6 +446,16 @@ final class AgentManager {
                 self?.appendTranscript(run.agent, role: "declined", text: "\(request.toolName): \(reason)")
                 completion(false, "The user said not now. Do the rest of the task without this step and say what you skipped.")
             })
+            if let cls {
+                // HeyClicky's "your yes covers one conversation": the same kind of action passes for the rest of this task.
+                card.onAlways = { [weak self, weak run] in
+                    run?.allowances.insert(cls)
+                    self?.hud.dismissConsent()
+                    self?.hud.upsertAgent(AgentRow(id: run?.agent.slug ?? "", name: run?.agent.name ?? "", line: reason, state: .running))
+                    if let run { self?.appendTranscript(run.agent, role: "allowed", text: "\(request.toolName): \(cls.title.lowercased()) allowed for the rest of this task") }
+                    completion(true, nil)
+                }
+            }
             hud.present(card)
             if config.speakAgentResults {
                 speaker.speak("\(run.agent.name) wants to \(title).")

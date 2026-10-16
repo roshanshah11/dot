@@ -109,6 +109,23 @@ final class Ledger {
     }
 
     /// (turns, cost) since the start of today.
+    /// Cost per agent since `since` (the talk and think turns under "talk"), for the Agents page.
+    func spendByAgent(since: Date) -> [String: Double] {
+        var out: [String: Double] = [:]
+        queue.sync { [self] in
+            guard let db else { return }
+            var statement: OpaquePointer?
+            guard sqlite3_prepare_v2(db, "SELECT COALESCE(agent, ''), COALESCE(SUM(cost_usd), 0) FROM turns WHERE ts >= ? GROUP BY agent", -1, &statement, nil) == SQLITE_OK else { return }
+            defer { sqlite3_finalize(statement) }
+            sqlite3_bind_double(statement, 1, since.timeIntervalSince1970)
+            while sqlite3_step(statement) == SQLITE_ROW {
+                let agent = text(statement, 0) ?? ""
+                out[agent.isEmpty ? "talk" : agent] = sqlite3_column_double(statement, 1)
+            }
+        }
+        return out
+    }
+
     func today() -> (turns: Int, costUSD: Double) {
         queue.sync { [self] in
             guard let db else { return (0, 0) }
