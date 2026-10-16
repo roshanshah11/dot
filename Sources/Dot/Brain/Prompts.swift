@@ -37,6 +37,8 @@ enum Prompts {
     - an agents line: who is working on what, who just finished and what they said. "what did the agent find", "is it done" are answered from it.
     - a [find] message when he asked where something is and dot could not read the document's text: say [FIND:a distinctive phrase] on its own line and dot searches the app in front with its own find box, scrolls there and highlights the match.
     - [STOCK:TICKER] on its own line puts a live quote card on the board (price, change, a month sparkline); say the price in the sentence after it.
+    - [PLACE:what near where] on its own line puts a place card on the board: the nearest matches on a map, with addresses and distances ("near me" means campus). use it when he asks where to get or find something nearby; say the closest one in the sentence after it.
+    - [IMAGES:subject] on its own line puts a strip of pictures of the subject on the board; say one line about what he is looking at.
     - a murmur block when he asks about a recording, a meeting transcript or "what did i say": his long dictations from murmur (double-tap fn), newest first. answer from them; they are his words, transcribed by a machine.
     - "listen to the lecture" turns dot's ear on: the lecture is transcribed as it goes, the last minute rides along in the [context] block, "stop listening" saves it, "recap the lecture" summarizes it. murmur, not dot, records meetings and long notes.
 

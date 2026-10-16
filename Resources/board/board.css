@@ -119,3 +119,24 @@ body.stage-page { padding: 0; max-width: none; overflow: hidden; }
 .stagebar .dots i.done { background: rgba(255,107,44,0.5); }
 .stagebar .dots i.cur { background: var(--accent); box-shadow: 0 0 0 3px rgba(255,107,44,0.25); }
 .stagebar .count { color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; min-width: 44px; text-align: right; }
+
+/* place cards: a map with numbered pins, then the matches */
+.places .map { display: block; width: 100%; height: auto; border-radius: 10px; margin: 2px 0 10px; }
+.places ol { list-style: none; margin: 0; padding: 0; }
+.places li { display: flex; gap: 10px; align-items: flex-start; padding: 7px 0; border-top: 1px solid var(--line); }
+.places li:first-child { border-top: 0; }
+.places .n { flex: 0 0 22px; height: 22px; border-radius: 50%; background: var(--accent); color: #fff; font-size: 12px; font-weight: 700; text-align: center; line-height: 22px; box-shadow: 0 0 0 2px rgba(255,255,255,0.12); margin-top: 1px; }
+.places .name { font-weight: 650; font-size: 15px; }
+.places .meta { color: var(--muted); font-weight: 500; font-size: 12.5px; margin-left: 4px; }
+.places .addr { color: var(--muted); font-size: 13px; margin-top: 1px; }
+.places .links { font-size: 12.5px; margin-top: 3px; }
+.places .links a { color: var(--blue); border-bottom: 0; }
+
+/* a picture strip: thumbnails that open their page, caption on hover */
+.gallery .strip { display: flex; gap: 8px; overflow-x: auto; padding: 2px 0 6px; scrollbar-width: none; }
+.gallery .strip::-webkit-scrollbar { display: none; }
+.gallery .pic { position: relative; flex: 0 0 auto; width: 168px; height: 118px; border-radius: 10px; overflow: hidden; background: rgba(255,255,255,0.05); border: 1px solid var(--line); border-bottom-width: 1px; }
+.gallery .pic img { width: 100%; height: 100%; object-fit: cover; display: block; transition: transform 0.35s ease; }
+.gallery .pic:hover img { transform: scale(1.04); }
+.gallery .cap { position: absolute; left: 0; right: 0; bottom: 0; padding: 14px 8px 6px; font-size: 11px; color: #fff; background: linear-gradient(transparent, rgba(0,0,0,0.75)); opacity: 0; transition: opacity 0.25s; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.gallery .pic:hover .cap { opacity: 1; }

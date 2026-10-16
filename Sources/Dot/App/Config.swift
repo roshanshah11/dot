@@ -98,6 +98,17 @@ struct DotConfig: Codable {
     /// Words appear while the key is held (FluidAudio sliding window); the WAV is the fallback.
     var streamingTranscription = true
 
+    // Round five: cards, the morning card, the microphone, the notch.
+    /// Where "near me" is when a place is asked for (Hyde Park, UChicago). Place cards search around here.
+    var homeLatitude = 41.7943
+    var homeLongitude = -87.5907
+    /// The morning card: a few things Dot could take on today, from Atlas, with yes and no remembered.
+    var morningSuggestions = true
+    /// The microphone Dot records from, by name; nil follows the system default.
+    var microphoneName: String? = nil
+    /// The version that last showed its "what's new" line, so an update is announced once.
+    var lastSeenVersion: String? = nil
+
     /// Atlas tools a talk turn may call without asking: everything that reads, remembers or drafts.
     /// Sends, submits, posts and harness administration stay with agents and his yes.
     static let talkAtlasTools = [
@@ -175,6 +186,11 @@ struct DotConfig: Codable {
         driveEnabled = get(.driveEnabled, d.driveEnabled)
         eagerSpeech = get(.eagerSpeech, d.eagerSpeech)
         streamingTranscription = get(.streamingTranscription, d.streamingTranscription)
+        homeLatitude = get(.homeLatitude, d.homeLatitude)
+        homeLongitude = get(.homeLongitude, d.homeLongitude)
+        morningSuggestions = get(.morningSuggestions, d.morningSuggestions)
+        microphoneName = try? c.decodeIfPresent(String.self, forKey: .microphoneName)
+        lastSeenVersion = try? c.decodeIfPresent(String.self, forKey: .lastSeenVersion)
     }
 
     static var directory: URL {

@@ -18,6 +18,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var jev: Jev?
     private var noticer: Noticer!
     private var murmur: MurmurWatcher?
+    private var morning: MorningSuggestions!
     private let hotkeys = HotkeyMonitor()
     private var permissionTimer: Timer?
     private var hoverTimer: Timer?
@@ -52,7 +53,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         hud.setPresence(config.notchPresence)
         applyRecordingVisibility()
         home = HomeWindowController(agents: agents, ledger: ledger, config: config, atlas: atlas)
+        home.speakSample = { [weak self] text in self?.speaker.speak(text) }
+        home.onSettingsChanged = { [weak self] changed in Task { @MainActor in self?.applySettings(changed) } }
+        morning = MorningSuggestions(config: config, atlas: atlas, hud: hud, agents: agents)
+        morning.canShow = { [weak self] in
+            guard let self else { return false }
+            return self.talk.isIdle && !(self.config.quietOnCalls && CallPresence.isOnCall())
+        }
         let hudModel = hud.model
+        hudModel.onOpenHome = { [weak self] slug in Task { @MainActor in self?.home.show(agent: slug) } }
+        NotificationCenter.default.addObserver(forName: .dotOpenHome, object: nil, queue: .main) { [weak self] _ in
+            Task { @MainActor in self?.home.show() }
+        }
         hudModel.onStopAgent = { [weak self] id in
             Task { @MainActor in
                 guard let self else { return }
@@ -62,6 +74,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         atlas.onUpdate = { [weak self] brief in
             hudModel.todayLine = brief.hoverLine()
             self?.talk.todayArrived(brief)
+            self?.morning.consider()
         }
         // The countdown to the next meeting moves by the minute; the brief itself every ten.
         hoverTimer = Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { [weak self] _ in
@@ -80,8 +93,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         NotificationCenter.default.addObserver(forName: .dotAgentFinished, object: nil, queue: .main) { [weak self] note in
             let failed = (note.userInfo?["failed"] as? Bool) ?? false
-            Task { @MainActor in self?.overlay.setMood(failed ? .puzzled : .happy, for: failed ? 3 : 2.5) }
+            Task { @MainActor in
+                self?.overlay.setMood(failed ? .puzzled : .happy, for: failed ? 3 : 2.5)
+                self?.refreshPeek()
+            }
         }
+        refreshPeek()
         installStatusItem()
         AccessibilityContext.observeForegroundApp()
         hotkeys.onEvent = { [weak self] event in self?.talk.hotkey(event) }
@@ -93,6 +110,57 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             murmur = MurmurWatcher(directory: config.murmurLogDirectory, hud: hud)
             murmur?.start()
         }
+        morning.start()
+        announceUpdate()
+    }
+
+    /// The agents' latest files, as tiles on the notch's hover peek (HeyClicky's agent peek).
+    private func refreshPeek() {
+        let files = agents.roster().flatMap { agents.outputFiles(for: $0).prefix(3) }
+            .sorted { a, b in
+                let da = (try? a.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? .distantPast
+                let db = (try? b.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? .distantPast
+                return da > db
+            }
+        hud.model.peekFiles = Array(files.prefix(4))
+    }
+
+    /// Once after an update: what changed, with the README a click away.
+    private func announceUpdate() {
+        guard config.lastSeenVersion != Version.string else { return }
+        let first = config.lastSeenVersion == nil
+        config.lastSeenVersion = Version.string
+        config.save()
+        guard !first else { return }
+        hud.notify(NotchNotice(id: "updated", icon: "sparkles", title: "dot \(Version.string) is in",
+                               detail: "place cards, pictures, the morning card, typed notices, settings pages for voice, mic, dictation and cursor",
+                               tone: .good, actionTitle: "what's new", action: {
+                                   let readme = URL(fileURLWithPath: DotConfig.expand("~/Projects/dot/README.md"))
+                                   if FileManager.default.fileExists(atPath: readme.path) { MarkdownViewer.show(file: readme) }
+                               }, seconds: 20))
+    }
+
+    /// Settings saved in the Dot window: the parts that can change while running change now.
+    private func applySettings(_ changed: DotConfig) {
+        let before = config
+        config = changed
+        // The window saves the copy it took at launch; keys the app set since must not go back.
+        if config.lastSeenVersion != before.lastSeenVersion { config.lastSeenVersion = before.lastSeenVersion; config.save() }
+        if changed.showCompanion != before.showCompanion {
+            presenceItem?.state = changed.showCompanion ? .on : .off
+            overlay.setPresence(changed.showCompanion)
+        }
+        if changed.showInRecordings != before.showInRecordings {
+            recordingsItem?.state = changed.showInRecordings ? .on : .off
+            applyRecordingVisibility()
+        }
+        if changed.pointerColorHex != before.pointerColorHex {
+            overlay.setColor(hex: changed.pointerColorHex)
+            hud.setAccent(hex: changed.pointerColorHex)
+        }
+        if changed.notchPresence != before.notchPresence { hud.setPresence(changed.notchPresence) }
+        if changed.microphoneName != before.microphoneName { talk.setMicrophone(name: changed.microphoneName) }
+        Log.info("settings: applied from the dot window")
     }
 
     private var noticedMeetings: Set<String> = []
@@ -106,7 +174,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         guard !noticedMeetings.contains(key) else { return }
         noticedMeetings.insert(key)
         let line = "\(next.title.lowercased()) in \(next.startsIn) min"
-        hud.flash(status: line, for: 20)
+        let title = next.title
+        let startsIn = next.startsIn
+        hud.notify(NotchNotice(id: "meeting", icon: "calendar", title: line,
+                               detail: brief.today.first(where: { $0.contains(title) }).map { String($0.dropFirst(10)).trimmingCharacters(in: .whitespaces) },
+                               tone: .info, actionTitle: "brief me", action: { [weak self] in
+                                   guard let self else { return }
+                                   self.speaker.speak("on it, a brief in a minute.")
+                                   self.agents.handoff(brief: "in \(startsIn) minutes roshan has: \(title). write a short brief fast: who or what it is, two talking points, two questions to ask. put it on the clipboard and in the output folder; keep it under a page.", agentName: nil, context: nil, shots: nil)
+                               }, secondaryTitle: "dismiss", secondary: {}, seconds: 60))
         let onCall = config.quietOnCalls && CallPresence.isOnCall()
         if !onCall { overlay.greet(line, for: 12) }
         if talk.isIdle, config.speakMeetingNotice, !onCall {
@@ -300,7 +376,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 }
 
 enum Version {
-    static let string = "0.4.0"
+    static let string = "0.5.0"
 }
 
 enum DotIPC {

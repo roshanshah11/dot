@@ -18,6 +18,8 @@ import Foundation
 ///   [THINK]                        the question deserves the stronger model; Dot re-asks it
 ///   [FIND:phrase]                  find the phrase in the document in front, scroll to it and highlight it
 ///   [STOCK:NVDA]                   a live quote card on the board
+///   [PLACE:coffee near campus]     a place card: the nearest matches on a map
+///   [IMAGES:artemis ii launch]     a strip of pictures on the board
 public enum DotTag: Equatable {
     case point(x: Int, y: Int, label: String, screen: Int?)
     case pointNone
@@ -39,6 +41,10 @@ public enum DotTag: Equatable {
     case find(phrase: String)
     /// A live quote card for a ticker.
     case stock(symbol: String)
+    /// A place card: the nearest matches for "what near where", on a map.
+    case place(query: String)
+    /// A strip of pictures of something.
+    case images(query: String)
 }
 
 public enum ShapeKind: String, Equatable, Sendable { case line, arrow, circle, curve, polygon }
@@ -62,7 +68,7 @@ public extension DotTag {
     /// Tags that draw or move something on screen (as opposed to handing off or escalating).
     var isVisual: Bool {
         switch self {
-        case .point, .highlight, .target, .hover, .shape, .card, .reveal, .clearBoard, .type, .web, .find, .stock: return true
+        case .point, .highlight, .target, .hover, .shape, .card, .reveal, .clearBoard, .type, .web, .find, .stock, .place, .images: return true
         case .pointNone, .agent, .newAgent, .think: return false
         }
     }
@@ -97,11 +103,11 @@ public struct ParsedResponse: Equatable {
 }
 
 public enum TagParser {
-    static let tagNames = ["POINT", "HIGHLIGHT", "TARGET", "HOVER", "SHAPE", "CARD", "REVEAL", "CLEAR_BOARD", "TYPE", "WEB", "FIND", "STOCK", "AGENT", "NEW_AGENT", "THINK"]
+    static let tagNames = ["POINT", "HIGHLIGHT", "TARGET", "HOVER", "SHAPE", "CARD", "REVEAL", "CLEAR_BOARD", "TYPE", "WEB", "FIND", "STOCK", "PLACE", "IMAGES", "AGENT", "NEW_AGENT", "THINK"]
 
     // swiftlint:disable:next force_try
     static let pattern = try! NSRegularExpression(
-        pattern: #"\[(POINT|HIGHLIGHT|TARGET|HOVER|SHAPE|CARD|REVEAL|CLEAR_BOARD|TYPE|WEB|FIND|STOCK|AGENT|NEW_AGENT|THINK)(?::([^\]]*))?\]"#,
+        pattern: #"\[(POINT|HIGHLIGHT|TARGET|HOVER|SHAPE|CARD|REVEAL|CLEAR_BOARD|TYPE|WEB|FIND|STOCK|PLACE|IMAGES|AGENT|NEW_AGENT|THINK)(?::([^\]]*))?\]"#,
         options: []
     )
 
@@ -161,6 +167,10 @@ public enum TagParser {
         case "FIND":
             let phrase = payload.trimmingCharacters(in: .whitespacesAndNewlines).trimmingCharacters(in: CharacterSet(charactersIn: "\"'"))
             return phrase.count >= 2 ? .find(phrase: phrase) : nil
+        case "PLACE", "IMAGES":
+            let query = payload.trimmingCharacters(in: .whitespacesAndNewlines).trimmingCharacters(in: CharacterSet(charactersIn: "\"'"))
+            guard query.count >= 2, query.count <= 90 else { return nil }
+            return kind == "PLACE" ? .place(query: query) : .images(query: query)
         case "STOCK":
             let symbol = payload.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
             guard !symbol.isEmpty, symbol.count <= 12, symbol.allSatisfy({ $0.isLetter || $0.isNumber || $0 == "." || $0 == "-" || $0 == "^" || $0 == "=" }) else { return nil }

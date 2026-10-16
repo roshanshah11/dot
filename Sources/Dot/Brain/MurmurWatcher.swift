@@ -76,14 +76,19 @@ final class MurmurWatcher {
             transcribingSince = nil
             hud.model.recordingLine = nil
             let count = chars >= 1000 ? "\(chars / 1000),\(String(format: "%03d", chars % 1000)) characters" : "\(chars) characters"
-            hud.flash(status: "murmur pasted \(count) into \(app.isEmpty ? "the app" : app.lowercased())", for: 6)
+            hud.notify(NotchNotice(id: "murmur", icon: "text.insert", title: "murmur pasted \(count) into \(app.isEmpty ? "the app" : app.lowercased())", tone: .good, seconds: 6))
             Log.info("murmur: pasted \(chars) chars into \(app)")
         case .notice(let body, _):
             let lower = body.lowercased()
             if !lower.hasPrefix("pasted into") {
                 transcribingSince = nil
                 hud.model.recordingLine = nil
-                hud.flash(status: MurmurEvents.line(forNotice: body), for: 6)
+                if lower.hasPrefix("copied to clipboard"), !lower.contains("empty") {
+                    // HeyClicky's dictation clipboard surface: the text is on the clipboard, press command v.
+                    hud.notify(NotchNotice(id: "murmur", icon: "doc.on.clipboard", title: "murmur put it on your clipboard", detail: "no field to type into; press command v where it should go", tone: .info, seconds: 10))
+                } else {
+                    hud.notify(NotchNotice(id: "murmur", icon: lower.contains("empty") ? "mic.slash" : "waveform", title: MurmurEvents.line(forNotice: body), tone: lower.contains("empty") ? .warn : .info, seconds: 6))
+                }
                 Log.info("murmur: \(body)")
             }
         case .idle:

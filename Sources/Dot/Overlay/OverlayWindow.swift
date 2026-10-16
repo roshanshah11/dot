@@ -80,6 +80,10 @@ final class CompanionModel: ObservableObject {
     @Published var shapes: [ShapeMark] = []
     @Published var highlight: CGRect?
     @Published var highlightLabel: String?
+    /// 0...1: the highlight's dashed outline draws itself on when it lands.
+    @Published var highlightProgress: CGFloat = 1
+    /// The ringed control was clicked: a filled pulse before the ring goes.
+    @Published var ringDone = false
     @Published var drawRect: CGRect?
     @Published var stroke: [CGPoint] = []
     /// Strokes already finished while the key stays held (he can mark two things).
@@ -128,8 +132,9 @@ struct CompanionView: View {
             }
             if let rect = model.highlight {
                 RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .trim(from: 0, to: model.highlightProgress)
                     .stroke(model.color, style: StrokeStyle(lineWidth: 2, lineCap: .round, dash: [7, 5]))
-                    .background(model.color.opacity(0.06), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                    .background(model.color.opacity(0.06 * Double(model.highlightProgress)), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
                     .shadow(color: model.color.opacity(0.35), radius: 3)
                     .frame(width: rect.width, height: rect.height)
                     .offset(x: rect.minX, y: rect.minY)
@@ -144,9 +149,11 @@ struct CompanionView: View {
                 }
             }
             if let ring = model.ring {
-                RingView(ring: ring, color: model.color)
+                RingView(ring: ring, color: model.color, done: model.ringDone)
+                    .transition(.scale(scale: 0.55).combined(with: .opacity))
                 if !ring.label.isEmpty, !(model.bubbleVisible && !model.bubbleText.isEmpty) {
                     chip(ring.label).offset(x: ring.center.x + ring.radius + 8, y: ring.center.y - 12)
+                        .transition(.opacity)
                 }
             }
             if let tail = model.tailTo, model.visible {
@@ -243,12 +250,18 @@ struct CompanionView: View {
 private struct RingView: View {
     let ring: Ring
     let color: Color
+    var done = false
 
     var body: some View {
         TimelineView(.animation(minimumInterval: 1 / 30)) { context in
             let t = context.date.timeIntervalSinceReferenceDate
             let pulse = CGFloat((sin(t * 2.4) + 1) / 2)
             ZStack {
+                if done {
+                    // The click landed: the ring fills and swells once, then goes.
+                    Circle().fill(color.opacity(0.35)).frame(width: ring.radius * 2, height: ring.radius * 2)
+                        .transition(.scale(scale: 1.6).combined(with: .opacity))
+                }
                 Circle()
                     .stroke(color.opacity(0.18 + 0.18 * (1 - pulse)), lineWidth: 1.5)
                     .frame(width: ring.radius * 2 + 10 + pulse * 14, height: ring.radius * 2 + 10 + pulse * 14)
@@ -516,13 +529,21 @@ final class OverlayManager {
     private var returnWork: DispatchWorkItem?
     private var blinkWork: DispatchWorkItem?
     private var presence: Bool
+    private var ringDoneWork: DispatchWorkItem?
     private var transientVisible = false
     private var transientFade: DispatchWorkItem?
     private var parkedScreen: Int?
     private var mouseAtPark = CGPoint.zero
     private var lastMouse = CGPoint.zero
     private var breathPhase: Double = 0
-    let color: Color
+    private(set) var color: Color
+
+    /// A new accent from Settings, applied to every screen's marks and the orb.
+    func setColor(hex: String) {
+        guard let next = Color(hex: hex) else { return }
+        color = next
+        for model in models { model.color = next }
+    }
 
     /// Dot stays beside the cursor all the time. Off: it appears for each exchange only.
     var isPresent: Bool { presence }
@@ -713,7 +734,11 @@ final class OverlayManager {
         returnWork?.cancel()
         let model = models[index]
         let center = Coordinates.overlayPoint(fromScreen: screenPoint, screenFrame: windows[index].screenFrame)
-        model.ring = Ring(center: center, radius: max(radius, 10), label: label, hover: hover)
+        ringDoneWork?.cancel()
+        model.ringDone = false
+        withAnimation(.spring(response: 0.38, dampingFraction: 0.68)) {
+            model.ring = Ring(center: center, radius: max(radius, 10), label: label, hover: hover)
+        }
         let seat = clampToScreen(CGPoint(x: center.x + radius + 20, y: center.y + radius + 14), model: model)
         park(on: index)
         model.chip = nil
@@ -731,8 +756,10 @@ final class OverlayManager {
         showTransient()
         returnWork?.cancel()
         let model = models[index]
+        model.highlightProgress = 0
         model.highlight = Coordinates.overlayRect(fromScreen: rect, screenFrame: windows[index].screenFrame)
         model.highlightLabel = label
+        withAnimation(.easeOut(duration: 0.45)) { model.highlightProgress = 1 }
         if model.motion != .parked {
             park(on: index)
             let corner = Coordinates.overlayPoint(fromScreen: CGPoint(x: rect.maxX, y: rect.minY), screenFrame: windows[index].screenFrame)
@@ -807,7 +834,17 @@ final class OverlayManager {
     }
 
     func clearRing() {
-        for model in models { model.ring = nil }
+        ringDoneWork?.cancel()
+        for model in models { withAnimation(.easeOut(duration: 0.2)) { model.ring = nil; model.ringDone = false } }
+    }
+
+    /// The ringed control was clicked: a filled pulse on the ring, then it goes (HeyClicky's target-completed beat).
+    func completeRing() {
+        ringDoneWork?.cancel()
+        for model in models where model.ring != nil { withAnimation(.easeOut(duration: 0.3)) { model.ringDone = true } }
+        let work = DispatchWorkItem { [weak self] in self?.clearRing() }
+        ringDoneWork = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.55, execute: work)
     }
 
     /// Marks fade, and Dot flies back to the cursor after `delay`.

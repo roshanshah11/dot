@@ -538,3 +538,74 @@ final class MurmurEventTests: XCTestCase {
         XCTAssertTrue(MurmurEvents.logName(for: Date()).hasPrefix("murmur-20"))
     }
 }
+
+
+final class CardTagTests: XCTestCase {
+    func testPlaceAndImagesTags() {
+        XCTAssertEqual(TagParser.makeTag(kind: "PLACE", payload: "coffee near campus"), .place(query: "coffee near campus"))
+        XCTAssertEqual(TagParser.makeTag(kind: "IMAGES", payload: " artemis ii launch "), .images(query: "artemis ii launch"))
+        XCTAssertNil(TagParser.makeTag(kind: "PLACE", payload: "x"))
+        XCTAssertTrue(DotTag.place(query: "a").isVisual)
+        XCTAssertTrue(DotTag.images(query: "a").isVisual)
+        let parsed = TagParser.parse("[PLACE:chai near hyde park]\nclosest is beargrounds, a quarter mile.")
+        XCTAssertEqual(parsed.tags, [.place(query: "chai near hyde park")])
+        XCTAssertEqual(parsed.spoken.trimmingCharacters(in: .whitespacesAndNewlines), "closest is beargrounds, a quarter mile.")
+    }
+}
+
+final class CardAskTests: XCTestCase {
+    func testPlaceAsks() {
+        XCTAssertEqual(CardAsks.place("find a coffee shop near me"), CardAsks.PlaceAsk(what: "coffee shop", whereWord: nil))
+        XCTAssertEqual(CardAsks.place("where's the closest pharmacy around campus?"), CardAsks.PlaceAsk(what: "pharmacy", whereWord: nil))
+        XCTAssertEqual(CardAsks.place("is there good ramen near wicker park"), CardAsks.PlaceAsk(what: "ramen", whereWord: "wicker park"))
+        XCTAssertEqual(CardAsks.place("Find a coffee shop near Hyde Park in Chicago."), CardAsks.PlaceAsk(what: "coffee shop", whereWord: "hyde park in chicago"))
+        XCTAssertNil(CardAsks.place("where does it explain the discount rate"))
+        XCTAssertNil(CardAsks.place("find my notes near the end of the document"))
+        XCTAssertNil(CardAsks.place("what's on my screen"))
+    }
+
+    func testImageAsks() {
+        XCTAssertEqual(CardAsks.images("show me pictures of the artemis ii launch"), "the artemis ii launch")
+        XCTAssertEqual(CardAsks.images("Can you pull up some photos of a golgi apparatus?"), "a golgi apparatus")
+        XCTAssertEqual(CardAsks.images("what does a mitochondrion look like"), "a mitochondrion")
+        XCTAssertNil(CardAsks.images("what does this formula mean"))
+        XCTAssertNil(CardAsks.images("show me around this page"))
+    }
+}
+
+final class MorningPlannerTests: XCTestCase {
+    private let day: Date = {
+        let f = DateFormatter(); f.dateFormat = "yyyy-MM-dd HH:mm"; f.locale = Locale(identifier: "en_US_POSIX")
+        return f.date(from: "2026-10-16 08:00")!
+    }()
+
+    func testBuildsFromTheDay() {
+        let items = MorningPlanner.suggestions(
+            deadlines: ["2026-10-16 Raymond James Sophomore Showcase application due 11:59 PM ET: short essays", "2026-10-25 Something far off"],
+            today: ["Fri 10-16 12:30–12:45 Call: Alex Morgan (BlackRock) (at Call (555) 010-0199)", "Fri 10-16 09:30–10:20 Mechanics: Lecture (at Kersten)"],
+            unanswered: ["prof@example.com: Re: Seminar Schedule (Tue 10-13 17)"],
+            commitments: ["Roshan Shah → Emily Parker: Reply to Emily Parker (LMR Partners office manager) with availability (she asked)"],
+            date: day)
+        XCTAssertEqual(items.count, 4)
+        XCTAssertTrue(items[0].text.hasPrefix("prep raymond james sophomore showcase application due 11"))
+        XCTAssertTrue(items[0].text.hasSuffix("due today"))
+        XCTAssertTrue(items[0].brief.contains("nothing gets submitted"))
+        XCTAssertEqual(items[1].text, "a one-page brief on alex morgan (blackrock) before 12:30")
+        XCTAssertEqual(items[2].text, "draft a reply to prof: Re: Seminar Schedule")
+        XCTAssertTrue(items[2].brief.contains("never send"))
+        XCTAssertTrue(items[3].text.hasPrefix("do: roshan shah → emily parker: reply to emily parker"))
+        XCTAssertFalse(items.contains { $0.text.contains("mechanics") })
+        XCTAssertFalse(items.contains { $0.text.contains("far off") })
+    }
+
+    func testDeclinedKeysAreSkippedAndLimitHolds() {
+        let unanswered = (1...4).map { "person\($0)@x.com: Subject \($0) (Tue 10-13 10)" }
+        let all = MorningPlanner.suggestions(deadlines: [], today: [], unanswered: unanswered, commitments: ["a", "b", "c"], date: day)
+        XCTAssertEqual(all.count, 5)
+        let declined = Set(all.prefix(2).map(\.key))
+        let rest = MorningPlanner.suggestions(deadlines: [], today: [], unanswered: unanswered, commitments: ["a", "b", "c"], date: day, declined: declined)
+        XCTAssertFalse(rest.contains { declined.contains($0.key) })
+        XCTAssertEqual(MorningPlanner.greeting(count: 1, hour: 9), "morning. i can do 1 thing for you today.")
+        XCTAssertEqual(MorningPlanner.greeting(count: 3, hour: 14), "afternoon. i can do 3 things for you today.")
+    }
+}

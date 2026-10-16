@@ -24,6 +24,7 @@ case "--help", "-h":
       Dot --find <phrase>      search the app in front and highlight the match
       Dot --listen [title]     start the lecture ear       Dot --stop-listening  stop it and save the transcript
       Dot --dictionary "heard => correct"   add a term the recognizer should write your way
+      Dot --snapshot [folder]  render every notch state, mark and card to PNG (no screen turn)
       Dot --version
 
     Hold control+option and talk; drag while holding to draw a box to ask about.
@@ -67,6 +68,17 @@ case "--today":
         print("could not parse the helper's output")
         exit(1)
     }
+    exit(0)
+case "--snapshot":
+    // Every surface to PNG, no screen turn: ~/Dot/snapshots/<stamp>/ unless a folder is given.
+    let stamp: String = { let f = DateFormatter(); f.dateFormat = "yyyy-MM-dd HHmm"; return f.string(from: Date()) }()
+    let folder = arguments.dropFirst().first.map { URL(fileURLWithPath: DotConfig.expand($0), isDirectory: true) }
+        ?? URL(fileURLWithPath: NSHomeDirectory()).appendingPathComponent("Dot/snapshots/\(stamp)", isDirectory: true)
+    let snapshotApp = NSApplication.shared
+    snapshotApp.setActivationPolicy(.accessory)   // prohibited apps may not draw windows, and WebKit paints only into one
+    snapshotApp.finishLaunching()                  // registers with the window server; without it no window ever appears
+    let group = arguments.dropFirst(2).first   // notch | overlay | cards
+    MainActor.assumeIsolated { Snapshots.run(into: folder, only: group) }
     exit(0)
 case "--voices":
     for voice in AppleSpeaker.availableVoices() {

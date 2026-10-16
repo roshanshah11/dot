@@ -7,11 +7,23 @@ import UniformTypeIdentifiers
 /// The one ordinary window, after HeyClicky's Home: a rail of agents on the left with a
 /// status dot and an unread dot, the selected agent's thread in the middle (his messages,
 /// the agent's words, each step it took, what it made), the outputs with a preview on the
-/// right, and pages for his day and Dot's settings.
+/// right, and pages for his day, Dot's settings, his skills and the offers Dot has made.
 @MainActor
 final class HomeWindowController {
     private var window: NSWindow?
     private let model: HomeModel
+
+    /// Speaks a line in the voice Dot loaded, for the Voice page's preview buttons.
+    var speakSample: ((String) -> Void)? {
+        get { model.speakSample }
+        set { model.speakSample = newValue }
+    }
+
+    /// Called with the new settings after Save has written config.json.
+    var onSettingsChanged: ((DotConfig) -> Void)? {
+        get { model.onSettingsChanged }
+        set { model.onSettingsChanged = newValue }
+    }
 
     init(agents: AgentManager, ledger: Ledger, config: DotConfig, atlas: AtlasBridge) {
         model = HomeModel(agents: agents, ledger: ledger, config: config, atlas: atlas)
@@ -75,7 +87,8 @@ struct ThreadItem: Identifiable, Equatable {
 
 @MainActor
 final class HomeModel: ObservableObject {
-    enum Page: Equatable { case agent, day, settings }
+    /// `settings` is the General page.
+    enum Page: Equatable { case agent, day, settings, voice, microphone, dictation, shortcuts, cursor, skills, suggestions }
 
     @Published var page: Page = .agent
     @Published var agents: [AgentManager.Agent] = []
@@ -110,6 +123,11 @@ final class HomeModel: ObservableObject {
     let ledger: Ledger
     let config: DotConfig
     let atlas: AtlasBridge
+    let dictionary = DictionaryEditor()
+    var speakSample: ((String) -> Void)?
+    var onSettingsChanged: ((DotConfig) -> Void)?
+    /// The settings as last written, to tell the pages there is something to save.
+    private var savedSettings: Data?
     private var timer: Timer?
     private let defaults = UserDefaults.standard
 
@@ -119,6 +137,7 @@ final class HomeModel: ObservableObject {
         self.config = config
         self.atlas = atlas
         self.settings = config
+        self.savedSettings = Self.encoded(config)
         timer = Timer.scheduledTimer(withTimeInterval: 2.0, repeats: true) { [weak self] _ in
             Task { @MainActor in self?.refreshLive() }
         }
@@ -257,8 +276,34 @@ final class HomeModel: ObservableObject {
 
     func saveSettings() {
         settings.save()
+        savedSettings = Self.encoded(settings)
+        onSettingsChanged?(settings)
         settingsNote = "saved to ~/.config/dot/config.json; voice, hotkey and model changes take effect when Dot relaunches"
         DispatchQueue.main.asyncAfter(deadline: .now() + 6) { [weak self] in self?.settingsNote = nil }
+    }
+
+    var hasUnsavedSettings: Bool { Self.encoded(settings) != savedSettings }
+
+    private static func encoded(_ config: DotConfig) -> Data? {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = .sortedKeys
+        return try? encoder.encode(config)
+    }
+
+    /// Restarts Dot through its launch agent so the voice loads again. Unsaved settings are
+    /// written first; working agents stop with the process.
+    func relaunch() {
+        if hasUnsavedSettings { saveSettings() }
+        let task = Process()
+        task.executableURL = URL(fileURLWithPath: "/bin/launchctl")
+        task.arguments = ["kickstart", "-k", "gui/\(getuid())/com.roshan.dot"]
+        // Success kills this process, so only a failure is ever reported.
+        task.terminationHandler = { [weak self] process in
+            let status = process.terminationStatus
+            guard status != 0 else { return }
+            Task { @MainActor in self?.settingsNote = "relaunch failed (launchctl exit \(status)); is Dot running from its launch agent?" }
+        }
+        do { try task.run() } catch { settingsNote = "relaunch failed: \(error.localizedDescription)" }
     }
 
     /// The last next-action offer the selected agent made, if its latest words were a result.
@@ -276,7 +321,7 @@ struct HomeView: View {
     @State private var showingNew = false
     @State private var openSteps: Set<String> = []
 
-    private let accent = Color(red: 1.0, green: 0.42, blue: 0.17)
+    private let accent = HomeStyle.accent
 
     var body: some View {
         HStack(spacing: 0) {
@@ -296,6 +341,13 @@ struct HomeView: View {
                 }
             case .day: dayView
             case .settings: settingsView
+            case .voice: VoicePage(model: model)
+            case .microphone: MicrophonePage(model: model)
+            case .dictation: DictationPage(model: model, editor: model.dictionary)
+            case .shortcuts: ShortcutsPage()
+            case .cursor: CursorPage(model: model)
+            case .skills: SkillsPage()
+            case .suggestions: SuggestionsPage(model: model)
             }
         }
         .sheet(isPresented: $showingNew) { newAgentSheet }
@@ -326,7 +378,17 @@ struct HomeView: View {
             }
             Divider().padding(.vertical, 4)
             pageRow("Day", icon: "sun.max", page: .day, detail: model.brief.map { "\($0.today.count) today · \($0.deadlines(withinDays: 7).count) due" })
-            pageRow("Settings", icon: "slider.horizontal.3", page: .settings, detail: nil)
+            // HeyClicky's sidebar groups: its own settings, then Work.
+            railHeader("Dot")
+            pageRow("General", icon: "slider.horizontal.3", page: .settings, detail: nil)
+            pageRow("Voice", icon: "waveform", page: .voice, detail: nil)
+            pageRow("Microphone", icon: "mic", page: .microphone, detail: nil)
+            pageRow("Dictation", icon: "text.cursor", page: .dictation, detail: nil)
+            pageRow("Shortcuts", icon: "keyboard", page: .shortcuts, detail: nil)
+            pageRow("Cursor", icon: "cursorarrow", page: .cursor, detail: nil)
+            railHeader("Work")
+            pageRow("Skills", icon: "books.vertical", page: .skills, detail: nil)
+            pageRow("Suggestions", icon: "lightbulb", page: .suggestions, detail: nil)
             HStack(spacing: 8) {
                 usageRing
                 VStack(alignment: .leading, spacing: 1) {
@@ -335,7 +397,7 @@ struct HomeView: View {
                 }
                 Spacer()
                 if !model.permissions.allGranted {
-                    Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.orange).help("A permission is missing; see Settings")
+                    Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.orange).help("A permission is missing; see General")
                         .onTapGesture { model.page = .settings }
                 }
             }
@@ -352,6 +414,12 @@ struct HomeView: View {
         .frame(width: 22, height: 22)
     }
 
+    private func railHeader(_ title: String) -> some View {
+        Text(title).font(.system(size: 10.5, weight: .semibold)).foregroundStyle(.tertiary)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 18).padding(.top, 8).padding(.bottom, 2)
+    }
+
     private func pageRow(_ title: String, icon: String, page: HomeModel.Page, detail: String?) -> some View {
         Button { model.page = page } label: {
             HStack(spacing: 10) {
@@ -362,7 +430,7 @@ struct HomeView: View {
                 }
                 Spacer()
             }
-            .padding(.horizontal, 10).padding(.vertical, 6)
+            .padding(.horizontal, 10).padding(.vertical, detail == nil ? 4 : 6)
             .background(model.page == page ? Color.primary.opacity(0.07) : .clear, in: RoundedRectangle(cornerRadius: 8))
             .contentShape(Rectangle())
         }
@@ -832,61 +900,42 @@ struct HomeView: View {
 
     // MARK: Settings
 
+    /// General. Voice speed and the notch tab moved to the Voice and Cursor pages.
     private var settingsView: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 18) {
-                Text("Settings").font(.title2.weight(.semibold)).padding(.top, 30)
-                settingsGroup("Talking") {
-                    Toggle("Dot sits in the notch when idle", isOn: $model.settings.notchPresence)
-                    Toggle("Speak the first sentence while the rest is still coming", isOn: $model.settings.eagerSpeech)
-                    Toggle("Good-morning line once a day", isOn: $model.settings.morningGreeting)
-                    HStack { Text("Voice speed"); Slider(value: $model.settings.ttsSpeed, in: 0.7...1.4, step: 0.05).frame(width: 200); Text(String(format: "%.2fx", model.settings.ttsSpeed)).font(.caption.monospaced()) }
-                }
-                settingsGroup("Agents") {
-                    Toggle("Say when an agent finishes", isOn: $model.settings.speakAgentResults)
-                    Toggle("Dot may move the cursor and click the ringed steps on \"do it\"", isOn: $model.settings.driveEnabled)
-                    HStack { Text("Close an idle agent after"); Stepper("\(model.settings.agentIdleMinutes) min", value: $model.settings.agentIdleMinutes, in: 1...120).frame(width: 130) }
-                }
-                settingsGroup("Models") {
-                    HStack { Text("Talk").frame(width: 60, alignment: .leading); TextField("sonnet", text: $model.settings.talkModel).frame(width: 160); Text("effort"); TextField("low", text: Binding(get: { model.settings.talkEffort ?? "" }, set: { model.settings.talkEffort = $0.isEmpty ? nil : $0 })).frame(width: 70) }
-                    HStack { Text("Think").frame(width: 60, alignment: .leading); TextField("opus", text: $model.settings.thinkModel).frame(width: 160) }
-                    HStack { Text("Agents").frame(width: 60, alignment: .leading); TextField("opus", text: $model.settings.agentModel).frame(width: 160); Text("effort"); TextField("", text: Binding(get: { model.settings.agentEffort ?? "" }, set: { model.settings.agentEffort = $0.isEmpty ? nil : $0 })).frame(width: 70) }
-                }
-                settingsGroup("What Dot knows") {
-                    Text("Markdown files in ~/Dot/talk/context ride along in every talk turn: a course map, a project brief, the names it should know.").font(.callout).foregroundStyle(.secondary)
-                    HStack {
-                        Button("Open context folder") {
-                            let dir = model.config.talkRootURL.appendingPathComponent("context")
-                            try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-                            NSWorkspace.shared.open(dir)
-                        }.controlSize(.small)
-                        Button("Open config.json") { NSWorkspace.shared.open(DotConfig.fileURL) }.controlSize(.small)
-                        Button("Open agents folder") { NSWorkspace.shared.open(model.config.agentsRootURL) }.controlSize(.small)
-                    }
-                }
-                settingsGroup("Permissions") {
-                    permissionRow("Microphone", model.permissions.microphone) { Permissions.requestMicrophone { _ in model.reload() }; Permissions.openSettings(.microphone) }
-                    permissionRow("Screen Recording", model.permissions.screenRecording) { Permissions.requestScreenRecording(); Permissions.openSettings(.screenRecording) }
-                    permissionRow("Accessibility", model.permissions.accessibility) { Permissions.requestAccessibility(); Permissions.openSettings(.accessibility) }
-                }
-                HStack(spacing: 10) {
-                    Button("Save") { model.saveSettings() }.keyboardShortcut("s", modifiers: .command)
-                    if let note = model.settingsNote { Text(note).font(.caption).foregroundStyle(.secondary) }
+        SettingsPage("General") {
+            HomeSection("Talking") {
+                Toggle("Speak the first sentence while the rest is still coming", isOn: $model.settings.eagerSpeech)
+                Toggle("Good-morning line once a day", isOn: $model.settings.morningGreeting)
+            }
+            HomeSection("Agents") {
+                Toggle("Say when an agent finishes", isOn: $model.settings.speakAgentResults)
+                Toggle("Dot may move the cursor and click the ringed steps on \"do it\"", isOn: $model.settings.driveEnabled)
+                HStack { Text("Close an idle agent after"); Stepper("\(model.settings.agentIdleMinutes) min", value: $model.settings.agentIdleMinutes, in: 1...120).frame(width: 130) }
+            }
+            HomeSection("Models") {
+                HStack { Text("Talk").frame(width: 60, alignment: .leading); TextField("sonnet", text: $model.settings.talkModel).frame(width: 160); Text("effort"); TextField("low", text: Binding(get: { model.settings.talkEffort ?? "" }, set: { model.settings.talkEffort = $0.isEmpty ? nil : $0 })).frame(width: 70) }
+                HStack { Text("Think").frame(width: 60, alignment: .leading); TextField("opus", text: $model.settings.thinkModel).frame(width: 160) }
+                HStack { Text("Agents").frame(width: 60, alignment: .leading); TextField("opus", text: $model.settings.agentModel).frame(width: 160); Text("effort"); TextField("", text: Binding(get: { model.settings.agentEffort ?? "" }, set: { model.settings.agentEffort = $0.isEmpty ? nil : $0 })).frame(width: 70) }
+            }
+            HomeSection("What Dot knows") {
+                Text("Markdown files in ~/Dot/talk/context ride along in every talk turn: a course map, a project brief, the names it should know.").font(.callout).foregroundStyle(.secondary)
+                HStack {
+                    Button("Open context folder") {
+                        let dir = model.config.talkRootURL.appendingPathComponent("context")
+                        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+                        NSWorkspace.shared.open(dir)
+                    }.controlSize(.small)
+                    Button("Open config.json") { NSWorkspace.shared.open(DotConfig.fileURL) }.controlSize(.small)
+                    Button("Open agents folder") { NSWorkspace.shared.open(model.config.agentsRootURL) }.controlSize(.small)
                 }
             }
-            .padding(.horizontal, 24).padding(.bottom, 24)
-            .frame(maxWidth: 640, alignment: .leading)
+            HomeSection("Permissions") {
+                permissionRow("Microphone", model.permissions.microphone) { Permissions.requestMicrophone { _ in model.reload() }; Permissions.openSettings(.microphone) }
+                permissionRow("Screen Recording", model.permissions.screenRecording) { Permissions.requestScreenRecording(); Permissions.openSettings(.screenRecording) }
+                permissionRow("Accessibility", model.permissions.accessibility) { Permissions.requestAccessibility(); Permissions.openSettings(.accessibility) }
+            }
+            SettingsSaveBar(model: model)
         }
-    }
-
-    private func settingsGroup<Content: View>(_ title: String, @ViewBuilder content: () -> Content) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text(title).font(.headline)
-            content()
-        }
-        .padding(14)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color.primary.opacity(0.05), in: RoundedRectangle(cornerRadius: 12))
     }
 
     private func permissionRow(_ name: String, _ granted: Bool, action: @escaping () -> Void) -> some View {

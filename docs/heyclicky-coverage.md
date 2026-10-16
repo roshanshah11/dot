@@ -1,7 +1,7 @@
 # HeyClicky coverage: one row per HeyClicky component, mapped to Dot
 
 A component ledger of HeyClicky 1.0.53 against Dot, one row per Swift source file named in the HeyClicky binary.
-Evidence: `strings` and `otool -L` of the binary (sha256 970569210a71cf1f39790f7d0fc02af2a1d64bacf0259d4741f0fa63e53dbb31) and its Resources listing, read 2026-10-15; static only, neither app was run.
+Evidence: `strings` and `otool -L` of the binary (sha256 970569210a71cf1f39790f7d0fc02af2a1d64bacf0259d4741f0fa63e53dbb31) and its Resources listing, read 2026-10-15; static only, neither app was run. Round five (2026-10-16) re-graded the rows it built; the per-behavior check is docs/heyclicky-verification.md.
 
 ## Summary
 
@@ -9,9 +9,9 @@ The binary names 212 Swift files. 42 are third-party (Sentry 19, PostHog 21, `re
 
 | Status | Components | What it means |
 |---|---|---|
-| built | 51 | Dot has a working counterpart, sometimes built a different way (noted in the row) |
-| partial | 40 | Dot covers part of it; the row says what is missing |
-| missing | 57 | Nothing in Dot does it |
+| built | 57 | Dot has a working counterpart, sometimes built a different way (noted in the row) |
+| partial | 37 | Dot covers part of it; the row says what is missing |
+| missing | 54 | Nothing in Dot does it |
 | n/a | 21 | Exists because HeyClicky is a hosted product (16: accounts, billing, referrals, paywall, analytics, remote config, the Codex runtime bridge, its OpenAI client), the hosted Composio catalog (3), a developer preview (1) and a release announcement (1). Dot runs on Claude Code and has no accounts |
 | total | 169 | |
 
@@ -40,9 +40,9 @@ Paths in the Dot owner column are relative to the repository root. "(inferred)" 
 | NotchWindowManager | the panel that hangs from the notch, per screen | `Sources/Dot/Notch/NotchHUD.swift` | built | one panel, on the notched (or main) screen |
 | NotchPresenter | decides which notch surface shows and reads the feature toggles (inferred) | `Sources/Dot/Notch/NotchHUD.swift` | built | |
 | NotchRootView | root view of the notch panel | `Sources/Dot/Notch/NotchHUD.swift` | built | |
-| NotchActivitySurface | state line: listening, thinking, speaking, dictating, with a waveform (observed) | `Sources/Dot/Notch/NotchHUD.swift` | built | the line being spoken shows under the state (2026-10-15) |
+| NotchActivitySurface | state line: listening, thinking, speaking, dictating, with a waveform (observed) | `Sources/Dot/Notch/NotchHUD.swift` | built | the state in a word (listening, thinking, thinking deeper, speaking, dictating) with the bars (round five) |
 | NotchAgentSurface | dropdown under the notch: Clickys with last line and artifact thumbnail, suggestions row, Home button (observed) | `Sources/Dot/Notch/NotchHUD.swift` | partial | task bar shows running and recent tasks only; no roster, thumbnails or suggestions row |
-| NotchAgentPeekSurface | hover peek of working Clickys and their latest files (settings copy) | `Sources/Dot/Notch/NotchHUD.swift` | partial | hover shows the day line and folded task pills, not files |
+| NotchAgentPeekSurface | hover peek of working Clickys and their latest files (settings copy) | `Sources/Dot/Notch/NotchHUD.swift` | built | hover shows the day line and the agents' latest files as tiles he can drag out, plus open dot (round five) |
 | NotchTextInputSurface | typed question field with file attachments and agent follow-up | `Sources/Dot/Notch/NotchHUD.swift` | partial | text only; no attachments or file drop |
 | NotchTextResponseSurface | the answer to a typed question, shown in the notch | `Sources/Dot/Notch/NotchHUD.swift` | built | a typed question's answer stays in the notch with copy and close; silent unless `speakTypedAnswers` (2026-10-15) |
 | NotchEyeView | eyes drawn on the notch (inferred) | none | missing | the idle tab shows a glowing dot |
@@ -67,7 +67,7 @@ Paths in the Dot owner column are relative to the repository root. "(inferred)" 
 | CompanionManager+EscapeInterrupt | escape stops speech and cancels work | `Sources/Dot/Input/HotkeyMonitor.swift`, `Sources/Dot/Brain/Talk.swift` | built | |
 | CompanionManager+ResponsePipeline | parses tags out of the reply and speaks agent updates | `Sources/Dot/Brain/Talk.swift`, `Sources/DotKit/Beats.swift`, `Sources/DotKit/TagParser.swift` | built | agent results are spoken by AgentManager, not by the talk model |
 | InlineVoiceRecordingWaveformView | waveform while he speaks | `Sources/Dot/Notch/NotchHUD.swift`, `Sources/Dot/Overlay/OverlayWindow.swift` | built | |
-| NotchMicrophoneTroubleSurface | notch card when the mic hears nothing, with a Mic settings button | `Sources/Dot/Brain/Talk.swift` | built | a status line naming the dead mic, no button (2026-10-15) |
+| NotchMicrophoneTroubleSurface | notch card when the mic hears nothing, with a Mic settings button | `Sources/Dot/Brain/Talk.swift` | built | a typed notice naming the dead mic and the fallback, with a Sound settings button (round five) |
 
 ### Dictation
 
@@ -81,8 +81,8 @@ Paths in the Dot owner column are relative to the repository root. "(inferred)" 
 | AppleSpeechTranscriptionProvider | Apple Speech as a second recognizer | `Sources/Dot/Audio/Transcriber.swift` | partial | one model; its offline pass is the only fallback |
 | DictationCorrectionLearner | learns spellings from his corrections into the dictionary (inferred) | `Sources/Dot/Brain/Talk.swift`, `Sources/DotKit/DictationDictionary.swift` | partial | "x is spelled y" and "add x to my dictionary" write the dictionary; nothing is learned from edits |
 | DictationAnnouncementWindow | introduces dictation to existing users | none | n/a | a release announcement |
-| NotchDictationClipboardSurface | "copied to your clipboard, press ⌘V" when no field takes the text (observed) | `Sources/Dot/Brain/Talk.swift` | built | a status line rather than a card |
-| NotchDictionaryLearnedSurface | "added to your dictionary" notice | `Sources/Dot/Notch/NotchHUD.swift` | built | "added to your dictionary" status line |
+| NotchDictationClipboardSurface | "copied to your clipboard, press ⌘V" when no field takes the text (observed) | `Sources/Dot/Brain/Talk.swift` | built | a typed notice card with the clipboard icon (round five) |
+| NotchDictionaryLearnedSurface | "added to your dictionary" notice | `Sources/Dot/Notch/NotchHUD.swift` | built | "learned: x" notice with undo (round five) |
 
 ### Seeing and annotating
 
@@ -125,7 +125,7 @@ The visual grammar has no files of its own in HeyClicky (it lives in the respons
 | ClickyRoster | the Clickys: created, archived, renamed, a portrait each | `Sources/Dot/Agents/AgentManager.swift` | built | no portraits |
 | ClickyAgentIconView | picks an agent's icon from words in its job | `Sources/Dot/Home/HomeWindow.swift` | partial | first-letter avatar |
 | ClickyAgentTurnCostLedger | cost of each agent turn | `Sources/Dot/Agents/Ledger.swift` | built | |
-| CodexHUDWindow | agent card under the notch: avatar, status, live line, Stop, Open (observed) | `Sources/Dot/Notch/NotchHUD.swift` | built | the task bar row |
+| CodexHUDWindow | agent card under the notch: avatar, status, live line, Stop, Open (observed) | `Sources/Dot/Notch/NotchHUD.swift` | built | the agent card: avatar on its own hue, name and state, live line with a slow ellipsis, stop and open (round five) |
 | CodexHUDHitRegions | click regions for that card (inferred) | none | missing | (unclear) |
 | HomeSpaceRootView | the Home window's layout | `Sources/Dot/Home/HomeWindow.swift` | built | |
 | HomeSpaceViewModel | Home's state | `Sources/Dot/Home/HomeWindow.swift` | built | |
@@ -175,8 +175,8 @@ The visual grammar has no files of its own in HeyClicky (it lives in the respons
 |---|---|---|---|---|
 | CompanionManager+Proactive | suggestions and proactive launches; goes quiet on calls (a `ClickyCallPresenceDetector` type; observed) | `Sources/Dot/Brain/Noticer.swift`, `Sources/Dot/App/AppDelegate.swift` | partial | deadline notices, document offers and the meeting notice; quiet on calls (`CallPresence`); no task suggestions |
 | ProactiveAgentsClient | fetches proactive agent suggestions | none | missing | no suggestion sweep |
-| HomeSpaceSuggestionsPage | suggestion cards with yes, no and "not now because", adjust, a daily sweep | none | missing | |
-| NotchMorningSuggestionsSurface | morning card "I can do N things for you today" (observed) | `Sources/Dot/Brain/Talk.swift` | partial | one Atlas line in the bubble, no cards to pick |
+| HomeSpaceSuggestionsPage | suggestion cards with yes, no and "not now because", adjust, a daily sweep | `Sources/Dot/Home/LibraryPages.swift` | built | the Suggestions page: toggles, the yes/no history from ~/Dot/suggestions.json, resets (round five) |
+| NotchMorningSuggestionsSurface | morning card "I can do N things for you today" (observed) | `Sources/Dot/Brain/Talk.swift` | built | the morning card: show me lists deadlines, calls, mail and commitments with do it / skip; back twice at 20 min (round five) |
 | CompanionManager+ClickyRoutines | runs a Clicky's routine and reports what changed since the last run | none | missing | |
 | CompanionManager+AgentCrons | scheduled agent runs (a `ScheduledAgentCronsResponse` type) | none | missing | |
 
@@ -187,7 +187,7 @@ Also in Resources with no Dot counterpart beyond his own Claude Code skills: `Cl
 | HeyClicky component | What it does | Dot owner | Status | Note |
 |---|---|---|---|---|
 | ClickySkillLibraryBackend | the community skill library (SkillLibraryCache.json, 200 skills, observed) | `Sources/Dot/Agents/AgentManager.swift` | partial | agents load his installed skills; no library to browse |
-| HomeSpaceSkillsLibraryPage | the skills library page with filter chips | none | missing | |
+| HomeSpaceSkillsLibraryPage | the skills library page with filter chips | `Sources/Dot/Home/LibraryPages.swift` | built | the Skills page lists ~/.claude/skills with search; no slots, no creator (round five) |
 | ClickyPowerUp | skills as power-ups: create, activate, remove, three active slots | `Sources/Dot/Agents/AgentManager.swift` | partial | his skills are always on; no create or activate UI |
 | PowerUpPanelWindow | panel for making a new skill | none | missing | |
 | PowerUpAvatarView | an avatar per skill (inferred) | none | missing | |
@@ -204,12 +204,12 @@ Also in Resources with no Dot counterpart beyond his own Claude Code skills: `Cl
 
 | HeyClicky component | What it does | Dot owner | Status | Note |
 |---|---|---|---|---|
-| ResponseCardOverlay | a response card that shows a stock, image or place widget from a tag such as `[IMAGES:` | `Sources/Dot/Board/Board.swift` | partial | cards are model-written HTML; no typed widget payloads |
+| ResponseCardOverlay | a response card that shows a stock, image or place widget from a tag such as `[IMAGES:` | `Sources/Dot/Board/Board.swift` | built | [STOCK], [PLACE] and [IMAGES] cards on the board; place and picture asks answered without a model turn (round five) |
 | StockQuoteAPI | live quote: price, change, day range, sparkline closes (field names) | `Sources/Dot/Brain/Quotes.swift` | built | Yahoo chart endpoint: price, change, a month of closes |
 | StockWidget | stock card with a range switch | `Sources/Dot/Brain/Quotes.swift` | built | [STOCK:NVDA] card with a sparkline; no range switch |
 | ImageSearchAPI | image search returning source and thumbnail URLs | `Sources/Dot/Brain/Talk.swift`, `Resources/board/board.css` | partial | the model finds and checks image URLs itself for a `.figure` |
 | PlaceSearchAPI | place search: rating, photos, phone, maps link | none | missing | web lookup only |
-| PlaceWidget | a place card | none | missing | |
+| PlaceWidget | a place card | `Sources/Dot/Brain/Places.swift` | built | [PLACE:coffee near campus]: Apple Maps results on a map with numbered pins, address, distance, links; no photos (round five) |
 | PlaceDetailOverlay | place details with directions | none | missing | |
 
 ### Onboarding and permissions

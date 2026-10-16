@@ -210,8 +210,8 @@ MIT. Built by Roshan Shah.
 ## What was added on 2026-10-15 (afternoon)
 
 - **Math, as his tutor.** Dot knows the course it is tutoring from `~/Dot/talk/context/*.md`
-  (a map of every numbered definition and result in the notes, the exam date, the syllabus
-  rules), cites results by number, starts every proof with his attempt, grades a written proof
+  (a map of every numbered definition and result in the notes, the exam dates), cites results
+  by number, starts every proof with his attempt, grades a written proof
   for the gaps a proof course marks, checks numbers with python and sympy before saying them
   (the one shell command talk mode may run, `TalkGuard.isComputationCommand`), drills with
   quiz cards and remembers misses in Atlas. (A homework guard shipped that afternoon and was
@@ -267,6 +267,35 @@ copy text, look it up) with on-device OCR, and an agent hand-off carries the cro
 every talk turn and dictation is saved under `~/Dot/transcripts/`; agents run with Atlas's own
 chat prompt, the vault's rules and all of its tools; a BIOS 11140 course map joined the math one
 in `~/Dot/talk/context/`.
+
+## Round five: how it acts, and what it draws (2026-10-16)
+
+His ask: "build my clicky alternative, not just in the scaffold but in how it acts, plus a professional
+level of visualizations". The check behind it is `docs/heyclicky-verification.md`: 90 rows of what
+HeyClicky does and draws, each with its evidence and Dot's verdict (68 pass, 5 beyond, 11 fail, 2 partial,
+4 n/a). What changed:
+
+- **The notch, HeyClicky's way.** The state in a word with voice bars beside it (listening, hearing you,
+  thinking, thinking deeper, speaking, dictating). Typed notices with an icon and buttons: dictation on the
+  clipboard, a learned word with undo, a dead microphone with a Sound settings button, a muted Mac with
+  "turn sound on", the next meeting at ten minutes with "brief me", and an update once per version with
+  "what's new". The agent card (avatar, name and state, the live line, stop and open). Hover the idle tab
+  for the day and the agents' latest files as tiles you can drag out. The corners glow when something lands.
+- **The morning card.** "morning. i can do four things for you today": deadlines in the next two days,
+  calls and interviews on the calendar, mail waiting, open commitments, from Atlas. "show me" lists them
+  with "do it" (an agent takes it) and "skip"; yes and no are kept in `~/Dot/suggestions.json` for a week.
+  After seven, once you are idle and not on a call; a card closed without deciding comes back twice more.
+- **Place and picture cards.** `[PLACE:coffee near campus]` puts Apple Maps results on a map with numbered
+  pins, address, distance and links ("near me" is campus; set `homeLatitude` and `homeLongitude`).
+  `[IMAGES:artemis ii launch]` puts a strip of Wikimedia Commons pictures with credits. "coffee near me" and
+  "show me pictures of x" are answered by Dot itself with no model turn.
+- **Marks.** The highlight draws itself on; the target ring springs in and pulses once when the click
+  lands; a control behind another window gets a line saying so instead of a ring on thin air.
+- **Home.** Voice (Kokoro and Apple voices with preview, speeds), Microphone (a device picker),
+  Dictation (the dictionary editor), Shortcuts, Cursor (swatches, presence, recordings, the bubble),
+  Skills (your `~/.claude/skills`), Suggestions (toggles and the yes/no history). Saved settings apply live.
+- **Snapshots.** `Dot --snapshot [folder] [notch|overlay|cards]` renders every notch state, mark and card
+  to PNG with one contact sheet, no screen turn needed. The visuals above were tuned from those files.
 
 ## Round four (2026-10-15, late afternoon)
 

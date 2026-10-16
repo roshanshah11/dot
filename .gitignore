@@ -4,3 +4,5 @@ build/
 .swiftpm/
 .DS_Store
 Package.resolved.bak
+Resources/board/card-*.html
+Resources/board/card-snapshot*

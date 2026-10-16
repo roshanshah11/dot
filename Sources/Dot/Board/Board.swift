@@ -280,6 +280,16 @@ final class CardPanel: NSPanel, WKNavigationDelegate {
         layoutViews()
     }
 
+    /// A link in a card opens outside (Maps, a browser): the card itself never navigates away.
+    func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction, decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
+        if !isWeb, navigationAction.navigationType == .linkActivated, let url = navigationAction.request.url, url.scheme != "file" {
+            NSWorkspace.shared.open(url)
+            decisionHandler(.cancel)
+            return
+        }
+        decisionHandler(.allow)
+    }
+
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
         if isWeb {
             loaded = true

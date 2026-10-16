@@ -3,6 +3,7 @@ import FluidAudio
 import AppKit
 import DotKit
 import Foundation
+import MapKit
 
 /// The voice loop: hold the key, speak (or draw a box), see the screen, answer aloud beside
 /// the cursor in beats that land on what they describe, walk him through a task one click at
@@ -114,6 +115,7 @@ final class Talk {
         self.jev = jev
         self.board = BoardManager(accentHex: config.pointerColorHex)
         self.lecture = LectureListener(transcriber: transcriber)
+        recorder.preferredInputName = config.microphoneName
         (speaker as? CommandSpeaker)?.warm(Self.acks + Self.thinkAcks)
         lecture.onStatus = { [weak self] line in self?.hud.model.listeningLine = line }
         CallPresence.setOwnMicrophoneCheck { [weak self] in
@@ -381,11 +383,14 @@ final class Talk {
     /// RealtimeMicrophoneCapture fails over the same way).
     private func microphoneHeardNothing(named name: String) {
         let devices = AudioDevices.inputDevices()
+        let soundSettings: () -> Void = { _ = NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.Sound-Settings.extension")!) }
         if let builtIn = devices.first(where: { $0.builtIn }), AudioDevices.defaultInput != builtIn.id, AudioDevices.setDefaultInput(builtIn.id) {
-            hud.flash(status: "\(name.lowercased()) heard nothing; switched to \(builtIn.name.lowercased())", for: 7)
+            hud.notify(NotchNotice(id: "mic", icon: "mic.slash.fill", title: "\(name.lowercased()) heard nothing", detail: "switched to \(builtIn.name.lowercased()) for the next hold",
+                                   tone: .warn, actionTitle: "sound settings", action: soundSettings, seconds: 10))
             Log.warn("mic: \(name) silent for the whole hold; default input now \(builtIn.name)")
         } else {
-            hud.flash(status: "\(name.lowercased()) heard nothing; check System Settings, Sound, Input", for: 7)
+            hud.notify(NotchNotice(id: "mic", icon: "mic.slash.fill", title: "\(name.lowercased()) heard nothing", detail: "no other microphone to fall over to; check the input in sound settings",
+                                   tone: .warn, actionTitle: "sound settings", action: soundSettings, seconds: 10))
             Log.warn("mic: \(name) silent for the whole hold; no other input to fall over to")
         }
         overlay.setMood(.puzzled, for: 3)
@@ -413,8 +418,27 @@ final class Talk {
         try? (existing.hasSuffix("\n") || existing.isEmpty ? existing : existing + "\n").appending(line + "\n").write(toFile: path, atomically: true, encoding: .utf8)
         dictionaryLoadedAt = .distantPast
         loadDictionaryIfNeeded()
-        hud.flash(status: "added to your dictionary: \(correct)", for: 4)
+        hud.notify(NotchNotice(id: "dictionary", icon: "character.book.closed.fill", title: "learned: \(correct)",
+                               detail: heard.map { "\($0) is written \(correct) from now on" } ?? "the recognizer writes it that way from now on",
+                               tone: .good, actionTitle: "undo", action: { [weak self] in self?.removeFromDictionary(line: line) }, seconds: 8))
         Log.info("dictionary: added \(line)")
+    }
+
+    /// Undo from the notice: the last line that matches goes.
+    private func removeFromDictionary(line: String) {
+        let path = DotConfig.expand(config.dictionaryFile)
+        guard let text = try? String(contentsOfFile: path, encoding: .utf8) else { return }
+        var lines = text.components(separatedBy: "\n")
+        if let index = lines.lastIndex(where: { $0.trimmingCharacters(in: .whitespaces) == line }) { lines.remove(at: index) }
+        try? lines.joined(separator: "\n").write(toFile: path, atomically: true, encoding: .utf8)
+        dictionaryLoadedAt = .distantPast
+        loadDictionaryIfNeeded()
+        Log.info("dictionary: removed \(line)")
+    }
+
+    /// The microphone picked in Settings, applied to the next hold.
+    func setMicrophone(name: String?) {
+        recorder.preferredInputName = name
     }
 
     private static let dictionaryWords = try! NSRegularExpression(pattern: #"^(?:add|put) (.+?) (?:to|in|into) (?:my |the )?dictionary\W*$"#, options: .caseInsensitive)
@@ -741,7 +765,8 @@ final class Talk {
         // A muted Mac would lose a spoken answer: show it in the notch as well.
         if !textSurface, !quietTurn, AudioDevices.outputIsSilent() {
             textSurface = true
-            hud.flash(status: "your sound is off, so the answer is here too", for: 5)
+            hud.notify(NotchNotice(id: "muted", icon: "speaker.slash.fill", title: "your sound is off, so the answer is here as text", tone: .warn,
+                                   actionTitle: "turn sound on", action: { _ = AudioDevices.restoreOutput() }, seconds: 12))
             Log.info("output is muted; answer goes to the notch")
         }
         Log.info("context: app \(context.appName ?? "?") window \(Log.short(context.windowTitle ?? "", 60)) url \(context.url != nil) selected \(context.selectedText?.count ?? 0) elements \(context.elements.count) shots \(shots.count)\(region != nil ? " box" : "")")
@@ -803,10 +828,19 @@ final class Talk {
             return
         case .dictionary(let heard, let correct):
             addToDictionary(heard: heard, correct: correct)
-            phase = .idle
-            overlay.setPhase(.speaking)
-            speaker.speak("got it, \(correct) is in your dictionary.")
-            scheduleIdleCheck()
+            sayLocal("got it, \(correct) is in your dictionary.")
+            return
+        case .place(let what, let whereWord):
+            hud.set(phase: .thinking)
+            overlay.setPhase(.thinking)
+            let line = await placeCard(what: what, whereWord: whereWord)
+            sayLocal(line)
+            return
+        case .images(let subject):
+            hud.set(phase: .thinking)
+            overlay.setPhase(.thinking)
+            let line = await imagesCard(subject)
+            sayLocal(line)
             return
         case .dismiss:
             overlay.hideBubble(after: 0)
@@ -1083,7 +1117,7 @@ final class Talk {
         sendTurn(built, images: images, to: session, kind: .talk)
     }
 
-    private enum Route { case answer, agent, think, followUp(String), continueWalkthrough, drive, closeBoard, lessonNext, lessonBack, lessonAgain, lecture, suggestion(String), dismiss, find(String), listen, stopListening, recapLecture, dictionary(heard: String?, correct: String) }
+    private enum Route { case answer, agent, think, followUp(String), continueWalkthrough, drive, closeBoard, lessonNext, lessonBack, lessonAgain, lecture, suggestion(String), dismiss, find(String), listen, stopListening, recapLecture, dictionary(heard: String?, correct: String), place(what: String, whereWord: String?), images(String) }
 
     /// "find the part about x", "where does it talk about x", "go to the section on x": Dot reads
     /// the document itself and scrolls there, no model needed when the words are plainly in it.
@@ -1155,6 +1189,9 @@ final class Talk {
                 if Self.noWords.firstMatch(in: text, range: range) != nil { Noticer.record(kind: suggestion.kind, accepted: false); return .dismiss }
             }
         }
+        // A place or pictures: Dot's own cards, no model turn (HeyClicky's place and image widgets).
+        if let ask = Places.parseAsk(text) { return .place(what: ask.what, whereWord: ask.where) }
+        if let subject = Images.parseAsk(text) { return .images(subject) }
         // Showing is Dot's own job: a page, a picture, a drawing or a card goes on the board, never to an agent.
         if Self.boardWords.firstMatch(in: text, range: range) != nil { return .answer }
         // A lesson on a stage: next, back and again are Dot's own moves, no model needed.
@@ -1280,6 +1317,7 @@ final class Talk {
         if kind == .talk { turnsInSession += 1 }
         turnModel = kind == .talk ? config.talkModel : config.thinkModel
         phase = .thinking
+        hud.model.deeper = kind == .think
         hud.set(phase: .thinking)
         overlay.setPhase(.thinking)
         session.send(text: message, images: images)
@@ -1605,6 +1643,13 @@ final class Talk {
             case .stock(let symbol):
                 showStock(symbol)
                 label = label ?? symbol
+            case .place(let query):
+                let ask = Places.parseAsk(query) ?? (what: query, where: nil)
+                Task { @MainActor in _ = await self.placeCard(what: ask.what, whereWord: ask.where) }
+                label = label ?? Log.short(ask.what, 24)
+            case .images(let query):
+                Task { @MainActor in _ = await self.imagesCard(query) }
+                label = label ?? Log.short(query, 24)
             default:
                 break
             }
@@ -1633,6 +1678,44 @@ final class Talk {
             guard let quote = await Quotes.quote(symbol) else { hud.flash(status: "no quote for \(symbol)", for: 3); return }
             showCard(id: "stock-\(symbol.lowercased())", rect: nil, title: "\(quote.name) (\(symbol))", html: Quotes.cardHTML(quote), screen: nil)
         }
+    }
+
+    /// [PLACE:coffee near campus]: the nearest matches from Maps, on a map, on the board. Returns the spoken line.
+    @discardableResult
+    private func placeCard(what: String, whereWord: String?) async -> String {
+        let home = CLLocationCoordinate2D(latitude: config.homeLatitude, longitude: config.homeLongitude)
+        let query = whereWord.map { "\(what) near \($0)" } ?? what
+        let places = await Places.search(query, near: home, radiusMeters: whereWord == nil ? 6000 : 30000)
+        guard !places.isEmpty else {
+            hud.flash(status: "no places for \(what)", for: 3)
+            return "i couldn't find \(what) \(whereWord.map { "near \($0)" } ?? "nearby")."
+        }
+        let center = whereWord == nil ? home : places[0].coordinate
+        let map = await Places.snapshot(of: places, center: center, accentHex: config.pointerColorHex)
+        showCard(id: "place", rect: nil, title: "\(what) near \(whereWord ?? "campus")",
+                 html: Places.cardHTML(query: query, places: places, mapPNG: map, nearName: whereWord ?? "hyde park"), screen: nil)
+        Log.info("place: \(places.count) for \"\(query)\": " + places.map { "\($0.name) \(Int($0.distanceMeters)) m" }.joined(separator: ", "))
+        return Places.spokenLine(query: what, places: places)
+    }
+
+    /// [IMAGES:subject]: a strip of pictures on the board. Returns the spoken line.
+    @discardableResult
+    private func imagesCard(_ query: String) async -> String {
+        let items = await Images.search(query)
+        guard !items.isEmpty else { hud.flash(status: "no pictures for \(query)", for: 3); return "i couldn't find pictures of \(query)." }
+        showCard(id: "images", rect: nil, title: "pictures: \(query)", html: Images.cardHTML(query: query, items: items), screen: nil)
+        Log.info("images: \(items.count) for \"\(query)\"")
+        return "here are some pictures of \(query)."
+    }
+
+    /// A local answer with no model turn: the line in the notch and the voice, then settle.
+    private func sayLocal(_ line: String) {
+        phase = .idle
+        overlay.setPhase(.speaking)
+        hud.set(phase: .speaking)
+        hud.setCaption(line)
+        speaker.speak(line)
+        scheduleIdleCheck()
     }
 
     /// The bubble holds one spoken sentence, cut at a word when it runs long.
@@ -1847,6 +1930,12 @@ final class Talk {
             screenRadius = max(screenRadius, max(element.frame.width, element.frame.height) / 2 + 6)
         }
         screenRadius = min(max(screenRadius, 14), 90)
+        // A control behind another window cannot be clicked: say so instead of ringing thin air.
+        let cover = WindowOcclusion.isCovered(target)
+        if cover.covered {
+            hud.flash(status: "\(label) is behind \(cover.by.lowercased()); bring the window forward", for: 6)
+            Log.info("walkthrough: target \"\(label)\" is covered by \(cover.by)")
+        }
         var next = Walkthrough(kind: hover ? .hover : .click, target: target, radius: screenRadius, label: label, step: step,
                                appBundle: context.bundleIdentifier)
         if let previous = walkthrough {
@@ -1954,7 +2043,7 @@ final class Talk {
         step.awaitingNextStep = true
         step.history.append("\(step.step). \(how) \(step.label)")
         walkthrough = step
-        overlay.clearRing()
+        overlay.completeRing()
         hud.flash(status: "saw that, looking", for: 3)
         stopSpeaking()
         // Wait for what the step opened to finish drawing (a pane, a sheet, a page), then look.

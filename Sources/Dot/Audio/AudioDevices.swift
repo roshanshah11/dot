@@ -59,6 +59,31 @@ enum AudioDevices {
         return false
     }
 
+    /// Unmute the speakers and bring a zeroed volume up to half, so a spoken answer can be heard.
+    @discardableResult
+    static func restoreOutput() -> Bool {
+        guard let output = defaultOutput else { return false }
+        var ok = false
+        var muteAddress = AudioObjectPropertyAddress(mSelector: kAudioDevicePropertyMute, mScope: kAudioObjectPropertyScopeOutput, mElement: kAudioObjectPropertyElementMain)
+        if AudioObjectHasProperty(output, &muteAddress) {
+            var off = UInt32(0)
+            ok = AudioObjectSetPropertyData(output, &muteAddress, 0, nil, UInt32(MemoryLayout<UInt32>.size), &off) == noErr
+        }
+        var volumeAddress = AudioObjectPropertyAddress(mSelector: kAudioHardwareServiceDeviceProperty_VirtualMainVolume, mScope: kAudioObjectPropertyScopeOutput, mElement: kAudioObjectPropertyElementMain)
+        var volume = Float32(1)
+        var size = UInt32(MemoryLayout<Float32>.size)
+        if AudioObjectHasProperty(output, &volumeAddress), AudioObjectGetPropertyData(output, &volumeAddress, 0, nil, &size, &volume) == noErr, volume <= 0.02 {
+            var half = Float32(0.5)
+            ok = AudioObjectSetPropertyData(output, &volumeAddress, 0, nil, size, &half) == noErr || ok
+        }
+        return ok
+    }
+
+    /// The input device with this name, if it is connected.
+    static func inputDevice(named name: String) -> AudioDeviceID? {
+        inputDevices().first { $0.name == name }?.id
+    }
+
     /// Every input device, with the built-in microphone marked.
     static func inputDevices() -> [(id: AudioDeviceID, name: String, builtIn: Bool)] {
         var address = AudioObjectPropertyAddress(mSelector: kAudioHardwarePropertyDevices, mScope: kAudioObjectPropertyScopeGlobal, mElement: kAudioObjectPropertyElementMain)

@@ -30,6 +30,28 @@ final class AudioRecorder {
 
     var isRecording: Bool { engine.isRunning && file != nil }
 
+    /// The microphone to record from, by name (Settings); nil follows the system default.
+    var preferredInputName: String? {
+        didSet { if preferredInputName != oldValue { applyPreferredInput() } }
+    }
+    private var appliedInput: AudioDeviceID?
+
+    /// Point the engine's input at the chosen device. Only between recordings; the engine is
+    /// reset so the next start picks the device up.
+    private func applyPreferredInput() {
+        guard !engine.isRunning else { return }
+        let wanted = preferredInputName.flatMap { AudioDevices.inputDevice(named: $0) } ?? AudioDevices.defaultInput
+        guard let wanted, wanted != appliedInput else { return }
+        do {
+            try engine.inputNode.auAudioUnit.setDeviceID(wanted)
+            appliedInput = wanted
+            engine.reset()
+            Log.info("mic: recording from \(AudioDevices.name(of: wanted))")
+        } catch {
+            Log.warn("mic: could not select \(preferredInputName ?? "default"): \(error)")
+        }
+    }
+
     /// The loudest moment since the recording started (0...1): zero after a few seconds means a dead mic.
     func peak() -> Float {
         lock.lock(); defer { lock.unlock() }
@@ -51,6 +73,7 @@ final class AudioRecorder {
     @discardableResult
     func start(stream: SlidingWindowAsrManager? = nil) throws -> URL {
         if isRecording { cancel() }
+        if preferredInputName != nil { applyPreferredInput() }
         let input = engine.inputNode
         let format = input.outputFormat(forBus: 0)
         guard format.sampleRate > 0, format.channelCount > 0 else { throw Failure.noInput }
