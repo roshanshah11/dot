@@ -128,10 +128,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// Once after an update: what changed, with the README a click away.
     private func announceUpdate() {
         guard config.lastSeenVersion != Version.string else { return }
-        let first = config.lastSeenVersion == nil
         config.lastSeenVersion = Version.string
         config.save()
-        guard !first else { return }
         hud.notify(NotchNotice(id: "updated", icon: "sparkles", title: "dot \(Version.string) is in",
                                detail: "place cards, pictures, the morning card, typed notices, settings pages for voice, mic, dictation and cursor",
                                tone: .good, actionTitle: "what's new", action: {
