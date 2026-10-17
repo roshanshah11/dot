@@ -31,6 +31,29 @@ final class BoardManager {
     /// Back, next and the dots on a stage: (card id, action "next" | "back" | "step", step).
     var onNav: ((String, String, Int) -> Void)?
 
+    /// What he did to a figure: a point let go, a slider set, a part tapped (CardEvent). Nil by
+    /// default; Dot's log gets a one-line summary either way. Cards run model-written JS, so a
+    /// receiver may start a talk turn with an event and nothing more: never a tool, never an action.
+    var onEvent: ((CardEvent) -> Void)?
+    private var eventFilter = CardEventFilter()
+
+    /// Style tokens, read again for every card so an edit to ~/Dot/style/tokens.json shows on the next one.
+    private var tokenProblems: [String] = []
+    private func tokens() -> StyleTokens {
+        let tokens = StyleTokens.load()
+        if tokens.problems != tokenProblems {
+            tokenProblems = tokens.problems
+            for problem in tokens.problems { Log.warn("style: \(problem)") }
+        }
+        return tokens.applyingPointerAccent(accentHex)
+    }
+
+    private func received(_ event: CardEvent) {
+        guard eventFilter.admit(event) else { return }
+        Log.info("board[\(event.card)] event: \(event.summary)")
+        onEvent?(event)
+    }
+
     static func isStageHTML(_ html: String) -> Bool { html.contains("class=\"stage") || html.contains("class='stage") }
     func isStage(_ id: String) -> Bool { cards[id]?.isStage ?? false }
     func shown(of id: String) -> Int { cards[id]?.shown ?? 0 }
@@ -62,7 +85,8 @@ final class BoardManager {
         let isNew = cards[id] == nil
         card.onClose = { [weak self] in self?.close(id: id) }
         card.onNav = { [weak self] action, step in self?.onNav?(id, action, step) }
-        card.load(title: title, html: html, resources: resources, accent: accentHex)
+        card.onEvent = { [weak self] event in self?.received(event) }
+        card.load(title: title, html: html, resources: resources, tokens: tokens())
         if stage {
             card.setStageFrame(isNew ? CGRect(origin: origin, size: size) : CGRect(x: card.frame.minX, y: card.frame.maxY - size.height, width: size.width, height: size.height))
         } else if isNew {
@@ -142,6 +166,7 @@ final class CardPanel: NSPanel, WKNavigationDelegate {
     private(set) var total = 0
     var onClose: (() -> Void)?
     var onNav: ((String, Int) -> Void)?
+    var onEvent: ((CardEvent) -> Void)?
     private(set) var isStage = false
     private let relay: CardMessageRelay
     private let web: WKWebView
@@ -178,7 +203,7 @@ final class CardPanel: NSPanel, WKNavigationDelegate {
         Self.all.add(self)
 
         container.wantsLayer = true
-        container.layer?.backgroundColor = NSColor(calibratedRed: 0.05, green: 0.047, blue: 0.043, alpha: 0.95).cgColor
+        container.layer?.backgroundColor = Self.color(StyleTokens.defaults.look("study").background, alpha: 0.95).cgColor
         container.layer?.cornerRadius = 14
         container.layer?.masksToBounds = true
         container.layer?.borderWidth = 1
@@ -208,6 +233,15 @@ final class CardPanel: NSPanel, WKNavigationDelegate {
         container.addSubview(web)
         layoutViews()
         relay.onNav = { [weak self] action, step in self?.onNav?(action, step) }
+        // A live web page shares the handler; only Dot's own card pages may report figure events.
+        relay.onEvent = { [weak self] event in
+            guard let self, !self.isWeb else { return }
+            self.onEvent?(event)
+        }
+    }
+
+    static func color(_ c: StyleTokens.RGBA, alpha: Double? = nil) -> NSColor {
+        NSColor(calibratedRed: CGFloat(c.red), green: CGFloat(c.green), blue: CGFloat(c.blue), alpha: CGFloat(alpha ?? c.alpha))
     }
 
     private var closeButton: NSButton?
@@ -242,16 +276,22 @@ final class CardPanel: NSPanel, WKNavigationDelegate {
         layoutViews()
     }
 
-    func load(title: String, html: String, resources: URL, accent: String) {
+    /// The page is board.html with the tokens filled in (StyleTokens.cardPage); the frame around it
+    /// (ground, border, strip, title) wears the same look, desk when the card holds a finance piece.
+    func load(title: String, html: String, resources: URL, tokens: StyleTokens) {
         self.title = title
         isWeb = false
         isStage = BoardManager.isStageHTML(html)
-        container.layer?.backgroundColor = NSColor(calibratedRed: 0.05, green: 0.047, blue: 0.043, alpha: isStage ? 1.0 : 0.97).cgColor
         loaded = false
         shown = 0
         total = 0
-        guard var page = try? String(contentsOf: resources.appendingPathComponent("board.html"), encoding: .utf8) else { return }
-        page = page.replacingOccurrences(of: "{{ACCENT}}", with: accent).replacingOccurrences(of: "{{CONTENT}}", with: html)
+        guard let template = try? String(contentsOf: resources.appendingPathComponent("board.html"), encoding: .utf8) else { return }
+        let (page, lookName) = tokens.cardPage(template: template, content: html)
+        let look = tokens.look(lookName)
+        container.layer?.backgroundColor = Self.color(look.background, alpha: isStage ? look.stageAlpha : look.backgroundAlpha).cgColor
+        container.layer?.borderColor = Self.color(look.border).cgColor
+        strip.layer?.backgroundColor = Self.color(look.glass, alpha: 0.04).cgColor
+        titleLabel.textColor = Self.color(look.accent)
         let file = resources.appendingPathComponent("card-\(cardID).html")
         do {
             try page.write(to: file, atomically: true, encoding: .utf8)
@@ -396,13 +436,25 @@ extension NSColor {
     }
 }
 
-/// Errors and console output from a card into Dot's log, so a broken drawing is visible; and the
-/// stage's back, next and dots, which arrive as {type: "nav", action, step}.
+/// Errors and console output from a card into Dot's log, so a broken drawing is visible; the
+/// stage's back, next and dots, which arrive as {type: "nav", action, step}; and figure events,
+/// {type: "event", kind, data, card}, from board.js's dot.report.
 final class CardMessageRelay: NSObject, WKScriptMessageHandler {
     let cardID: String
     var onNav: ((String, Int) -> Void)?
+    var onEvent: ((CardEvent) -> Void)?
     init(cardID: String) { self.cardID = cardID }
     func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
+        if let object = message.body as? [String: Any], object["type"] as? String == "event" {
+            // A figure he moved. The page is model-written JS with file access, so this is words for
+            // a talk turn at most (board.onEvent): it can never start a tool, an agent or an action.
+            guard let event = CardEvent.parse(object, card: cardID) else {
+                Log.warn("board[\(cardID)] unreadable event \(Log.short("\(object)", 200))")
+                return
+            }
+            DispatchQueue.main.async { [weak self] in self?.onEvent?(event) }
+            return
+        }
         if let object = message.body as? [String: Any], object["type"] as? String == "nav", let action = object["action"] as? String {
             let step = (object["step"] as? Int) ?? Int((object["step"] as? Double) ?? 0)
             Log.info("board[\(cardID)] nav \(action)\(step > 0 ? " \(step)" : "")")

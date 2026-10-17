@@ -1,0 +1,34 @@
+<!doctype html>
+<html data-card="events-fixture" data-look="study" data-look-fixed><head><meta charset="utf-8">
+<title>Dot board: figures that report back</title>
+<script>
+  // A stand-in for WebKit's dot handler: every message board.js posts lands in window.posted and in the box below.
+  window.posted = [];
+  window.webkit = {messageHandlers: {dot: {postMessage: function (m) {
+    window.posted.push(JSON.parse(JSON.stringify(m)));
+    var out = document.getElementById("posted");
+    if (out) out.textContent = window.posted.filter(function (p) { return p && p.type === "event"; }).map(function (p) { return JSON.stringify(p); }).join("\n");
+  }}}};
+</script>
+<link rel="stylesheet" href="../board.css">
+<script src="../vendor/anime.iife.min.js"></script>
+<script src="../vendor/chart.umd.min.js"></script>
+<script src="../board.js"></script>
+<style>
+  html { background: var(--card-bg); }
+  body { max-width: 520px; overflow: auto; }
+  #posted { font: 11px/1.45 var(--mono); color: var(--green); white-space: pre-wrap; min-height: 40px; }
+  .parts circle, .parts rect { cursor: pointer; }
+</style>
+</head><body>
+<h2>Drag the eigenvector, set k, tap a part</h2>
+<div class="jsx" id="eigen" data-name="eigenvector figure" data-bounds="-4,4,4,-4" data-height="260"
+     data-setup="var v = board.create('point', [1, 0.5], {name: 'eigenvector', size: 5}); board.create('arrow', [[0, 0], v], {strokeWidth: 2});"></div>
+<p><label>k <input type="range" id="k" min="0" max="10" step="1" value="3" aria-label="k"></label></p>
+<svg class="parts" viewBox="0 0 220 60" width="220" height="60">
+  <circle data-part="nucleus" aria-label="nucleus" cx="30" cy="30" r="22" style="fill: var(--blue)"></circle>
+  <rect data-part="mito" aria-label="mitochondria" x="80" y="12" width="70" height="36" rx="16" style="fill: var(--green)"></rect>
+</svg>
+<p class="why">posted events:</p>
+<pre id="posted"></pre>
+</body></html>

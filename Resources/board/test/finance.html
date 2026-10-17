@@ -1,0 +1,180 @@
+<!doctype html>
+<html data-card="finance-fixture"><head><meta charset="utf-8">
+<title>Dot board: finance kit fixtures</title>
+<script>
+  // finance.html?look=study or ?look=desk shows the pieces in that look; with neither, the pieces
+  // force desk the way they do on a real card.
+  (function () {
+    var m = location.search.match(/look=(study|desk)/);
+    if (m) { document.documentElement.dataset.look = m[1]; document.documentElement.setAttribute("data-look-fixed", ""); }
+  })();
+</script>
+<link rel="stylesheet" href="../board.css">
+<script src="../vendor/anime.iife.min.js"></script>
+<script src="../vendor/chart.umd.min.js"></script>
+<script src="../board.js"></script>
+<style>
+  html { background: var(--card-bg); }
+  body { max-width: 600px; overflow: auto; }
+  .fixture { margin: 18px 0 0; padding-top: 10px; border-top: 1px dashed var(--line); }
+  .fixture > .tag { color: var(--muted); font: 11px var(--mono); margin-bottom: 4px; }
+  #summary { font: 600 13px var(--mono); }
+  #summary.pass { color: var(--green); } #summary.fail { color: var(--down); }
+  #asserts { font: 11px/1.45 var(--mono); color: var(--muted); max-height: none; white-space: pre-wrap; margin: 4px 0 0; }
+</style>
+</head><body>
+<h2>Northwind looks cheap on comps and about fair on the DCF</h2>
+<div id="summary">assertions did not run</div>
+<pre id="asserts"></pre>
+
+<div class="fixture"><div class="tag">.football</div>
+<div class="football" id="football" data-source="Fixture data for the board test page, illustrative only, not market data">
+<script type="application/json">
+{"title": "Valuation summary, $ per share", "unit": "$", "price": 40.10, "priceLabel": "Current", "highlight": "DCF",
+ "bars": [
+  {"label": "52-week range", "low": 31.40, "high": 46.80},
+  {"label": "Analyst price targets", "low": 36.00, "high": 50.00},
+  {"label": "Trading comps", "detail": "EV / NTM EBITDA 10.6x to 11.2x", "low": 54.22, "high": 57.80},
+  {"label": "Precedent transactions", "detail": "EV / LTM EBITDA 10.5x to 13.0x", "low": 47.83, "high": 61.97},
+  {"label": "DCF", "detail": "WACC 8.5% to 9.5%, growth 2.5% to 3.5%", "low": 34.41, "high": 51.07}]}
+</script>
+</div></div>
+
+<div class="fixture"><div class="tag">.sens (WACC by terminal growth)</div>
+<div class="sens" id="sens-growth" data-source="Fixture data for the board test page, illustrative only, not market data">
+<script type="application/json">
+{"title": "DCF sensitivity, $ per share", "subtitle": "Unlevered free cash flow $420m to $585m over five years, net debt $1,850m, 160m diluted shares",
+ "metric": "Implied share price", "unit": "$", "method": "growth",
+ "wacc": [8, 8.5, 9, 9.5, 10], "growth": [2, 2.5, 3, 3.5, 4], "price": 40.10,
+ "model": {"fcf": [420, 465, 510, 550, 585], "netDebt": 1850, "shares": 160}}
+</script>
+</div></div>
+
+<div class="fixture"><div class="tag">.sens (WACC by exit multiple)</div>
+<div class="sens" id="sens-multiple" data-source="Fixture data for the board test page, illustrative only, not market data">
+<script type="application/json">
+{"title": "DCF sensitivity, exit multiple", "metric": "Implied share price", "unit": "$", "method": "multiple",
+ "wacc": [8, 8.5, 9, 9.5, 10], "multiple": [10, 11, 12, 13, 14], "price": 40.10,
+ "model": {"fcf": [420, 465, 510, 550, 585], "ebitda": 880, "netDebt": 1850, "shares": 160}}
+</script>
+</div></div>
+
+<div class="fixture"><div class="tag">.comps</div>
+<div class="comps" id="comps" data-source="Fixture data for the board test page, illustrative only, not market data">
+<script type="application/json">
+{"title": "Trading comparables", "nmAbove": 100,
+ "columns": [
+  {"label": "EV", "key": "ev", "format": "$m"},
+  {"label": "EV / Revenue", "period": "LTM", "num": "ev", "den": "revenueLtm"},
+  {"label": "EV / Revenue", "period": "NTM", "num": "ev", "den": "revenueNtm"},
+  {"label": "EV / EBITDA", "period": "LTM", "num": "ev", "den": "ebitdaLtm"},
+  {"label": "EV / EBITDA", "period": "NTM", "num": "ev", "den": "ebitdaNtm"},
+  {"label": "P / E", "period": "NTM", "num": "price", "den": "epsNtm"}],
+ "peers": [
+  {"name": "Alder Corp", "ticker": "ALD", "ev": 12400, "revenueLtm": 5200, "revenueNtm": 5600, "ebitdaLtm": 1050, "ebitdaNtm": 1160, "price": 48.20, "epsNtm": 3.10},
+  {"name": "Birch Systems", "ticker": "BRC", "ev": 8900, "revenueLtm": 3900, "revenueNtm": 4150, "ebitdaLtm": 760, "ebitdaNtm": 820, "price": 31.75, "epsNtm": 1.95},
+  {"name": "Cedar Holdings", "ticker": "CDR", "ev": 21300, "revenueLtm": 9800, "revenueNtm": 10300, "ebitdaLtm": 1720, "ebitdaNtm": 1880, "price": 77.40, "epsNtm": 4.85},
+  {"name": "Dogwood Tech", "ticker": "DGW", "ev": 4100, "revenueLtm": 2050, "revenueNtm": 2400, "ebitdaLtm": -35, "ebitdaNtm": 120, "price": 18.10, "epsNtm": 0.12},
+  {"name": "Elm Partners", "ticker": "ELM", "ev": 15600, "revenueLtm": 6300, "revenueNtm": 6700, "ebitdaLtm": 1380, "ebitdaNtm": 1470, "price": 62.00, "epsNtm": 4.20},
+  {"name": "Fir Group", "ticker": "FIR", "ev": 6750, "revenueLtm": 3100, "revenueNtm": 3250, "ebitdaLtm": 590, "ebitdaNtm": 640, "price": 27.30, "epsNtm": 1.70}],
+ "target": {"name": "Northwind Industrial", "ticker": "NWD", "ev": 8266, "revenueLtm": 4600, "revenueNtm": 4950, "ebitdaLtm": 905, "ebitdaNtm": 990, "price": 40.10, "epsNtm": 2.55}}
+</script>
+</div></div>
+
+<div class="fixture"><div class="tag">.comps with no data-source</div>
+<div class="comps" id="no-source">
+<script type="application/json">
+{"title": "Peers with no source", "peers": [{"name": "Alder Corp", "ev": 12400, "ebitdaLtm": 1050}]}
+</script>
+</div></div>
+
+<div class="fixture"><div class="tag">.sens with numbers that do not read</div>
+<div class="sens" id="bad-json" data-source="Fixture"><script type="application/json">{"wacc": [8, 9,</script></div></div>
+
+<script>
+  // Copies of the fixtures' numbers, taken before board.js draws the pieces (drawing replaces them).
+  var FIX = {};
+  document.querySelectorAll(".football, .sens, .comps").forEach(function (p) {
+    try { FIX[p.id] = JSON.parse(p.querySelector('script[type="application/json"]').textContent); } catch (e) {}
+  });
+  document.addEventListener("DOMContentLoaded", function () {
+    var B = window.Board, rows = [], pass = 0, fail = 0;
+    function check(label, actual, expected) {
+      var ok = typeof expected === "number" && typeof actual === "number" ? (isNaN(expected) ? isNaN(actual) : Math.abs(actual - expected) < 5e-5) : actual === expected;
+      ok ? pass++ : fail++;
+      rows.push((ok ? "PASS " : "FAIL ") + label + " = " + JSON.stringify(actual) + (ok ? "" : " (expected " + JSON.stringify(expected) + ")"));
+    }
+    var fmt = B.fmt, r4 = function (v) { return Math.round(v * 1e4) / 1e4; };
+    // fmt: banking conventions
+    check('fmt(12.345, "x")', fmt(12.345, "x"), "12.3x");
+    check('fmt(-3.2, "x")', fmt(-3.2, "x"), "NM");
+    check('fmt(0, "x")', fmt(0, "x"), "0.0x");
+    check('fmt(9, "%")', fmt(9, "%"), "9.0%");
+    check('fmt(-2.34, "%")', fmt(-2.34, "%"), "(2.3%)");
+    check('fmt(-0.04, "%")', fmt(-0.04, "%"), "0.0%");
+    check('fmt(25, "bp")', fmt(25, "bp"), "25bp");
+    check('fmt(-50, "bp")', fmt(-50, "bp"), "(50bp)");
+    check('fmt(1234.5, "$m")', fmt(1234.5, "$m"), "$1,235m");
+    check('fmt(-1234.5, "$m")', fmt(-1234.5, "$m"), "($1,235m)");
+    check('fmt("1,250", "$m")', fmt("1,250", "$m"), "$1,250m");
+    check('fmt(12.34, "$bn")', fmt(12.34, "$bn"), "$12.3bn");
+    check('fmt(-0.75, "$bn")', fmt(-0.75, "$bn"), "($0.8bn)");
+    check('fmt(40.1, "$")', fmt(40.1, "$"), "$40.10");
+    check('fmt(-3.205, "$")', fmt(-3.205, "$"), "($3.21)");
+    check('fmt(1.005, "$")', fmt(1.005, "$"), "$1.01");
+    check('fmt(1234567.891, "num", 1)', fmt(1234567.891, "num", 1), "1,234,567.9");
+    check('fmt(null, "x")', fmt(null, "x"), "n/a");
+    check('fmt(Infinity, "x")', fmt(Infinity, "x"), "NM");
+    check('fmt(NaN, "$")', fmt(NaN, "$"), "NM");
+    // statistics: Excel QUARTILE.INC, NM and missing cells left out
+    check("quantile([1,2,3,4], 0.25)", B.quantile([1, 2, 3, 4], 0.25), 1.75);
+    check("quantile([1,2,3,4], 0.75)", B.quantile([1, 2, 3, 4], 0.75), 3.25);
+    check("median([3,1,2])", B.median([3, 1, 2]), 2);
+    check("median([4,1,3,2])", B.median([4, 1, 3, 2]), 2.5);
+    check("median([NaN,1,null,3])", B.median([NaN, 1, null, 3]), 2);
+    check("mean([1,2,NaN,6])", B.mean([1, 2, NaN, 6]), 3);
+    check("multiple(1200, 100)", B.multiple(1200, 100), 12);
+    check("multiple(4100, -35) is NM", B.multiple(4100, -35), NaN);
+    check("multiple(18.10, 0.12) above 100x is NM", B.multiple(18.10, 0.12, 100), NaN);
+    check("multiple(null, 5) is n/a", B.multiple(null, 5), null);
+    // DCF against values worked out by hand (python, same formulas)
+    check("dcf 100/110/121, 10% WACC, 2% growth", r4(B.dcf({fcf: [100, 110, 121], netDebt: 200, shares: 50}, 10, 2, "growth")), 24.6364);
+    var m = FIX["sens-growth"].model, mx = FIX["sens-multiple"].model;
+    check("dcf fixture base 9.0% / 3.0%", r4(B.dcf(m, 9, 3, "growth")), 41.3581);
+    check("dcf fixture base, mid-year", r4(B.dcf({fcf: m.fcf, netDebt: m.netDebt, shares: m.shares, midYear: true}, 9, 3, "growth")), 43.6882);
+    check("dcf fixture 9.0% / 12.0x exit", r4(B.dcf(mx, 9, 12, "multiple")), 43.4602);
+    check("dcf with WACC at growth is NM", B.dcf(m, 3, 3, "growth"), NaN);
+    // the pieces as drawn
+    var q = function (sel) { return document.querySelector(sel); }, qa = function (sel) { return document.querySelectorAll(sel); };
+    check("look", document.documentElement.dataset.look, (location.search.match(/look=(study|desk)/) || [0, "desk"])[1]);
+    check("sens base cell", q("#sens-growth td.base").textContent, "$41.36");
+    check("sens band cells", qa("#sens-growth td.band").length, 9);
+    check("sens exit base cell", q("#sens-multiple td.base").textContent, "$43.46");
+    check("sens source line", q("#sens-growth .source").textContent.indexOf("Source: Fixture"), 0);
+    var compsCol = function (row, ci) { return q("#comps tbody tr." + row).children[ci + 1].textContent; };
+    check("comps NM cells in peer rows", qa("#comps tr.peer td.nm").length, 2);
+    check("comps 75th pct EV/EBITDA NTM", compsCol("stat.first", 4), "11.2x");
+    check("comps mean EV/EBITDA NTM", q("#comps tbody").rows[7].children[5].textContent, "14.7x");
+    check("comps median EV/EBITDA NTM", q("#comps tbody").rows[8].children[5].textContent, "10.8x");
+    check("comps 25th pct EV/EBITDA NTM", q("#comps tbody").rows[9].children[5].textContent, "10.6x");
+    check("comps median EV", q("#comps tbody").rows[8].children[1].textContent, "$10,650m");
+    check("comps median P/E NTM (NM left out)", q("#comps tbody").rows[8].children[6].textContent, "16.0x");
+    check("comps target EV/EBITDA NTM", compsCol("target", 4), "8.3x");
+    check("no data-source shows [unclear]", q("#no-source").textContent.indexOf("[unclear]"), 0);
+    check("bad numbers show [unclear]", q("#bad-json").textContent.indexOf("[unclear]"), 0);
+    // the football's bars agree with the other fixtures
+    var c = FIX.comps, ntm = c.peers.map(function (p) { return B.multiple(p.ev, p.ebitdaNtm); }), t = c.target, sh = m.shares, nd = m.netDebt;
+    var bars = FIX.football.bars;
+    check("football comps low = 25th pct x NWD NTM EBITDA", fmt((B.quantile(ntm, 0.25) * t.ebitdaNtm - nd) / sh, "$"), fmt(bars[2].low, "$"));
+    check("football comps high = 75th pct x NWD NTM EBITDA", fmt((B.quantile(ntm, 0.75) * t.ebitdaNtm - nd) / sh, "$"), fmt(bars[2].high, "$"));
+    var band = [8.5, 9, 9.5].map(function (w) { return [2.5, 3, 3.5].map(function (g) { return B.dcf(m, w, g, "growth"); }); }).reduce(function (a, b) { return a.concat(b); });
+    check("football DCF low = band low", fmt(Math.min.apply(null, band), "$"), fmt(bars[4].low, "$"));
+    check("football DCF high = band high", fmt(Math.max.apply(null, band), "$"), fmt(bars[4].high, "$"));
+    check("football drawn", qa(".football canvas").length, 1);
+    var s = q("#summary");
+    s.textContent = "fmt and math: " + pass + " PASS, " + fail + " FAIL";
+    s.className = fail ? "fail" : "pass";
+    q("#asserts").textContent = rows.join("\n");
+  });
+</script>
+</body></html>
