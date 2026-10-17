@@ -598,12 +598,14 @@ final class NotchHUD {
 // MARK: - View
 
 /// The notch's palette, shared by the strip, the panel and the cards.
+/// The notch's colors, from the same study look the cards wear (IF-01), so his token file
+/// recolors both.
 enum NotchInk {
-    static let ground = Color(red: 0.051, green: 0.047, blue: 0.043)
-    static let text = Color(red: 0.925, green: 0.91, blue: 0.882)
-    static let good = Color(red: 0.55, green: 0.86, blue: 0.62)
-    static let warn = Color(red: 1.0, green: 0.8, blue: 0.36)
-    static let red = Color(red: 0.95, green: 0.3, blue: 0.28)
+    static var ground: Color { Theme.color(Theme.look.background) }
+    static var text: Color { Theme.color(Theme.look.paper) }
+    static var good: Color { Theme.color(Theme.look.color("green") ?? StyleTokens.RGBA(red: 0.55, green: 0.86, blue: 0.62)) }
+    static var warn: Color { Theme.color(Theme.look.color("yellow") ?? StyleTokens.RGBA(red: 1.0, green: 0.8, blue: 0.36)) }
+    static var red: Color { Theme.color(Theme.look.color("down") ?? StyleTokens.RGBA(red: 0.95, green: 0.3, blue: 0.28)) }
 }
 
 struct NotchHUDView: View {

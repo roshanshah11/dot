@@ -50,6 +50,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let tokens = StyleTokens.load()
         tokens.problems.forEach { Log.warn("style: \($0)") }
         Theme.fileColors = tokens.fileColors
+        Theme.look = tokens.look("study")
         Chimes.shared.configure(names: ["launch": tokens.chimes.launch, "needsYou": tokens.chimes.needsYou, "done": tokens.chimes.done, "failed": tokens.chimes.failed])
         // The sound set (AU-04) holds on a call, like every other chime (FX-11).
         Chimes.shared.isSilenced = { [weak self] in self.map { $0.config.quietOnCalls && CallPresence.isOnCall() } ?? false }
