@@ -235,6 +235,10 @@ public final class OrbAnimator {
     /// Dot appeared on a screen (HeyClicky blinks on pointer entry, rea-C7).
     public func appeared(at time: Double) { pendingBlinks.append(time + 0.05) }
 
+    /// Whether an app-switch glance would play now (the 10 s throttle), so the caller can skip the
+    /// window lookup when it would not.
+    public func appGlanceDue(at time: Double) -> Bool { time - lastAppGlance >= 10 }
+
     public func react(_ kind: OrbReaction, at time: Double) {
         if case .appSwitch = kind {
             guard time - lastAppGlance >= 10 else { return }   // he switches often; a blink is the gentlest cue (science-C62)

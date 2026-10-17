@@ -291,6 +291,10 @@ final class Noticer {
         }
     }
 
+    /// He moved on to something else while an offer was up: no "ok, later." over his new answer, and
+    /// no soft decline for an offer he engaged past.
+    static func clearPending() { pending = nil }
+
     /// Yes/no history per kind; three declines with no acceptance retire a kind.
     static func record(kind: String, accepted: Bool) {
         if pending?.kind == kind { pending = nil }

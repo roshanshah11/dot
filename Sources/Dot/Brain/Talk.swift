@@ -1509,6 +1509,7 @@ final class Talk {
         }
         if let (suggestion, until) = pendingSuggestion {
             pendingSuggestion = nil
+            Noticer.clearPending()
             if Date() < until {
                 if Self.yesWords.firstMatch(in: text, range: range) != nil { Noticer.record(kind: suggestion.kind, accepted: true); return .suggestion(suggestion.ask) }
                 if Self.noWords.firstMatch(in: text, range: range) != nil { Noticer.record(kind: suggestion.kind, accepted: false); return .dismiss }

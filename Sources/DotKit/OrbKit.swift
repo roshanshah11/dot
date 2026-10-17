@@ -270,21 +270,28 @@ public struct LazyZone {
     public var maxHold: Double = 1.2
     public var maxApproachSpeed: Double = 600
     private var holdStart: Double?
+    /// After a hold ends, the cursor must go away past `approach` before another can start.
+    private var armed = true
 
     public init() {}
 
     public var isHolding: Bool { holdStart != nil }
 
-    public mutating func shouldHold(cursor: CGPoint, velocity: CGVector, orb: CGPoint, approach: CGFloat, now: Double, rubbing: Bool) -> Bool {
+    /// `buttonDown`: a mouse button is held (a drag-select): never hold then.
+    public mutating func shouldHold(cursor: CGPoint, velocity: CGVector, orb: CGPoint, approach: CGFloat, now: Double,
+                                    rubbing: Bool, buttonDown: Bool = false) -> Bool {
         let toOrb = CGVector(dx: orb.x - cursor.x, dy: orb.y - cursor.y)
         let distance = hypot(toOrb.dx, toOrb.dy)
+        if distance > approach * 1.15 { armed = true }
         if let start = holdStart {
-            if distance > approach * 1.15 || (!rubbing && now - start > maxHold) {
+            if buttonDown || distance > approach * 1.15 || (!rubbing && now - start > maxHold) {
                 holdStart = nil
+                armed = false
                 return false
             }
             return true
         }
+        guard armed, !buttonDown else { return false }
         let speed = hypot(velocity.dx, velocity.dy)
         let closing = (toOrb.dx * velocity.dx + toOrb.dy * velocity.dy) / max(distance, 1)
         if distance < approach, speed > 20, speed < maxApproachSpeed, closing > speed * 0.5 {
@@ -294,7 +301,7 @@ public struct LazyZone {
         return false
     }
 
-    public mutating func release() { holdStart = nil }
+    public mutating func release() { holdStart = nil; armed = false }
 }
 
 /// Waking from the pet routine: a cursor move of more than 6 px (oneko's IdleSpace, cute-C43) or a key.

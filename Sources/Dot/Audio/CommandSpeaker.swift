@@ -247,6 +247,7 @@ final class CommandSpeaker: NSObject, TTSProvider, AVAudioPlayerDelegate {
     }
 
     func audioPlayerDidFinishPlaying(_ player: AVAudioPlayer, successfully flag: Bool) {
+        SpeechActivity.level(0, metered: true)   // the next sentence may not be ready yet: close the mouth
         if let url = player.url, !cache.values.contains(url) { try? FileManager.default.removeItem(at: url) }
         self.player = nil
         playNextIfIdle()

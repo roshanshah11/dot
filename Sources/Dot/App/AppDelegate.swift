@@ -29,6 +29,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// The alive pass (docs/alive.md): what the orb reacts to, and the quips at its breaks.
     private func wireAlive() {
         overlay.isQuiet = { [weak self] in self.map { $0.config.quietOnCalls && CallPresence.isOnCall() } ?? false }
+        overlay.isRecording = { [weak self] in self.map { $0.talk.lecture.isListening || ($0.murmur?.isRecording ?? false) } ?? false }
         overlay.onWake = { [weak self] idle in self?.noticer.quip(idle > 15 * 60 ? .backLong : .backShort) }
         overlay.onPetted = { [weak self] in self?.noticer.quip(.petted) }
         SpeechActivity.onSentence = { [weak self] duration, isLast in

@@ -469,6 +469,18 @@ final class OrbAnimatorTests: XCTestCase {
         XCTAssertFalse(away.shouldHold(cursor: CGPoint(x: 170, y: 175), velocity: CGVector(dx: -300, dy: -250), orb: orb, approach: 50, now: 0, rubbing: false), "moving away")
     }
 
+    func testLazyZoneNeverHoldsADragAndRearmsOnlyAfterLeaving() {
+        let orb = CGPoint(x: 200, y: 200)
+        var zone = LazyZone()
+        XCTAssertFalse(zone.shouldHold(cursor: CGPoint(x: 170, y: 175), velocity: CGVector(dx: 300, dy: 250), orb: orb, approach: 50, now: 0,
+                                       rubbing: false, buttonDown: true), "a drag-select never freezes Dot")
+        XCTAssertTrue(zone.shouldHold(cursor: CGPoint(x: 170, y: 175), velocity: CGVector(dx: 300, dy: 250), orb: orb, approach: 50, now: 0.1, rubbing: false))
+        XCTAssertFalse(zone.shouldHold(cursor: CGPoint(x: 190, y: 195), velocity: CGVector(dx: 100, dy: 80), orb: orb, approach: 50, now: 1.5, rubbing: false), "timed out")
+        XCTAssertFalse(zone.shouldHold(cursor: CGPoint(x: 175, y: 178), velocity: CGVector(dx: 200, dy: 180), orb: orb, approach: 50, now: 1.6, rubbing: false), "no new hold until it went away")
+        _ = zone.shouldHold(cursor: CGPoint(x: 100, y: 100), velocity: .zero, orb: orb, approach: 50, now: 2, rubbing: false)
+        XCTAssertTrue(zone.shouldHold(cursor: CGPoint(x: 170, y: 175), velocity: CGVector(dx: 300, dy: 250), orb: orb, approach: 50, now: 2.5, rubbing: false), "re-armed after leaving")
+    }
+
     func testRubReactionAndItsCooldown() {
         let animator = OrbAnimator(seed: 12)
         var input = OrbInput()

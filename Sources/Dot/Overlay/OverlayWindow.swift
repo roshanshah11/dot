@@ -824,6 +824,9 @@ final class OverlayManager {
     private(set) var orbSize: CGFloat
     /// Whether he wants quiet now (on a call with "quiet on calls" set); AppDelegate supplies it.
     var isQuiet: (() -> Bool)?
+    /// Whether Dot's lecture ear or Murmur is recording: no antics then either.
+    var isRecording: (() -> Bool)?
+    private var recording = false
     /// Dot woke from its pet routine after `idle` seconds without input: the quip hook.
     var onWake: ((TimeInterval) -> Void)?
     /// He started rubbing Dot.
@@ -870,6 +873,11 @@ final class OverlayManager {
     }
 
     func rebuild() {
+        // Screens changed: any flight or park refers to the old screens' indices (the review's crash).
+        flightTimer?.invalidate()
+        flightTimer = nil
+        parkedScreen = nil
+        chasing = false
         for window in windows { window.orderOut(nil) }
         windows = []
         models = []
@@ -1007,7 +1015,7 @@ final class OverlayManager {
     /// He switched apps: a glance toward the new front window and a blink.
     func appSwitched() {
         let now = clock
-        for (index, model) in models.enumerated() where model.visible {
+        for (index, model) in models.enumerated() where model.visible && animators[index].appGlanceDue(at: now) {
             let window = frontWindow(on: windows[index].screenFrame)
             let dx: Double = window.map { $0.midX >= model.position.x ? 1 : -1 } ?? 1
             animators[index].react(.appSwitch(dx: dx), at: now)
@@ -1491,7 +1499,8 @@ final class OverlayManager {
         let cursor = Coordinates.overlayPoint(fromScreen: mouse, screenFrame: windows[index].screenFrame)
         let rubOn = rubs[index].add(cursor: cursor, at: now, orb: model.position, radius: orbSize / 2)
         let approach = hypot(followOffset.dx, followOffset.dy) * 1.25
-        let hold = lazyZones[index].shouldHold(cursor: cursor, velocity: velocity, orb: model.position, approach: approach, now: now, rubbing: rubOn)
+        let hold = lazyZones[index].shouldHold(cursor: cursor, velocity: velocity, orb: model.position, approach: approach, now: now,
+                                                rubbing: rubOn, buttonDown: NSEvent.pressedMouseButtons != 0)
         if rubOn != rubbing[index] {
             rubbing[index] = rubOn
             if rubOn { onPetted?() }
@@ -1516,12 +1525,11 @@ final class OverlayManager {
     /// Step every visible orb's animator and publish its pose: 60 Hz while something moves, 15 Hz for
     /// the slow breath and glow, nothing while covered.
     private func animate(now: Double) {
-        // CallPresence may read the front window's title through Accessibility; every 10 s is plenty
-        // for the guards and keeps that read off the animation's frames.
-        if now - quietCheckedAt > 10 {
-            quietCheckedAt = now
-            quiet = isQuiet?() ?? false
-        }
+        // CallPresence may read the front window's title through Accessibility, which can stall on a hung
+        // app; the guards only matter near an antic (about to perch, perched), so read it only then,
+        // at most every 10 s. A fling reads it fresh in `flung`.
+        let idleNow = sinceInput + (now - inputReadAt)
+        if idleNow > OrbAnimator.petAfter - 15 || perched, now - quietCheckedAt > 10 { refreshGuards(now) }
         for (index, model) in models.enumerated() where model.visible {
             var input = OrbInput()
             input.phase = OrbPhase(model.phase)
@@ -1536,6 +1544,7 @@ final class OverlayManager {
             input.speechLevel = speechLevel
             input.speechUnmetered = !speechMetered
             input.onCall = quiet
+            input.recording = recording
             input.agentWorking = model.agentActivity != nil || model.agentsWaiting > 0
             input.reduceMotion = model.reduceMotion
             input.diameter = Double(orbSize)
@@ -1556,10 +1565,17 @@ final class OverlayManager {
         inputReadAt = now
     }
 
+    private func refreshGuards(_ now: Double) {
+        quietCheckedAt = now
+        quiet = isQuiet?() ?? false
+        recording = isRecording?() ?? false
+    }
+
     private func flung(_ event: FlingDetector.Event, now: Double) {
         switch event {
         case .began:
-            guard parkedScreen == nil, sinceKey > 2, !quiet, let index = models.firstIndex(where: { $0.visible }),
+            if now - quietCheckedAt > 10 { refreshGuards(now) }
+            guard parkedScreen == nil, sinceKey > 2, !quiet, !recording, let index = models.firstIndex(where: { $0.visible }),
                   animators[index].guardsAllowAntics else { return }
             chasing = true
         case .stopped:
@@ -1597,14 +1613,15 @@ final class OverlayManager {
     private func perchTick(index: Int, mouse: CGPoint, now: Double) {
         let model = models[index]
         if let back = wakeReturnAt {
-            if now >= back { returnToCursor() }
+            // The cursor moved minutes after the perch began; measure "went far" from now on.
+            if now >= back { mouseAtPark = mouse; returnToCursor() }
             return
         }
         let moved = hypot(mouse.x - mouseAtPerch.x, mouse.y - mouseAtPerch.y)
         let woken = PetWake.shouldWake(moved: moved, keyPressed: sinceKey < now - perchStartedAt)
         if model.motion == .flying {
             // Still walking there: any real movement and it turns around.
-            if woken { flightTimer?.invalidate(); flightTimer = nil; returnToCursor() }
+            if woken { flightTimer?.invalidate(); flightTimer = nil; mouseAtPark = mouse; returnToCursor() }
             return
         }
         if woken {
@@ -1612,6 +1629,7 @@ final class OverlayManager {
             wakeReturnAt = now + (model.reduceMotion ? 0.1 : 0.75)
             onWake?(idleAtPerch + (now - perchStartedAt))
         } else if animators[index].wantsReturn {
+            mouseAtPark = mouse
             returnToCursor()
         }
     }
@@ -1649,7 +1667,7 @@ final class OverlayManager {
         let began = clock
         animators[index].flightWillStart(toward: CGVector(dx: destination.x - start.x, dy: destination.y - start.y), at: began)
         flightTimer = Timer.scheduledTimer(withTimeInterval: 1.0 / 60.0, repeats: true) { [weak self] timer in
-            guard let self else { timer.invalidate(); return }
+            guard let self, index < self.models.count, self.models[index] === model else { timer.invalidate(); return }
             let now = ProcessInfo.processInfo.systemUptime
             let sample = path.sample(at: now - began)
             switch sample.stage {
