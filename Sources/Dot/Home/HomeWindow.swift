@@ -360,11 +360,11 @@ final class HomeModel: ObservableObject {
         do { try task.run() } catch { settingsNote = "relaunch failed: \(error.localizedDescription)" }
     }
 
-    /// The last next-action offer the selected agent made, if its latest words were a result.
-    var nextAction: String? {
-        guard let last = entries.last(where: { $0.role == "assistant" }) else { return nil }
-        guard let idx = entries.firstIndex(of: last), !entries[idx...].contains(where: { $0.role == "user" }) else { return nil }
-        return AgentResult.parse(last.text).nextAction
+    /// The next-action offers (up to four, TC-02) the selected agent made, if its latest words were a result.
+    var nextActions: [String] {
+        guard let last = entries.last(where: { $0.role == "assistant" }) else { return [] }
+        guard let idx = entries.firstIndex(of: last), !entries[idx...].contains(where: { $0.role == "user" }) else { return [] }
+        return AgentResult.parse(last.text).nextActions
     }
 }
 
@@ -603,20 +603,24 @@ struct HomeView: View {
                             Text(model.lastLines[agent.slug].map { "working: \($0)" } ?? "working").font(.system(size: 12)).foregroundStyle(.secondary).lineLimit(1)
                         }
                         .padding(.leading, 4)
-                    } else if let next = model.nextAction {
-                        Button {
-                            model.composer = next
-                            model.send()
-                        } label: {
-                            HStack(spacing: 6) {
-                                Image(systemName: "arrow.turn.down.right").font(.system(size: 10, weight: .bold))
-                                Text(next).font(.system(size: 12, weight: .semibold))
+                    } else if !model.nextActions.isEmpty {
+                        VStack(alignment: .leading, spacing: 6) {
+                            ForEach(model.nextActions.prefix(4), id: \.self) { next in
+                                Button {
+                                    model.composer = next
+                                    model.send()
+                                } label: {
+                                    HStack(spacing: 6) {
+                                        Image(systemName: "arrow.turn.down.right").font(.system(size: 10, weight: .bold))
+                                        Text(next).font(.system(size: 12, weight: .semibold))
+                                    }
+                                    .padding(.horizontal, 12).padding(.vertical, 6)
+                                    .background(accent.opacity(0.18), in: Capsule())
+                                    .overlay(Capsule().stroke(accent.opacity(0.5), lineWidth: 1))
+                                }
+                                .buttonStyle(.plain)
                             }
-                            .padding(.horizontal, 12).padding(.vertical, 6)
-                            .background(accent.opacity(0.18), in: Capsule())
-                            .overlay(Capsule().stroke(accent.opacity(0.5), lineWidth: 1))
                         }
-                        .buttonStyle(.plain)
                     }
                     Color.clear.frame(height: 1).id("end")
                 }
@@ -698,17 +702,29 @@ struct HomeView: View {
             EmptyView()
         case "artifact":
             // A file the turn made or changed (round seven, G1): open it or drag it out.
-            let url = model.selected?.outputFolder.appendingPathComponent(entry.text)
+            // By name inside output/; by full path or URL when the agent named a file elsewhere (TC-04).
+            let url = entry.text.hasPrefix("/") ? URL(fileURLWithPath: entry.text)
+                : entry.text.contains("://") ? URL(string: entry.text) : model.selected?.outputFolder.appendingPathComponent(entry.text)
             HStack(spacing: 8) {
                 Image(systemName: url.map(Self.fileIcon) ?? "doc").font(.system(size: 10)).foregroundStyle(url.flatMap(Theme.fileColor) ?? accent).frame(width: 14)
                 Text(entry.text).font(.system(size: 11.5)).lineLimit(1)
-                if let url, FileManager.default.fileExists(atPath: url.path) {
+                if let url, !url.isFileURL || FileManager.default.fileExists(atPath: url.path) {
                     Button("open") { NSWorkspace.shared.open(url) }.buttonStyle(.link).font(.system(size: 11))
                 }
                 Spacer()
             }
             .padding(.leading, 6)
             .onDrag { url.map { NSItemProvider(object: $0 as NSURL) } ?? NSItemProvider() }
+        case "title":
+            // The turn's done title (TC-01).
+            Text(entry.text).font(.system(size: 12, weight: .semibold)).foregroundStyle(.secondary).padding(.leading, 6)
+        case "routine":
+            HStack(spacing: 8) {
+                Image(systemName: "clock.arrow.circlepath").font(.system(size: 10)).foregroundStyle(.secondary).frame(width: 14)
+                Text(entry.text).font(.system(size: 11.5)).foregroundStyle(.secondary).lineLimit(1)
+                Spacer()
+            }
+            .padding(.leading, 6)
         case "next":
             HStack(spacing: 8) {
                 Image(systemName: "arrow.turn.down.right").font(.system(size: 10)).foregroundStyle(.secondary).frame(width: 14)

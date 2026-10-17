@@ -150,6 +150,9 @@ public struct Routine: Codable, Identifiable, Equatable, Sendable {
     /// The agent's slug.
     public var agent: String
     public var agentName: String
+    /// Two to four words the agent names it by (TC-06: HeyClicky's routines are keyed by title).
+    /// Routines made before titles, and from talk, have none; `displayTitle` stands in.
+    public var title: String?
     public var brief: String
     public var schedule: RoutineSchedule
     public var paused: Bool
@@ -163,10 +166,11 @@ public struct Routine: Codable, Identifiable, Equatable, Sendable {
     /// A new routine runs once right away unless `runFirstNow` is false (round seven, G3: HeyClicky's
     /// first run happens at once, so he sees what the routine makes); after that it keeps its schedule.
     public init(id: String = UUID().uuidString.lowercased(), agent: String, agentName: String, brief: String, schedule: RoutineSchedule,
-                now: Date = Date(), runFirstNow: Bool = true) {
+                now: Date = Date(), runFirstNow: Bool = true, title: String? = nil) {
         self.id = id
         self.agent = agent
         self.agentName = agentName
+        self.title = title
         self.brief = brief
         self.schedule = schedule
         self.paused = false

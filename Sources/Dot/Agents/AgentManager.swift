@@ -70,6 +70,13 @@ final class AgentManager {
     private let rulesURL: URL
     /// A routine run finished: (agent slug, failed, a note); the scheduler listens.
     var routineOutcome: ((String, Bool, String?) -> Void)?
+    /// A turn ended with a `Routine:` line (TC-06): (agent slug, agent name, the command); the
+    /// scheduler carries it out and says what it did. AppDelegate sets it.
+    var onRoutineCommand: ((String, String, RoutineCommand) -> RoutineChange?)?
+    /// The agent's routines in one line for its brief (TC-07); AppDelegate sets it.
+    var routineList: ((String) -> String)?
+    /// Whether Home's open thread is this agent's (VO-04): its result is read there, not spoken.
+    var isThreadOpen: ((String) -> Bool)?
 
     struct Running { let slug: String; let name: String; let task: String }
 
@@ -295,6 +302,8 @@ final class AgentManager {
         }
         if let shots, !shots.isEmpty { contextLines.append("A screenshot of their screen at the time is attached; it is context, not the task.") }
         if let note, !note.isEmpty { contextLines.append(note) }
+        // Its routines, and that the list is complete (TC-07), with how to change them (TC-06).
+        if let routines = routineList?(agent.slug), !routines.isEmpty { contextLines.append(routines + " " + RoutineCommand.howTo) }
         if !contextLines.isEmpty {
             text += "\n\n[context]\n" + contextLines.joined(separator: "\n") + "\n[/context]"
         }
@@ -482,15 +491,28 @@ final class AgentManager {
         finishedAt[agent.slug] = Date()
         lastBriefs[agent.slug] = run.lastBrief
         let outputs = outputFiles(for: agent)
-        // The turn's own files first (G1); the folder's newest otherwise.
+        // The files it named (TC-04, so one on the Desktop counts), then the turn's own in output/ (G1),
+        // each checked to exist, at most eight; the folder's newest when the turn named and made none.
         let made = TurnArtifacts.changed(before: run.outputBaseline, after: TurnArtifacts.listing(of: agent.outputFolder))
-        let shown = made.isEmpty ? Array(outputs.prefix(4)) : made.prefix(4).map { agent.outputFolder.appendingPathComponent($0) }
-        hud.upsertAgent(AgentRow(id: agent.slug, name: agent.name, line: failed ? "failed: \(summary)" : summary, state: failed ? .failed : .done,
-                                 result: text, outputCount: outputs.count, outputs: shown, nextAction: parsed.nextAction))
+        let files = TurnArtifacts.merge(stated: parsed.files, made: made.map { agent.outputFolder.appendingPathComponent($0) }, folder: agent.folder)
+        let shown = files.isEmpty ? Array(outputs.prefix(4)) : files
+        // The done title is the row's line (TC-01); the first sentence when the agent gave none.
+        hud.upsertAgent(AgentRow(id: agent.slug, name: agent.name, line: failed ? "failed: \(summary)" : (parsed.doneTitle ?? summary), state: failed ? .failed : .done,
+                                 result: text, outputCount: outputs.count, outputs: shown, nextActions: parsed.nextActions))
         appendTranscript(agent, role: "result", text: "\(result.subtype) in \(result.durationMs) ms, $\(String(format: "%.3f", result.costUSD))")
-        // The turn's record keeps what HeyClicky's does (G1): the next step it offered and the files it made.
-        if let next = parsed.nextAction { appendTranscript(agent, role: "next", text: next) }
-        for name in made { appendTranscript(agent, role: "artifact", text: name) }
+        // The turn's record keeps what HeyClicky's does (G1): its title, the next steps it offered and its files
+        // (by name inside output/, by full path or URL outside it).
+        if let title = parsed.doneTitle { appendTranscript(agent, role: "title", text: title) }
+        for next in parsed.nextActions { appendTranscript(agent, role: "next", text: next) }
+        let outputPath = agent.outputFolder.standardizedFileURL.path + "/"
+        for url in files {
+            let path = url.isFileURL ? url.path : url.absoluteString
+            appendTranscript(agent, role: "artifact", text: path.hasPrefix(outputPath) ? String(path.dropFirst(outputPath.count)) : path)
+        }
+        // A routine it made, changed, paused, resumed or deleted (TC-06).
+        if let command = parsed.routine, let change = onRoutineCommand?(agent.slug, agent.name, command) {
+            appendTranscript(agent, role: "routine", text: change.words)
+        }
         // A second result in the same brief (a message that came in during the last reply) names only its own files.
         run.outputBaseline = TurnArtifacts.listing(of: agent.outputFolder)
         let quiet = run.isRoutine   // a scheduled run lands in the thread without a chime or a word (HeyClicky's routines do the same)
@@ -507,9 +529,11 @@ final class AgentManager {
         activities[agent.slug] = nil
         postActivity()
         NotificationCenter.default.post(name: .dotAgentFinished, object: nil, userInfo: ["failed": failed])
-        if config.speakAgentResults, !summary.isEmpty, !silent {
-            let more = SpeechText.clean(text).count > summary.count + 40 ? " the rest is in the notch." : ""
-            speaker.speak("\(agent.name) here. \(summary)\(more)")
+        // Not spoken when he is reading that agent's thread in Home (TC-03); under 200 characters when spoken.
+        if config.speakAgentResults, !summary.isEmpty, !silent, isThreadOpen?(agent.slug) != true {
+            let spoken = Self.spokenSummary(summary)
+            let more = SpeechText.clean(text).count > spoken.count + 40 ? " the rest is in the notch." : ""
+            speaker.speak("\(agent.name) here. \(spoken)\(more)")
         }
         Log.info("agent[\(agent.slug)] finished \(result.subtype) in \(result.durationMs) ms, \(outputs.count) output file(s)")
         atlas?.refreshSoon()
@@ -878,7 +902,7 @@ final class AgentManager {
             keepInterruptedBrief(brief, for: agent)
             hud.upsertAgent(AgentRow(id: agent.slug, name: agent.name, line: "interrupted when Dot closed", state: .failed,
                                      result: "Dot closed while \(agent.name) was working on: \(Log.short(brief, 240))\n\nIts conversation is saved; continue picks it up where it stopped.",
-                                     nextAction: Self.continueLabel))
+                                     nextActions: [Self.continueLabel]))
         }
     }
 
@@ -997,6 +1021,14 @@ final class AgentManager {
         let projects = URL(fileURLWithPath: NSHomeDirectory()).appendingPathComponent(".claude/projects")
         guard let dirs = try? FileManager.default.contentsOfDirectory(at: projects, includingPropertiesForKeys: nil) else { return false }
         return dirs.contains { FileManager.default.fileExists(atPath: $0.appendingPathComponent("\(sessionId).jsonl").path) }
+    }
+
+    /// The summary as spoken: under 200 characters, cut at a word (TC-03, HeyClicky's SUMMARY).
+    static func spokenSummary(_ summary: String) -> String {
+        guard summary.count >= 200 else { return summary }
+        let head = String(summary.prefix(199))
+        guard let space = head.lastIndex(of: " ") else { return head }
+        return String(head[..<space]).trimmingCharacters(in: CharacterSet(charactersIn: " ,;:"))
     }
 
     static func firstSentence(of text: String) -> String {
