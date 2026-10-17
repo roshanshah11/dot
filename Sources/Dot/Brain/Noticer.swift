@@ -30,7 +30,9 @@ final class Noticer {
             }
             Log.info("noticer: suggestions on, watching for documents")
         }
-        guard config.proactiveNotices, jev != nil else {
+        // App switches carry the deadline notices (Jev) and the skill offers (a table, no Jev).
+        let notices = config.proactiveNotices && jev != nil
+        guard notices || config.suggestions else {
             Log.info("noticer: off (\(config.proactiveNotices ? "no jev key" : "disabled in config"))")
             return
         }
@@ -39,7 +41,7 @@ final class Noticer {
                   app.processIdentifier != ProcessInfo.processInfo.processIdentifier else { return }
             Task { @MainActor in self?.appChanged(app) }
         }
-        Log.info("noticer: watching app switches against Atlas deadlines")
+        Log.info("noticer: watching app switches\(notices ? " against Atlas deadlines" : "")\(config.suggestions ? " for skill offers" : "")")
     }
 
     private func appChanged(_ app: NSRunningApplication) {
@@ -50,12 +52,13 @@ final class Noticer {
     }
 
     private func consider(_ app: NSRunningApplication) {
-        guard let jev, let brief = atlas.brief else { return }
         if config.quietOnCalls, CallPresence.isOnCall() { return }
+        let context = AccessibilityContext.capture(maxElements: 0, timeBudget: 0.15)
+        if config.suggestions, offerSkill(app: app, context: context) { return }
+        guard config.proactiveNotices, let jev, let brief = atlas.brief else { return }
         guard Date().timeIntervalSince(lastNoticeAt) > Double(config.noticeCooldownMinutes) * 60 else { return }
         let items = Array((brief.deadlines(withinDays: 2) + brief.commitments.prefix(4)).prefix(8))
         guard !items.isEmpty else { return }
-        let context = AccessibilityContext.capture(maxElements: 0, timeBudget: 0.15)
         let title = context.windowTitle ?? ""
         let key = "\(app.bundleIdentifier ?? app.localizedName ?? "?")|\(title.prefix(60))"
         guard key != lastKey else { return }
@@ -149,6 +152,33 @@ final class Noticer {
             self.overlay.greet(line, for: 12)
             self.onSuggest?(Suggestion(kind: kind, line: line, ask: ask))
         }
+    }
+
+    // MARK: Skills for the app in front (SK-01)
+    // HeyClicky offers an app's skill while he is in it. PowerPoint, a model in Excel, a filing or
+    // Canvas gets the matching skill offered (AppSkillOffers), once per row per day, through the same
+    // yes and no counts and cooldown as the document offers; a yes hands it to an agent with the
+    // skill named in the ask, the way Talk runs any suggestion.
+
+    private static let offeredKey = "dot.appskill.offered"
+
+    /// Returns true when it made an offer, so the deadline notice waits for the next switch.
+    private func offerSkill(app: NSRunningApplication, context: ScreenContext) -> Bool {
+        let bundle = context.bundleIdentifier ?? app.bundleIdentifier
+        guard let offer = AppSkillOffers.match(bundleID: bundle, windowTitle: context.windowTitle, url: context.url, documentPath: context.documentPath),
+              Self.allowed(offer.kind) else { return false }
+        let today = AppSkillOffers.day(Date())
+        var offered = UserDefaults.standard.dictionary(forKey: Self.offeredKey) as? [String: String] ?? [:]
+        guard AppSkillOffers.isDue(offer.row, lastOffered: offered, today: today),
+              Date().timeIntervalSince(lastSuggestAt) > Double(config.suggestionCooldownMinutes) * 60 else { return false }
+        offered[offer.row] = today
+        UserDefaults.standard.set(offered, forKey: Self.offeredKey)
+        lastSuggestAt = Date()
+        let line = offer.line + " say yes."
+        Log.info("suggest: \(offer.kind) (\(offer.skill)) for \(Log.short(context.windowTitle ?? "", 60))")
+        overlay.greet(line, for: 12)
+        onSuggest?(Suggestion(kind: offer.kind, line: line, ask: offer.ask))
+        return true
     }
 
     /// Yes/no history per kind; three declines with no acceptance retire a kind.

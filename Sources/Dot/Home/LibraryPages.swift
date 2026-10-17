@@ -1,4 +1,5 @@
 import AppKit
+import DotKit
 import SwiftUI
 
 // The pages that edit or list his files: Dictation (the dictionary), Skills and Suggestions.
@@ -238,12 +239,12 @@ struct SuggestionsPage: View {
         var id: String { name }
     }
 
-    /// The document offers Noticer makes, and what each one is.
+    /// The document offers Noticer makes, and what each one is, then its skill offers for the app in front.
     static let kinds = [
         OfferKind(name: "gist", about: "a one-minute gist of the document"),
         OfferKind(name: "find", about: "the part today's lecture or deadline is about"),
         OfferKind(name: "quiz", about: "three quick questions on what is on screen"),
-    ]
+    ] + AppSkillOffers.rows.map { OfferKind(name: $0.kind, about: $0.about) }
 
     private var file: URL { model.config.dotHome.appendingPathComponent("suggestions.json") }
 
@@ -254,7 +255,7 @@ struct SuggestionsPage: View {
                 SettingToggle("Document offers", detail: "offers when a document opens", isOn: $model.settings.suggestions)
                 SettingToggle("Deadline notices", detail: "a quiet line when an app touches a deadline", isOn: $model.settings.proactiveNotices)
             }
-            HomeSection("Document offers so far") {
+            HomeSection("Offers so far") {
                 ForEach(Self.kinds) { kind in
                     let yes = counts[kind.name]?[0] ?? 0, no = counts[kind.name]?[1] ?? 0
                     HStack(spacing: 10) {
