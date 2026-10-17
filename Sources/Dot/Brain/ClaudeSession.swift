@@ -56,6 +56,15 @@ final class ClaudeSession {
     /// Main thread. Completion: (allow, denial message).
     var permissionHandler: ((PermissionRequest, @escaping (Bool, String?) -> Void) -> Void)?
 
+    /// Agents (AG-12): set to the agent's slug and `start` runs the process in Dot's agent host, so it
+    /// outlives Dot; when the host is not there or refuses, it starts here exactly as before.
+    var hostID: String?
+    private let host = AgentHostClient()
+    private var follower: HostFollower?
+    /// The last host stdout line handled, saved at quit so a relaunch picks up after it.
+    private(set) var lastHostSeq = 0
+    var isHosted: Bool { follower != nil }
+
     init(label: String, claudePath: URL, options: Options) {
         self.label = label
         self.claudePath = claudePath
@@ -68,8 +77,18 @@ final class ClaudeSession {
     // MARK: Lifecycle
 
     func start() throws {
-        guard process == nil else { return }
+        guard process == nil, follower == nil else { return }
         try FileManager.default.createDirectory(at: options.cwd, withIntermediateDirectories: true)
+        if let id = hostID {
+            var environment = Self.environment().merging(options.environment) { _, added in added }
+            environment["DOT_AGENT_HOST"] = "1"   // the gate waits for a relaunched Dot instead of denying (AG-12)
+            if let pid = host.spawn(HostSpawn(id: id, executable: claudePath.path, arguments: arguments(), cwd: options.cwd.path, environment: environment)) {
+                follow(id: id, from: 0, turnInFlight: false)
+                Log.info("session[\(label)] started in the agent host, pid \(pid) model \(options.model) cwd \(options.cwd.path)")
+                return
+            }
+            Log.info("session[\(label)] agent host not available; starting it here")
+        }
         let process = Process()
         process.executableURL = claudePath
         process.arguments = arguments()
@@ -96,15 +115,7 @@ final class ClaudeSession {
         process.terminationHandler = { [weak self] proc in
             stdout.fileHandleForReading.readabilityHandler = nil
             stderr.fileHandleForReading.readabilityHandler = nil
-            DispatchQueue.main.async {
-                guard let self else { return }
-                self.isRunning = false
-                self.turnInFlight = false
-                self.process = nil
-                self.stdinHandle = nil
-                Log.info("session[\(self.label)] exited \(proc.terminationStatus)")
-                self.onExit?(proc.terminationStatus)
-            }
+            DispatchQueue.main.async { self?.exited(proc.terminationStatus) }
         }
 
         try process.run()
@@ -118,7 +129,69 @@ final class ClaudeSession {
         Log.info("session[\(label)] started pid \(process.processIdentifier) model \(options.model) cwd \(options.cwd.path)")
     }
 
+    private func exited(_ status: Int32) {
+        isRunning = false
+        turnInFlight = false
+        process = nil
+        stdinHandle = nil
+        follower = nil
+        Log.info("session[\(label)] exited \(status)")
+        onExit?(status)
+    }
+
+    /// Takes over a process the agent host already runs (a relaunch, AG-12): its output from `seq`
+    /// on, and any permission request it still waits on. False when the host does not answer.
+    func attachToHost(id: String, from seq: Int, turnInFlight inFlight: Bool) -> Bool {
+        guard process == nil, follower == nil, host.list(timeout: 2)?.contains(where: { $0.id == id }) == true else { return false }
+        hostID = id
+        follow(id: id, from: seq, turnInFlight: inFlight)
+        Log.info("session[\(label)] attached to the agent host from seq \(seq)")
+        return true
+    }
+
+    private func follow(id: String, from seq: Int, turnInFlight inFlight: Bool) {
+        lastHostSeq = seq
+        follower = host.follow(id: id, from: seq, onLines: { [weak self] lines in
+            let parsed = lines.map { ($0.seq, StreamJSON.parse(line: $0.text)) }
+            DispatchQueue.main.async {
+                guard let self, self.follower != nil else { return }
+                for (seq, event) in parsed {
+                    self.lastHostSeq = max(self.lastHostSeq, seq)
+                    if let event { self.dispatch(event) }
+                }
+            }
+        }, onEnd: { [weak self] status in
+            DispatchQueue.main.async {
+                guard let self, self.follower != nil else { return }
+                if status == nil { Log.warn("session[\(self.label)] the agent host went away") }
+                self.exited(status ?? 1)
+            }
+        })
+        isRunning = true
+        turnInFlight = inFlight
+        lastActivity = Date()
+    }
+
+    /// Dot is quitting and the process stays in the host: stop following and say so, so the host
+    /// knows nobody can answer until Dot is back. Returns the seq to pick up from.
+    func detachFromHost() -> Int {
+        guard let follower else { return lastHostSeq }
+        follower.cancel()
+        self.follower = nil
+        host.detach(id: follower.id)
+        isRunning = false
+        turnInFlight = false
+        return lastHostSeq
+    }
+
     func stop() {
+        if let id = follower?.id {
+            // The host runs the same ladder: end of input, then TERM after 3 s, KILL after 8 s.
+            host.signal(id: id, "close")
+            isRunning = false
+            turnInFlight = false
+            return
+        }
         guard let process else { return }
         try? stdinHandle?.close()
         stdinHandle = nil
@@ -137,6 +210,14 @@ final class ClaudeSession {
     /// Dot is quitting: end the process now. `stop()` waits three seconds before its signal, and a
     /// quitting app never gets there, which left agents running on without Dot (F2, 2026-10-15).
     func terminateNow() {
+        if let id = follower?.id {
+            host.signal(id: id, "TERM")
+            follower?.cancel()
+            follower = nil
+            isRunning = false
+            turnInFlight = false
+            return
+        }
         guard let process else { return }
         try? stdinHandle?.close()
         stdinHandle = nil
@@ -165,6 +246,11 @@ final class ClaudeSession {
     }
 
     private func write(_ line: String) {
+        if let id = follower?.id {
+            let host = self.host
+            writeQueue.async { if !host.write(id: id, line: line) { Log.error("session write to the agent host failed (\(id))") } }
+            return
+        }
         guard let handle = stdinHandle, let data = (line + "\n").data(using: .utf8) else { return }
         writeQueue.async {
             do { try handle.write(contentsOf: data) } catch { Log.error("session write failed: \(error)") }
