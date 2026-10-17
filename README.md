@@ -142,6 +142,8 @@ with `ATLAS_MCP_TOOLS=now,search,facts,...` so only those tools ride along.
 | `allowTools`, `allowToolPrefixes`, `denyTools` | `[]` | Consent policy for agent tool calls |
 | `speakAgentResults` | `true` | Read an agent's first sentence aloud when it finishes |
 | `screenshotMaxDimension` | `1280` | Long edge of each screenshot sent to the model |
+| `contextQuips` | `true` | A small model writes each quip for the moment (the app and window in front, the next Atlas event or deadline within 24 h, the time, an agent's result), and 30 to 60 minutes before an event one line for it, once. Each line is checked (lowercase, 60 characters, nothing from the never-does list); a failed check, an error or more than 6 s falls back to the written lines. `false` uses the written lines only. Home > General has it, beside the chattiness picker. See `docs/alive.md` |
+| `quipModel` | `haiku` | The Claude Code model alias that writes the quips: one `claude -p` per quip, no tools, thinking off. `Dot --quip-test` runs three sample moments through it |
 | `chattiness` | `2` | How much Dot says unprompted, 0 to 3: 0 nothing, 1 deadline notices only (cooldown 3x) and a quip every 2 hours, 2 notices, offers and a quip every 40 minutes, 3 cooldowns halved and a quip every 20 minutes. Scales `noticeCooldownMinutes` and `suggestionCooldownMinutes`; `proactiveNotices` and `suggestions` still switch their part off. See `docs/persona.md` |
 | `orbSize` | `24` | The orb's diameter in points, 16 to 36 (it was 20 before the alive pass). Its eyes, follow offset and bubble scale with it. To pet Dot, rub the cursor gently back and forth over it; a gentle rub is smaller than macOS's shake-to-find-cursor. See `docs/alive.md` |
 

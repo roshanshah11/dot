@@ -138,6 +138,13 @@ struct DotConfig: Codable {
     /// The orb's diameter in points, 16 to 36 (docs/alive.md: 24 by default; 20 was the old size).
     var orbSize: Double = 24
 
+    // The alive pass, round two: context lines.
+    /// A small model writes each quip for the moment (the app, the next Atlas event, the time, an agent's
+    /// result), checked before it shows; false keeps to the written lines in Quips.swift.
+    var contextQuips = true
+    /// The Claude Code model alias that writes them, through a one-shot `claude -p` with no tools.
+    var quipModel = "haiku"
+
     /// Atlas tools a talk turn may call without asking: everything that reads, remembers or drafts.
     /// Sends, submits, posts and harness administration stay with agents and his yes.
     static let talkAtlasTools = [
@@ -228,6 +235,8 @@ struct DotConfig: Codable {
         agentsOutliveDot = get(.agentsOutliveDot, d.agentsOutliveDot)
         chattiness = min(max(get(.chattiness, d.chattiness), 0), 3)
         orbSize = min(max(get(.orbSize, d.orbSize), 16), 36)
+        contextQuips = get(.contextQuips, d.contextQuips)
+        quipModel = get(.quipModel, d.quipModel)
     }
 
     static var directory: URL {

@@ -8,7 +8,8 @@ import Foundation
 /// A switch with nothing to say is a break, and may get a quip (docs/persona.md).
 @MainActor
 final class Noticer {
-    private let config: DotConfig
+    /// Replaced when Home's settings are saved (`update`), so chattiness and the quip settings apply at once.
+    private var config: DotConfig
     private let atlas: AtlasBridge
     private let overlay: OverlayManager
     private let jev: Jev?
@@ -31,10 +32,14 @@ final class Noticer {
         self.atlas = atlas
         self.overlay = overlay
         self.jev = jev
+        self.writer = QuipWriter(config: config)
     }
 
+    private var watchingSwitches = false
+
+    /// Starts what the settings call for. Safe to call again: what already runs is left as it is.
     func start() {
-        if offers, jev != nil {
+        if offers, jev != nil, titleTimer == nil {
             titleTimer = Timer.scheduledTimer(withTimeInterval: 5, repeats: true) { [weak self] _ in
                 Task { @MainActor in self?.pollDocument() }
             }
@@ -47,12 +52,22 @@ final class Noticer {
             Log.info("noticer: off (\(chat.level == 0 ? "chattiness 0" : notices ? "no jev key" : "disabled in config"))")
             return
         }
+        guard !watchingSwitches else { return }
+        watchingSwitches = true
         NSWorkspace.shared.notificationCenter.addObserver(forName: NSWorkspace.didActivateApplicationNotification, object: nil, queue: .main) { [weak self] note in
             guard let app = note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication,
                   app.processIdentifier != ProcessInfo.processInfo.processIdentifier else { return }
             Task { @MainActor in self?.appChanged(app) }
         }
         Log.info("noticer: watching app switches\(deadlineNotices ? " against Atlas deadlines" : "")\(offers ? " for skill offers" : "")\(quips ? " for quips" : "") (chattiness \(chat.level))")
+    }
+
+    /// Settings saved in Home: chattiness and the quip settings count from the next break. Raising
+    /// chattiness from 0 starts watching app switches; lowering it closes each gate as it is reached.
+    func update(_ config: DotConfig) {
+        self.config = config
+        writer.config = config
+        start()
     }
 
     private func appChanged(_ app: NSRunningApplication) {
@@ -69,7 +84,7 @@ final class Noticer {
         let context = AccessibilityContext.capture(maxElements: 0, timeBudget: 0.15)
         if offers, offerSkill(app: app, context: context) { return }
         // One line per switch: a deadline notice comes first; with none to give, the switch is a break.
-        notice(app: app, context: context) { [weak self] in self?.quipAtSwitch(repeated: repeated) }
+        notice(app: app, context: context) { [weak self] in self?.quipAtSwitch(repeated: repeated, screen: context) }
     }
 
     /// A deadline notice for the window in front, or `otherwise` when there is none to give.
@@ -129,37 +144,100 @@ final class Noticer {
 
     /// One quip at a break, through every gate: chattiness, not while he types (a key in the last two
     /// seconds), on a call, while Talk is busy or something records, or with Reduce Motion on; then the
-    /// cooldown and the week without repeats (Quips.pick). A return from idle becomes "morning" or
-    /// "lateNight" when one is due. A bubble, never the voice. The animator side calls this for
-    /// backShort, backLong, petted, agentDone and agentFailed; app switches come in from here.
+    /// cooldown and the week without repeats. A return from idle becomes "morning" or "lateNight" when
+    /// one is due. A bubble, never the voice. The animator side calls this for backShort, backLong,
+    /// petted, agentDone and agentFailed; app switches come in from here. True when a line is on its way.
     @discardableResult
     func quip(_ situation: QuipSituation) -> Bool {
         quip(among: { history in [Quips.refine(situation, now: Date(), history: history)] })
     }
 
-    /// A switch with nothing to notice: the time of day, a deadline due today, or the fifth visit to
-    /// one app in ten minutes may each have a line, in that order.
-    private func quipAtSwitch(repeated: Bool) {
+    /// A switch with nothing to notice: an event about to start (once per event, past the cooldown),
+    /// then the time of day, a deadline due today, or the fifth visit to one app in ten minutes.
+    private func quipAtSwitch(repeated: Bool, screen: ScreenContext) {
         let dueToday = !(atlas.brief?.deadlines(withinDays: 0).isEmpty ?? true)
-        quip(among: { history in Quips.atSwitch(now: Date(), history: history, dueToday: dueToday, repeated: repeated) })
+        let events = upcomingEvents()
+        quip(among: { history in
+            let soon: [QuipSituation] = Upcoming.due(events, now: Date(), history: history) == nil ? [] : [.upcoming]
+            return soon + Quips.atSwitch(now: Date(), history: history, dueToday: dueToday, repeated: repeated)
+        }, screen: screen)
     }
 
     /// Notes the break (the morning's first sight counts even when nothing shows), then the first
-    /// situation with a line gets it.
+    /// situation that may have a line gets one: the quip model's for the moment when context lines are
+    /// on (round two), else, or when its line fails the check, errs or takes over six seconds, the bank's.
     @discardableResult
-    private func quip(among situations: (QuipHistory) -> [QuipSituation]) -> Bool {
+    private func quip(among situations: (QuipHistory) -> [QuipSituation], screen: ScreenContext? = nil) -> Bool {
         let now = Date()
-        var history = Quips.sawBreak(at: now, history: quipHistory)
-        defer { quipHistory = history }
-        guard chat.quipCooldown != nil, quipGatesOpen else { return false }
-        for situation in situations(history) {
-            guard let pick = Quips.pick(situation, now: now, chattiness: chat.level, history: history) else { continue }
-            history = pick.history
-            Log.info("quip: \(situation.rawValue): \(pick.line)")
-            overlay.greet(pick.line, for: 6)
-            return true
+        quipHistory = Quips.sawBreak(at: now, history: quipHistory)
+        let history = quipHistory
+        guard chat.quipCooldown != nil, !writer.isBusy, quipGatesOpen else { return false }
+        let writes = config.contextQuips
+        guard let situation = situations(history).first(where: { situation in
+            Quips.allows(situation, now: now, chattiness: chat.level, history: history)
+                && (writes || !Quips.fresh(situation, now: now, history: history).isEmpty)
+        }) else { return false }
+        let events = upcomingEvents()
+        let event = situation == .upcoming ? Upcoming.due(events, now: now, history: history) : nil
+        guard writes else { return showWritten(situation, event: event) }
+        let screen = screen ?? AccessibilityContext.capture(maxElements: 0, timeBudget: 0.12)
+        let context = QuipContext(situation: situation, now: now, app: screen.appName, windowTitle: screen.windowTitle,
+                                  next: event ?? Upcoming.relevant(to: situation, in: events, now: now), agent: recentAgent(at: now))
+        writer.write(context) { [weak self] outcome in
+            guard let self else { return }
+            // Up to six seconds have passed: long enough to start typing or take a call.
+            guard self.chat.quipCooldown != nil, self.quipGatesOpen else {
+                Log.info("quip: \(situation.rawValue): a gate closed while the line was written")
+                return
+            }
+            let model = self.config.quipModel
+            if let line = outcome.line, Quips.isFresh(line, now: Date(), history: self.quipHistory) {
+                Log.info(String(format: "quip: %@ wrote it in %.1f s ($%.4f)", model, outcome.seconds, outcome.costUSD))
+                self.show(line, situation, event: event)
+            } else {
+                let why = outcome.raw.map { "\"\(Log.short($0, 80))\" failed the check" } ?? (outcome.timedOut ? "took over six seconds" : "gave no line")
+                Log.info("quip: \(model) \(why); the written lines instead")
+                self.showWritten(situation, event: event)
+            }
         }
-        return false
+        return true
+    }
+
+    /// A written line for the situation, when one is fresh.
+    @discardableResult
+    private func showWritten(_ situation: QuipSituation, event: UpcomingEvent?) -> Bool {
+        guard let line = Quips.fresh(situation, now: Date(), history: quipHistory).randomElement() else { return false }
+        show(line, situation, event: event)
+        return true
+    }
+
+    /// Up it goes: stamped for the cooldown, the week without repeats and, for an upcoming event, once per event.
+    private func show(_ line: String, _ situation: QuipSituation, event: UpcomingEvent?) {
+        quipHistory = Quips.stamp(line, situation, now: Date(), history: quipHistory, event: event.map { Upcoming.key($0) })
+        Log.info("quip: \(situation.rawValue)\(event.map { " (\(Log.short($0.title, 50)))" } ?? ""): \(line)")
+        overlay.greet(line, for: 6)
+    }
+
+    // MARK: Context lines (docs/alive.md, round two)
+
+    private let writer: QuipWriter
+    /// The last agent result, for a line in the minute or two after it lands.
+    private var lastAgent: (agent: QuipContext.Agent, at: Date)?
+
+    /// An agent finished or failed; its one-line result is the context for the quip that follows.
+    func agentFinished(line: String, failed: Bool) {
+        let line = line.trimmingCharacters(in: .whitespacesAndNewlines)
+        lastAgent = line.isEmpty ? nil : (QuipContext.Agent(line: line, failed: failed), Date())
+    }
+
+    private func recentAgent(at now: Date) -> QuipContext.Agent? {
+        guard let lastAgent, now.timeIntervalSince(lastAgent.at) < 120 else { return nil }
+        return lastAgent.agent
+    }
+
+    /// Today's and tomorrow's events and the deadlines, from the TodayBrief AtlasBridge refreshes.
+    private func upcomingEvents() -> [UpcomingEvent] {
+        atlas.brief.map { Upcoming.events(in: $0) } ?? []
     }
 
     /// The mischief guard for quips (docs/alive.md, Phase 2 item 8), read from the system.

@@ -1,6 +1,7 @@
 import AppKit
 import AVFoundation
 import CoreAudio
+import DotKit
 import SwiftUI
 
 // The settings pages after HeyClicky's: Voice, Microphone, Shortcuts and Cursor, plus the
@@ -140,6 +141,46 @@ struct RadioRow<Trailing: View>: View {
 extension RadioRow where Trailing == EmptyView {
     init(_ title: String, detail: String? = nil, badges: [String] = [], selected: Bool, monospaced: Bool = false, action: @escaping () -> Void) {
         self.init(title, detail: detail, badges: badges, selected: selected, monospaced: monospaced, action: action) { EmptyView() }
+    }
+}
+
+/// How much Dot says before he asks (`chattiness`, DotKit's Chattiness): one row per level, as
+/// docs/persona.md describes them.
+struct ChattinessPicker: View {
+    @Binding var level: Int
+
+    static let levels: [(level: Int, name: String, detail: String)] = [
+        (0, "Nothing", "no deadline notices, offers or quips"),
+        (1, "Rarely", "deadline notices only, three times as far apart; a quip every 2 hours at most"),
+        (2, "Normal", "deadline notices and offers; a quip every 40 minutes at most"),
+        (3, "Chatty", "notices and offers twice as often; a quip every 20 minutes at most"),
+    ]
+
+    var body: some View {
+        ForEach(Self.levels, id: \.level) { row in
+            RadioRow(row.name, detail: row.detail, badges: row.level == Chattiness.defaultLevel ? ["default"] : [],
+                     selected: level == row.level) { level = row.level }
+        }
+    }
+}
+
+/// The orb's diameter (`orbSize`): three sizes, and the configured one when config.json says otherwise.
+struct OrbSizePicker: View {
+    @Binding var size: Double
+
+    static let sizes: [(points: Double, name: String, detail: String)] = [
+        (20, "Small", "20 pt, its size before the alive pass"),
+        (24, "Medium", "24 pt"),
+        (28, "Large", "28 pt"),
+    ]
+
+    var body: some View {
+        ForEach(Self.sizes, id: \.points) { row in
+            RadioRow(row.name, detail: row.detail, badges: row.points == 24 ? ["default"] : [], selected: size == row.points) { size = row.points }
+        }
+        if !Self.sizes.contains(where: { $0.points == size }) {
+            RadioRow("\(Int(size)) pt", detail: "set in config.json", selected: true) {}
+        }
     }
 }
 
@@ -461,6 +502,10 @@ struct CursorPage: View {
                         }
                     }
                 }
+            }
+            HomeSection("Size") {
+                OrbSizePicker(size: $model.settings.orbSize)
+                Text("the eyes, the bubble and how far it sits from the pointer scale with it").font(.caption).foregroundStyle(.secondary)
             }
             HomeSection("Presence") {
                 SettingToggle("Floating companion", detail: "dot beside the cursor", isOn: $model.settings.showCompanion)

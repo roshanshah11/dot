@@ -592,7 +592,8 @@ final class AgentManager {
         if !silent { Chimes.shared.play(failed ? .failed : .done) }
         activities[agent.slug] = nil
         postActivity()
-        NotificationCenter.default.post(name: .dotAgentFinished, object: nil, userInfo: ["failed": failed])
+        // The row's line rides along as the context for the quip that follows (docs/alive.md, round two).
+        NotificationCenter.default.post(name: .dotAgentFinished, object: nil, userInfo: ["failed": failed, "line": failed ? summary : (parsed.doneTitle ?? summary)])
         // Not spoken when he is reading that agent's thread in Home (TC-03); under 200 characters when spoken.
         if config.speakAgentResults, !summary.isEmpty, !silent, isThreadOpen?(agent.slug) != true {
             let spoken = Self.spokenSummary(summary)
