@@ -153,9 +153,14 @@ final class CommandSpeaker: NSObject, TTSProvider, AVAudioPlayerDelegate {
 
     // MARK: Worker protocol
 
+    /// The mode's speed multiplier, sent with each sentence (dot-tts-kokoro.py multiplies --speed by it).
+    private var rate: Double = 1
+    func setRate(_ multiplier: Double) { rate = min(max(multiplier, 0.5), 2) }
+
     private func request(_ text: String, completion: @escaping (URL?) -> Void) {
+        let body: [String: Any] = rate == 1 ? ["text": text] : ["text": text, "rate": rate]
         guard let handle = stdinHandle,
-              let data = try? JSONSerialization.data(withJSONObject: ["text": text]),
+              let data = try? JSONSerialization.data(withJSONObject: body),
               var line = String(data: data, encoding: .utf8) else { completion(nil); return }
         line += "\n"
         synthQueue.async { [weak self] in

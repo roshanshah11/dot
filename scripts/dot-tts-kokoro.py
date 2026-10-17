@@ -49,10 +49,11 @@ def main() -> int:
     out_dir = os.path.join(tempfile.gettempdir(), "dot-tts")
     os.makedirs(out_dir, exist_ok=True)
 
-    def synthesize(text: str) -> str:
+    def synthesize(text: str, multiplier: float = 1.0) -> str:
         pieces = []
         rate = 24000
-        for result in model.generate(text=text, voice=args.voice, speed=args.speed, lang_code=args.lang, verbose=False):
+        speed = max(0.5, min(2.0, args.speed * multiplier))
+        for result in model.generate(text=text, voice=args.voice, speed=speed, lang_code=args.lang, verbose=False):
             pieces.append(result.audio)
             rate = result.sample_rate
         if not pieces:
@@ -87,7 +88,11 @@ def main() -> int:
             continue
         started = time.time()
         try:
-            path = synthesize(text)
+            try:
+                multiplier = float(request.get("rate") or 1.0)
+            except (TypeError, ValueError):
+                multiplier = 1.0
+            path = synthesize(text, multiplier)
             print(json.dumps({"wav": path, "ms": int((time.time() - started) * 1000)}), flush=True)
         except Exception as exc:  # noqa: BLE001
             print(json.dumps({"error": str(exc)}), flush=True)

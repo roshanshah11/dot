@@ -12,10 +12,14 @@ protocol TTSProvider: AnyObject {
     /// `onStart` is a marker: it fires when the queue reaches it (at once when nothing is queued).
     func speak(_ sentence: String, onStart: (() -> Void)?)
     func stop()
+    /// A multiplier on his voice speed for the sentences that follow (VI-03: study a little slower,
+    /// desk a little faster). Engines that cannot change speed per sentence ignore it.
+    func setRate(_ multiplier: Double)
 }
 
 extension TTSProvider {
     func speak(_ sentence: String) { speak(sentence, onStart: nil) }
+    func setRate(_ multiplier: Double) {}
 }
 
 final class AppleSpeaker: NSObject, TTSProvider, AVSpeechSynthesizerDelegate {
