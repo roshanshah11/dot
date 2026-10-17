@@ -9,7 +9,8 @@ import Foundation
 
 public enum OrbPhase: Equatable { case idle, listening, thinking, speaking }
 public enum OrbMood: Equatable { case neutral, happy, puzzled, focused, sleepy }
-public enum OrbMotionState: Equatable { case following, flying, parked, perched }
+/// `held`: picked up and dangling under the cursor; `tossed`: thrown and flying free (round two).
+public enum OrbMotionState: Equatable { case following, flying, parked, perched, held, tossed }
 
 /// One-shot moves over the base pose. Keep-alive blinks and darts pause while one plays (craft-A2-03).
 public enum OrbReaction: Equatable {
@@ -18,7 +19,12 @@ public enum OrbReaction: Equatable {
     case appSwitch(dx: Double)
     /// Puzzled or curious: a fast head tilt toward the orb's right (cute-C6, C7).
     case tilt
+    /// He clicked Dot: a squish, a giggle wobble and a happy squint (round two).
+    case boop
 }
+
+/// Spiral eyes after a landing, while the world spins (dizzy is one of the motions rated cute, cute-C3).
+public enum OrbEyeStyle: Equatable { case normal, dizzy }
 
 public enum OrbGlyph: Equatable { case sleeping, alert }
 
@@ -57,6 +63,7 @@ public struct OrbPose: Equatable {
     public var mouthOpen: Double = 0
     public var mouthCurve: Double = 0.15
     public var glyph: OrbGlyph?
+    public var eyeStyle: OrbEyeStyle = .normal
     /// 0...1 through the glyph's float cycle.
     public var glyphProgress: Double = 0
     public init() {}
@@ -169,6 +176,9 @@ public final class OrbAnimator {
     private var rubFullAt = -Double.infinity
     private var rubFull = false
 
+    private var landedAt: Double?
+    private var bounce: (normal: CGVector, start: Double)?
+
     private enum Beat: Equatable { case groom, scratch, scratchEdge, yawn, lookAround }
 
     public init(seed: UInt64 = 0xD07) {
@@ -231,6 +241,20 @@ public final class OrbAnimator {
         landing = (CGVector(dx: direction.dx / length, dy: direction.dy / length), time)
         anticipation = nil
     }
+
+    /// A thrown Dot hit a screen edge: a squash against it.
+    public func bounced(normal: CGVector, at time: Double) {
+        bounce = (normal, time)
+    }
+
+    /// A thrown Dot came to rest: dizzy for about a second, then it shakes it off.
+    public func landed(at time: Double) {
+        landedAt = time
+        reaction = nil
+    }
+
+    /// Dizzy and shaking it off: the manager waits for this before Dot trots back.
+    public var isRecovering: Bool { landedAt.map { now - $0 < 1.4 } ?? false }
 
     /// Dot appeared on a screen (HeyClicky blinks on pointer entry, rea-C7).
     public func appeared(at time: Double) { pendingBlinks.append(time + 0.05) }
@@ -330,6 +354,7 @@ public final class OrbAnimator {
         isBusy = blinkStart != nil || saccadeStart != nil || reaction != nil || hop != nil || anticipation != nil
             || landing != nil || input.motion == .flying || isRubbed || wokeAt != nil || beat != nil
             || input.speed > 1 || (input.phase == .speaking && !input.reduceMotion)
+            || input.motion == .held || input.motion == .tossed || landedAt != nil || bounce != nil
             || abs(lids.upperLid - lidTarget(right: false).upper) > 0.01 || abs(lids.lowerLid - lidTarget(right: false).lower) > 0.01
         if let reactionNow = reaction, now - reactionNow.start > reactionLength(reactionNow.kind) {
             reaction = nil
@@ -392,7 +417,12 @@ public final class OrbAnimator {
     private func desiredGaze() -> (target: CGPoint, pursuit: Bool)? {
         if let wake = wokeAt, now - wake < 0.7 { return (CGPoint(x: 0, y: -0.25 * Self.travelY), false) }
         if let reaction, case .appSwitch = reaction.kind { return nil }   // the jump already set it
+        if input.motion == .held { return (CGPoint(x: 0, y: -0.6 * Self.travelY), false) }   // looking up at his hand
+        if input.motion == .tossed { return nil }
+        if let land = landedAt, now - land < 1.4 { return (.zero, false) }
         switch input.motion {
+        case .held, .tossed:
+            return nil
         case .flying:
             if anticipation != nil { return nil }
             let length = max(hypot(input.lead.dx, input.lead.dy), 1e-6)
@@ -566,10 +596,11 @@ public final class OrbAnimator {
         }
         if beat?.kind == .yawn { upper = 1 }
         if let wake = wokeAt, now - wake < 0.7 { upper = 0; lower = 0; scale = 1.15 }
+        if input.motion == .held || input.motion == .tossed { upper = 0; lower = 0; scale = 1.12 }
         if isRubbed { lower = 0.55; upper = 0 }
         if let reaction {
             switch reaction.kind {
-            case .agentDone, .thanks: lower = 0.55
+            case .agentDone, .thanks, .boop: lower = 0.55
             case .agentFailed: upper = max(upper, 0.4)
             default: break
             }
@@ -638,8 +669,30 @@ public final class OrbAnimator {
                 offer(1.15, 0)                                           // 1.15 x 0.87 on landing for 80 ms
             } else { hop = nil }
         }
+        // Held: dangling, a little longer top to bottom. Tossed: stretched along the throw.
+        if input.motion == .held { offer(1.12, -.pi / 2) }
+        if input.motion == .tossed, leadLength > 0.5 {
+            offer(1 + min(input.speed / 2000, 1) * 0.25, atan2(Double(input.lead.dy), Double(input.lead.dx)))
+        }
+        if let b = bounce {
+            let e = now - b.start
+            if e < 0.18 { offer(1 - 0.22 * sin(e / 0.18 * .pi), atan2(Double(b.normal.dy), Double(b.normal.dx))) } else { bounce = nil }
+        }
         // Rotation: the tilt, the purr, the groom and scratch, the lean into a rub.
         var rotation = 0.0
+        if input.motion == .held { rotation += 0.12 * max(-1, min(1, Double(input.lead.dx) / 400)) }
+        if input.motion == .tossed { rotation += 0.35 * sin(now * 14) * min(input.speed / 2000, 1) }
+        if let land = landedAt {
+            let e = now - land
+            if e < 1.0 {
+                pose.eyeStyle = .dizzy
+                rotation += 0.12 * sin(e * 2 * .pi * 3)
+            } else if e < 1.4 {
+                rotation += 0.15 * sin((e - 1.0) * 2 * .pi * 8) * (1 - (e - 1.0) / 0.4)   // shakes it off
+            } else {
+                landedAt = nil
+            }
+        }
         var tiltTarget = 0.0
         if let reaction {
             let e = now - reaction.start
@@ -647,6 +700,9 @@ public final class OrbAnimator {
             case .agentFailed: offset.y += CGFloat(0.1 * sin(min(e / 0.25, 1) * .pi / 2) * (e > 0.45 ? max(0, 1 - (e - 0.45) / 0.15) : 1))
             case .dismissed: offset.y += CGFloat(0.1 * sin(min(e / 0.4, 1) * .pi))
             case .tilt: tiltTarget = 0.24
+            case .boop:
+                if e < 0.12 { offer(1 - 0.2 * sin(e / 0.12 * .pi), -.pi / 2) }                    // the squish
+                else { rotation += 0.1 * sin((e - 0.12) * 2 * .pi * 5) * max(0, 1 - (e - 0.12) / 0.5) }   // the giggle
             default: break
             }
         }
@@ -684,7 +740,7 @@ public final class OrbAnimator {
         }
 
         // Blush: petting and praise only (a design call; cute-C35 found no study of it).
-        let blushTarget: Double = (isRubbed && rubFull) || (reaction?.kind == .thanks) ? 1 : 0
+        let blushTarget: Double = (isRubbed && rubFull) || reaction?.kind == .thanks ? 1 : (reaction?.kind == .boop ? 0.6 : 0)
         blush += (blushTarget - blush) * (1 - exp(-dt / (blushTarget > blush ? 0.15 : 0.5)))
         pose.blush = blush < 0.01 ? 0 : blush
     }
@@ -700,7 +756,7 @@ public final class OrbAnimator {
         let target = speaking ? level : 0
         let k = 1 - exp(-dt / (target > mouthOpen ? 0.03 : 0.09))
         mouthOpen += (target - mouthOpen) * k
-        let happy = input.mood == .happy || reaction?.kind == .agentDone || reaction?.kind == .thanks || (isRubbed && rubFull)
+        let happy = input.mood == .happy || reaction?.kind == .agentDone || reaction?.kind == .thanks || reaction?.kind == .boop || (isRubbed && rubFull)
         pose.mouthVisible = (speaking && mouthOpen > 0.02) || happy
         pose.mouthOpen = speaking ? mouthOpen : 0
         pose.mouthCurve = happy ? 0.5 : 0.15
@@ -764,6 +820,7 @@ public final class OrbAnimator {
         case .pounce: return 0.45
         case .appSwitch: return 0.5
         case .tilt: return 1.2
+        case .boop: return 0.65
         }
     }
 }

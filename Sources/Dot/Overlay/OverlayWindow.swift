@@ -53,7 +53,7 @@ final class OverlayWindow: NSPanel {
 enum CompanionPhase: Equatable { case idle, listening, thinking, speaking }
 /// The face: what Dot feels about the moment, on top of the phase.
 enum CompanionMood: Equatable { case neutral, happy, puzzled, focused, sleepy }
-enum CompanionMotion: Equatable { case following, flying, parked, perched }
+enum CompanionMotion: Equatable { case following, flying, parked, perched, held, tossed }
 
 struct Ring: Equatable {
     var center: CGPoint
@@ -524,12 +524,25 @@ struct OrbView: View {
 
     /// Two eyes, each 0.20 x 0.40 of the orb, centered a little below its middle (baby schema: big,
     /// low-set eyes, cute-C31, C32, C52), with a white highlight upper left in both (cute-C9, C10).
+    @ViewBuilder
     private func eyes(body: CGFloat, pose: OrbPose) -> some View {
-        HStack(spacing: body * model.eyeGap) {
-            EyeView(eye: pose.left, width: body * 0.20, height: body * 0.40, body: body, ink: ink)
-            EyeView(eye: pose.right, width: body * 0.20, height: body * 0.40, body: body, ink: ink)
+        if pose.eyeStyle == .dizzy {
+            // Landed from a throw: spiral eyes while the world spins (round two).
+            HStack(spacing: body * 0.12) {
+                SpiralEye().stroke(ink, style: StrokeStyle(lineWidth: max(body * 0.055, 1), lineCap: .round))
+                    .frame(width: body * 0.28, height: body * 0.28)
+                SpiralEye().stroke(ink, style: StrokeStyle(lineWidth: max(body * 0.055, 1), lineCap: .round))
+                    .frame(width: body * 0.28, height: body * 0.28)
+                    .scaleEffect(x: -1)
+            }
+            .offset(y: body * 0.03)
+        } else {
+            HStack(spacing: body * model.eyeGap) {
+                EyeView(eye: pose.left, width: body * 0.20, height: body * 0.40, body: body, ink: ink)
+                EyeView(eye: pose.right, width: body * 0.20, height: body * 0.40, body: body, ink: ink)
+            }
+            .offset(x: pose.gaze.x * body, y: body * 0.05 + pose.gaze.y * body)
         }
-        .offset(x: pose.gaze.x * body, y: body * 0.05 + pose.gaze.y * body)
     }
 
     /// A tiny mouth, never wider than a fifth of the orb (cute-C32): a small round "o" that opens with
@@ -706,6 +719,24 @@ struct EyeView: View {
     }
 }
 
+/// A dizzy eye: two turns of a spiral from the middle out.
+struct SpiralEye: Shape {
+    func path(in rect: CGRect) -> Path {
+        var path = Path()
+        let center = CGPoint(x: rect.midX, y: rect.midY)
+        let maxR = min(rect.width, rect.height) / 2
+        let steps = 48
+        for i in 0...steps {
+            let t = Double(i) / Double(steps)
+            let angle = t * 4 * .pi
+            let r = maxR * CGFloat(0.15 + 0.85 * t)
+            let point = CGPoint(x: center.x + r * CGFloat(cos(angle)), y: center.y + r * CGFloat(sin(angle)))
+            if i == 0 { path.move(to: point) } else { path.addLine(to: point) }
+        }
+        return path
+    }
+}
+
 /// A happy eye: an upward arch, like a smile turned over.
 struct HappyEye: Shape {
     func path(in rect: CGRect) -> Path {
@@ -791,19 +822,24 @@ final class OverlayManager {
     private var mouseAtPark = CGPoint.zero
     private var lastMouse = CGPoint.zero
     /// The face and body of each screen's orb (DotKit's OrbAnimator, docs/alive.md), the spring it
-    /// follows the cursor on, and what it reads to be a pet: an approaching cursor, a rub, a fling.
+    /// follows the cursor on, and what it reads to be a pet: the leash, a rub, a call-over wiggle.
     private var animators: [OrbAnimator] = []
     private var followers: [Spring2D] = []
-    private var lazyZones: [LazyZone] = []
+    private var leashes: [Leash] = []
+    private var callOvers: [CallOverDetector] = []
+    /// The click target over each orb, and since when the cursor has rested on the orb (round two).
+    private var handles: [OrbHandle] = []
+    private var restingOnOrbSince: [Double?] = []
+    private var armed: [Bool] = []
+    private var mouseCaptured = false
+    /// He pressed on Dot: where the press was, the drag's samples (overlay points), and whether it moved.
+    private var grab: (index: Int, samples: [(point: CGPoint, time: Double)], moved: Bool)?
+    /// Dot was thrown: its flight until it comes to rest.
+    private var toss: (index: Int, physics: Toss)?
     private var rubs: [RubDetector] = []
     private var leads: [CGVector] = []
     private var speeds: [Double] = []
     private var rubbing: [Bool] = []
-    private var fling = FlingDetector()
-    private var chasing = false
-    private var chaseSettlesAt: Double = 0
-    private var pounceCheckAt: Double?
-    private var flingStoppedAt: Double = 0
     /// The pet routine: Dot walked off his text to a window edge and is grooming, drowsing or asleep.
     private var perched = false
     private var mouseAtPerch = CGPoint.zero
@@ -877,13 +913,19 @@ final class OverlayManager {
         flightTimer?.invalidate()
         flightTimer = nil
         parkedScreen = nil
-        chasing = false
+        grab = nil
+        toss = nil
         for window in windows { window.orderOut(nil) }
+        for handle in handles { handle.orderOut(nil) }
         windows = []
         models = []
         animators = []
         followers = []
-        lazyZones = []
+        leashes = []
+        callOvers = []
+        handles = []
+        restingOnOrbSince = []
+        armed = []
         rubs = []
         leads = []
         speeds = []
@@ -898,7 +940,16 @@ final class OverlayManager {
             models.append(model)
             animators.append(OrbAnimator(seed: UInt64.random(in: 1...UInt64.max)))
             followers.append(Spring2D(position: model.position))
-            lazyZones.append(LazyZone())
+            leashes.append(Leash(radius: 90 * orbSize / 24))
+            callOvers.append(CallOverDetector())
+            let handle = OrbHandle()
+            let index = models.count - 1
+            handle.onDown = { [weak self] point in self?.pressed(index, at: point) }
+            handle.onDrag = { [weak self] point in self?.dragged(index, to: point) }
+            handle.onUp = { [weak self] point in self?.released(index, at: point) }
+            handles.append(handle)
+            restingOnOrbSince.append(nil)
+            armed.append(false)
             rubs.append(RubDetector())
             leads.append(.zero)
             speeds.append(0)
@@ -964,7 +1015,9 @@ final class OverlayManager {
     /// While the hotkey is held, the overlay takes the mouse so a drag draws a box instead of
     /// selecting text underneath. Released, it is click-through again.
     func setMouseCapture(_ on: Bool) {
+        mouseCaptured = on
         for window in windows { window.ignoresMouseEvents = !on }
+        if on { for index in handles.indices { setArmed(index, false) } }
     }
 
     // MARK: State
@@ -1362,6 +1415,8 @@ final class OverlayManager {
         parkedScreen = nil
         perched = false
         wakeReturnAt = nil
+        grab = nil
+        toss = nil
         for (index, model) in models.enumerated() { followers[index].snap(to: model.position) }
     }
 
@@ -1376,9 +1431,12 @@ final class OverlayManager {
     }
 
     private func park(on index: Int) {
-        // Pointing at something wins over the pet routine.
+        // Pointing at something wins over the pet routine, a grab and a throw.
         perched = false
         wakeReturnAt = nil
+        grab = nil
+        toss = nil
+        for i in handles.indices { setArmed(i, false) }
         parkedScreen = index
         mouseAtPark = NSEvent.mouseLocation
         for (i, model) in models.enumerated() where i != index { model.visible = false; model.chip = nil; model.tailTo = nil }
@@ -1442,13 +1500,9 @@ final class OverlayManager {
         lastMouse = mouse
         if moved > 0.5 { lastMouseMoveAt = now }
         if jump || tickCount % 15 == 0 { readInput(now) }
-        if let event = fling.add(CGPoint(x: mouse.x, y: -mouse.y), at: now) { flung(event, now: now) }
-        if let check = pounceCheckAt, now >= check {
-            pounceCheckAt = nil
-            readInput(now)   // the click times are read at 4 Hz; this decision needs them fresh
-            // A fling that ended in a click was pointing, not play.
-            if sinceClick > now - flingStoppedAt, sinceKey > 2, parkedScreen == nil { react(.pounce) }
-        }
+        // Picked up or thrown: Dot goes where the hand or the throw takes it (round two).
+        if let grab, grab.moved { holdTick(index: grab.index, mouse: mouse) }
+        if toss != nil { tossTick(now: now, dt: dt) }
 
         if let parked = parkedScreen {
             let model = models[parked]
@@ -1484,7 +1538,7 @@ final class OverlayManager {
                     leads[index] = .zero
                     continue
                 }
-                guard model.motion == .following else { continue }
+                guard model.motion == .following else { if armed[index], grab?.index != index { setArmed(index, false) }; continue }
                 follow(index: index, desired: desired, mouse: mouse, velocity: velocity, now: now, dt: dt)
                 if animators[index].wantsPerch { startPerch(index: index, mouse: mouse, now: now) }
             }
@@ -1492,34 +1546,169 @@ final class OverlayManager {
         animate(now: now)
     }
 
-    /// One frame of following: the spring (looser while it chases a flung cursor), held still while
-    /// the cursor comes to pet it, and the rub read off the cursor's wiggle.
+    /// One frame of following, on the leash (round two): Dot sits while the cursor stays near and trots to
+    /// its spot once the cursor goes far. It reads a rub off the cursor's wiggle over it, a call-over off a
+    /// gentle wiggle anywhere else, hops aside from a fast approach, and arms its click target when he rests on it.
     private func follow(index: Int, desired: CGPoint, mouse: CGPoint, velocity: CGVector, now: Double, dt: Double) {
         let model = models[index]
+        let radius = orbSize / 2
         let cursor = Coordinates.overlayPoint(fromScreen: mouse, screenFrame: windows[index].screenFrame)
-        let rubOn = rubs[index].add(cursor: cursor, at: now, orb: model.position, radius: orbSize / 2)
-        let approach = hypot(followOffset.dx, followOffset.dy) * 1.25
-        let hold = lazyZones[index].shouldHold(cursor: cursor, velocity: velocity, orb: model.position, approach: approach, now: now,
-                                                rubbing: rubOn, buttonDown: NSEvent.pressedMouseButtons != 0)
+        let rubOn = rubs[index].add(cursor: cursor, at: now, orb: model.position, radius: radius)
         if rubOn != rubbing[index] {
             rubbing[index] = rubOn
             if rubOn { onPetted?() }
         }
         animators[index].setRubbing(rubOn, direction: Double(rubs[index].lastDirection), at: now)
+        updateArming(index, cursor: cursor, now: now, rubbing: rubOn)
+        let bounds = CGRect(origin: .zero, size: model.screenSize).insetBy(dx: radius + 2, dy: radius + 2)
+        // A fast approach is a click on something under Dot: hop out of the way.
+        if !armed[index], !model.reduceMotion,
+           let spot = Dodge.spot(cursor: cursor, velocity: velocity, orb: model.position, radius: radius, bounds: bounds) {
+            hop(index, to: spot)
+            return
+        }
+        // A gentle wiggle anywhere else calls Dot over, under the cursor, where the wiggle becomes a pet.
+        if callOvers[index].add(cursor: cursor, at: now, orb: model.position, radius: radius) {
+            let under = CGPoint(x: min(max(cursor.x, bounds.minX), bounds.maxX), y: min(max(cursor.y + radius * 0.5, bounds.minY), bounds.maxY))
+            hop(index, to: under)
+            return
+        }
         var spring = followers[index]
-        if hold {
-            spring.position = model.position
-            spring.velocity = .zero
-        } else {
-            let loose = chasing || now < chaseSettlesAt
-            spring.duration = loose ? 0.5 : 0.25
-            spring.bounce = loose ? 0.3 : 0.12
+        let moving = !animators[index].isRecovering && !armed[index]
+            && leashes[index].update(cursor: cursor, orb: model.position, target: desired)
+        if moving {
+            spring.duration = 0.25
+            spring.bounce = 0.12
             spring.step(toward: desired, dt: dt)
             if hypot(spring.position.x - model.position.x, spring.position.y - model.position.y) > 0.01 { model.position = spring.position }
+        } else {
+            spring.position = model.position
+            spring.velocity = .zero
         }
         followers[index] = spring
-        leads[index] = CGVector(dx: desired.x - model.position.x, dy: desired.y - model.position.y)
+        leads[index] = moving ? CGVector(dx: desired.x - model.position.x, dy: desired.y - model.position.y) : .zero
         speeds[index] = spring.speed
+    }
+
+    /// A quick hop to a spot nearby (a dodge or a call-over); it sits there after.
+    private func hop(_ index: Int, to spot: CGPoint) {
+        let model = models[index]
+        restingOnOrbSince[index] = nil
+        fly(model: model, to: spot, style: .hop) { [weak self] in
+            model.motion = .following
+            self?.leashes[index].sit()
+        }
+    }
+
+    // MARK: Boop, grab and toss (round two)
+
+    /// The click target takes the mouse only once he has rested on Dot for 0.3 s or is rubbing it, so a
+    /// click meant for whatever is under Dot still lands there.
+    private func updateArming(_ index: Int, cursor: CGPoint, now: Double, rubbing rubOn: Bool) {
+        let distance = hypot(cursor.x - models[index].position.x, cursor.y - models[index].position.y)
+        if distance <= orbSize / 2 * 1.25 {
+            if restingOnOrbSince[index] == nil { restingOnOrbSince[index] = now }
+        } else if distance > orbSize / 2 * 1.8 {
+            restingOnOrbSince[index] = nil
+        }
+        let rested = restingOnOrbSince[index].map { now - $0 >= 0.3 } ?? false
+        setArmed(index, (rested || rubOn) && !mouseCaptured && parkedScreen == nil)
+    }
+
+    private func setArmed(_ index: Int, _ on: Bool) {
+        guard index < handles.count else { return }
+        let handle = handles[index]
+        if on {
+            let frame = windows[index].screenFrame, p = models[index].position, side = orbSize * 1.6
+            let origin = CGPoint(x: frame.minX + p.x - side / 2, y: frame.maxY - p.y - side / 2)
+            if handle.frame.origin != origin || handle.frame.width != side {
+                handle.setFrame(CGRect(origin: origin, size: CGSize(width: side, height: side)), display: false)
+            }
+            if !handle.isVisible { handle.orderFrontRegardless() }
+        }
+        guard armed[index] != on else { return }
+        armed[index] = on
+        handle.ignoresMouseEvents = !on
+    }
+
+    private func overlayPoint(_ screenPoint: CGPoint, _ index: Int) -> CGPoint {
+        Coordinates.overlayPoint(fromScreen: screenPoint, screenFrame: windows[index].screenFrame)
+    }
+
+    private func pressed(_ index: Int, at screenPoint: CGPoint) {
+        guard index < models.count, armed[index] else { return }
+        grab = (index, [(overlayPoint(screenPoint, index), clock)], false)
+    }
+
+    private func dragged(_ index: Int, to screenPoint: CGPoint) {
+        guard var current = grab, current.index == index else { return }
+        let point = overlayPoint(screenPoint, index)
+        current.samples.append((point, clock))
+        if current.samples.count > 40 { current.samples.removeFirst(current.samples.count - 40) }
+        if !current.moved, let first = current.samples.first, hypot(point.x - first.point.x, point.y - first.point.y) > 4 {
+            current.moved = true
+            models[index].motion = .held          // picked up
+        }
+        grab = current
+    }
+
+    private func released(_ index: Int, at screenPoint: CGPoint) {
+        guard let current = grab, current.index == index else { return }
+        grab = nil
+        let model = models[index]
+        guard current.moved else {
+            animators[index].react(.boop, at: clock)
+            onPetted?()
+            return
+        }
+        setArmed(index, false)
+        restingOnOrbSince[index] = nil
+        let velocity = Toss.releaseVelocity(current.samples)
+        if model.reduceMotion || !Toss.isThrow(velocity) {
+            model.motion = .following           // set down here
+            followers[index].snap(to: model.position)
+            leashes[index].sit()
+            return
+        }
+        model.motion = .tossed
+        toss = (index, Toss(position: model.position, velocity: velocity))
+    }
+
+    /// Picked up: Dot dangles just under the cursor.
+    private func holdTick(index: Int, mouse: CGPoint) {
+        let model = models[index]
+        let cursor = overlayPoint(mouse, index)
+        let radius = orbSize / 2
+        let next = CGPoint(x: min(max(cursor.x, radius), model.screenSize.width - radius),
+                           y: min(max(cursor.y + radius * 1.1, radius), model.screenSize.height - radius))
+        leads[index] = CGVector(dx: (next.x - model.position.x) * 60, dy: (next.y - model.position.y) * 60)
+        speeds[index] = 0
+        model.position = next
+        setArmed(index, true)
+    }
+
+    /// Thrown: fly at the release speed, bounce off the screen's edges, land dizzy, then trot back.
+    private func tossTick(now: Double, dt: Double) {
+        guard var current = toss, current.index < models.count else { toss = nil; return }
+        let model = models[current.index]
+        let radius = orbSize / 2
+        let bounds = CGRect(origin: .zero, size: model.screenSize).insetBy(dx: radius + 1, dy: radius + 1)
+        let result = current.physics.step(dt: dt, bounds: bounds)
+        model.position = current.physics.position
+        leads[current.index] = current.physics.velocity
+        speeds[current.index] = current.physics.speed
+        if let normal = result.bounce { animators[current.index].bounced(normal: normal, at: now) }
+        if result.done {
+            toss = nil
+            leads[current.index] = .zero
+            speeds[current.index] = 0
+            animators[current.index].landed(at: now)
+            followers[current.index].snap(to: model.position)
+            leashes[current.index].sit()
+            model.motion = .following
+        } else {
+            toss = current
+        }
     }
 
     /// Step every visible orb's animator and publish its pose: 60 Hz while something moves, 15 Hz for
@@ -1527,7 +1716,7 @@ final class OverlayManager {
     private func animate(now: Double) {
         // CallPresence may read the front window's title through Accessibility, which can stall on a hung
         // app; the guards only matter near an antic (about to perch, perched), so read it only then,
-        // at most every 10 s. A fling reads it fresh in `flung`.
+        // at most every 10 s.
         let idleNow = sinceInput + (now - inputReadAt)
         if idleNow > OrbAnimator.petAfter - 15 || perched, now - quietCheckedAt > 10 { refreshGuards(now) }
         for (index, model) in models.enumerated() where model.visible {
@@ -1569,22 +1758,6 @@ final class OverlayManager {
         quietCheckedAt = now
         quiet = isQuiet?() ?? false
         recording = isRecording?() ?? false
-    }
-
-    private func flung(_ event: FlingDetector.Event, now: Double) {
-        switch event {
-        case .began:
-            if now - quietCheckedAt > 10 { refreshGuards(now) }
-            guard parkedScreen == nil, sinceKey > 2, !quiet, !recording, let index = models.firstIndex(where: { $0.visible }),
-                  animators[index].guardsAllowAntics else { return }
-            chasing = true
-        case .stopped:
-            guard chasing else { return }
-            chasing = false
-            chaseSettlesAt = now + 0.4         // the skid past the stop
-            flingStoppedAt = now
-            pounceCheckAt = now + 0.5
-        }
     }
 
     // MARK: The pet routine (docs/alive.md 2.2-2.3)
@@ -1731,6 +1904,50 @@ extension OrbMotionState {
         case .flying: self = .flying
         case .parked: self = .parked
         case .perched: self = .perched
+        case .held: self = .held
+        case .tossed: self = .tossed
         }
+    }
+}
+
+/// The click target over the orb (round two): a small transparent panel that ignores the mouse until he
+/// rests on Dot or rubs it, then takes a press for a boop or a grab. Non-activating, so a press never
+/// makes Dot the frontmost app. Its view paints an almost invisible disc, since the window server lets
+/// clicks fall through pixels that are fully clear.
+final class OrbHandle: NSPanel {
+    var onDown: ((CGPoint) -> Void)?
+    var onDrag: ((CGPoint) -> Void)?
+    var onUp: ((CGPoint) -> Void)?
+
+    init() {
+        super.init(contentRect: NSRect(x: 0, y: 0, width: 38, height: 38), styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
+        isOpaque = false
+        backgroundColor = .clear
+        hasShadow = false
+        ignoresMouseEvents = true
+        collectionBehavior = [.canJoinAllSpaces, .stationary, .fullScreenAuxiliary, .ignoresCycle]
+        isFloatingPanel = true
+        level = NSWindow.Level(rawValue: NSWindow.Level.screenSaver.rawValue + 1)
+        isReleasedWhenClosed = false
+        hidesOnDeactivate = false
+        becomesKeyOnlyIfNeeded = true
+        let view = HandleView()
+        view.handle = self
+        contentView = view
+    }
+
+    override var canBecomeKey: Bool { false }
+    override var canBecomeMain: Bool { false }
+
+    private final class HandleView: NSView {
+        weak var handle: OrbHandle?
+        override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+        override func draw(_ dirtyRect: NSRect) {
+            NSColor(white: 0, alpha: 0.01).setFill()
+            NSBezierPath(ovalIn: bounds.insetBy(dx: 2, dy: 2)).fill()
+        }
+        override func mouseDown(with event: NSEvent) { handle?.onDown?(NSEvent.mouseLocation) }
+        override func mouseDragged(with event: NSEvent) { handle?.onDrag?(NSEvent.mouseLocation) }
+        override func mouseUp(with event: NSEvent) { handle?.onUp?(NSEvent.mouseLocation) }
     }
 }

@@ -101,7 +101,7 @@ public struct Spring2D: Equatable {
 /// Clicky's quadratic-bezier flight with smoothstep easing (rea-C22, C23), plus a beat of anticipation
 /// before it leaves (craft-A1-04) and a lower, slower "trot" for walking to a perch.
 public struct FlightPath: Equatable {
-    public enum Style: Equatable { case flight, trot }
+    public enum Style: Equatable { case flight, trot, hop }
     public enum Stage: Equatable { case anticipating, moving, done }
 
     public let start: CGPoint
@@ -125,6 +125,10 @@ public struct FlightPath: Equatable {
         case .trot:
             duration = min(max(distance / 260, 0.6), 3.0)
             control = CGPoint(x: mid.x, y: mid.y - CGFloat(min(distance * 0.04, 14)))
+        case .hop:
+            // A quick hop aside or a scoot under the cursor: short, with a little lift.
+            duration = min(max(distance / 500, 0.22), 0.5)
+            control = CGPoint(x: mid.x, y: mid.y - CGFloat(min(distance * 0.3, 16)))
         }
     }
 
@@ -156,69 +160,6 @@ public struct FlightPath: Equatable {
         let length = hypot(dx, dy)
         guard length > 1e-9 else { return CGVector(dx: 1, dy: 0) }
         return CGVector(dx: dx / length, dy: dy / length)
-    }
-}
-
-/// A flung cursor, as opposed to an ordinary pointing move: a burst of at least `minSpeed` that lasts
-/// `minDuration` and covers `minTravel`, then a stop. Pointing moves peak fast too, so the burst needs
-/// all three, and the pounce it earns is gated on no click right after the stop (OverlayManager).
-public struct FlingDetector {
-    public enum Event: Equatable { case began, stopped(CGPoint) }
-
-    // A fast pointing move peaks near 1.9x its mean speed: 1,500 px in 0.5 s tops out at 5,600 px/s and
-    // covers about 700 px above 5,000. A fling (the same 1,500 px in 0.25 s) holds 6,000 px/s for over
-    // 120 ms and covers about 1,200 px doing it, so distance at speed is what tells them apart
-    // (docs/alive.md 2.4; the numbers are a design call, checked in OrbAnimatorTests).
-    public var minSpeed: Double = 6000
-    public var minDuration: Double = 0.1
-    public var minTravel: Double = 900
-    public var cooldown: Double = 30
-    public var stopSpeed: Double = 60
-    public var stopHold: Double = 0.15
-
-    private var last: (point: CGPoint, time: Double)?
-    private var burstStart: Double?
-    private var burstTravel: Double = 0
-    private var flinging = false
-    private var slowSince: Double?
-    private var lastFired = -Double.infinity
-
-    public init() {}
-
-    public var isFlinging: Bool { flinging }
-
-    public mutating func add(_ point: CGPoint, at time: Double) -> Event? {
-        defer { last = (point, time) }
-        guard let last, time > last.time else { return nil }
-        let step = Double(hypot(point.x - last.point.x, point.y - last.point.y))
-        let speed = step / (time - last.time)
-        if flinging {
-            if speed < stopSpeed {
-                if slowSince == nil { slowSince = time }
-                if let slow = slowSince, time - slow >= stopHold {
-                    flinging = false
-                    slowSince = nil
-                    return .stopped(point)
-                }
-            } else {
-                slowSince = nil
-            }
-            return nil
-        }
-        if speed >= minSpeed {
-            if burstStart == nil { burstStart = last.time; burstTravel = 0 }
-            burstTravel += step
-            if let start = burstStart, time - start >= minDuration, burstTravel >= minTravel, time - lastFired >= cooldown {
-                flinging = true
-                lastFired = time
-                burstStart = nil
-                return .began
-            }
-        } else {
-            burstStart = nil
-            burstTravel = 0
-        }
-        return nil
     }
 }
 
@@ -263,45 +204,141 @@ public struct RubDetector {
     }
 }
 
-/// So he can reach Dot to pet it: while the cursor is coming toward the orb and is close, the orb holds
-/// still instead of following, for up to `maxHold` seconds or until the cursor goes away.
-public struct LazyZone {
-    // Slow and deliberate only: an ordinary move down and to the right should not freeze Dot (design call).
-    public var maxHold: Double = 1.2
-    public var maxApproachSpeed: Double = 600
-    private var holdStart: Double?
-    /// After a hold ends, the cursor must go away past `approach` before another can start.
-    private var armed = true
+/// The leash (docs/alive.md, round two): pets people touch stay put until you go far (oneko.js idles
+/// within 48 px of the cursor, cute-C45). Dot sits still while the cursor stays within `radius` of it,
+/// then trots to its spot beside the cursor and sits again, so he can move onto it to pet or grab it.
+public struct Leash: Equatable {
+    public var radius: CGFloat
+    public private(set) var following = false
+
+    public init(radius: CGFloat = 90) { self.radius = radius }
+
+    /// Whether Dot should be moving toward `target` (its spot beside the cursor) this frame.
+    public mutating func update(cursor: CGPoint, orb: CGPoint, target: CGPoint) -> Bool {
+        if !following, hypot(cursor.x - orb.x, cursor.y - orb.y) > radius { following = true }
+        if following, hypot(target.x - orb.x, target.y - orb.y) < 3 { following = false }
+        return following
+    }
+
+    /// Sit where it is now (after a call-over, a set-down or a landing) until the cursor goes far.
+    public mutating func sit() { following = false }
+    /// Head back beside the cursor now (after a toss lands far away).
+    public mutating func heel() { following = true }
+}
+
+/// The call-over: a gentle wiggle anywhere, small and slow, that is not on Dot. macOS's shake-to-find
+/// is big and fast, so it stays out (docs/alive.md, round two; thresholds are a design call).
+public struct CallOverDetector {
+    public var reversals = 3
+    public var window: Double = 1.2
+    public var maxSpan: CGFloat = 40
+    public var maxSpeed: Double = 800
+    public var cooldown: Double = 3
+
+    private var samples: [(x: CGFloat, y: CGFloat, t: Double)] = []
+    private var lastFired = -Double.infinity
 
     public init() {}
 
-    public var isHolding: Bool { holdStart != nil }
-
-    /// `buttonDown`: a mouse button is held (a drag-select): never hold then.
-    public mutating func shouldHold(cursor: CGPoint, velocity: CGVector, orb: CGPoint, approach: CGFloat, now: Double,
-                                    rubbing: Bool, buttonDown: Bool = false) -> Bool {
-        let toOrb = CGVector(dx: orb.x - cursor.x, dy: orb.y - cursor.y)
-        let distance = hypot(toOrb.dx, toOrb.dy)
-        if distance > approach * 1.15 { armed = true }
-        if let start = holdStart {
-            if buttonDown || distance > approach * 1.15 || (!rubbing && now - start > maxHold) {
-                holdStart = nil
-                armed = false
-                return false
+    /// Feed one cursor sample; true once when a call-over completes.
+    public mutating func add(cursor: CGPoint, at time: Double, orb: CGPoint, radius: CGFloat) -> Bool {
+        if hypot(cursor.x - orb.x, cursor.y - orb.y) <= radius * 1.6 { samples.removeAll(); return false }
+        if let last = samples.last {
+            let speed = Double(hypot(cursor.x - last.x, cursor.y - last.y)) / max(time - last.t, 1e-3)
+            if speed > maxSpeed { samples.removeAll() }
+        }
+        samples.append((cursor.x, cursor.y, time))
+        samples.removeAll { time - $0.t > window }
+        guard time - lastFired >= cooldown, samples.count >= 4 else { return false }
+        let xs = samples.map(\.x), ys = samples.map(\.y)
+        guard let minX = xs.min(), let maxX = xs.max(), let minY = ys.min(), let maxY = ys.max(),
+              maxX - minX <= maxSpan, maxY - minY <= maxSpan, maxX - minX >= 4 else { return false }
+        var flips = 0
+        var direction: CGFloat = 0
+        var run: CGFloat = 0
+        for i in 1..<samples.count {
+            let dx = samples[i].x - samples[i - 1].x
+            guard abs(dx) > 0.01 else { continue }
+            let sign: CGFloat = dx > 0 ? 1 : -1
+            if direction == 0 || sign == direction { run += abs(dx) } else {
+                if run >= 1.5 { flips += 1 }
+                run = abs(dx)
             }
-            return true
+            direction = sign
         }
-        guard armed, !buttonDown else { return false }
-        let speed = hypot(velocity.dx, velocity.dy)
-        let closing = (toOrb.dx * velocity.dx + toOrb.dy * velocity.dy) / max(distance, 1)
-        if distance < approach, speed > 20, speed < maxApproachSpeed, closing > speed * 0.5 {
-            holdStart = now
-            return true
-        }
-        return false
+        guard flips >= reversals else { return false }
+        lastFired = time
+        samples.removeAll()
+        return true
+    }
+}
+
+/// The throw (docs/alive.md, round two): every throw found is a grab and release (VS Code Pets launches
+/// its ball on mouse-up with the last movement as its velocity; Shimeji is dragged and thrown). Dot
+/// flies at the release speed, slows with friction, and bounces off the screen's edges at 60%.
+public struct Toss: Equatable {
+    public static let maxSpeed: Double = 4000
+    public static let minSpeed: Double = 300
+    public var position: CGPoint
+    public var velocity: CGVector
+    public var restitution: Double = 0.6
+    /// Speed decays as exp(-t / friction).
+    public var friction: Double = 0.45
+
+    public init(position: CGPoint, velocity: CGVector) {
+        self.position = position
+        let speed = Double(hypot(velocity.dx, velocity.dy))
+        let scale = speed > Self.maxSpeed ? Self.maxSpeed / speed : 1
+        self.velocity = CGVector(dx: velocity.dx * CGFloat(scale), dy: velocity.dy * CGFloat(scale))
     }
 
-    public mutating func release() { holdStart = nil; armed = false }
+    public var speed: Double { Double(hypot(velocity.dx, velocity.dy)) }
+
+    /// Release speed this low just sets Dot down where it is.
+    public static func isThrow(_ velocity: CGVector) -> Bool { Double(hypot(velocity.dx, velocity.dy)) >= minSpeed }
+
+    /// One step inside `bounds` (the screen, inset by the orb's radius). Returns the wall normal when it
+    /// bounced, and whether it has come to rest.
+    public mutating func step(dt: Double, bounds: CGRect) -> (bounce: CGVector?, done: Bool) {
+        let decay = CGFloat(exp(-dt / friction))
+        velocity = CGVector(dx: velocity.dx * decay, dy: velocity.dy * decay)
+        position.x += velocity.dx * CGFloat(dt)
+        position.y += velocity.dy * CGFloat(dt)
+        var normal: CGVector?
+        let e = CGFloat(restitution)
+        if position.x < bounds.minX { position.x = bounds.minX; velocity.dx = -velocity.dx * e; normal = CGVector(dx: 1, dy: 0) }
+        if position.x > bounds.maxX { position.x = bounds.maxX; velocity.dx = -velocity.dx * e; normal = CGVector(dx: -1, dy: 0) }
+        if position.y < bounds.minY { position.y = bounds.minY; velocity.dy = -velocity.dy * e; normal = CGVector(dx: 0, dy: 1) }
+        if position.y > bounds.maxY { position.y = bounds.maxY; velocity.dy = -velocity.dy * e; normal = CGVector(dx: 0, dy: -1) }
+        return (normal, speed < 40)
+    }
+
+    /// The release velocity from the drag's samples: the movement over its last 50 ms.
+    public static func releaseVelocity(_ samples: [(point: CGPoint, time: Double)], window: Double = 0.05) -> CGVector {
+        guard let last = samples.last else { return .zero }
+        let early = samples.last { last.time - $0.time >= window } ?? samples.first!
+        let dt = last.time - early.time
+        guard dt > 1e-3 else { return .zero }
+        return CGVector(dx: (last.point.x - early.point.x) / CGFloat(dt), dy: (last.point.y - early.point.y) / CGFloat(dt))
+    }
+}
+
+/// A fast approach is a click on something under Dot, not a pet: Dot hops aside (docs/alive.md, round two).
+public enum Dodge {
+    public static let speed: Double = 900
+
+    /// Where to hop when the cursor comes at the orb fast, or nil when it needn't move.
+    public static func spot(cursor: CGPoint, velocity: CGVector, orb: CGPoint, radius: CGFloat, bounds: CGRect) -> CGPoint? {
+        let speed = Double(hypot(velocity.dx, velocity.dy))
+        guard speed > Self.speed, hypot(cursor.x - orb.x, cursor.y - orb.y) < radius * 2.2 else { return nil }
+        // Sideways to the cursor's path, on the side Dot is already on.
+        var side = CGVector(dx: -velocity.dy / CGFloat(speed), dy: velocity.dx / CGFloat(speed))
+        let toOrb = CGVector(dx: orb.x - cursor.x, dy: orb.y - cursor.y)
+        if side.dx * toOrb.dx + side.dy * toOrb.dy < 0 { side = CGVector(dx: -side.dx, dy: -side.dy) }
+        let hop = radius * 3.2
+        let spot = CGPoint(x: orb.x + side.dx * hop, y: orb.y + side.dy * hop)
+        return CGPoint(x: min(max(spot.x, bounds.minX), bounds.maxX), y: min(max(spot.y, bounds.minY), bounds.maxY))
+    }
 }
 
 /// Waking from the pet routine: a cursor move of more than 6 px (oneko's IdleSpace, cute-C43) or a key.

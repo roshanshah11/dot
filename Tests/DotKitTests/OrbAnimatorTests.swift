@@ -391,43 +391,7 @@ final class OrbAnimatorTests: XCTestCase {
         XCTAssertTrue(PetWake.shouldWake(moved: 6.5))
     }
 
-    // MARK: 2.4-2.5 Fling and rub
-
-    private func minimumJerk(distance: Double, duration: Double, at t: Double) -> Double {
-        let s = min(max(t / duration, 0), 1)
-        return distance * (10 * pow(s, 3) - 15 * pow(s, 4) + 6 * pow(s, 5))
-    }
-
-    func testOrdinaryPointingIsNotAFling() {
-        for (distance, duration) in [(1500.0, 0.5), (1500.0, 0.7), (900.0, 0.35), (600.0, 0.25)] {
-            var detector = FlingDetector()
-            var fired = false
-            for i in 0...Int(duration * fps + 30) {
-                let t = Double(i) / fps
-                if detector.add(CGPoint(x: minimumJerk(distance: distance, duration: duration, at: t), y: 300), at: t) == .began { fired = true }
-            }
-            XCTAssertFalse(fired, "a \(Int(distance)) px pointing move in \(duration) s")
-        }
-    }
-
-    func testAFlingFiresOnceThenCoolsDown() {
-        var detector = FlingDetector()
-        var events: [FlingDetector.Event] = []
-        func fling(from t0: Double) {
-            for i in 0...40 {
-                let t = t0 + Double(i) / fps
-                if let e = detector.add(CGPoint(x: minimumJerk(distance: 1500, duration: 0.25, at: t - t0), y: 300), at: t) { events.append(e) }
-            }
-        }
-        fling(from: 0)
-        XCTAssertEqual(events.first, .began)
-        XCTAssertTrue(events.contains { if case .stopped = $0 { return true }; return false })
-        events.removeAll()
-        fling(from: 10)
-        XCTAssertFalse(events.contains(.began), "30 s cooldown")
-        fling(from: 45)
-        XCTAssertTrue(events.contains(.began))
-    }
+    // MARK: 2.5 Rub
 
     func testRubNeedsThreeReversals() {
         let orb = CGPoint(x: 200, y: 200)
@@ -455,30 +419,6 @@ final class OrbAnimatorTests: XCTestCase {
         var on = false
         for i in 0..<30 { on = straight.add(cursor: CGPoint(x: 150 + CGFloat(i) * 5, y: 200), at: Double(i) / fps, orb: orb, radius: 12) || on }
         XCTAssertFalse(on)
-    }
-
-    func testLazyZoneHoldsThenLetsGo() {
-        var zone = LazyZone()
-        let orb = CGPoint(x: 200, y: 200)
-        XCTAssertTrue(zone.shouldHold(cursor: CGPoint(x: 170, y: 175), velocity: CGVector(dx: 300, dy: 250), orb: orb, approach: 50, now: 0, rubbing: false))
-        XCTAssertTrue(zone.shouldHold(cursor: CGPoint(x: 190, y: 192), velocity: CGVector(dx: 100, dy: 80), orb: orb, approach: 50, now: 1.0, rubbing: false))
-        XCTAssertFalse(zone.shouldHold(cursor: CGPoint(x: 195, y: 195), velocity: .zero, orb: orb, approach: 50, now: 1.3, rubbing: false), "lets go after 1.2 s")
-        var quick = LazyZone()
-        XCTAssertFalse(quick.shouldHold(cursor: CGPoint(x: 170, y: 175), velocity: CGVector(dx: 900, dy: 700), orb: orb, approach: 50, now: 0, rubbing: false), "an ordinary quick move down-right does not freeze Dot")
-        var away = LazyZone()
-        XCTAssertFalse(away.shouldHold(cursor: CGPoint(x: 170, y: 175), velocity: CGVector(dx: -300, dy: -250), orb: orb, approach: 50, now: 0, rubbing: false), "moving away")
-    }
-
-    func testLazyZoneNeverHoldsADragAndRearmsOnlyAfterLeaving() {
-        let orb = CGPoint(x: 200, y: 200)
-        var zone = LazyZone()
-        XCTAssertFalse(zone.shouldHold(cursor: CGPoint(x: 170, y: 175), velocity: CGVector(dx: 300, dy: 250), orb: orb, approach: 50, now: 0,
-                                       rubbing: false, buttonDown: true), "a drag-select never freezes Dot")
-        XCTAssertTrue(zone.shouldHold(cursor: CGPoint(x: 170, y: 175), velocity: CGVector(dx: 300, dy: 250), orb: orb, approach: 50, now: 0.1, rubbing: false))
-        XCTAssertFalse(zone.shouldHold(cursor: CGPoint(x: 190, y: 195), velocity: CGVector(dx: 100, dy: 80), orb: orb, approach: 50, now: 1.5, rubbing: false), "timed out")
-        XCTAssertFalse(zone.shouldHold(cursor: CGPoint(x: 175, y: 178), velocity: CGVector(dx: 200, dy: 180), orb: orb, approach: 50, now: 1.6, rubbing: false), "no new hold until it went away")
-        _ = zone.shouldHold(cursor: CGPoint(x: 100, y: 100), velocity: .zero, orb: orb, approach: 50, now: 2, rubbing: false)
-        XCTAssertTrue(zone.shouldHold(cursor: CGPoint(x: 170, y: 175), velocity: CGVector(dx: 300, dy: 250), orb: orb, approach: 50, now: 2.5, rubbing: false), "re-armed after leaving")
     }
 
     func testRubReactionAndItsCooldown() {
@@ -568,6 +508,135 @@ final class OrbAnimatorTests: XCTestCase {
         }
         XCTAssertFalse(Gratitude.isThanks("thanksgiving plans"))
         XCTAssertFalse(Gratitude.isThanks("tyler's email"))
+    }
+
+    // MARK: Round two: leash, call-over, toss, dodge, held, dizzy, boop
+
+    func testLeashSitsUntilTheCursorGoesFarThenCatchesUp() {
+        var leash = Leash(radius: 90)
+        let orb = CGPoint(x: 300, y: 300)
+        XCTAssertFalse(leash.update(cursor: CGPoint(x: 260, y: 270), orb: orb, target: CGPoint(x: 289, y: 301)), "close by: stay")
+        XCTAssertFalse(leash.update(cursor: CGPoint(x: 330, y: 340), orb: orb, target: CGPoint(x: 359, y: 371)), "even moving onto it: stay")
+        XCTAssertTrue(leash.update(cursor: CGPoint(x: 420, y: 300), orb: orb, target: CGPoint(x: 449, y: 331)), "far: follow")
+        XCTAssertTrue(leash.update(cursor: CGPoint(x: 420, y: 300), orb: CGPoint(x: 400, y: 320), target: CGPoint(x: 449, y: 331)), "keeps going until it arrives")
+        XCTAssertFalse(leash.update(cursor: CGPoint(x: 420, y: 300), orb: CGPoint(x: 448, y: 330), target: CGPoint(x: 449, y: 331)), "arrived: sits again")
+    }
+
+    func testCallOverIsAGentleWiggleNotAShakeAndNotOnDot() {
+        let orb = CGPoint(x: 600, y: 600)
+        func wiggle(span: CGFloat, hz: Double, at center: CGPoint, seconds: Double = 1.2) -> Bool {
+            var detector = CallOverDetector()
+            var fired = false
+            var t = 0.0
+            while t < seconds {
+                let x = center.x + span / 2 * CGFloat(sin(t * 2 * .pi * hz))
+                if detector.add(cursor: CGPoint(x: x, y: center.y), at: t, orb: orb, radius: 12) { fired = true }
+                t += 1 / fps
+            }
+            return fired
+        }
+        XCTAssertTrue(wiggle(span: 24, hz: 3, at: CGPoint(x: 200, y: 200)), "a gentle wiggle calls Dot")
+        XCTAssertFalse(wiggle(span: 300, hz: 4, at: CGPoint(x: 200, y: 200)), "a big shake (find-my-cursor) does not")
+        XCTAssertFalse(wiggle(span: 30, hz: 12, at: CGPoint(x: 200, y: 200)), "a fast jitter does not")
+        XCTAssertFalse(wiggle(span: 24, hz: 3, at: CGPoint(x: 605, y: 600)), "on Dot it's a rub, not a call")
+        var straight = CallOverDetector()
+        var fired = false
+        for i in 0..<60 { if straight.add(cursor: CGPoint(x: 100 + CGFloat(i), y: 100), at: Double(i) / fps, orb: orb, radius: 12) { fired = true } }
+        XCTAssertFalse(fired, "a slow straight move does not")
+    }
+
+    func testTossFliesBouncesAndComesToRest() {
+        let bounds = CGRect(x: 12, y: 12, width: 776, height: 576)
+        var toss = Toss(position: CGPoint(x: 400, y: 300), velocity: CGVector(dx: 9000, dy: 0))
+        XCTAssertEqual(toss.speed, Toss.maxSpeed, accuracy: 1e-6, "capped at 4,000 px/s")
+        var bounces = 0, frames = 0
+        var done = false
+        while !done, frames < 600 {
+            let result = toss.step(dt: 1 / fps, bounds: bounds)
+            if let normal = result.bounce { bounces += 1; XCTAssertEqual(normal.dx, -1, "bounced off the right edge first") ; break }
+            done = result.done
+            frames += 1
+        }
+        XCTAssertEqual(bounces, 1)
+        XCTAssertLessThan(toss.velocity.dx, 0, "heading back after the bounce")
+        while !done, frames < 1200 { done = toss.step(dt: 1 / fps, bounds: bounds).done; frames += 1; XCTAssertTrue(bounds.insetBy(dx: -0.01, dy: -0.01).contains(toss.position)) }
+        XCTAssertTrue(done, "friction brings it to rest within 20 s")
+        XCTAssertFalse(Toss.isThrow(CGVector(dx: 200, dy: 100)), "a slow release just sets it down")
+        XCTAssertTrue(Toss.isThrow(CGVector(dx: 600, dy: 0)))
+    }
+
+    func testReleaseVelocityUsesTheLast50ms() {
+        var samples: [(point: CGPoint, time: Double)] = []
+        for i in 0..<30 { samples.append((CGPoint(x: Double(i) * 2, y: 0), Double(i) / 120)) }        // slow drag, 240 px/s
+        for i in 0..<8 { samples.append((CGPoint(x: 58 + Double(i + 1) * 15, y: 0), (30.0 + Double(i)) / 120)) }   // then a flick, 1800 px/s
+        let v = Toss.releaseVelocity(samples)
+        XCTAssertEqual(Double(v.dx), 1800, accuracy: 200, "the flick at the end, not the slow drag before it")
+        XCTAssertEqual(Toss.releaseVelocity([]), .zero)
+    }
+
+    func testDodgeHopsAsideOnlyForAFastApproach() {
+        let bounds = CGRect(x: 0, y: 0, width: 1000, height: 800)
+        let orb = CGPoint(x: 500, y: 400)
+        XCTAssertNil(Dodge.spot(cursor: CGPoint(x: 480, y: 390), velocity: CGVector(dx: 300, dy: 150), orb: orb, radius: 12, bounds: bounds), "a slow approach is a pet")
+        let spot = Dodge.spot(cursor: CGPoint(x: 485, y: 400), velocity: CGVector(dx: 2000, dy: 0), orb: orb, radius: 12, bounds: bounds)
+        XCTAssertNotNil(spot)
+        XCTAssertGreaterThan(abs(spot!.y - orb.y), 30, "out of the cursor's path")
+        XCTAssertNil(Dodge.spot(cursor: CGPoint(x: 200, y: 200), velocity: CGVector(dx: 3000, dy: 0), orb: orb, radius: 12, bounds: bounds), "far away: no hop")
+    }
+
+    func testHeldTossedThenDizzyThenBackToNormal() {
+        let animator = OrbAnimator(seed: 31)
+        var input = OrbInput()
+        input.motion = .held
+        var pose = OrbPose()
+        for i in 0...30 { pose = animator.step(at: Double(i) / fps, input: input) }
+        XCTAssertGreaterThan(pose.stretch, 1.05, "dangling")
+        XCTAssertGreaterThan(pose.left.scale, 1.05, "eyes wide")
+        input.motion = .tossed
+        input.lead = CGVector(dx: 1500, dy: 0)
+        input.speed = 1500
+        for i in 31...60 { pose = animator.step(at: Double(i) / fps, input: input) }
+        XCTAssertGreaterThan(pose.stretch, 1.1)
+        animator.bounced(normal: CGVector(dx: -1, dy: 0), at: 1.0)
+        pose = animator.step(at: 1.05, input: input)
+        XCTAssertLessThan(pose.stretch, 0.95, "squashed against the wall")
+        input.motion = .following
+        input.lead = .zero
+        input.speed = 0
+        animator.landed(at: 1.5)
+        pose = animator.step(at: 1.8, input: input)
+        XCTAssertEqual(pose.eyeStyle, .dizzy)
+        XCTAssertTrue(animator.isRecovering)
+        for i in 0...60 { pose = animator.step(at: 3.0 + Double(i) / fps, input: input) }
+        XCTAssertEqual(pose.eyeStyle, .normal)
+        XCTAssertFalse(animator.isRecovering)
+        XCTAssertEqual(pose.rotation, 0, accuracy: 0.01)
+    }
+
+    func testBoopSquishesGigglesAndSettles() {
+        let animator = OrbAnimator(seed: 33)
+        let input = OrbInput()
+        _ = animator.step(at: 0, input: input)
+        animator.react(.boop, at: 0.5)
+        let squish = animator.step(at: 0.56, input: input)
+        XCTAssertLessThan(squish.stretch, 0.9, "squashed top to bottom for a moment")
+        XCTAssertEqual(squish.stretchAngle, -.pi / 2, accuracy: 1e-9, "along the vertical, so it reads wider than tall")
+        XCTAssertTrue(squish.mouthVisible, "a little smile")
+        var pose = OrbPose()
+        for i in 0...90 { pose = animator.step(at: 0.6 + Double(i) / fps, input: input) }
+        XCTAssertEqual(pose.stretch, 1, accuracy: 0.02)
+        XCTAssertEqual(pose.rotation, 0, accuracy: 0.01)
+    }
+
+    func testNoPerchWhileHeldOrTossed() {
+        let animator = OrbAnimator(seed: 35)
+        var input = OrbInput()
+        input.sinceInput = 400
+        for motion in [OrbMotionState.held, .tossed] {
+            input.motion = motion
+            _ = animator.step(at: 1, input: input)
+            XCTAssertFalse(animator.wantsPerch)
+        }
     }
 
     // MARK: Cost
