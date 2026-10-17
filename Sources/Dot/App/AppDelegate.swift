@@ -273,6 +273,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationWillTerminate(_ notification: Notification) {
         agents.prepareForQuit()
+        Log.info("quit: agents ended")
+        Log.flush()
     }
 
     /// launchd stops Dot with SIGTERM (build.sh, Home's relaunch, logout), which by default ends the

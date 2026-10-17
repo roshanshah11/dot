@@ -256,5 +256,40 @@ unk_98ea8c584a4bac74e68508ee0ea34fe6cf9849c2a0726d204a5089c94de20016  edits insi
 ## 9. Rerunning
 
 scripts/verify-agents/README.md has the commands. The probe and the decision replay cost nothing; the
-runtime replay is one Opus turn (about $0.25). After fixing F1 to F3, rerun row 4.5 (a request should
-now reach Dot), two agents asking within seconds of each other, and a relaunch during a turn.
+runtime replay is one Opus turn (about $0.25). Round seven reran all of these (section 10); what is
+left to see is in section 10's last paragraph.
+
+## 10. After round seven (2026-10-17, commits 555f36b and the one after it)
+
+Built overnight under /overnight from the plan he agreed in /grilling; the run log with every decision
+is ~/.claude/overnight/runs/2026-10-16-2322-fix-all-of-this-overnight-round-seven-of-dot-the.md. Live
+checks ran on the installed app at 01:48 to 01:56 with a throwaway agent ("Probe Desk"), removed after.
+
+| Row | What changed | Checked by | Now |
+|---|---|---|---|
+| 2.4 turn record | Each turn adds "next" (the step it offered) and "artifact" (files new or changed in output/ during the turn) rows; Home lists them; the notch shows the turn's own files first | TurnArtifacts tests; live: the routine turn recorded `next: delete the check file` and `artifact: routine-check.txt`; the probe now prints HeyClicky's sentence, REA ev_fe2aa2ec (terminal and exit unchanged) | match (was a signed fail) |
+| 2.5 / F1 two agents asking | One card per request, oldest first, "+N waiting"; answering removes only that card; stopping or archiving an agent withdraws its cards; a waiting row brings its card forward; a card is announced when it comes on show; a tap in its first 0.5 s is ignored | ConsentQueueTests; `Dot --selftest` 11 of 11 on the notch's own code; snapshot notch-consent-queued; REA ev_3c424a9a: two helper requests open at once inside one agent | fixed; two real agents asking at once not yet seen on his screen |
+| 2.6 / F2 quit during a turn | SIGTERM, SIGINT and SIGHUP go through AppKit's quit; a quit ends agent processes; at launch an agent session left running is ended and an unfinished turn is marked, a recent one with "continue where you left off" | AgentRecoveryTests; live: a fake leftover session was ended at launch ("agent: ended pid 50048"); a two-day-old unfinished brief was marked quietly; a SIGTERM relaunch during `sleep 90` logged "quit on signal 15" and "stopped by quit mid-turn", and the launch after it ended the still-exiting agent and marked the turn; no MCP processes left behind | fixed |
+| 2.7 steer | A message to a working agent is written into its turn; Claude Code hands it over at the next tool boundary (probed) | probe steer.log | match, Claude Code's way |
+| 2.8 / 2.9 named voice control | `[TELL:name:message]`, `[STOP_AGENT:name]`; "tell/ask/remind/message X", "X, ...", "stop X", "is X done", "progress?" handled before the model; a first-word alias counts only after tell, ask, remind or message; work that names an agent goes to it; a reply within two minutes of a report he heard goes to that agent, a nod never does; spoken card answers name the card's own act | AgentVoiceTests; live dry runs (`Dot --ask --dry`): 9 of 10 phrases routed as expected, the tenth ("allow" with no card) went to a routine that had just finished, fixed so a quiet routine result never counts as a report; live: "tell probe desk to ..." reached it | built |
+| 2.11 / G3 routines | A new routine runs once at once, then on schedule | RoutineTests; live: a due routine ran 20 s after launch, quietly, and moved to its next slot | built; a routine on a real schedule is still unseen (unk_213d806c) |
+| 3.4 computer-use envelope | The script runner and extension installer are off for agents; kill_app, install_ffmpeg, escalate_session and set_config ask | decision replay | narrowed; desktop-scope input and the clipboard stay open, so the REA fail stands |
+| 3.3 per-turn gate | unchanged, his call on 2026-10-15 | | fail by design |
+| 4.x / F3 acceptEdits | Agents start in Claude Code's default permission mode and every command starts in the agent's folder (`CLAUDE_BASH_MAINTAIN_PROJECT_WORKING_DIR`: without it a cd into ~/roshan carried to the next command, probed both ways); a delete inside the agent's folder or a temp folder passes; any other delete is a card classed outward, never left to Jev, however it is wrapped (unlink, shred, trash, `xargs rm`, `bash -c`, braces, `find -delete`, `git clean`); paths compare in one spelling | AgentConsentRoundSevenTests; REA ev_c5e94564: an rm in the vault stand-in, a Write into Atlas/private and an rm in the agent's tmp all reached Dot; every tool call his four agents made through 10/16 (385 that reach a permission check) replayed through the new rules: 10 cards, 7 of them sends and deletes, 3 false alarms already in round six's rules; an ordinary task raised 5 requests and 0 cards | fixed |
+| 4.x / F4 consent holes | RSVPs, invitations with guests and shares are sending; tools of MCP servers Dot doesn't hand agents are changing the Mac; "Allow for this task" ends with the brief, and deletes and each unknown server have their own | unit tests; the decision replay gives a card on rows 4.3, 4.6 to 4.8, 4.10 and 4.11 | fixed |
+| F5 background helpers (new) | Claude Code 2.1.289 ran helpers as background tasks: the turn's result, chime and spoken "done" came before they finished. Agents get `CLAUDE_CODE_DISABLE_BACKGROUND_TASKS=1`; a result with background tasks open (ambient ones aside) is progress | probes without the switch: two results and an early "done"; REA ev_3c424a9a with it: one result after both helpers | fixed |
+| 3.7 image generation | not built (his call) | | gap |
+
+REA after round seven: verify_reconstruction ev_65bc7e1103cd253b33b81bf09540297c34eeda8f26096c620a94ad3b61e6f258
+over the same 11 claims on the terminal dimension: 9 unchanged (the probe prints the same sentence for
+both apps; REA on macOS calls these "unknown" for the reasons at the top), 2 fail (3.3 by his call, 3.4
+narrowed). The turn-record comparison is new (ev_fe2aa2ec6882bf3ae983a9eecc4bd8d66b1b68bcff291ebaac39351c0d7b9470);
+the other ten reuse section 8's comparisons, whose sentences the probe printed unchanged on 10/17.
+unk_f4fdffce is resolved (yes). The probe's computer-use envelope claim now leaves out the two tools
+agents can no longer call.
+
+Still to see: two real agents asking at once on his screen; a card answered by voice; a routine on a
+real schedule; "Allow for this task" on a real card; HeyClicky's side of 2.7 to 2.9 and 3.3 (metered
+HeyClicky turns, his call). Known limits, his call: a move counts as a write, so moving his file into
+the agent's tmp and deleting it there passes; interpreter code (`python3 -c`, `perl -e`) is judged by
+Jev or the words in it, not parsed.

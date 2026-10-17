@@ -83,4 +83,6 @@ Round seven (2026-10-16 night), after docs/heyclicky-agents-verification.md:
 
 A routine on a real morning; "Allow for this task" on a real card; an agent with helpers on a real
 job; the Agents page clicked through; a card answered by voice; two agents asking at once on his
-screen (checked by `Dot --selftest` and the replays, not yet by him).
+screen (checked by `Dot --selftest` and the replays, not yet by him). Seen live on 10/17 with a
+throwaway agent: a due routine running quietly with its next step and file recorded, a leftover agent
+session ended at launch, a quit during a command marked and resumable, "tell <name> ..." by voice.

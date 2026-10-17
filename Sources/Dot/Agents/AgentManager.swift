@@ -74,6 +74,8 @@ final class AgentManager {
     /// The last final text of each agent, for the notch card and Home.
     private(set) var lastResults: [String: String] = [:]
     private var finishedAt: [String: Date] = [:]
+    /// When an agent last reported to him out loud or with a chime (not a quiet routine run).
+    private var reportedAt: [String: Date] = [:]
     private var lastBriefs: [String: String] = [:]
 
     /// What the talk model is told about agents: who is working on what, who just finished and what they said.
@@ -430,6 +432,7 @@ final class AgentManager {
         // A second result in the same brief (a message that came in during the last reply) names only its own files.
         run.outputBaseline = TurnArtifacts.listing(of: agent.outputFolder)
         let quiet = run.isRoutine   // a scheduled run lands in the thread without a chime or a word (HeyClicky's routines do the same)
+        if !quiet { reportedAt[agent.slug] = Date() }
         run.isRoutine = false
         if quiet { routineOutcome?(agent.slug, failed, failed ? summary : nil) }
         if !quiet { NSSound(named: failed ? "Basso" : "Glass")?.play() }
@@ -804,8 +807,9 @@ final class AgentManager {
     /// The agent whose result came in last, within `seconds`, and is not at work again: his next words
     /// may be for it ("good, now draft the reply"), the way HeyClicky binds a reply to the agent that
     /// just reported (G2).
+    /// A routine's quiet result never counts: he did not hear it, so his next words are not a reply to it.
     func justReported(within seconds: TimeInterval = 120) -> (slug: String, name: String, said: String)? {
-        guard let (slug, when) = finishedAt.max(by: { $0.value < $1.value }), Date().timeIntervalSince(when) <= seconds,
+        guard let (slug, when) = reportedAt.max(by: { $0.value < $1.value }), Date().timeIntervalSince(when) <= seconds,
               runs[slug]?.isWorking != true, !hud.hasConsent(agent: slug) else { return nil }
         let name = roster().first(where: { $0.slug == slug })?.name ?? slug
         return (slug, name, Self.firstSentence(of: lastResults[slug] ?? ""))

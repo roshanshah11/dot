@@ -5,16 +5,16 @@ bottom with the date. "His ask" quotes the message that created the item.
 
 ## Now
 
-- [ ] 2026-10-16 Round seven, overnight (the plan agreed in /grilling), his ask ("fix all of this overnight", after the agent verification in docs/heyclicky-agents-verification.md):
+- [x] 2026-10-16 Round seven, overnight (the plan agreed in /grilling), his ask ("fix all of this overnight", after the agent verification in docs/heyclicky-agents-verification.md):
       1. [x] F1 one card per request, oldest first, "+N waiting"; a stopped agent's cards go with it; a waiting row brings its card forward (DotKit/ConsentQueue.swift, NotchHUD; `Dot --selftest`).
       2. [x] F3 agents in Claude Code's default permission mode (config `agentPermissionMode`); a delete inside the agent's folder or a temp folder passes, any other delete asks.
       3. [x] F4 RSVPs, invitations with guests and Drive shares ask; tools of MCP servers Dot doesn't hand agents ask; kill_app asks; the script runner and extension installer are off; the rm pattern fixed.
       4. [x] F5 (found tonight) helpers ran in the background, so an agent's turn ended before they did: agents get CLAUDE_CODE_DISABLE_BACKGROUND_TASKS=1, and a result is progress while background tasks are open.
-      5. [ ] F2 a quit ends agent processes (SIGTERM now quits cleanly); at launch, leftovers are ended and an unfinished turn is marked, a recent one with "continue where you left off".
-      6. [ ] G1 each turn keeps its next step and the files it made (transcript "next" and "artifact" rows; Home lists them).
-      7. [ ] G2 [TELL:name:message], [STOP_AGENT:name], "tell/ask/stop X", "is X done", "progress?"; a message to a working agent reaches it at its next step (probed: Claude Code delivers it mid-turn, it does not wait for the turn to end); cards answered by voice, a send or a delete needs the act named; `Dot --ask --dry`.
-      8. [ ] G3 a new routine runs once at once, then on schedule.
-      9. [ ] installed, re-verified under REA, committed locally (the push waits for him). Not in round seven: image generation (his call), the per-turn computer-use gate (his 10/15 call), and from the deep pass (3.1) the PreToolUse hook, per-agent MCP servers and agents that outlive Dot.
+      5. [x] F2 a quit ends agent processes (SIGTERM now quits cleanly); at launch, leftovers are ended and an unfinished turn is marked, a recent one with "continue where you left off".
+      6. [x] G1 each turn keeps its next step and the files it made (transcript "next" and "artifact" rows; Home lists them).
+      7. [x] G2 [TELL:name:message], [STOP_AGENT:name], "tell/ask/stop X", "is X done", "progress?"; a message to a working agent reaches it at its next step (probed: Claude Code delivers it mid-turn, it does not wait for the turn to end); cards answered by voice, a send or a delete needs the act named; `Dot --ask --dry`.
+      8. [x] G3 a new routine runs once at once, then on schedule.
+      9. [x] installed 10/17 01:48 and live-checked on a throwaway agent; REA ev_65bc7e11 (turn record now matches; the two computer-use claims stay open); committed 555f36b and after; the push waits for him. Not in round seven: image generation (his call), the per-turn computer-use gate (his 10/15 call), and from the deep pass (3.1) the PreToolUse hook, per-agent MCP servers and agents that outlive Dot.
 
 - [ ] 2026-10-16 Round six, his asks ("research all features in myclicky and try to replicate; audit residual unknowns; read my chats: what is good, what needs to get fixed, what else would be useful to add"; "the bar at the top is too big and covers a lot of stuff, very inconvenient, please fix, look how it's done in clicky"; "the agent setup and agent management in clicky: how do i control agents, general agents, agent swarms, specific task agents; use logic also from chatgpt dots or meta's muse"):
       1. [x] the notch window is sized to what it draws (221×42 at rest; it was an invisible 620×620 window that took every click under it). HeyClicky did the same in 1.0.52 ("you told us the notch got too big, so we made it smaller"). Escape clears the cards under the notch (its 1.0.50). Installed 16:54.

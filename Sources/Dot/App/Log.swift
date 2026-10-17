@@ -21,6 +21,10 @@ enum Log {
     static func warn(_ message: String) { write("WARN", message); logger.warning("\(message, privacy: .public)") }
     static func error(_ message: String) { write("ERROR", message); logger.error("\(message, privacy: .public)") }
 
+    /// Waits until every line written so far is in the file: the lines of a quit are written
+    /// last thing before the process ends.
+    static func flush() { queue.sync {} }
+
     static func short(_ text: String, _ limit: Int = 120) -> String {
         let one = text.replacingOccurrences(of: "\n", with: " ")
         return one.count > limit ? String(one.prefix(limit)) + "…" : one
