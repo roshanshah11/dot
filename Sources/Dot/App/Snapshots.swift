@@ -65,7 +65,7 @@ enum Snapshots {
         let agentDone = AgentRow(id: "research-buddy", name: "Research Buddy", line: "done: a one-page brief, saved as a pdf", state: .done,
                                  result: "Bridgewater's October: the Pure Alpha fund was reported up about 9% for the year through September; Nir Bar Dea said the firm is expanding its AI strategies; the brief has four dated items with sources.",
                                  outputCount: 1, outputs: [URL(fileURLWithPath: "/Users/roshanshah/Dot/agents/research-buddy/output/bridgewater_news_brief.pdf")],
-                                 nextAction: "add a section on their CEO", startedAt: Date().addingTimeInterval(-176))
+                                 nextActions: ["Add a section on their CEO", "Compare with Citadel's year", "Turn it into a one-pager"], startedAt: Date().addingTimeInterval(-176))
         return [
             ("idle", make { _ in }),
             ("idle-hover", make { m in m.hovering = true; m.todayLine = "next: ugе interview in 42 min · 8 on the calendar today · 48 mail waiting"
@@ -105,7 +105,7 @@ enum Snapshots {
             ("agent-interrupted", make { m in
                 m.agents = [AgentRow(id: "dot", name: "Dot", line: "interrupted when Dot closed", state: .failed,
                                      result: "Dot closed while Dot was working on: go through my gmail and trash the marketing mail\n\nIts conversation is saved; continue picks it up where it stopped.",
-                                     nextAction: "continue where you left off")]
+                                     nextActions: ["continue where you left off"])]
                 m.expanded = "dot"
             }),
             ("walkthrough", make { m in m.agents = [AgentRow(id: "walkthrough", name: "walkthrough", line: "step 3: click schedule", state: .running, kind: .walkthrough, steps: ["clicked displays", "clicked night shift"], canStop: true, startedAt: Date().addingTimeInterval(-40))] }),

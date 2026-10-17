@@ -14,7 +14,8 @@ struct AgentRow: Identifiable, Equatable {
     var result: String? = nil
     var outputCount: Int = 0
     var outputs: [URL] = []
-    var nextAction: String? = nil
+    /// Up to four offers from the turn's "Next:" lines (TC-02), each a button that sends it back.
+    var nextActions: [String] = []
     var kind: Kind = .agent
     /// The last few things it did, newest last: tool calls, a sentence it wrote, a step he took.
     var steps: [String] = []
@@ -1006,7 +1007,7 @@ struct NotchHUDView: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
             .frame(maxHeight: 220)
-            ForEach(row.outputs, id: \.self) { url in
+            ForEach(row.outputs.prefix(4), id: \.self) { url in
                 HStack(spacing: 6) {
                     Image(systemName: Self.symbol(forFile: url)).font(.system(size: 10)).foregroundStyle(Theme.fileColor(url) ?? model.accent)
                     Text(url.lastPathComponent).font(.system(size: 11.5)).foregroundStyle(text.opacity(0.85)).lineLimit(1)
@@ -1023,16 +1024,20 @@ struct NotchHUDView: View {
                 if row.outputCount > 0 {
                     smallButton("output folder") { model.onOpenAgent?(row.id) }
                 }
-                if let next = row.nextAction {
-                    Button {
-                        model.expanded = nil
-                        model.onReply?(row.id, next)
-                    } label: {
-                        Text(next).font(.system(size: 11, weight: .semibold)).lineLimit(1).padding(.horizontal, 10).padding(.vertical, 4)
-                            .background(model.accent, in: Capsule()).foregroundStyle(.black)
-                    }.buttonStyle(.plain)
-                }
                 Spacer()
+            }
+            if !row.nextActions.isEmpty {
+                VStack(alignment: .leading, spacing: 4) {
+                    ForEach(row.nextActions.prefix(4), id: \.self) { next in
+                        Button {
+                            model.expanded = nil
+                            model.onReply?(row.id, next)
+                        } label: {
+                            Text(next).font(.system(size: 11, weight: .semibold)).lineLimit(1).padding(.horizontal, 10).padding(.vertical, 4)
+                                .background(model.accent, in: Capsule()).foregroundStyle(.black)
+                        }.buttonStyle(.plain)
+                    }
+                }
             }
             HStack {
                 TextField("reply to \(row.name.lowercased())", text: $model.replyText)

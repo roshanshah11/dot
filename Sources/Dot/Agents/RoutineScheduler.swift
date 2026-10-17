@@ -87,6 +87,18 @@ final class RoutineScheduler {
 
     func routines(for slug: String) -> [Routine] { book.routines.filter { $0.agent == slug } }
 
+    /// An agent's `Routine:` line (TC-06): create, update, pause, resume or delete one of its own
+    /// routines by title.
+    func apply(_ command: RoutineCommand, agent slug: String, agentName: String) -> RoutineChange {
+        let change = book.apply(command, agent: slug, agentName: agentName)
+        if case .notFound = change {} else { save() }
+        Log.info("routines: \(slug) asked to \(command.action.rawValue) \"\(command.title)\": \(change.words)")
+        return change
+    }
+
+    /// The line an agent's brief carries about its routines (TC-07).
+    func listLine(for slug: String) -> String { book.listLine(for: slug) }
+
     // MARK: Running
 
     func tick(now: Date = Date()) {
@@ -125,9 +137,19 @@ final class RoutineScheduler {
         let paused = book.markFinished(id, failed: failed, note: note)
         save()
         if paused, let routine = book.routines.first(where: { $0.id == id }) {
+            // "fix it" (TC-11, HeyClicky's C102): the agent gets its brief, the last failure and where the failed runs are.
             hud.notify(NotchNotice(id: "routine-paused-\(id)", icon: "pause.circle", title: "\(routine.agentName)'s routine is paused",
-                                   detail: routine.lastNote, tone: .warn, actionTitle: "resume", action: { [weak self] in self?.setPaused(id, false) }, seconds: 0))
+                                   detail: routine.lastNote, tone: .warn, actionTitle: "resume", action: { [weak self] in self?.setPaused(id, false) },
+                                   secondaryTitle: "fix it", secondary: { [weak self] in self?.fix(id) }, seconds: 0))
         }
+    }
+
+    /// Hands a paused routine to its agent to fix (TC-11). The routine stays paused until he resumes it
+    /// or the agent's reply changes it with a Routine line.
+    func fix(_ id: String) {
+        guard let routine = book.routines.first(where: { $0.id == id }) else { return }
+        agents.handoff(brief: routine.fixBrief, agentName: routine.agentName, context: nil, shots: nil)
+        Log.info("routines: \(id) handed to \(routine.agent) to fix")
     }
 
     private func save() {

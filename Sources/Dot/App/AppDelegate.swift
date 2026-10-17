@@ -67,6 +67,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         talk.scheduler = routines
         home.scheduler = routines
+        // Agents edit their own routines by title (TC-06) and see the full list each turn (TC-07).
+        agents.onRoutineCommand = { [weak self] slug, name, command in self?.routines.apply(command, agent: slug, agentName: name) }
+        agents.routineList = { [weak self] slug in self?.routines.listLine(for: slug) ?? "" }
         morning = MorningSuggestions(config: config, atlas: atlas, hud: hud, agents: agents)
         // A scout brief's "do it" hands the brief over (run one) and registers its routine (MB-03).
         morning.addRoutine = { [weak self] name, when, brief in
