@@ -83,6 +83,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // The voice verbs that reach past Talk (VO-01, VO-04, VO-13, MB-07).
         talk.openHome = { [weak self] slug in self?.home.show(agent: slug) }
         talk.focusedThread = { [weak self] in self?.home.focusedThread }
+        // A result for the agent whose thread he has open is read there, not spoken (TC-03).
+        agents.isThreadOpen = { [weak self] slug in self?.home.focusedThread == slug }
         talk.resumeRoutines = { [weak self] slug in
             guard let routines = self?.routines else { return 0 }
             let paused = routines.routines(for: slug).filter(\.paused)
