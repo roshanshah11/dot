@@ -37,6 +37,7 @@ cp Resources/Info.plist "$APP/Contents/Info.plist"
 [[ -f Resources/AppIcon.icns ]] && cp Resources/AppIcon.icns "$APP/Contents/Resources/AppIcon.icns"
 cp scripts/dot-tts-kokoro.py "$APP/Contents/Resources/dot-tts-kokoro.py"
 cp scripts/dot-atlas-today.py "$APP/Contents/Resources/dot-atlas-today.py"
+cp scripts/dot-scout.py "$APP/Contents/Resources/dot-scout.py"
 cp -R Resources/board "$APP/Contents/Resources/board"
 # SwiftPM resource bundles (FluidAudio ships none today; copy whatever exists).
 for bundle in .build/$CONFIG/*.bundle(N); do
@@ -82,3 +83,5 @@ if (( LAUNCH )); then
 else
   echo "installed $INSTALLED (not started)"
 fi
+# The morning scout's LaunchAgent (06:30, runs the bundled dot-scout.py; never on load).
+scripts/install-scout.sh || echo "scout: install failed; run scripts/install-scout.sh to see why" >&2
