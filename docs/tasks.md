@@ -5,6 +5,14 @@ bottom with the date. "His ask" quotes the message that created the item.
 
 ## Now
 
+- [x] 2026-10-17 Round eight, overnight (plan: the round-eight overnight plan agreed in /grilling), his asks ("my dot is awful at 1. keeping the box on the content as i scroll. 2. the visualizations ... especially when i want rendered JS to just walk me through and explain things"; "bring chatgpt's intelligent UI to dot"):
+      1. [x] P1 marks follow scrolled content: element anchors, pixel anchors (scroll tap, Vision registration, settle-time patch re-find), hide/chevron/return, app switch clears; MarkAnchor, ImageRegistration, PatchFinder tests; `Dot --track-selftest` live on 10/17 (Preview pixel mark back within 4 pt after a 1,800 pt round trip; Safari element mark 0 pt drift in the run where Safari took the scrolls).
+      2. [x] P2 the explainer panel and Dot's UI language: renderer, 18 fixtures (every old card re-expressed), panel-check, ExplainerPanel/PanelMessage/PanelDock/PanelStream/CourseTag with tests, an Opus review against ChatGPT's answers applied.
+      3. [x] P4/P5 the widget framework, viz-check, the dot-viz skill (a fresh Opus agent built wacc from the skill alone).
+      4. [ ] P6 the catalog build (8 Opus builders overnight; resumes from docs/catalog-status.json; tier 1 first).
+      5. [x] P7 wired into talk: explain route to Opus, [PANEL]/[STEP], panel rules (his ChatGPT habits, the course maps' notation, finance pieces), quiz turns, per-course recap; dry run of ten past questions twice (first word median 17.3 s then 13.4 s; about $0.12 a panel).
+      6. [ ] his verdicts: a real explanation on the panel in class, the box on a PDF in Comet while he scrolls, a quiz answer by tap.
+
 - [x] 2026-10-16 Round seven, overnight (the plan agreed in /grilling), his ask ("fix all of this overnight", after the agent verification in docs/heyclicky-agents-verification.md):
       1. [x] F1 one card per request, oldest first, "+N waiting"; a stopped agent's cards go with it; a waiting row brings its card forward (DotKit/ConsentQueue.swift, NotchHUD; `Dot --selftest`).
       2. [x] F3 agents in Claude Code's default permission mode (config `agentPermissionMode`); a delete inside the agent's folder or a temp folder passes, any other delete asks.
