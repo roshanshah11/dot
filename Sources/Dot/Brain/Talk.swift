@@ -1619,6 +1619,7 @@ final class Talk {
         let mode = ContextMode.decide(onCall: CallPresence.isOnCall(), lectureListening: lecture.isListening, bundleID: context.bundleIdentifier,
                                       windowTitle: context.windowTitle, url: context.url, boardLesson: lessonCard != nil, override: modeOverride)
         board.mode = mode.rawValue
+        hud.model.modeWord = mode == .normal ? nil : "\(mode.rawValue) mode"
         if mode != .normal { lines.append("[mode] \(mode.rawValue)") }
         // This message cuts off the answer still being given in the same conversation (VO-07).
         if activeSession?.turnInFlight == true, activeKind == kind { lines.append("note: the last question was cut off by this one; don't mention it.") }

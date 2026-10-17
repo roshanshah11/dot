@@ -134,6 +134,8 @@ final class HUDModel: ObservableObject {
     /// Files the agents made lately, as tiles on the hover peek; each can be dragged out.
     @Published var peekFiles: [URL] = []
     @Published var morning: MorningCard?
+    /// The context mode in words ("desk mode"), the idle header when nothing else is on (VI-03).
+    @Published var modeWord: String?
     @Published var morningExpanded = false
     /// A small black tab under the notch when there is nothing else to show.
     @Published var presence = false
@@ -852,7 +854,7 @@ struct NotchHUDView: View {
         case .hidden:
             if model.answer != nil { return "dot" }
             if model.morning != nil, model.agents.isEmpty, !model.showInput { return "this morning" }
-            return model.showInput ? "ask dot" : (model.agents.isEmpty ? "dot" : (model.agents.count == 1 ? "one task" : "\(model.agents.count) tasks"))
+            return model.showInput ? "ask dot" : (model.agents.isEmpty ? (model.modeWord ?? "dot") : (model.agents.count == 1 ? "one task" : "\(model.agents.count) tasks"))
         case .listening: return model.mode == .agent ? "listening, for an agent" : (model.mode == .dictate ? "dictating" : "listening")
         case .transcribing: return "hearing you"
         case .thinking: return model.deeper ? "thinking deeper" : "thinking"
@@ -929,8 +931,12 @@ struct NotchHUDView: View {
                 VStack(alignment: .leading, spacing: 3) {
                     HStack(spacing: 6) {
                         Text(row.name).font(.system(size: 12.5, weight: .semibold)).foregroundStyle(text)
-                        Text("•").font(.system(size: 11)).foregroundStyle(text.opacity(0.35))
-                        Text(Self.stateWord(row)).font(.system(size: 11.5, weight: .medium)).foregroundStyle(Self.stateColor(row, accent: model.accent))
+                        // The state word as a tinted chip: fill, edge and text from one color (VI-05).
+                        let tone = Self.stateColor(row, accent: model.accent)
+                        Text(Self.stateWord(row)).font(.system(size: 11, weight: .medium)).foregroundStyle(tone)
+                            .padding(.horizontal, 7).padding(.vertical, 1.5)
+                            .background(Capsule().fill(tone.opacity(0.14)))
+                            .overlay(Capsule().strokeBorder(tone.opacity(0.35), lineWidth: 0.5))
                         if row.state == .running {
                             Text(Self.elapsed(since: row.startedAt)).font(.system(size: 10.5, design: .monospaced)).foregroundStyle(text.opacity(0.4))
                         }
