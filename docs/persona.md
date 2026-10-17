@@ -180,3 +180,12 @@ this block and once with the same prompt minus the block.
   runs with the block, and all four without it, said plainly that the answer came from the agent's report.
 - Some answers start with a capital letter with or without the block, so that comes from the model, not
   from this block.
+
+## Context lines (round two)
+
+Most quips are now written for the moment by a small model (Haiku, `quipModel`), from what Dot can see: the app and window in
+front, the next Atlas event or deadline within a day, the time, and an agent that just finished. The voice is his three examples:
+"good luck on math!!", "u gonna ace this test", "lmk if u need help". The system prompt is `QuipPrompt.system` in
+`Sources/DotKit/QuipContext.swift`, and every line passes `QuipLine.check` (lowercase, 60 characters, no emoji, no names, nothing
+from the never-does list) or Dot uses the written bank above instead. About 30-60 minutes before an event or deadline there is one
+line for it, once.

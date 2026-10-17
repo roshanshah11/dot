@@ -430,3 +430,23 @@ thrown", Android measures a fling's velocity. A fast cursor move alone can't be 
 - Home Settings gains a chattiness picker (0-3) and a size picker (20, 24, 28).
 
 **Ship:** tests, an independent review, previews and the CPU check; then merge `alive` into main, push, and install from main.
+
+### As built, round two
+
+- Petting: `Leash` (90 px scaled by orbSize / 24), `RubDetector` over the orb, `CallOverDetector` anywhere else, all in
+  `Sources/DotKit/OrbKit.swift`. The click target is `OrbHandle` in `OverlayWindow.swift`: a non-activating panel over the orb
+  that paints an almost invisible disc (fully clear pixels let clicks fall through) and ignores the mouse until he has rested on
+  Dot for 0.3 s or is rubbing it. A press boops; a drag over 4 px picks Dot up; letting go throws it (`Toss`), or sets it down
+  under 300 px/s or with Reduce Motion on. A fast approach (over 900 px/s) hops Dot aside (`Dodge`).
+- Throwing: `Toss` (friction 0.45 s, restitution 0.6, cap 4,000 px/s, release velocity over the last 50 ms). The animator stretches
+  a held Dot, tumbles a thrown one, squashes it on each bounce, gives it spiral eyes for 1 s after it lands and a shake-off for 0.4 s.
+- Context lines: `QuipContext`, `QuipPrompt` and `QuipLine` in DotKit; the writer runs one `claude -p` per quip on `quipModel`
+  (default haiku) with thinking off and nothing saved, checks the line, and falls back to the written bank. `contextQuips` turns it
+  off. Live check on 2026-10-17: "math midterm in an hour, you got this", "yo welcome back, math exam in like 11 hours btw",
+  "yo i crushed that handoff" (1.3-2.6 s each). `Dot --quip-test` runs it by hand.
+- Home: chattiness and context lines on General, the size picker on Cursor.
+- The notch (a side fix the same day): HeyClicky's resting notch, measured from its window, is exactly the camera housing (black
+  from x 663 to 848.5 pt, 32 pt tall). Dot's idle tab was the notch plus 18 pt a side and a 10 pt lip, and a folded task made it
+  415 x 57, covering the status items beside the notch. Now the resting tab is the notch, and anything wider hangs below the menu
+  bar from a notch-wide stem (`NotchSilhouette`, after HeyClicky's `NotchSilhouetteShape`, `menuBarBandHeight`, `stemWidth`).
+  At rest Dot is invisible, part of the notch; hover the notch to see it.
