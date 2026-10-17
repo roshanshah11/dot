@@ -1002,7 +1002,17 @@ final class OverlayManager {
         for (index, model) in models.enumerated() where model.visible { animators[index].react(reaction, at: now) }
     }
 
-    /// He switched apps: a glance toward the new window (AppKit screen point) and a blink.
+    /// He switched apps: a glance toward the new front window and a blink.
+    func appSwitched() {
+        let now = clock
+        for (index, model) in models.enumerated() where model.visible {
+            let window = frontWindow(on: windows[index].screenFrame)
+            let dx: Double = window.map { $0.midX >= model.position.x ? 1 : -1 } ?? 1
+            animators[index].react(.appSwitch(dx: dx), at: now)
+        }
+    }
+
+    /// He switched apps: a glance toward a known point (AppKit screen point) and a blink.
     func appSwitched(toward screenPoint: CGPoint?) {
         let now = clock
         for (index, model) in models.enumerated() where model.visible {
@@ -1503,7 +1513,9 @@ final class OverlayManager {
     /// Step every visible orb's animator and publish its pose: 60 Hz while something moves, 15 Hz for
     /// the slow breath and glow, nothing while covered.
     private func animate(now: Double) {
-        if now - quietCheckedAt > 2 {
+        // CallPresence may read the front window's title through Accessibility; every 10 s is plenty
+        // for the guards and keeps that read off the animation's frames.
+        if now - quietCheckedAt > 10 {
             quietCheckedAt = now
             quiet = isQuiet?() ?? false
         }

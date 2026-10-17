@@ -22,6 +22,23 @@ extension TTSProvider {
     func setRate(_ multiplier: Double) {}
 }
 
+/// Where Dot's face hears its own voice (docs/alive.md 1.2, 1.11): each sentence as it starts, with its
+/// length when known and whether nothing is queued after it, and the voice's level for the mouth. Kokoro's
+/// player can meter itself; Apple's synthesizer cannot, so it reports unmetered and the mouth falls back
+/// to its two sines.
+enum SpeechActivity {
+    nonisolated(unsafe) static var onSentence: ((_ duration: TimeInterval?, _ isLast: Bool) -> Void)?
+    nonisolated(unsafe) static var onLevel: ((_ level: Double, _ metered: Bool) -> Void)?
+
+    static func sentence(duration: TimeInterval?, isLast: Bool) {
+        DispatchQueue.main.async { onSentence?(duration, isLast) }
+    }
+
+    static func level(_ level: Double, metered: Bool) {
+        DispatchQueue.main.async { onLevel?(level, metered) }
+    }
+}
+
 final class AppleSpeaker: NSObject, TTSProvider, AVSpeechSynthesizerDelegate {
     private let synthesizer = AVSpeechSynthesizer()
     private let voice: AVSpeechSynthesisVoice?
@@ -73,6 +90,8 @@ final class AppleSpeaker: NSObject, TTSProvider, AVSpeechSynthesizerDelegate {
     }
 
     func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didStart utterance: AVSpeechUtterance) {
+        SpeechActivity.sentence(duration: nil, isLast: queued <= 1)
+        SpeechActivity.level(0, metered: false)
         if let start = starts.removeValue(forKey: ObjectIdentifier(utterance)) {
             DispatchQueue.main.async(execute: start)
         }
@@ -93,6 +112,7 @@ final class AppleSpeaker: NSObject, TTSProvider, AVSpeechSynthesizerDelegate {
         }
         if lastUtterance === utterance { lastUtterance = nil }
         queued = max(0, queued - 1)
+        if queued == 0 { SpeechActivity.level(0, metered: true) }
         guard queued == 0 else { return }
         // `isSpeaking` can still read true inside the delegate callback for the last utterance;
         // our own queue count is the truth, so report on the next run-loop turn.

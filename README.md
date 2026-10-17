@@ -143,6 +143,7 @@ with `ATLAS_MCP_TOOLS=now,search,facts,...` so only those tools ride along.
 | `speakAgentResults` | `true` | Read an agent's first sentence aloud when it finishes |
 | `screenshotMaxDimension` | `1280` | Long edge of each screenshot sent to the model |
 | `chattiness` | `2` | How much Dot says unprompted, 0 to 3: 0 nothing, 1 deadline notices only (cooldown 3x) and a quip every 2 hours, 2 notices, offers and a quip every 40 minutes, 3 cooldowns halved and a quip every 20 minutes. Scales `noticeCooldownMinutes` and `suggestionCooldownMinutes`; `proactiveNotices` and `suggestions` still switch their part off. See `docs/persona.md` |
+| `orbSize` | `24` | The orb's diameter in points, 16 to 36 (it was 20 before the alive pass). Its eyes, follow offset and bubble scale with it. To pet Dot, rub the cursor gently back and forth over it; a gentle rub is smaller than macOS's shake-to-find-cursor. See `docs/alive.md` |
 
 ### Computer use (optional)
 

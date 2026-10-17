@@ -370,3 +370,11 @@ public enum SpeechLevel {
         return level < 0.05 ? 0 : level
     }
 }
+
+/// He thanked Dot: a happy squint and a blush (docs/alive.md 2.6).
+public enum Gratitude {
+    public static func isThanks(_ text: String) -> Bool {
+        let lower = text.lowercased()
+        return lower.range(of: #"\b(thanks|thank you|thank u|thankyou|thx|ty)\b"#, options: .regularExpression) != nil
+    }
+}

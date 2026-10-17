@@ -29,6 +29,8 @@ final class CommandSpeaker: NSObject, TTSProvider, AVAudioPlayerDelegate {
     /// Audio for short phrases ("mm-hm.", "one sec.") kept after the first synthesis.
     private var cache: [String: URL] = [:]
     private var player: AVAudioPlayer?
+    /// Reads the playing sentence's level every 80 ms for the mouth (SALSA's sampling, craft-A6-06).
+    private var meter: Timer?
     private var generation = 0
     private(set) var ready = false
     private let fallback: TTSProvider
@@ -148,7 +150,24 @@ final class CommandSpeaker: NSObject, TTSProvider, AVAudioPlayerDelegate {
         items = []
         player?.stop()
         player = nil
+        stopMeter()
         fallback.stop()
+    }
+
+    private func startMeter(_ player: AVAudioPlayer) {
+        meter?.invalidate()
+        player.isMeteringEnabled = true
+        meter = Timer.scheduledTimer(withTimeInterval: 0.08, repeats: true) { [weak player] _ in
+            guard let player, player.isPlaying else { return }
+            player.updateMeters()
+            SpeechActivity.level(SpeechLevel.openness(decibels: player.averagePower(forChannel: 0)), metered: true)
+        }
+    }
+
+    private func stopMeter() {
+        meter?.invalidate()
+        meter = nil
+        SpeechActivity.level(0, metered: true)
     }
 
     // MARK: Worker protocol
@@ -214,7 +233,9 @@ final class CommandSpeaker: NSObject, TTSProvider, AVAudioPlayerDelegate {
                 let player = try AVAudioPlayer(contentsOf: url)
                 player.delegate = self
                 self.player = player
+                startMeter(player)
                 player.play()
+                SpeechActivity.sentence(duration: player.duration, isLast: !items.contains { !$0.isMarker })
                 item.onStart?()
                 return
             } catch {
@@ -222,7 +243,7 @@ final class CommandSpeaker: NSObject, TTSProvider, AVAudioPlayerDelegate {
                 try? FileManager.default.removeItem(at: url)
             }
         }
-        if items.isEmpty, player == nil { onFinishedAll?() }
+        if items.isEmpty, player == nil { stopMeter(); onFinishedAll?() }
     }
 
     func audioPlayerDidFinishPlaying(_ player: AVAudioPlayer, successfully flag: Bool) {

@@ -784,6 +784,7 @@ final class Talk {
         lastAskWasTyped = typed
         lastAskWasLecture = false
         lastAsked = text
+        if Gratitude.isThanks(text) { overlay.react(.thanks) }
         if !typed { textSurface = false }
         if let captureTask {
             let captured = await captureTask.value

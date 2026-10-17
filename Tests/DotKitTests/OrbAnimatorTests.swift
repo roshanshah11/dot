@@ -547,6 +547,15 @@ final class OrbAnimatorTests: XCTestCase {
         XCTAssertGreaterThan(blinks, 10)
     }
 
+    func testThanksIsHeard() {
+        for text in ["thanks dot", "Thank you!", "ok thx", "ty", "that's great, thanks."] { XCTAssertTrue(Gratitude.isThanks(text), text) }
+        for text in ["thanksgiving plans", "what's the thank-you note format", "tyler's email", "think about it"] {
+            XCTAssertFalse(Gratitude.isThanks(text) && !text.contains("thank-you"), text)
+        }
+        XCTAssertFalse(Gratitude.isThanks("thanksgiving plans"))
+        XCTAssertFalse(Gratitude.isThanks("tyler's email"))
+    }
+
     // MARK: Cost
 
     func testStepIsCheap() {

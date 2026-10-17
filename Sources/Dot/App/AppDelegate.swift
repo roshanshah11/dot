@@ -26,10 +26,31 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var hoverTimer: Timer?
     private var presenceItem: NSMenuItem?
 
+    /// The alive pass (docs/alive.md): what the orb reacts to, and the quips at its breaks.
+    private func wireAlive() {
+        overlay.isQuiet = { [weak self] in self.map { $0.config.quietOnCalls && CallPresence.isOnCall() } ?? false }
+        overlay.onWake = { [weak self] idle in self?.noticer.quip(idle > 15 * 60 ? .backLong : .backShort) }
+        overlay.onPetted = { [weak self] in self?.noticer.quip(.petted) }
+        SpeechActivity.onSentence = { [weak self] duration, isLast in
+            MainActor.assumeIsolated { self?.overlay.sentenceStarted(duration: duration, isLast: isLast) }
+        }
+        SpeechActivity.onLevel = { [weak self] level, metered in
+            MainActor.assumeIsolated { self?.overlay.setSpeechLevel(level, metered: metered) }
+        }
+        NSWorkspace.shared.notificationCenter.addObserver(forName: NSWorkspace.didActivateApplicationNotification, object: nil, queue: .main) { [weak self] note in
+            let app = note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication
+            guard app?.processIdentifier != ProcessInfo.processInfo.processIdentifier else { return }
+            Task { @MainActor in self?.overlay.appSwitched() }
+        }
+        NotificationCenter.default.addObserver(forName: .dotDismissNotice, object: nil, queue: .main) { [weak self] _ in
+            Task { @MainActor in self?.overlay.react(.dismissed) }
+        }
+    }
+
     func applicationDidFinishLaunching(_ notification: Notification) {
         Log.info("Dot \(Version.string) launching; config \(DotConfig.fileURL.path)")
         hud = NotchHUD(accentHex: config.pointerColorHex)
-        overlay = OverlayManager(colorHex: config.pointerColorHex, presence: config.showCompanion)
+        overlay = OverlayManager(colorHex: config.pointerColorHex, presence: config.showCompanion, orbSize: CGFloat(config.orbSize))
         atlas = AtlasBridge(config: config)
         let apple = AppleSpeaker(voiceIdentifier: config.voiceIdentifier, rate: config.speechRate)
         if let command = config.resolvedTTSCommand() {
@@ -79,6 +100,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             guard let self else { return false }
             return self.talk.isIdle && !self.talk.lecture.isListening && !(self.murmur?.isRecording ?? false)
         }
+        wireAlive()
         hud.setPresence(config.notchPresence)
         applyRecordingVisibility()
         home = HomeWindowController(agents: agents, ledger: ledger, config: config, atlas: atlas)
@@ -149,7 +171,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NotificationCenter.default.addObserver(forName: .dotAgentFinished, object: nil, queue: .main) { [weak self] note in
             let failed = (note.userInfo?["failed"] as? Bool) ?? false
             Task { @MainActor in
-                self?.overlay.setMood(failed ? .puzzled : .happy, for: failed ? 3 : 2.5)
+                // A hop when it lands, a droop when it fails (docs/alive.md 2.6), and maybe a quip.
+                self?.overlay.react(failed ? .agentFailed : .agentDone)
+                self?.noticer.quip(failed ? .agentFailed : .agentDone)
                 self?.refreshPeek()
             }
         }
