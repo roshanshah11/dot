@@ -229,7 +229,7 @@ struct CompanionView: View {
                     .opacity(model.reduceMotion && model.motion == .flying ? 0 : 1)
                     .animation(.easeInOut(duration: 0.15), value: model.reduceMotion && model.motion == .flying)
                 if model.motion == .parked, let text = model.chip, !text.isEmpty, !(model.bubbleVisible && !model.bubbleText.isEmpty) {
-                    chip(text).offset(x: model.position.x + 16, y: model.position.y + 10)
+                    chip(text).offset(x: model.position.x + 16 * model.orbSize / 20, y: model.position.y + 10 * model.orbSize / 20)
                 }
                 if model.bubbleVisible, !model.bubbleText.isEmpty {
                     bubble
@@ -254,8 +254,10 @@ struct CompanionView: View {
         let maxWidth: CGFloat = model.motion == .parked ? 240 : 260
         let width = bubbleWidth(for: model.bubbleText, max: maxWidth)
         let parked = model.motion == .parked
-        let roomRight = model.position.x + 24 + width + 28 <= model.screenSize.width - 12
-        let roomLeft = model.position.x - 20 - width - 28 >= 12
+        // Spaced for the orb's size (orbSize; these were tuned at 20 px).
+        let k = model.orbSize / 20
+        let roomRight = model.position.x + 24 * k + width + 28 <= model.screenSize.width - 12
+        let roomLeft = model.position.x - 20 * k - width - 28 >= 12
         let flip = model.bubbleFlip.map { $0 ? roomLeft : !roomRight } ?? !roomRight
         let below = model.position.y + 180 < model.screenSize.height
         // A quiet note beside Dot (a greeting, an offer, a short line): light paper, two lines at
@@ -282,10 +284,10 @@ struct CompanionView: View {
             .background(paper.opacity(0.97), in: RoundedRectangle(cornerRadius: 9, style: .continuous))
             .overlay(RoundedRectangle(cornerRadius: 9, style: .continuous).stroke(ink.opacity(0.1), lineWidth: 1))
             .shadow(color: .black.opacity(0.18), radius: 8, x: 0, y: 3)
-            .alignmentGuide(.leading) { d in flip ? d[.trailing] - (model.position.x - 20) : -(model.position.x + 22) }
+            .alignmentGuide(.leading) { d in flip ? d[.trailing] - (model.position.x - 20 * k) : -(model.position.x + 22 * k) }
             .alignmentGuide(.top) { d in
                 if parked { return d[VerticalAlignment.center] - model.position.y }
-                return below ? -(model.position.y + 18) : d[.bottom] - (model.position.y - 18)
+                return below ? -(model.position.y + 18 * k) : d[.bottom] - (model.position.y - 18 * k)
             }
             .transition(.opacity.combined(with: .scale(scale: 0.96, anchor: .topLeading)))
             .animation(.spring(response: 0.3, dampingFraction: 0.8), value: model.bubbleVisible)
