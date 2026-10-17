@@ -75,13 +75,17 @@ struct ThreadItem: Identifiable, Equatable {
     let entry: TranscriptEntry
     var outputs: [TranscriptEntry] = []
     var outputLines = 0
+    /// The first file a turn made: Home previews it under its row (TC-04).
+    var isFirstFile = false
     var id: Int { entry.id }
     var failed: Bool { outputs.contains { $0.role == "tool_error" } }
 
     static func group(_ entries: [TranscriptEntry]) -> [ThreadItem] {
         var items: [ThreadItem] = []
         var attaching = false
+        var fileShown = false
         for entry in entries {
+            if entry.role == "user" { fileShown = false }
             if entry.role == "output" || entry.role == "tool_error" {
                 let text = entry.text.trimmingCharacters(in: .newlines)
                 if attaching, !text.isEmpty {
@@ -90,7 +94,9 @@ struct ThreadItem: Identifiable, Equatable {
                 }
                 continue
             }
-            items.append(ThreadItem(entry: entry))
+            var item = ThreadItem(entry: entry)
+            if entry.role == "artifact", !fileShown { item.isFirstFile = true; fileShown = true }
+            items.append(item)
             attaching = entry.role == "tool"
         }
         return items
@@ -716,6 +722,10 @@ struct HomeView: View {
             }
             .padding(.leading, 6)
             .onDrag { url.map { NSItemProvider(object: $0 as NSURL) } ?? NSItemProvider() }
+            if item.isFirstFile, let url, url.isFileURL, FileManager.default.fileExists(atPath: url.path),
+               ["pdf", "png", "jpg", "jpeg", "gif", "heic", "html", "pptx", "key", "docx", "xlsx", "md"].contains(url.pathExtension.lowercased()) {
+                QuickLookPreview(url: url).frame(width: 300, height: 190).clipShape(RoundedRectangle(cornerRadius: 8)).padding(.leading, 28)
+            }
         case "title":
             // The turn's done title (TC-01).
             Text(entry.text).font(.system(size: 12, weight: .semibold)).foregroundStyle(.secondary).padding(.leading, 6)
