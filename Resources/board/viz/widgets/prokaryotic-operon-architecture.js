@@ -83,33 +83,39 @@
       else { repressor([54, 62], lac); api.label([54, 86], lac ? "let go of O" : "inactive alone", {color: c.c6, size: 12, anchor: "middle"}); }
       if (v.signal) {
         api.circle([lac ? 22 : opX + 40, lac ? 40 : 34], 5, {fill: c.ink});
-        api.label([lac ? 32 : opX + 50, lac ? 40 : 34], (lac ? "allolactose" : "tryptophan") + " (from the cell)", {color: c.ink, size: 12});
+        api.label([lac ? 32 : opX + 50, lac ? 40 : 34], lac ? "allolactose (made from lactose)" : "tryptophan (from the cell)", {color: c.ink, size: 12});
       }
       // RNA polymerase: transcribing, or blocked at the promoter
-      var polX = isOn ? g0 + 26 : lac ? 82 : 60, polY = isOn ? yD - 32 : 76;
+      var polX = isOn ? g0 + 26 : lac ? 82 : 90, polY = isOn ? yD - 32 : lac ? 76 : 68;   // blocked: on or just upstream of P, clear of the repressor
       api.rect(polX - 22, polY - 18, 44, 36, {rx: 16, fill: c.c2, fillOpacity: 0.3, stroke: c.c2, width: 1.6});
       api.label([polX, polY], "RNAP", {color: c.ink, size: 12, weight: 650, anchor: "middle"});
       if (!isOn) api.label([polX, polY - 28], "blocked", {color: c.c5, size: 12, weight: 650, anchor: "middle"});
       else api.arrow([polX + 26, polY], [polX + 60, polY], {color: c.c2, width: 2, halo: false});
-      if (isOn) {
-        // one mRNA spanning every gene, then one protein per gene
-        var pts = [], y = 172;
-        for (var px = g0 - 4; px <= g1; px += 6) pts.push([px, y + 3 * Math.sin((px - g0) / 5)]);
-        api.polyline(pts, {stroke: c.c1, width: 2.5});
-        api.label([g0 - 10, y], "5′", {color: c.c1, size: 12, anchor: "end"});
-        api.label([g1 + 8, y], "one mRNA", {color: c.c1, size: 12, weight: 650});
-        var xs = 0;
-        o.genes.forEach(function (g, i) {
-          var cx = g0 + xs + g[1] / 2; xs += g[1];
-          api.line([cx, y + 8], [cx, 202], {color: c.c3, width: 1.2, dash: "3 3", arrow: true});
-          api.circle([cx, 216], lac ? [14, 10, 8][i] : 9, {fill: c.c3, fillOpacity: 0.4, stroke: c.c3, width: 1.5});
+      // one mRNA from +1 (just past the operator; the trp leader is transcribed too) across every gene, then one protein per
+      // gene. When the operon is off the same row is drawn ghosted and crossed out, so toggling compares like with like.
+      var gh = isOn ? null : api.group({opacity: 0.28}), y = 172, x1 = lac ? 140 : 124, pts = [];
+      for (var px = x1; px <= g1; px += 6) pts.push([px, y + 3 * Math.sin((px - x1) / 5)]);
+      api.polyline(pts, {stroke: c.c1, width: 2.5, dash: isOn ? null : "5 4", parent: gh});
+      api.label([x1 - 6, y], "5′", {color: c.c1, size: 12, anchor: "end", parent: gh});
+      var xs = 0, cxs = [];
+      o.genes.forEach(function (g, i) {
+        var cx = g0 + xs + g[1] / 2; xs += g[1]; cxs.push(cx);
+        api.line([cx, y + 8], [cx, 202], {color: c.c3, width: 1.2, dash: "3 3", arrow: true, parent: gh});
+        api.circle([cx, 216], lac ? [14, 10, 8][i] : 9, {fill: c.c3, fillOpacity: 0.4, stroke: c.c3, width: 1.5, dash: isOn ? null : "3 2", parent: gh});
+      });
+      if (lac) {   // each name under its own circle with a short leader; permease drops a row so the names never stack
+        [[cxs[0], 244, "middle"], [cxs[1], 262, "middle"], [cxs[2] - 9, 244, "start"]].forEach(function (q, i) {
+          api.line([cxs[i], 216 + [14, 10, 8][i] + 2], [cxs[i], q[1] - 8], {color: c.c3, width: 1, opacity: 0.7, parent: gh});
+          api.label([q[0], q[1]], o.prot[i], {color: c.c3, size: 12, anchor: q[2], parent: gh});
         });
-        if (lac) o.prot.forEach(function (p, i) {
-          var cx = [g0 + 50, g0 + 125, g0 + 169][i];
-          api.label([cx + (i === 2 ? 22 : 0), 246 + (i === 1 ? 18 : 0)], p, {color: c.c3, size: 12, anchor: i === 2 ? "end" : "middle"});
-        });
-        else api.label([(g0 + g1) / 2, 246], o.prot[0], {color: c.c3, size: 12, anchor: "middle"});
-      } else api.label([(g0 + g1) / 2, 186], "no mRNA, no enzymes", {color: c.muted, size: 12.5, weight: 600, anchor: "middle"});
+      } else api.label([(g0 + g1) / 2, 246], o.prot[0], {color: c.c3, size: 12, anchor: "middle", parent: gh});
+      if (isOn) api.label([g1 + 8, y], "one mRNA", {color: c.c1, size: 12, weight: 650});
+      else {
+        var mx = (x1 + g1) / 2;
+        api.line([mx - 9, y - 9], [mx + 9, y + 9], {color: c.c5, width: 2.2}); api.line([mx - 9, y + 9], [mx + 9, y - 9], {color: c.c5, width: 2.2});
+        api.label([g1 + 8, y], "no mRNA", {color: c.muted, size: 12.5, weight: 650});
+        api.label([g0 - 22, 216], "no enzymes", {color: c.muted, size: 12.5, weight: 650, anchor: "end"});
+      }
       api.label([10, 280], o.kind + ": " + (lac ? "lactose switches it on" : "tryptophan switches it off"), {color: c.muted, size: 12});
       api.root.querySelectorAll("text").forEach(function (t) { var f = t.getAttribute("fill"); if (f) t.style.fill = f; });   // viz.css paints text ink
     }

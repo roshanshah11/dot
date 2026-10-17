@@ -40,7 +40,7 @@
     examples: [
       {name: "Minimum supported values", values: {amount: 10, ratePercent: 0, periods: 0}},
       {name: "Maximum supported values", values: {amount: 10000, ratePercent: 20, periods: 50}},
-      {name: "8% for 9 periods doubles it", values: {amount: 1000, ratePercent: 8, periods: 9}},
+      {name: "8% for 9 periods: about double (rule of 72)", values: {amount: 1000, ratePercent: 8, periods: 9}},
       {name: "one period", values: {periods: 1}}
     ],
     size: [400, 290],

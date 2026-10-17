@@ -211,10 +211,94 @@ window.VIZ_INDEX = [
 "shows": "Flip the template's orientation and add nucleotides: the new strand always grows 5′→3′ off a 3′-OH, so it runs toward the fork on one template (leading) and away on the other (lagging)"
 },
 {
+"id": "dna-replication-five-prime-to-three-prime-synthesis",
+"title": "Why a DNA strand grows 5′ to 3′",
+"subject": "biology",
+"shows": "Step through one nucleotide being added: the strand's 3′-OH attacks the incoming dNTP's α-phosphate, pyrophosphate leaves, and the chain ends in a new 3′-OH, so it can only grow 5′ to 3′"
+},
+{
+"id": "dna-replication-fork-architecture",
+"title": "The replisome: who does what at the fork",
+"subject": "biology",
+"shows": "Step through the machines at a replication fork (helicase, SSB, topoisomerase, primase, clamp and loader, two polymerases) and switch between E. coli and human names"
+},
+{
+"id": "dna-replication-fork",
+"title": "The replication fork",
+"subject": "biology",
+"shows": "Slide time: the fork unzips the parent duplex and leaves two daughter duplexes behind it, each one old strand plus one new, the leading copy in one piece and the lagging copy in Okazaki fragments"
+},
+{
+"id": "dna-replication-lagging-okazaki-fragments",
+"title": "Okazaki fragments on the lagging strand",
+"subject": "biology",
+"shows": "Slide the stretch copied and the fragment length: the lagging strand is built backward from the fork in Okazaki fragments, one primer each, and every join leaves a nick to seal"
+},
+{
+"id": "dna-replication-leading-lagging-strand-comparison",
+"title": "Leading and lagging strands compared",
+"subject": "biology",
+"shows": "Slide time at one fork: the leading strand grows in one piece right behind the helicase, while the lagging strand starts later, trails by one Okazaki fragment and stays in pieces"
+},
+{
+"id": "dna-replication-leading-strand-synthesis",
+"title": "Leading strand: one primer, one continuous run",
+"subject": "biology",
+"shows": "Slide time and toggle the sliding clamp: the leading strand follows the fork in one continuous piece from one primer, and the clamp is what keeps the polymerase on for the whole run"
+},
+{
+"id": "dna-replication-okazaki-fragment-joining",
+"title": "Joining Okazaki fragments",
+"subject": "biology",
+"shows": "Step through how two Okazaki fragments become one strand: the RNA primer between them is removed and replaced with DNA, leaving a nick that DNA ligase seals; switch between E. coli and human enzymes"
+},
+{
+"id": "dna-replication-origin-bidirectional-forks",
+"title": "One origin, two forks",
+"subject": "biology",
+"shows": "Slide time on the E. coli chromosome: two forks leave oriC in opposite directions and meet at ter in about 38 minutes, half the time one fork would take; the bubble shows each fork's leading and lagging strand"
+},
+{
+"id": "dna-replication-polymerase-proofreading",
+"title": "Proofreading: how DNA polymerase fixes its own mistakes",
+"subject": "biology",
+"shows": "Step through a wrong base going in and the 3′→5′ exonuclease clipping it off; switch proofreading and mismatch repair off to see errors per genome copy jump"
+},
+{
+"id": "dna-replication-rna-primer-initiation",
+"title": "RNA primers: how DNA replication gets started",
+"subject": "biology",
+"shows": "Step through why polymerase needs a primer: primase lays RNA with a free 3′-OH, polymerase extends it, and the RNA is later swapped for DNA; slide the length copied to count primers"
+},
+{
+"id": "dna-replication-semiconservative-inheritance",
+"title": "Semiconservative replication: the Meselson–Stahl result",
+"subject": "biology",
+"shows": "Move heavy-labeled DNA into light medium for n generations: each model of copying predicts different bands in a density gradient, and only semiconservative matches what was seen"
+},
+{
+"id": "dna-replication-versus-transcription-products",
+"title": "Replication vs transcription: what each one makes",
+"subject": "biology",
+"shows": "The same DNA, copied two ways: replication turns both strands of the whole molecule into two duplexes; transcription turns one strand of one gene into as many RNAs as the cell needs"
+},
+{
 "id": "dna-replication",
 "title": "DNA replication at the fork",
 "subject": "biology",
 "shows": "Step through a replication fork: helicase opens it, primase lays RNA primers, polymerase builds the leading strand continuously and the lagging strand in Okazaki fragments, then pol I and ligase finish the job"
+},
+{
+"id": "dna-template-rna-complementarity",
+"title": "Template DNA and RNA: complementary base pairing",
+"subject": "biology",
+"shows": "Pick the template bases: each calls for its partner ribonucleotide (A pairs with U, not T), a purine always faces a pyrimidine, and G–C pairs add a third hydrogen bond"
+},
+{
+"id": "dna-transcription",
+"title": "Transcription: initiation, elongation, termination",
+"subject": "biology",
+"shows": "Step through one gene being transcribed in a bacterium or a eukaryote: polymerase finds the promoter, opens the DNA, builds RNA 5′→3′ off the template, and lets go at the end"
 },
 {
 "id": "dot-product-angle",
@@ -247,6 +331,18 @@ window.VIZ_INDEX = [
 "shows": "Step through the four layers of a sandwich ELISA; slide the antigen concentration: more antigen captured means more enzyme, more color, and a higher reading on the standard curve"
 },
 {
+"id": "eukaryotic-enhancer-promoter-looping",
+"title": "Enhancers: DNA looping brings activators to the promoter",
+"subject": "biology",
+"shows": "Move the enhancer near or far, upstream or downstream, and switch the activators or an insulator: the DNA loops so the enhancer touches the promoter through Mediator, unless nothing is bound or an insulator walls it off"
+},
+{
+"id": "eukaryotic-gene-regulation",
+"title": "Eukaryotic gene regulation: control at every level",
+"subject": "biology",
+"shows": "Open or close the chromatin, bind an activator, add a microRNA or a degradation tag: each control point multiplies into how much mRNA and protein the cell ends up with"
+},
+{
 "id": "ev-equity-bridge",
 "title": "Equity value to enterprise value",
 "subject": "finance",
@@ -271,16 +367,94 @@ window.VIZ_INDEX = [
 "shows": "Drag the harvest price: spot sales and the short futures move in opposite directions, so a full hedge always adds up to q times the futures price"
 },
 {
+"id": "gel-electrophoresis-apparatus",
+"title": "Gel electrophoresis: the setup",
+"subject": "biology",
+"shows": "Set the voltage, the run time and which lead goes where: DNA is negative, so with black at the wells it runs toward red, at a speed set by the field V/L"
+},
+{
+"id": "gel-electrophoresis-size-separation",
+"title": "Gel electrophoresis: separating by size",
+"subject": "biology",
+"shows": "Change the agarose percentage and run time: the gel mesh holds big fragments back, so a denser gel separates small fragments and a looser one separates large ones"
+},
+{
+"id": "gene-coding-template-strand-orientation",
+"title": "Which strand is the template?",
+"subject": "biology",
+"shows": "Pick a gene and slide transcription along it: the gene's direction decides the template, the strand that runs 3' to 5' the way RNA polymerase moves"
+},
+{
+"id": "gene-expression-regulation",
+"title": "Gene expression: control at every stage",
+"subject": "biology",
+"shows": "Open or close the chromatin, add an activator and change the mRNA and protein half-lives: each stage multiplies how much protein the cell holds"
+},
+{
 "id": "kernel-image",
 "title": "Kernel and image of a linear map",
 "subject": "linear-algebra",
 "shows": "Drag x in the input plane: T(x) moves in the output plane; the kernel line is crushed to 0 and the image is the set T can reach"
 },
 {
+"id": "kinematics-velocity-squared",
+"title": "Speed squared over a distance",
+"subject": "physics",
+"shows": "Slide v_i, a and Δx: speed squared behaves like area, so 2aΔx adds (or cuts) a strip and the new square's side is v_f"
+},
+{
+"id": "kinematics-velocity",
+"title": "Velocity under constant acceleration",
+"subject": "physics",
+"shows": "Slide v_i, a and t: the velocity line starts at v_i, climbs by a every second, and after t seconds has gained a·t"
+},
+{
+"id": "kinetic-and-potential-energy",
+"title": "Potential energy into kinetic energy",
+"subject": "physics",
+"shows": "Drop the ball and step down: potential energy mgh drains into kinetic energy ½mv² while their total stays mgh₀"
+},
+{
+"id": "kinetic-energy",
+"title": "Kinetic energy",
+"subject": "physics",
+"shows": "Slide the mass and the velocity: KE = ½mv² grows with the square of the speed, and the direction of motion doesn't matter"
+},
+{
+"id": "lac-operon-catabolite-activation",
+"title": "lac operon: CAP and cAMP",
+"subject": "biology",
+"shows": "Toggle glucose, the strain and added cAMP: low glucose raises cAMP, CAP-cAMP binds beside the lac promoter and helps RNA polymerase start about 50 times more often"
+},
+{
+"id": "lac-operon-inducer-repression-switch",
+"title": "lac repressor: the inducer switch",
+"subject": "biology",
+"shows": "Raise the inducer (IPTG): it binds the lac repressor, which lets go of the operator, and expression climbs a steep S-curve; lacI⁻ and Oᶜ stay on, lacIˢ never turns on"
+},
+{
+"id": "lac-operon",
+"title": "The lac operon: lactose and glucose",
+"subject": "biology",
+"shows": "Toggle glucose and lactose: lactose takes the repressor off the operator, low glucose lets CAP-cAMP help RNA polymerase, and only lactose without glucose turns the genes fully on"
+},
+{
 "id": "lbo-returns",
 "title": "LBO returns: IRR and MOIC",
 "subject": "finance",
 "shows": "Entry multiple, leverage, EBITDA growth and exit multiple turn into the equity's MOIC and IRR, split into growth, multiple and debt paydown"
+},
+{
+"id": "least-square-regression",
+"title": "Least squares regression line",
+"subject": "stats",
+"shows": "Move the trial line: each residual becomes a square, and the least squares line is the one with the smallest total area"
+},
+{
+"id": "likelihood-function",
+"title": "Likelihood of a success probability",
+"subject": "stats",
+"shows": "Set the successes and trials: the likelihood p^k(1−p)^(n−k) peaks at p̂ = k/n and narrows as the trials grow"
 },
 {
 "id": "linear-combination",
@@ -293,6 +467,18 @@ window.VIZ_INDEX = [
 "title": "Span and linear independence",
 "subject": "linear-algebra",
 "shows": "Drag u and v: the parallelogram they span has area |det(u, v)|; when it collapses to zero the two vectors are dependent and span only a line"
+},
+{
+"id": "logistic-regression",
+"title": "Logistic regression curve",
+"subject": "stats",
+"shows": "Slide β₀ and β₁: the log-odds β₀ + β₁x is a straight line, and the logistic function bends it into a probability between 0 and 1"
+},
+{
+"id": "mass-spring-shm",
+"title": "Mass on a spring: simple harmonic motion",
+"subject": "physics",
+"shows": "Slide the mass, stiffness and amplitude: the period T = 2π√(m/k) depends on m and k only, never on how far it swings"
 },
 {
 "id": "matrix-inverse-2d",
@@ -317,6 +503,12 @@ window.VIZ_INDEX = [
 "title": "A matrix as a map of the plane",
 "subject": "linear-algebra",
 "shows": "Change the entries of A: the columns are where e1 and e2 land, the grid moves with them, and det A scales areas"
+},
+{
+"id": "mrna-codon-amino-acid-sequence",
+"title": "Reading an mRNA: codons to amino acids",
+"subject": "biology",
+"shows": "Change one base or shift the reading frame: the mRNA is read three bases at a time from AUG, each codon names an amino acid, and a stop codon ends the chain"
 },
 {
 "id": "mrna-translation",
@@ -409,6 +601,48 @@ window.VIZ_INDEX = [
 "shows": "Step through digest, ligation, transformation, selection and screening; compare cutting with one enzyme against two"
 },
 {
+"id": "restriction-digest-gel-band-patterns",
+"title": "Restriction digest: reading the gel bands",
+"subject": "biology",
+"shows": "Choose a digest and drag the second BamHI site: n cuts in a circle give n fragments that add up to the plasmid, and each fragment becomes a band by size"
+},
+{
+"id": "restriction-enzyme-map",
+"title": "Restriction map: sites and fragments",
+"subject": "biology",
+"shows": "Pick enzymes and the topology: each site is a cut at a fixed bp position; a circle gives as many fragments as cuts, linear DNA one more, and they always add up to the whole"
+},
+{
+"id": "restriction-enzyme-recognition-sites",
+"title": "Restriction enzyme recognition sites",
+"subject": "biology",
+"shows": "Pick an enzyme: it finds its own short palindrome on both strands, and the shorter the site, the more often it turns up (about once every 4^n bp)"
+},
+{
+"id": "restriction-enzyme-sticky-end-cleavage",
+"title": "Sticky ends: how a restriction enzyme cuts",
+"subject": "biology",
+"shows": "Step through binding, cutting, separating and ligating: staggered cuts leave matching single-stranded overhangs (sticky ends); a straight cut leaves blunt ends"
+},
+{
+"id": "ribosome-a-p-e-sites",
+"title": "The ribosome's A, P and E sites",
+"subject": "biology",
+"shows": "Step one elongation cycle: a tRNA enters the A site, the chain jumps onto its amino acid, then translocation shifts every tRNA one site (A to P to E) and opens the A site again"
+},
+{
+"id": "rna-polymerase-template-directed-synthesis",
+"title": "RNA polymerase adds one nucleotide",
+"subject": "biology",
+"shows": "Step one addition: the template base picks the matching NTP, the RNA's 3′-OH attacks its α phosphate, and pyrophosphate leaves; slide n to move along the gene"
+},
+{
+"id": "rna-polymerase-template-strand-reading",
+"title": "Which strand is the template?",
+"subject": "biology",
+"shows": "Flip the promoter to the other end: the polymerase travels the other way, so it reads the other strand 3′→5′, and the RNA always spells the coding strand with U for T"
+},
+{
 "id": "row-reduction-stepper",
 "title": "Row reduction, one step at a time",
 "subject": "linear-algebra",
@@ -473,6 +707,60 @@ window.VIZ_INDEX = [
 "title": "One transaction through the three statements",
 "subject": "finance",
 "shows": "Pick a transaction (depreciation, capex, a debt raise, interest, a dividend) and step it through the income statement, the cash flow statement and the balance sheet"
+},
+{
+"id": "transcription-and-rna-processing",
+"title": "Transcription and RNA processing",
+"subject": "biology",
+"shows": "Step from gene to exported mRNA: the pre-mRNA copies exons and introns, gets a 5′ cap and a poly(A) tail, and splicing cuts the introns out; slide the intron length"
+},
+{
+"id": "transcription-elongation-rna-synthesis",
+"title": "Transcription elongation: RNA grows 5′ to 3′",
+"subject": "biology",
+"shows": "Slide the RNA's length: polymerase reads the template 3′ to 5′, adds each matching NTP to the 3′ end and releases PPi; slide the speed to see how long a whole gene takes"
+},
+{
+"id": "transcription-factor-combinatorial-control",
+"title": "Combinatorial control by transcription factors",
+"subject": "biology",
+"shows": "Toggle three activators and a repressor: each gene's enhancer needs its own combination, so a handful of factors can switch many genes in different patterns"
+},
+{
+"id": "transcription-termination-rna-release",
+"title": "Transcription termination: releasing the RNA",
+"subject": "biology",
+"shows": "Pick the mechanism and step through: a hairpin plus a U-tract, the Rho helicase, or poly(A) cleavage plus the Xrn2 torpedo frees the RNA; mutate the signal to see read-through"
+},
+{
+"id": "transcription-unit-promoter-terminator",
+"title": "A transcription unit: promoter to terminator",
+"subject": "biology",
+"shows": "Flip the gene's direction, change the spacer between the -35 and -10 boxes, and the RNA length: the promoter sets where and which way transcription runs, and which strand is the template"
+},
+{
+"id": "translation-elongation",
+"title": "Translation elongation: one codon per cycle",
+"subject": "biology",
+"shows": "Step through one elongation cycle: EF-Tu brings a tRNA, a correct match triggers GTP hydrolysis, the chain moves onto the new amino acid and EF-G shifts the ribosome one codon; try a near-cognate tRNA to see it rejected"
+},
+{
+"id": "translation-initiation",
+"title": "Translation initiation: finding the start codon",
+"subject": "biology",
+"shows": "Step through initiation in a bacterium (Shine-Dalgarno pairing) or a eukaryote (cap binding and scanning); weaken the start signal to see rare binding or leaky scanning"
+},
+{
+"id": "translation-termination",
+"title": "Translation termination: releasing the protein",
+"subject": "biology",
+"shows": "Pick the stop codon and the cell, then step through: a release factor reads the stop codon, water cuts the finished chain off the tRNA and the ribosome comes apart"
+},
+{
+"id": "translation",
+"title": "Translation along an mRNA: the polysome",
+"subject": "biology",
+"shows": "Set the protein length, the ribosome speed and how often a ribosome starts: chains grow as ribosomes move 5′ to 3′, and the start rate sets how many ride the mRNA and how much protein it makes"
 },
 {
 "id": "trp-operon-corepressor-switch",

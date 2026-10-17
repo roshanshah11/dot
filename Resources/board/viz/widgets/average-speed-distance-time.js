@@ -19,7 +19,7 @@
       d1: {kind: "number", default: 60, min: 5, max: 150, step: 5, label: "d_1\\ (\\text{km})"},
       v1: {kind: "number", default: 60, min: 10, max: 120, step: 5, label: "v_1\\ (\\text{km/h})"},
       d2: {kind: "number", default: 60, min: 5, max: 150, step: 5, label: "d_2\\ (\\text{km})"},
-      v2: {kind: "number", default: 40, min: 10, max: 120, step: 5, label: "v_2\\ (\\text{km/h})"}
+      v2: {kind: "number", default: 20, min: 10, max: 120, step: 5, label: "v_2\\ (\\text{km/h})"}   // 60 then 20: average 30 against a mean of 40
     },
     formula: function (v) {
       var k = calc(v);
@@ -36,16 +36,16 @@
         (k.t1 > k.t2 === (slow === "first") ? "more" : "less") + " than half the time.";
     },
     examples: [
-      {name: "slowest, shortest legs", values: {d1: 5, v1: 10, d2: 5, v2: 10}},
-      {name: "longest, fastest legs", values: {d1: 150, v1: 120, d2: 150, v2: 120}},
+      {name: "there at 60, back at 30", values: {d1: 60, v1: 60, d2: 60, v2: 30}},
+      {name: "slow leg short, fast leg long (average above the mean)", values: {d1: 10, v1: 20, d2: 150, v2: 100}},
       {name: "a short fast leg and a long slow one", values: {d1: 5, v1: 120, d2: 150, v2: 10}},
       {name: "equal times: mean of speeds works", values: {d1: 30, v1: 30, d2: 90, v2: 90}}
     ],
-    size: [400, 290],
+    size: [400, 310],
     draw: function (api, v) {
       var c = api.color, k = calc(v);
       var ts = nice(k.t * 1.1 / 5), ds = nice(k.d * 1.1 / 5), T = Math.ceil(k.t * 1.08 / ts) * ts, D = Math.ceil(k.d * 1.12 / ds) * ds;
-      var pl = api.plane({x: [0, T], y: [0, D], box: [52, 28, 330, 222], equal: false, grid: false, ticks: false, labels: false});
+      var pl = api.plane({x: [0, T], y: [0, D], box: [52, 28, 330, 216], equal: false, grid: false, ticks: false, labels: false});
       var O = pl.px([0, 0]), J = pl.px([k.t1, v.d1]), F = pl.px([k.t, k.d]), top = pl.y(D);
       // ticks, leaving room for the finish's own t and d marked on the axes in amber
       for (var x = ts; x <= T + 1e-9; x += ts) {
@@ -69,7 +69,11 @@
         if (ex[1] <= top + 1) {
           var fits = ex[0] + 6 + mlab.length * 6.8 < 392;
           api.label([ex[0] + (fits ? 6 : -6), top + 10], mlab, {color: c.muted, size: 12, anchor: fits ? "start" : "end"});
-        } else api.label([ex[0] - 4, ex[1] - 10], mlab, {color: c.muted, size: 12, anchor: "end"});
+        } else if (k.avg < k.mean) api.label([ex[0] - 4, ex[1] - 10], mlab, {color: c.muted, size: 12, anchor: "end"});
+        else {   // the finish is above the line here, so the label goes under the line, low enough to clear its slope
+          var w = mlab.length * 6.8, sl = (O[1] - ex[1]) / (ex[0] - O[0]);
+          api.label([ex[0] - 4, ex[1] + sl * (w + 4) + 10], mlab, {color: c.muted, size: 12, anchor: "end"});
+        }
       }
       // the average: the chord from start to finish, labelled on the side away from the two legs
       api.line(O, F, {color: c.c3, width: 2.5, dash: "8 5"});
@@ -80,11 +84,11 @@
       var dx = F[0] - O[0], dy = F[1] - O[1], L = Math.hypot(dx, dy), side = v.v1 >= v.v2 ? 1 : -1;   // 1: legs above the chord
       var am = [O[0] + dx * 0.56 - side * dy / L * 16, O[1] + dy * 0.56 + side * dx / L * 16];
       api.label(am, "average " + api.fmt(k.avg) + " km/h", {color: c.c3, size: 13, weight: 700, anchor: side > 0 ? "start" : "end"});
-      // the legs' speeds and times, keyed by colour just under the finish line's height
-      var ky = F[1] + 18;
+      // the legs' speeds and times, keyed by colour below the plot (left of the time-axis title), clear of every line
+      var ky = O[1] + 32;
       [[c.c1, "leg 1: " + api.fmt(v.v1) + " km/h for " + h(k.t1) + " h"], [c.c2, "leg 2: " + api.fmt(v.v2) + " km/h for " + h(k.t2) + " h"]].forEach(function (row, i) {
-        api.line([O[0] + 10, ky + i * 17], [O[0] + 26, ky + i * 17], {color: row[0], width: 4});
-        api.label([O[0] + 32, ky + i * 17], row[1], {color: row[0], size: 12.5, weight: 650});
+        api.line([O[0], ky + i * 17], [O[0] + 16, ky + i * 17], {color: row[0], width: 4});
+        api.label([O[0] + 22, ky + i * 17], row[1], {color: row[0], size: 12.5, weight: 650});
       });
     }
   });

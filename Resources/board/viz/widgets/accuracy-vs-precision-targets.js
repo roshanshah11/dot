@@ -13,7 +13,7 @@
     var s = Math.sqrt(ss / (n - 1));
     return RAW.map(function (p) { return [(p[0] - mx) / s, (p[1] - my) / s]; });
   })();
-  var OFFSET = [1.8, 1.2], SPREAD = {small: 0.5, large: 1.5};   // cm
+  var OFFSET = [1.8, 1.2], SPREAD = {small: 0.8, large: 1.5};   // cm; small is wide enough for its circle to show past the hits
   function calc(v) {
     var off = v.meanPosition === "offset" ? OFFSET : [0, 0], sp = SPREAD[v.measurementSpread];
     var hits = UNIT.map(function (u) { return [off[0] + sp * u[0], off[1] + sp * u[1]]; }), n = hits.length;
@@ -38,42 +38,47 @@
     },
     status: function (v) {
       var k = calc(v), b = r2(k.bias) + " cm", s = r2(k.s) + " cm";
-      if (k.accurate && k.precise) return "<b>Accurate and precise</b>: the hits group within " + s + " and their mean sits on the bullseye.";
-      if (k.accurate) return "<b>Accurate, not precise</b>: single shots stray (spread " + s + "), but their mean still lands on the bullseye.";
-      if (k.precise) return "<b>Precise, not accurate</b>: the shots agree within " + s + " yet all miss by <b>" + b + "</b>, a systematic error averaging cannot remove.";
-      return "<b>Neither</b>: the shots scatter by " + s + " and their mean misses by <b>" + b + "</b>.";
+      // s is an RMS distance: about half the hits lie farther than s from their mean, so never say "within s"
+      if (k.accurate && k.precise) return "<b>Accurate and precise</b>: the hits scatter about " + s + " (RMS) from their own mean, and that mean sits on the bullseye.";
+      if (k.accurate) return "<b>Accurate, not precise</b>: single shots stray about " + s + " (RMS) from their mean, but that mean still lands on the bullseye.";
+      if (k.precise) return "<b>Precise, not accurate</b>: the hits scatter about " + s + " (RMS) from their own mean, yet their mean misses by <b>" + b + "</b>, a systematic error averaging cannot remove.";
+      return "<b>Neither</b>: the hits scatter about " + s + " (RMS) from their own mean, and that mean misses by <b>" + b + "</b>.";
     },
     examples: [
-      {name: "meanPosition: offset", values: {meanPosition: "offset"}},
-      {name: "measurementSpread: large", values: {measurementSpread: "large"}},
+      {name: "precise, not accurate", values: {meanPosition: "offset"}},
+      {name: "accurate, not precise", values: {measurementSpread: "large"}},
       {name: "neither accurate nor precise", values: {meanPosition: "offset", measurementSpread: "large"}}
     ],
     size: [400, 280],
     draw: function (api, v) {
-      var c = api.color, k = calc(v), cx = 118, cy = 136, u = 26, R = 4;
+      // 36 px per cm and three 1 cm rings: the farthest hit (offset, large spread) stays left of the meters
+      var c = api.color, k = calc(v), cx = 122, cy = 146, u = 36, R = 3;
       var P = function (q) { return [cx + q[0] * u, cy - q[1] * u]; };
-      // the target: four rings, 1 cm apart
       for (var r = R; r >= 1; r--) api.circle([cx, cy], r * u, {fill: r % 2 ? "none" : c.grid, fillOpacity: 1, stroke: c.faint, width: 1});
-      api.circle([cx, cy], 5, {fill: c.muted});
-      api.label([cx, cy + R * u + 15], "bullseye = true value", {color: c.muted, size: 12, anchor: "middle"});
+      api.circle([cx, cy], 4, {fill: c.muted});
+      api.label([cx, cy + R * u + 14], "bullseye = true value", {color: c.muted, size: 12, anchor: "middle"});
       api.label([6, 16], "rings 1 cm apart", {color: c.muted, size: 12});
-      // spread: a circle of radius s around the hits' mean, with one radius drawn and named
+      // the hits first, so the spread circle, its radius and the mean's X stay visible on top of them
+      var hp = k.hits.map(P);
+      hp.forEach(function (h) { api.circle(h, 3, {fill: c.ink, stroke: c.card, width: 1}); });
+      // spread: a circle of radius s (RMS distance) around the hits' mean, with one radius drawn and named
       var M = P(k.mean), rs = k.s * u, e = [M[0] + rs * 0.707, M[1] + rs * 0.707];
-      api.circle(M, rs, {stroke: c.c2, width: 2, dash: "5 4", fill: c.c2, fillOpacity: 0.07});
+      api.circle(M, rs, {stroke: c.c2, width: 2, dash: "5 4", fill: c.c2, fillOpacity: 0.06});
       api.line(M, e, {color: c.c2, width: 2});
       api.label([e[0] + 7, e[1] + 8], "s", {color: c.c2, size: 14, weight: 700});
-      // the hits
-      k.hits.forEach(function (h) { api.circle(P(h), 4, {fill: c.ink, stroke: c.card, width: 1.2}); });
-      // bias: bullseye to the mean of the hits, labelled at whichever spot beside the arrow is clearest of the hits
+      // bias: bullseye to the mean of the hits, labelled at whichever spot beside the arrow is clearest of the hits,
+      // the dashed spread circle, the s label and the bullseye
       if (k.bias > 1e-9) {
         var dx = M[0] - cx, dy = M[1] - cy, L = Math.hypot(dx, dy);
         api.arrow([cx, cy], M, {color: c.c3, width: 2.5});
-        var best = null, hp = k.hits.map(P);
-        [0.3, 0.45, 0.6].forEach(function (t) { [-1, 1].forEach(function (sd) {
-          var q = [cx + dx * t - sd * dy / L * 17, cy + dy * t + sd * dx / L * 17];
-          var clear = Math.min.apply(null, hp.map(function (h) { return Math.hypot((h[0] - q[0]) / 1.6, h[1] - q[1]); }));
+        var obst = hp.concat([[e[0] + 7, e[1] + 8], [cx, cy]]);
+        for (var a = 0; a < 32; a++) obst.push([M[0] + rs * Math.cos(a * Math.PI / 16), M[1] + rs * Math.sin(a * Math.PI / 16)]);
+        var best = null;
+        [0.2, 0.35, 0.5, 0.65].forEach(function (t) { [-1, 1].forEach(function (sd) { [16, 24].forEach(function (off) {
+          var q = [cx + dx * t - sd * dy / L * off, cy + dy * t + sd * dx / L * off];
+          var clear = Math.min.apply(null, obst.map(function (h) { return Math.hypot((h[0] - q[0]) / 1.6, h[1] - q[1]); }));
           if (!best || clear > best.clear) best = {q: q, clear: clear};
-        }); });
+        }); }); });
         api.label(best.q, "bias", {color: c.c3, size: 13, weight: 650, anchor: "middle"});
       }
       api.line([M[0] - 6, M[1] - 6], [M[0] + 6, M[1] + 6], {color: c.c3, width: 3});
@@ -84,7 +89,7 @@
         api.label([bx, y], title, {color: c.ink, size: 13, weight: 650});
         api.label([bx, y + 20], name + " " + r2(val) + " cm", {color: color, size: 13, weight: 650});
         api.rect(bx, y + 33, bw, 9, {fill: c.grid, rx: 4});
-        api.rect(bx, y + 33, Math.max(3, Math.min(bw, val * sc)), 9, {fill: color, rx: 4});
+        if (val > 1e-9) api.rect(bx, y + 33, Math.max(3, Math.min(bw, val * sc)), 9, {fill: color, rx: 4});   // nothing at 0
         api.label([bx, y + 58], (good ? "\u2713 " + goodWord : "\u2717 " + badWord), {color: good ? c.ink : color, size: 13, weight: 650});
         api.label([bx, y + 76], meaning, {color: c.muted, size: 12});
       }

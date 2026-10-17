@@ -61,23 +61,26 @@
         }
       }
       if (s === 1) {
-        var O = [92, 132];
-        plasmid(O, 52, {gap: one ? [-47, -33] : [-52, -28]});
-        arc(O, 52, -72, one ? -47 : -52, c.c2, 7); arc(O, 52, one ? -33 : -28, -8, c.c2, 7);
-        api.label([O[0] + 66 * Math.cos(-40 * D2R), O[1] + 66 * Math.sin(-40 * D2R)], "cut", {color: c.c5, size: 12, weight: 650, anchor: "middle"});
+        var O = [92, 132], gap = one ? [-50, -30] : [-52, -28];
+        plasmid(O, 52, {gap: gap});
+        arc(O, 52, -72, gap[0], c.c2, 7); arc(O, 52, gap[1], -8, c.c2, 7);
+        gap.forEach(function (a) { api.line([O[0] + 45 * Math.cos(a * D2R), O[1] + 45 * Math.sin(a * D2R)], [O[0] + 59 * Math.cos(a * D2R), O[1] + 59 * Math.sin(a * D2R)], {color: c.c5, width: 2}); });   // the cut ends
+        var rc = one ? 68 : 66;
+        api.label([O[0] + rc * Math.cos(-40 * D2R), O[1] + rc * Math.sin(-40 * D2R)], "cut", {color: c.c5, size: 12, weight: 650, anchor: "middle"});
         api.label([O[0], O[1]], "plasmid", {color: c.c1, size: 12, anchor: "middle"});
         api.label([O[0] + 30, O[1] - 84], one ? "cut with EcoRI" : "cut with EcoRI + BamHI", {color: c.ink, size: 12, weight: 650, anchor: "middle"});
-        if (!one) { arc(O, 80, -52, -28, c.c2, 5); api.label([O[0] + 84, O[1] - 52], "piece removed", {color: c.muted, size: 12}); }
-        // the gene in its source DNA, cut out
-        api.line([214, 96], [386, 96], {color: c.faint, width: 6});
-        api.rect(254, 89, 92, 14, {rx: 3, fill: c.c3});
-        api.label([300, 74], "gene", {color: c.c3, size: 12.5, weight: 650, anchor: "middle"});
-        api.label([250, 116], "EcoRI", {color: c.ink, size: 12, anchor: "middle"}); api.label([350, 116], one ? "EcoRI" : "BamHI", {color: c.ink, size: 12, anchor: "middle"});
-        api.rect(254, 160, 92, 14, {rx: 3, fill: c.c3});
-        api.line([300, 126], [300, 150], {color: c.muted, width: 1.4, arrow: true});
-        api.label([248, 190], "AATT", {color: c.c3, size: 12, weight: 650, anchor: "middle"});
-        api.label([352, 190], one ? "AATT" : "GATC", {color: c.c3, size: 12, weight: 650, anchor: "middle"});
-        api.label([300, 214], one ? "both ends alike" : "two different ends", {color: c.ink, size: 12, anchor: "middle"});
+        if (!one) { arc(O, 80, -52, -28, c.c2, 5); api.label([O[0] + 76, O[1] - 46], "piece removed", {color: c.muted, size: 12}); }
+        // the gene in its source DNA, cut out (set lower and further right so the removed piece's label has room)
+        var gy = 16;
+        api.line([226, 96 + gy], [390, 96 + gy], {color: c.faint, width: 6});
+        api.rect(262, 89 + gy, 92, 14, {rx: 3, fill: c.c3});
+        api.label([308, 74 + gy], "gene", {color: c.c3, size: 12.5, weight: 650, anchor: "middle"});
+        api.label([258, 116 + gy], "EcoRI", {color: c.ink, size: 12, anchor: "middle"}); api.label([358, 116 + gy], one ? "EcoRI" : "BamHI", {color: c.ink, size: 12, anchor: "middle"});
+        api.rect(262, 160 + gy, 92, 14, {rx: 3, fill: c.c3});
+        api.line([308, 126 + gy], [308, 150 + gy], {color: c.muted, width: 1.4, arrow: true});
+        api.label([256, 190 + gy], "AATT", {color: c.c3, size: 12, weight: 650, anchor: "middle"});
+        api.label([360, 190 + gy], one ? "AATT" : "GATC", {color: c.c3, size: 12, weight: 650, anchor: "middle"});
+        api.label([308, 214 + gy], one ? "both ends alike" : "two different ends", {color: c.ink, size: 12, anchor: "middle"});
       }
       if (s === 2) {
         var items = one ? [[[80, 128], "fwd", "gene →"], [[200, 128], "rev", "gene ← (backwards)"], [[320, 128], null, "empty, re-closed"]] :
@@ -88,7 +91,7 @@
         });
         if (!one) {
           var Q = [290, 128];
-          arc(Q, 40, -20, 300, c.c1, 5);
+          arc(Q, 40, -28, 308, c.c1, 5); arc(Q, 40, 110, 170, c.c5, 5); arc(Q, 40, 288, 308, c.c2, 5); arc(Q, 40, -28, -8, c.c2, 5);   // same vector, still open
           api.label([Q[0] + 24, Q[1] - 44], "✕", {color: c.c5, size: 15, weight: 700, anchor: "middle"});
           api.label([Q[0], Q[1] + 62], "empty can't close", {color: c.c5, size: 12, weight: 650, anchor: "middle"});
           api.label([Q[0], Q[1] + 80], "AATT ≠ GATC", {color: c.c5, size: 12, anchor: "middle"});
@@ -125,12 +128,21 @@
         api.rect(30, 90, 34, 110, {rx: 12, stroke: c.muted, width: 1.6, fill: c.c4, fillOpacity: 0.12});
         api.label([47, 216], "culture", {color: c.muted, size: 12, anchor: "middle"});
         api.arrow([74, 145], [104, 145], {color: c.muted, width: 2, halo: false});
-        var checks = one ? [[[176, 140], "fwd", "right way: about 1/2", c.c4], [[300, 140], "rev", "backwards: about 1/2", c.c5]] : [[[220, 140], "fwd", "right way: every clone", c.c4]];
+        var checks = one ? [[[160, 140], "fwd", "forward ≈ ½", c.c4], [[320, 140], "rev", "backward ≈ ½", c.c5]] : [[[220, 140], "fwd", "forward: every clone", c.c4]];
         checks.forEach(function (it) {
           plasmid(it[0], 40, {gene: it[1], small: true});
           api.label([it[0][0], it[0][1] + 62], it[2], {color: it[3], size: 12, weight: 650, anchor: "middle"});
         });
         api.label([200, 40], "plasmid prep, then sequence the gene", {color: c.ink, size: 12.5, weight: 600, anchor: "middle"});
+      }
+      if (s === 2 || s === 3 || s === 5) {   // key for the plasmid's colored segments (named on the plasmid itself in step 1)
+        var kx = 64;
+        [[c.c1, "plasmid"], [c.c5, "ampR"], [c.c2, "lacZα"], [c.c3, "gene"]].forEach(function (k) {
+          api.line([kx, 274], [kx + 16, 274], {color: k[0], width: 5});
+          var t = api.label([kx + 22, 274], k[1], {color: k[0], size: 12}), tw = 0;
+          try { tw = t.getComputedTextLength(); } catch (e) {}
+          kx += 22 + (tw || k[1].length * 6.8) + 16;
+        });
       }
       api.root.querySelectorAll("text").forEach(function (t) { var f = t.getAttribute("fill"); if (f) t.style.fill = f; });   // viz.css paints text ink
     }

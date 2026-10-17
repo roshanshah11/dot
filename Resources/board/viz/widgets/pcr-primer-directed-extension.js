@@ -31,7 +31,7 @@
     },
     status: function (v) {
       var m = model(v), k = v.added, n = L - PL;
-      if (m.stall) return "The forward primer's 3′ base (" + m.fwdPrimer[PL - 1] + ") does not pair with " + BOT[PL - 1] + ", so Taq, which cannot remove it, <b>barely extends</b> that primer, while the reverse primer has gained " + k + " nt.";
+      if (m.stall) return "The forward primer's 3′ base (" + m.fwdPrimer[PL - 1] + ") does not pair with " + BOT[PL - 1] + ", so Taq, which cannot remove it, <b>cannot extend</b> that primer at all, while the reverse primer has gained " + k + " nt.";
       if (m.tail) return "The 5′ tail " + TAIL + " (an EcoRI site) pairs with nothing, but extension only needs a paired 3′ end, so the copy grows to <b>" + m.len + " nt</b> and carries the site.";
       if (k === 0) return "Both primers have annealed antiparallel to the 3′ end of their template; polymerase can add bases only to each primer's free <b>3′-OH</b>.";
       if (k === n) return "Done: each new strand runs from its primer's 5′ end to the end of the template (<b>" + L + " nt</b>), so every copy starts exactly at a primer.";
@@ -62,8 +62,8 @@
       bases(TOP, 0, yT, c.c1); bases(BOT, 0, yB, c.c2);
       api.label([X(0) - 14, yT - 13], "5′", {color: c.c1, size: 12, anchor: "end"}); api.label([X(L - 1) + 14, yT - 13], "3′", {color: c.c1, size: 12});
       api.label([X(0) - 14, yB + 13], "3′", {color: c.c2, size: 12, anchor: "end"}); api.label([X(L - 1) + 14, yB + 13], "5′", {color: c.c2, size: 12});
-      api.label([X(0) - 14, yT + 12], "template", {color: c.c1, size: 12, anchor: "end"});
-      api.label([X(0) - 14, yB - 12], "template", {color: c.c2, size: 12, anchor: "end"});
+      api.label([X(0) - 6, yT - 28], "template", {color: c.c1, size: 12});   // outside the backbones, where the pills never reach
+      api.label([X(0) - 6, yB + 28], "template", {color: c.c2, size: 12});
       // reverse primer: pairs with the top strand's 3' end, grows leftward
       var r0 = L - PL - m.rAdd;
       bases(BOT.slice(L - PL), L - PL, yR, c.c4);
@@ -72,7 +72,7 @@
       api.line([X(r0) - 6, yR + 13], [X(L - 1) + 6, yR + 13], {color: c.c3, width: 3});
       api.line([X(L - PL) - 6, yR + 13], [X(L - 1) + 6, yR + 13], {color: c.c4, width: 3});
       api.label([X(L - 1) + 14, yR + 13], "5′", {color: c.c4, size: 12});
-      api.label([X(L - 1) + 4, yR + 28], "reverse primer", {color: c.c4, size: 12, anchor: "end"});
+      api.label([X(L - 1) + 4, yR + 28], "reverse primer", {color: c.c4, size: 12, anchor: "end"});   // below the pill's reach (yR + 17)
       // forward primer: pairs with the bottom strand's 3' end, grows rightward
       var f1 = PL + m.fAdd;
       bases(m.fwdPrimer, 0, yF, c.c4, {colorAt: function (j) { return m.stall && j === PL - 1 ? c.c5 : c.c4; }});
@@ -88,22 +88,24 @@
         api.label([X(0) - 2, yF - 98], "5′ tail: EcoRI site", {color: c.c6, size: 12, weight: 650, anchor: "middle"});
       } else api.label([X(0) - 14, yF - 13], "5′", {color: c.c4, size: 12, anchor: "end"});
       if (m.stall) api.label([X(PL - 1), yF + 12], "✕", {color: c.c5, size: 12, weight: 700, anchor: "middle"});
-      // polymerase at each growing 3' end, with the next dNTP waiting
-      function pol(i, y, dir, next) {
-        api.rect(X(i) - 16 + dir * 12, y - 30, 34, 60, {rx: 16, fill: c.c6, fillOpacity: 0.16, stroke: c.c6, width: 1.3});
-        if (next) api.label([X(i + dir), y], next, {color: c.c3, size: 12.5, weight: 700, anchor: "middle", opacity: 0.5});
+      // polymerase: a small pill on the new strand's side of its growing 3' end, holding the next dNTP; it never
+      // reaches the template row. The 3' label and a short growth arrow sit just past it on the backbone row.
+      function pol(last, y, dir, next) {   // last = index of the newest base, y = the new strand's letter row
+        var xn = X(last + dir), x0 = dir > 0 ? xn - 9 : xn - 15, yb = y + (dir > 0 ? -13 : 13);   // edges stay in the gaps between letters
+        api.rect(x0, y + (dir > 0 ? -14 : -10), 24, 24, {rx: 9, fill: c.c6, fillOpacity: 0.16, stroke: c.c6, width: 1.3});
+        api.label([xn, y], next, {color: c.c3, size: 12.5, weight: 700, anchor: "middle", opacity: 0.5});
+        var xe = dir > 0 ? x0 + 28 : x0 - 4;
+        if (dir > 0 && xe + 16 > api.w) { api.label([xn + 3, y - 27], "3′", {color: c.c3, size: 12, weight: 650, anchor: "middle"}); return; }   // no room past the pill
+        api.label([xe, yb], "3′", {color: c.c3, size: 12, weight: 650, anchor: dir > 0 ? "start" : "end"});
+        if (xe + dir * 32 > 4 && xe + dir * 32 < api.w - 4) api.arrow([xe + dir * 14, yb], [xe + dir * 32, yb], {color: c.c3, width: 2, head: 8, halo: false});
       }
-      if (r0 > 0) pol(r0, (yT + yR) / 2 + 12, -1, BOT[r0 - 1]);
-      api.label([X(r0) - 14, yR + 13], "3′", {color: c.c3, size: 12, weight: 650, anchor: "end"});
-      if (!m.stall && f1 < L) pol(f1 - 1, (yF + yB) / 2 - 12, 1, TOP[f1]);
+      if (r0 > 0) pol(r0, yR, -1, BOT[r0 - 1]);
+      else api.label([X(r0) - 14, yR + 13], "3′", {color: c.c3, size: 12, weight: 650, anchor: "end"});
       if (m.stall) api.label([X(PL - 1) + 14, yF - 13], "3′ stalled", {color: c.c5, size: 12, weight: 650});
+      else if (f1 < L) pol(f1 - 1, yF, 1, TOP[f1]);
       else api.label([X(f1 - 1) + 14, yF - 13], "3′", {color: c.c3, size: 12, weight: 650});
-      // direction of synthesis
-      api.arrow([X(14), 114], [X(6), 114], {color: c.c3, width: 2.5, halo: false});
-      api.arrow([X(6), 154], [X(14), 154], {color: c.c3, width: 2.5, halo: false});
-      api.label([X(14) + 10, 114], "grows 5′→3′", {color: c.c3, size: 12});
-      api.label([X(14) + 10, 154], "grows 5′→3′", {color: c.c3, size: 12});
-      api.label([X(10), 134], "polymerase adds only at a 3′ end", {color: c.c6, size: 12, anchor: "middle"});
+      api.label([X(10), 122], "polymerase adds only at a 3′ end,", {color: c.c6, size: 12, anchor: "middle"});
+      api.label([X(10), 140], "so each new strand grows 5′ → 3′", {color: c.c3, size: 12, anchor: "middle"});
       api.label([200, 280], "primers shortened to 6 nt; real ones are about 20", {color: c.muted, size: 12, anchor: "middle"});
       api.root.querySelectorAll("text").forEach(function (t) { var f = t.getAttribute("fill"); if (f) t.style.fill = f; });   // viz.css paints text ink
     }

@@ -179,6 +179,9 @@ enum TrackSelfTest {
     }
 
     private static func scroll(steps: Int, by pixels: Int32, at point: CGPoint, each: () -> Void) async {
+        // WebKit routes wheel events by the last mouse move it saw; a warp moves the pointer without one
+        if let move = CGEvent(mouseEventSource: nil, mouseType: .mouseMoved, mouseCursorPosition: point, mouseButton: .left) { move.post(tap: .cghidEventTap) }
+        try? await Task.sleep(nanoseconds: 60_000_000)
         for _ in 0..<steps {
             if let e = CGEvent(scrollWheelEvent2Source: nil, units: .pixel, wheelCount: 1, wheel1: pixels, wheel2: 0, wheel3: 0) {
                 e.location = point
@@ -218,6 +221,8 @@ enum TrackSelfTest {
         if let title {
             let axApp = AXUIElementCreateApplication(pid)
             for w in windows(of: axApp) where self.title(of: w).contains(title) { AXUIElementPerformAction(w, kAXRaiseAction as CFString) }
+            // an accessory app's activate() request can be ignored; making it frontmost through AX is not
+            AXUIElementSetAttributeValue(axApp, kAXFrontmostAttribute as CFString, kCFBooleanTrue)
             NSRunningApplication(processIdentifier: pid)?.activate()
         }
         guard let list = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]] else { return nil }

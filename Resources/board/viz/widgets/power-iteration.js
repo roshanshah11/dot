@@ -49,7 +49,7 @@
       var o = run(v);
       if (o.zero) return "A = 0 sends every vector to 0, so there is nothing to find.";
       if (o.scalar) return "A = " + Viz.fmt(o.a) + "I: every vector is an eigenvector, so x never moves and xᵀAx = <b>" + Viz.fmt(o.big, 3) + "</b> at once.";
-      if (o.dead != null && o.dead < v.k) return "x" + "₀₁₂₃₄₅₆₇₈₉"[o.dead] + " lies in the null space, so A x = 0 and the method <b>breaks down</b>.";
+      if (o.dead != null && o.dead <= v.k) return "x" + "₀₁₂₃₄₅₆₇₈₉"[o.dead] + " lies in the null space, so A x = 0 and the method <b>breaks down</b>.";
       if (o.tie) return "λ = ±" + Viz.fmt(Math.abs(o.big)) + " tie in size: there is <b>no dominant eigenvalue</b>, so x keeps bouncing between two directions.";
       if (o.c1 < 1e-9) return "x₀ has no component along v₁, so every iterate stays on v₂'s line: power iteration needs a start with some v₁ in it.";
       var ratio = Math.abs(o.small / o.big), head = "After " + o.kk + " step" + (o.kk === 1 ? "" : "s") + " x is <b>" + Viz.fmt(o.ang[o.kk], 2) + "°</b> from v₁";

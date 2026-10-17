@@ -41,7 +41,7 @@
       var m = model(v), s = v.step || 1;
       if (s === 1) return "σ reads the −35 and −10 boxes, " + m.t + " of 12 consensus bases, " + v.sp + " bp apart" + (m.off ? "" : " (ideal)") + ": " + m.fit + ".";
       if (s === 2) return "The open complex: polymerase melts about 13 bp from −11 to +2, the AT-rich −10 box opening first, so the template strand is exposed.";
-      if (s === 3) return "RNA starts at <b>+1</b>, copying the template strand 5′ → 3′; the first short RNAs are often released and restarted.";
+      if (s === 3) return "RNA starts at <b>+1</b>, built 5′ → 3′ while polymerase reads the template 3′ → 5′; the first short RNAs are often released and restarted.";
       return "After about 10 nucleotides <b>σ lets go</b> and the core enzyme leaves the promoter, free for the next polymerase to bind.";
     },
     examples: [
@@ -53,28 +53,33 @@
     draw: function (api, v) {
       var c = api.color, m = model(v), s = v.step || 1, X = function (p) { return 296 + 5.4 * p; }, yT = 136, yB = 148;
       var a35 = -13 - v.sp - 5, a10 = -12;   // first position of each box
-      // RNA polymerase: core (blue) with σ (purple) on the promoter; at step 4 the core has moved on and σ is free
-      var core = s < 4 ? [X(-52), X(18)] : [X(-1), 394], bub = s < 4 ? [-11, 2] : [5, 15];
-      api.rect(core[0], 70, core[1] - core[0], 92, {rx: 34, fill: c.c2, fillOpacity: 0.16, stroke: c.c2, width: 1.4});
+      // RNA polymerase: core (blue) with σ (purple) on the promoter, inset so the strand-end labels sit outside it; at
+      // step 4 the core has moved downstream (still inside the figure) and σ is free. The bubble grows downstream as RNA starts.
+      var core = s < 4 ? [X(-49), 70, X(16), 162] : [X(2.5), 96, X(16.5), 166], bub = s === 4 ? [5, 15] : s === 3 ? [-11, 8] : [-11, 2];
+      api.rect(core[0], core[1], core[2] - core[0], core[3] - core[1], {rx: s < 4 ? 34 : 26, fill: c.c2, fillOpacity: 0.16, stroke: c.c2, width: 1.4});
       if (s < 4) api.label([X(5), 86], "RNA polymerase", {color: c.c2, size: 12, weight: 650, anchor: "middle"});
       var sig = s < 4 ? [X(a35) - 6, 102, X(a10 + 6) - X(a35) + 12, 22] : [24, 16, 64, 22];
       api.rect(sig[0], sig[1], sig[2], sig[3], {rx: 11, fill: c.c6, fillOpacity: 0.3, stroke: c.c6, width: 1.6});
       api.label([sig[0] + sig[2] / 2, sig[1] + 11], s < 4 ? "σ" : "σ released", {color: c.ink, size: 12.5, weight: 700, anchor: "middle"});
-      if (s < 4) {   // contacts: thicker for a better match, dashed when the spacing twists the -35 box away
-        [[a35 + 3, v.m35, m.off > 0], [a10 + 3, v.m10, false]].forEach(function (q) {
-          api.line([X(q[0]), 124], [X(q[0]), yT - 5], {color: c.c6, width: 1 + q[1] * 0.6, dash: q[2] || q[1] < 3 ? "3 3" : null});
+      if (s < 4) {   // contacts: thicker for a better match. Above each box a dial shows which way that box faces around the
+        // helix: the -10 box faces σ, and every bp of spacing away from 17 swings the -35 box 34° away from it.
+        var tilt = (v.sp - 17) * 34.3 * Math.PI / 180;
+        [[a35 + 3, v.m35, tilt], [a10 + 3, v.m10, 0]].forEach(function (q) {
+          var cx = X(q[0]), col = q[2] ? c.c5 : c.c4;
+          api.line([cx, 124], [cx, yT - 5], {color: c.c6, width: 1 + q[1] * 0.6, dash: q[1] < 3 ? "3 3" : null});
+          api.circle([cx, 88], 8, {stroke: c.muted, width: 1.2});
+          api.line([cx, 88], [cx + 7 * Math.sin(q[2]), 88 + 7 * Math.cos(q[2])], {color: col, width: 2.4});   // down = toward σ and the DNA
         });
-        if (m.off) api.label([X(a35) - 8, 94], "twisted " + m.deg + "°", {color: c.c5, size: 12, weight: 650, anchor: "end"});
+        api.label([X(a35 + 3) + 13, 88], m.off ? "twisted " + m.deg + "°" : "faces σ", {color: m.off ? c.c5 : c.c4, size: 12, weight: 650});
       }
       // DNA: top = non-template (coding) strand 5'->3', bottom = template; a bubble where it is open
       var open = s >= 2, top = [], bot = [];
-      for (var p = -53; p <= 17; p += 0.5) {
-        var bump = open && p > bub[0] - 1 && p < bub[1] + 1 ? Math.sin(Math.PI * (p - bub[0] + 1) / (bub[1] - bub[0] + 2)) * 12 : 0;
-        top.push([X(p), yT - bump]); bot.push([X(p), yB + bump]);
-      }
+      function bump(p) { return open && p > bub[0] - 1 && p < bub[1] + 1 ? Math.sin(Math.PI * (p - bub[0] + 1) / (bub[1] - bub[0] + 2)) * 12 : 0; }
+      function onTemplate(p0, p1) { var q = []; for (var p = p0; p >= p1; p -= 0.5) q.push([X(p), yB + bump(p) - 4]); return q; }   // RNA paired just inside the template
+      for (var p = -53; p <= 17; p += 0.5) { top.push([X(p), yT - bump(p)]); bot.push([X(p), yB + bump(p)]); }
       api.polyline(top, {stroke: c.ink, width: 2.4}); api.polyline(bot, {stroke: c.muted, width: 2.4});
       api.label([X(-53) - 4, yT - 10], "5′", {color: c.ink, size: 12}); api.label([X(-53) - 4, yB + 10], "3′", {color: c.muted, size: 12});
-      api.label([X(17) + 6, yB + 12], "template", {color: c.muted, size: 12, anchor: "end"});
+      api.label([X(-53) - 4, yB + 26], "template", {color: c.muted, size: 12});   // below the 3' end, outside the polymerase
       // the two boxes, their sequences (mismatches in red) and the spacer
       [[a35, m.b35, "−35", v.m35], [a10, m.b10, "−10", v.m10]].forEach(function (q) {
         var x0 = X(q[0]), w = 6 * 5.4, cx = x0 + w / 2;
@@ -92,11 +97,12 @@
       api.line([X(1), yB + 14], [X(1), yB + 22], {color: c.c1, width: 1.5});
       api.label([X(1), 180], "+1", {color: c.c1, size: 12, weight: 650, anchor: "middle"});
       if (s === 2) api.label([X(-4.5), 58], "open: −11 to +2", {color: c.ink, size: 12, anchor: "middle"});
-      if (s === 3) { api.line([X(1), yB + 2], [X(7), yB + 2], {color: c.c1, width: 4}); api.label([X(10), 58], "first RNA", {color: c.c1, size: 12, weight: 650, anchor: "middle"}); api.line([X(8), 64], [X(5), yB - 6], {color: c.c1, width: 1.2, arrow: true}); }
-      if (s === 4) {
-        api.polyline([[X(18), yB + 2], [X(12), yB + 2], [X(8), 116], [X(2), 86], [X(-6), 62], [X(-16), 50]], {stroke: c.c1, width: 3});
-        api.label([X(-16) - 6, 50], "5′ RNA", {color: c.c1, size: 12, weight: 650, anchor: "end"});
-        api.arrow([300, 40], [350, 40], {color: c.c2, width: 2.5, halo: false, label: "core polymerase moves on", labelAt: "mid", labelOffset: [0, -14], labelSize: 12});
+      if (s === 3) { api.polyline(onTemplate(7, 1), {stroke: c.c1, width: 4}); api.label([X(3.5), 178], "first RNA", {color: c.c1, size: 12, weight: 650}); }
+      if (s === 4) {   // about 15 nt of RNA: its 3' end paired in the bubble, its 5' end leaving the core's upstream side
+        api.polyline(onTemplate(13, 8).concat([[X(1), 114]]), {stroke: c.c1, width: 3});
+        api.label([X(1) - 5, 109], "5′ RNA", {color: c.c1, size: 12, weight: 650, anchor: "end"});
+        api.label([X(11.5), 108], "core", {color: c.c2, size: 12, weight: 650, anchor: "middle"});
+        api.arrow([X(5), 80], [X(15), 80], {color: c.c2, width: 2.5, halo: false, label: "core polymerase moves on", labelAt: "mid", labelOffset: [0, -14], labelSize: 12});
       }
       api.label([200, 238], "consensus  TTGACA · 17 bp · TATAAT", {color: c.muted, size: 12, anchor: "middle"});
       api.root.querySelectorAll("text").forEach(function (t) { var f = t.getAttribute("fill"); if (f) t.style.fill = f; });   // viz.css paints text ink

@@ -1,8 +1,8 @@
 {
  "counts": {
   "fail": 0,
-  "pass": 84,
-  "total": 84
+  "pass": 132,
+  "total": 132
  },
  "widgets": {
   "absorption-variable-costing-inventory-profit": {
@@ -30,7 +30,7 @@
    "title": "Accrual vs cash accounting"
   },
   "accuracy-vs-precision-targets": {
-   "checked": "2026-10-17T04:09:03",
+   "checked": "2026-10-17T04:39:58",
    "failures": [],
    "shows": "Move the mean and widen the spread: accuracy is how far the average lands from the bullseye, precision is how tightly the shots group",
    "status": "pass",
@@ -46,7 +46,7 @@
    "title": "Angular frequency and period"
   },
   "anova-decomposition": {
-   "checked": "2026-10-17T04:09:03",
+   "checked": "2026-10-17T04:39:58",
    "failures": [],
    "shows": "Drag any point: each value's gap from the grand mean splits into a between-group part and a within-group part, and F weighs one against the other",
    "status": "pass",
@@ -94,7 +94,7 @@
    "title": "The arithmetic mean"
   },
   "autocorrelation": {
-   "checked": "2026-10-17T04:09:03",
+   "checked": "2026-10-17T04:39:58",
    "failures": [],
    "shows": "Pick a pattern and a lag: r_k correlates the series with itself k steps later, and the correlogram shows it for every lag",
    "status": "pass",
@@ -102,7 +102,7 @@
    "title": "Autocorrelation and the correlogram"
   },
   "average-speed-distance-time": {
-   "checked": "2026-10-17T04:09:03",
+   "checked": "2026-10-17T04:39:58",
    "failures": [],
    "shows": "Set two legs of a trip: the average speed is the slope of the start-to-finish chord, total distance over total time, not the mean of the two speeds",
    "status": "pass",
@@ -206,7 +206,7 @@
    "title": "Column space"
   },
   "compound-interest": {
-   "checked": "2026-10-17T02:33:22",
+   "checked": "2026-10-17T04:31:46",
    "failures": [],
    "shows": "Slide the rate and the number of periods: the balance grows by 1 + r each period, and the amber interest on interest is what makes the curve bend upward",
    "status": "pass",
@@ -293,6 +293,118 @@
    "subject": "biology",
    "title": "Antiparallel strands: which way a new strand grows"
   },
+  "dna-replication-five-prime-to-three-prime-synthesis": {
+   "checked": "2026-10-17T04:25:08",
+   "failures": [],
+   "shows": "Step through one nucleotide being added: the strand's 3\u2032-OH attacks the incoming dNTP's \u03b1-phosphate, pyrophosphate leaves, and the chain ends in a new 3\u2032-OH, so it can only grow 5\u2032 to 3\u2032",
+   "status": "pass",
+   "subject": "biology",
+   "title": "Why a DNA strand grows 5\u2032 to 3\u2032"
+  },
+  "dna-replication-fork": {
+   "checked": "2026-10-17T04:25:08",
+   "failures": [],
+   "shows": "Slide time: the fork unzips the parent duplex and leaves two daughter duplexes behind it, each one old strand plus one new, the leading copy in one piece and the lagging copy in Okazaki fragments",
+   "status": "pass",
+   "subject": "biology",
+   "title": "The replication fork"
+  },
+  "dna-replication-fork-architecture": {
+   "checked": "2026-10-17T04:25:08",
+   "failures": [],
+   "shows": "Step through the machines at a replication fork (helicase, SSB, topoisomerase, primase, clamp and loader, two polymerases) and switch between E. coli and human names",
+   "status": "pass",
+   "subject": "biology",
+   "title": "The replisome: who does what at the fork"
+  },
+  "dna-replication-lagging-okazaki-fragments": {
+   "checked": "2026-10-17T04:25:08",
+   "failures": [],
+   "shows": "Slide the stretch copied and the fragment length: the lagging strand is built backward from the fork in Okazaki fragments, one primer each, and every join leaves a nick to seal",
+   "status": "pass",
+   "subject": "biology",
+   "title": "Okazaki fragments on the lagging strand"
+  },
+  "dna-replication-leading-lagging-strand-comparison": {
+   "checked": "2026-10-17T04:25:08",
+   "failures": [],
+   "shows": "Slide time at one fork: the leading strand grows in one piece right behind the helicase, while the lagging strand starts later, trails by one Okazaki fragment and stays in pieces",
+   "status": "pass",
+   "subject": "biology",
+   "title": "Leading and lagging strands compared"
+  },
+  "dna-replication-leading-strand-synthesis": {
+   "checked": "2026-10-17T04:25:08",
+   "failures": [],
+   "shows": "Slide time and toggle the sliding clamp: the leading strand follows the fork in one continuous piece from one primer, and the clamp is what keeps the polymerase on for the whole run",
+   "status": "pass",
+   "subject": "biology",
+   "title": "Leading strand: one primer, one continuous run"
+  },
+  "dna-replication-okazaki-fragment-joining": {
+   "checked": "2026-10-17T04:25:08",
+   "failures": [],
+   "shows": "Step through how two Okazaki fragments become one strand: the RNA primer between them is removed and replaced with DNA, leaving a nick that DNA ligase seals; switch between E. coli and human enzymes",
+   "status": "pass",
+   "subject": "biology",
+   "title": "Joining Okazaki fragments"
+  },
+  "dna-replication-origin-bidirectional-forks": {
+   "checked": "2026-10-17T04:25:08",
+   "failures": [],
+   "shows": "Slide time on the E. coli chromosome: two forks leave oriC in opposite directions and meet at ter in about 38 minutes, half the time one fork would take; the bubble shows each fork's leading and lagging strand",
+   "status": "pass",
+   "subject": "biology",
+   "title": "One origin, two forks"
+  },
+  "dna-replication-polymerase-proofreading": {
+   "checked": "2026-10-17T04:19:30",
+   "failures": [],
+   "shows": "Step through a wrong base going in and the 3\u2032\u21925\u2032 exonuclease clipping it off; switch proofreading and mismatch repair off to see errors per genome copy jump",
+   "status": "pass",
+   "subject": "biology",
+   "title": "Proofreading: how DNA polymerase fixes its own mistakes"
+  },
+  "dna-replication-rna-primer-initiation": {
+   "checked": "2026-10-17T04:19:30",
+   "failures": [],
+   "shows": "Step through why polymerase needs a primer: primase lays RNA with a free 3\u2032-OH, polymerase extends it, and the RNA is later swapped for DNA; slide the length copied to count primers",
+   "status": "pass",
+   "subject": "biology",
+   "title": "RNA primers: how DNA replication gets started"
+  },
+  "dna-replication-semiconservative-inheritance": {
+   "checked": "2026-10-17T04:19:30",
+   "failures": [],
+   "shows": "Move heavy-labeled DNA into light medium for n generations: each model of copying predicts different bands in a density gradient, and only semiconservative matches what was seen",
+   "status": "pass",
+   "subject": "biology",
+   "title": "Semiconservative replication: the Meselson\u2013Stahl result"
+  },
+  "dna-replication-versus-transcription-products": {
+   "checked": "2026-10-17T04:19:30",
+   "failures": [],
+   "shows": "The same DNA, copied two ways: replication turns both strands of the whole molecule into two duplexes; transcription turns one strand of one gene into as many RNAs as the cell needs",
+   "status": "pass",
+   "subject": "biology",
+   "title": "Replication vs transcription: what each one makes"
+  },
+  "dna-template-rna-complementarity": {
+   "checked": "2026-10-17T04:19:30",
+   "failures": [],
+   "shows": "Pick the template bases: each calls for its partner ribonucleotide (A pairs with U, not T), a purine always faces a pyrimidine, and G\u2013C pairs add a third hydrogen bond",
+   "status": "pass",
+   "subject": "biology",
+   "title": "Template DNA and RNA: complementary base pairing"
+  },
+  "dna-transcription": {
+   "checked": "2026-10-17T04:19:30",
+   "failures": [],
+   "shows": "Step through one gene being transcribed in a bacterium or a eukaryote: polymerase finds the promoter, opens the DNA, builds RNA 5\u2032\u21923\u2032 off the template, and lets go at the end",
+   "status": "pass",
+   "subject": "biology",
+   "title": "Transcription: initiation, elongation, termination"
+  },
   "dot-product-angle": {
    "checked": "2026-10-17T02:32:52",
    "failures": [],
@@ -333,6 +445,22 @@
    "subject": "biology",
    "title": "Sandwich ELISA"
   },
+  "eukaryotic-enhancer-promoter-looping": {
+   "checked": "2026-10-17T04:19:30",
+   "failures": [],
+   "shows": "Move the enhancer near or far, upstream or downstream, and switch the activators or an insulator: the DNA loops so the enhancer touches the promoter through Mediator, unless nothing is bound or an insulator walls it off",
+   "status": "pass",
+   "subject": "biology",
+   "title": "Enhancers: DNA looping brings activators to the promoter"
+  },
+  "eukaryotic-gene-regulation": {
+   "checked": "2026-10-17T04:19:30",
+   "failures": [],
+   "shows": "Open or close the chromatin, bind an activator, add a microRNA or a degradation tag: each control point multiplies into how much mRNA and protein the cell ends up with",
+   "status": "pass",
+   "subject": "biology",
+   "title": "Eukaryotic gene regulation: control at every level"
+  },
   "ev-equity-bridge": {
    "checked": "2026-10-17T02:33:22",
    "failures": [],
@@ -365,6 +493,38 @@
    "subject": "finance",
    "title": "Futures hedge: locking in revenue"
   },
+  "gel-electrophoresis-apparatus": {
+   "checked": "2026-10-17T04:37:24",
+   "failures": [],
+   "shows": "Set the voltage, the run time and which lead goes where: DNA is negative, so with black at the wells it runs toward red, at a speed set by the field V/L",
+   "status": "pass",
+   "subject": "biology",
+   "title": "Gel electrophoresis: the setup"
+  },
+  "gel-electrophoresis-size-separation": {
+   "checked": "2026-10-17T04:37:24",
+   "failures": [],
+   "shows": "Change the agarose percentage and run time: the gel mesh holds big fragments back, so a denser gel separates small fragments and a looser one separates large ones",
+   "status": "pass",
+   "subject": "biology",
+   "title": "Gel electrophoresis: separating by size"
+  },
+  "gene-coding-template-strand-orientation": {
+   "checked": "2026-10-17T04:11:19",
+   "failures": [],
+   "shows": "Pick a gene and slide transcription along it: the gene's direction decides the template, the strand that runs 3' to 5' the way RNA polymerase moves",
+   "status": "pass",
+   "subject": "biology",
+   "title": "Which strand is the template?"
+  },
+  "gene-expression-regulation": {
+   "checked": "2026-10-17T04:37:24",
+   "failures": [],
+   "shows": "Open or close the chromatin, add an activator and change the mRNA and protein half-lives: each stage multiplies how much protein the cell holds",
+   "status": "pass",
+   "subject": "biology",
+   "title": "Gene expression: control at every stage"
+  },
   "kernel-image": {
    "checked": "2026-10-17T01:48:09",
    "failures": [],
@@ -373,6 +533,62 @@
    "subject": "linear-algebra",
    "title": "Kernel and image of a linear map"
   },
+  "kinematics-velocity": {
+   "checked": "2026-10-17T04:35:19",
+   "failures": [],
+   "shows": "Slide v_i, a and t: the velocity line starts at v_i, climbs by a every second, and after t seconds has gained a\u00b7t",
+   "status": "pass",
+   "subject": "physics",
+   "title": "Velocity under constant acceleration"
+  },
+  "kinematics-velocity-squared": {
+   "checked": "2026-10-17T04:35:19",
+   "failures": [],
+   "shows": "Slide v_i, a and \u0394x: speed squared behaves like area, so 2a\u0394x adds (or cuts) a strip and the new square's side is v_f",
+   "status": "pass",
+   "subject": "physics",
+   "title": "Speed squared over a distance"
+  },
+  "kinetic-and-potential-energy": {
+   "checked": "2026-10-17T04:35:19",
+   "failures": [],
+   "shows": "Drop the ball and step down: potential energy mgh drains into kinetic energy \u00bdmv\u00b2 while their total stays mgh\u2080",
+   "status": "pass",
+   "subject": "physics",
+   "title": "Potential energy into kinetic energy"
+  },
+  "kinetic-energy": {
+   "checked": "2026-10-17T04:35:19",
+   "failures": [],
+   "shows": "Slide the mass and the velocity: KE = \u00bdmv\u00b2 grows with the square of the speed, and the direction of motion doesn't matter",
+   "status": "pass",
+   "subject": "physics",
+   "title": "Kinetic energy"
+  },
+  "lac-operon": {
+   "checked": "2026-10-17T04:11:19",
+   "failures": [],
+   "shows": "Toggle glucose and lactose: lactose takes the repressor off the operator, low glucose lets CAP-cAMP help RNA polymerase, and only lactose without glucose turns the genes fully on",
+   "status": "pass",
+   "subject": "biology",
+   "title": "The lac operon: lactose and glucose"
+  },
+  "lac-operon-catabolite-activation": {
+   "checked": "2026-10-17T04:11:19",
+   "failures": [],
+   "shows": "Toggle glucose, the strain and added cAMP: low glucose raises cAMP, CAP-cAMP binds beside the lac promoter and helps RNA polymerase start about 50 times more often",
+   "status": "pass",
+   "subject": "biology",
+   "title": "lac operon: CAP and cAMP"
+  },
+  "lac-operon-inducer-repression-switch": {
+   "checked": "2026-10-17T04:37:24",
+   "failures": [],
+   "shows": "Raise the inducer (IPTG): it binds the lac repressor, which lets go of the operator, and expression climbs a steep S-curve; lacI\u207b and O\u1d9c stay on, lacI\u02e2 never turns on",
+   "status": "pass",
+   "subject": "biology",
+   "title": "lac repressor: the inducer switch"
+  },
   "lbo-returns": {
    "checked": "2026-10-17T02:33:22",
    "failures": [],
@@ -380,6 +596,22 @@
    "status": "pass",
    "subject": "finance",
    "title": "LBO returns: IRR and MOIC"
+  },
+  "least-square-regression": {
+   "checked": "2026-10-17T04:35:19",
+   "failures": [],
+   "shows": "Move the trial line: each residual becomes a square, and the least squares line is the one with the smallest total area",
+   "status": "pass",
+   "subject": "stats",
+   "title": "Least squares regression line"
+  },
+  "likelihood-function": {
+   "checked": "2026-10-17T04:35:19",
+   "failures": [],
+   "shows": "Set the successes and trials: the likelihood p^k(1\u2212p)^(n\u2212k) peaks at p\u0302 = k/n and narrows as the trials grow",
+   "status": "pass",
+   "subject": "stats",
+   "title": "Likelihood of a success probability"
   },
   "linear-combination": {
    "checked": "2026-10-17T03:35:57",
@@ -396,6 +628,22 @@
    "status": "pass",
    "subject": "linear-algebra",
    "title": "Span and linear independence"
+  },
+  "logistic-regression": {
+   "checked": "2026-10-17T04:35:19",
+   "failures": [],
+   "shows": "Slide \u03b2\u2080 and \u03b2\u2081: the log-odds \u03b2\u2080 + \u03b2\u2081x is a straight line, and the logistic function bends it into a probability between 0 and 1",
+   "status": "pass",
+   "subject": "stats",
+   "title": "Logistic regression curve"
+  },
+  "mass-spring-shm": {
+   "checked": "2026-10-17T04:35:19",
+   "failures": [],
+   "shows": "Slide the mass, stiffness and amplitude: the period T = 2\u03c0\u221a(m/k) depends on m and k only, never on how far it swings",
+   "status": "pass",
+   "subject": "physics",
+   "title": "Mass on a spring: simple harmonic motion"
   },
   "matrix-inverse-2d": {
    "checked": "2026-10-17T02:32:52",
@@ -429,8 +677,16 @@
    "subject": "linear-algebra",
    "title": "A matrix as a map of the plane"
   },
+  "mrna-codon-amino-acid-sequence": {
+   "checked": "2026-10-17T04:11:19",
+   "failures": [],
+   "shows": "Change one base or shift the reading frame: the mRNA is read three bases at a time from AUG, each codon names an amino acid, and a stop codon ends the chain",
+   "status": "pass",
+   "subject": "biology",
+   "title": "Reading an mRNA: codons to amino acids"
+  },
   "mrna-translation": {
-   "checked": "2026-10-17T03:49:27",
+   "checked": "2026-10-17T04:34:14",
    "failures": [],
    "shows": "Step the ribosome along the mRNA: tRNAs pair with each codon, the chain moves onto the newest amino acid, and a stop codon ends it; try a one-base mutation",
    "status": "pass",
@@ -454,7 +710,7 @@
    "title": "PCR: one cycle, then doubling"
   },
   "pcr-exponential-dna-amplification": {
-   "checked": "2026-10-17T03:49:27",
+   "checked": "2026-10-17T04:34:14",
    "failures": [],
    "shows": "Slide the cycles, the efficiency and the starting copies: the copies grow as N0(1 + E)^n, a hockey stick on a linear axis and a straight line on a log axis",
    "status": "pass",
@@ -462,7 +718,7 @@
    "title": "PCR: exponential amplification"
   },
   "pcr-primer-directed-extension": {
-   "checked": "2026-10-17T03:49:27",
+   "checked": "2026-10-17T04:34:14",
    "failures": [],
    "shows": "Slide the extension: polymerase adds bases only to each primer's 3\u2032 end, pairing with the template; give the forward primer a 3\u2032 mismatch or a 5\u2032 tail to see why only the 3\u2032 end must pair",
    "status": "pass",
@@ -470,7 +726,7 @@
    "title": "PCR: primers direct the extension"
   },
   "pcr-temperature-cycle-overview": {
-   "checked": "2026-10-17T03:49:27",
+   "checked": "2026-10-17T04:34:14",
    "failures": [],
    "shows": "Step through a full PCR run on the thermocycler; slide the annealing temperature against the primers' Tm, the product length (which sets the extension time) and the cycles",
    "status": "pass",
@@ -486,7 +742,7 @@
    "title": "Sticky ends and ligation"
   },
   "power-iteration": {
-   "checked": "2026-10-17T03:35:57",
+   "checked": "2026-10-17T04:31:46",
    "failures": [],
    "shows": "Step k up and drag the start x\u2080: multiplying by A and rescaling pulls x onto the dominant eigendirection, faster when |\u03bb\u2082/\u03bb\u2081| is small",
    "status": "pass",
@@ -502,7 +758,7 @@
    "title": "Present value: discounting a future cash flow"
   },
   "prokaryotic-operon-architecture": {
-   "checked": "2026-10-17T03:49:27",
+   "checked": "2026-10-17T04:34:14",
    "failures": [],
    "shows": "Switch between the lac and trp operons and add or remove the small molecule: one promoter and operator switch several genes on together as one mRNA",
    "status": "pass",
@@ -510,7 +766,7 @@
    "title": "Operon architecture: lac and trp"
   },
   "promoter-rna-polymerase-initiation": {
-   "checked": "2026-10-17T03:49:27",
+   "checked": "2026-10-17T04:34:14",
    "failures": [],
    "shows": "Set how well the -35 and -10 boxes match consensus and the spacer between them, then step through binding, DNA opening, the first RNA and \u03c3 letting go",
    "status": "pass",
@@ -542,12 +798,68 @@
    "title": "Rates up, bond prices down"
   },
   "recombinant-dna-plasmid-workflow": {
-   "checked": "2026-10-17T03:49:27",
+   "checked": "2026-10-17T04:34:14",
    "failures": [],
    "shows": "Step through digest, ligation, transformation, selection and screening; compare cutting with one enzyme against two",
    "status": "pass",
    "subject": "biology",
    "title": "Cloning a gene into a plasmid"
+  },
+  "restriction-digest-gel-band-patterns": {
+   "checked": "2026-10-17T04:34:48",
+   "failures": [],
+   "shows": "Choose a digest and drag the second BamHI site: n cuts in a circle give n fragments that add up to the plasmid, and each fragment becomes a band by size",
+   "status": "pass",
+   "subject": "biology",
+   "title": "Restriction digest: reading the gel bands"
+  },
+  "restriction-enzyme-map": {
+   "checked": "2026-10-17T04:09:36",
+   "failures": [],
+   "shows": "Pick enzymes and the topology: each site is a cut at a fixed bp position; a circle gives as many fragments as cuts, linear DNA one more, and they always add up to the whole",
+   "status": "pass",
+   "subject": "biology",
+   "title": "Restriction map: sites and fragments"
+  },
+  "restriction-enzyme-recognition-sites": {
+   "checked": "2026-10-17T04:09:36",
+   "failures": [],
+   "shows": "Pick an enzyme: it finds its own short palindrome on both strands, and the shorter the site, the more often it turns up (about once every 4^n bp)",
+   "status": "pass",
+   "subject": "biology",
+   "title": "Restriction enzyme recognition sites"
+  },
+  "restriction-enzyme-sticky-end-cleavage": {
+   "checked": "2026-10-17T04:09:36",
+   "failures": [],
+   "shows": "Step through binding, cutting, separating and ligating: staggered cuts leave matching single-stranded overhangs (sticky ends); a straight cut leaves blunt ends",
+   "status": "pass",
+   "subject": "biology",
+   "title": "Sticky ends: how a restriction enzyme cuts"
+  },
+  "ribosome-a-p-e-sites": {
+   "checked": "2026-10-17T04:09:36",
+   "failures": [],
+   "shows": "Step one elongation cycle: a tRNA enters the A site, the chain jumps onto its amino acid, then translocation shifts every tRNA one site (A to P to E) and opens the A site again",
+   "status": "pass",
+   "subject": "biology",
+   "title": "The ribosome's A, P and E sites"
+  },
+  "rna-polymerase-template-directed-synthesis": {
+   "checked": "2026-10-17T04:09:36",
+   "failures": [],
+   "shows": "Step one addition: the template base picks the matching NTP, the RNA's 3\u2032-OH attacks its \u03b1 phosphate, and pyrophosphate leaves; slide n to move along the gene",
+   "status": "pass",
+   "subject": "biology",
+   "title": "RNA polymerase adds one nucleotide"
+  },
+  "rna-polymerase-template-strand-reading": {
+   "checked": "2026-10-17T04:34:48",
+   "failures": [],
+   "shows": "Flip the promoter to the other end: the polymerase travels the other way, so it reads the other strand 3\u2032\u21925\u2032, and the RNA always spells the coding strand with U for T",
+   "status": "pass",
+   "subject": "biology",
+   "title": "Which strand is the template?"
   },
   "row-reduction-stepper": {
    "checked": "2026-10-17T03:44:55",
@@ -636,6 +948,78 @@
    "status": "pass",
    "subject": "finance",
    "title": "One transaction through the three statements"
+  },
+  "transcription-and-rna-processing": {
+   "checked": "2026-10-17T04:34:48",
+   "failures": [],
+   "shows": "Step from gene to exported mRNA: the pre-mRNA copies exons and introns, gets a 5\u2032 cap and a poly(A) tail, and splicing cuts the introns out; slide the intron length",
+   "status": "pass",
+   "subject": "biology",
+   "title": "Transcription and RNA processing"
+  },
+  "transcription-elongation-rna-synthesis": {
+   "checked": "2026-10-17T04:21:02",
+   "failures": [],
+   "shows": "Slide the RNA's length: polymerase reads the template 3\u2032 to 5\u2032, adds each matching NTP to the 3\u2032 end and releases PPi; slide the speed to see how long a whole gene takes",
+   "status": "pass",
+   "subject": "biology",
+   "title": "Transcription elongation: RNA grows 5\u2032 to 3\u2032"
+  },
+  "transcription-factor-combinatorial-control": {
+   "checked": "2026-10-17T04:21:02",
+   "failures": [],
+   "shows": "Toggle three activators and a repressor: each gene's enhancer needs its own combination, so a handful of factors can switch many genes in different patterns",
+   "status": "pass",
+   "subject": "biology",
+   "title": "Combinatorial control by transcription factors"
+  },
+  "transcription-termination-rna-release": {
+   "checked": "2026-10-17T04:21:02",
+   "failures": [],
+   "shows": "Pick the mechanism and step through: a hairpin plus a U-tract, the Rho helicase, or poly(A) cleavage plus the Xrn2 torpedo frees the RNA; mutate the signal to see read-through",
+   "status": "pass",
+   "subject": "biology",
+   "title": "Transcription termination: releasing the RNA"
+  },
+  "transcription-unit-promoter-terminator": {
+   "checked": "2026-10-17T04:21:02",
+   "failures": [],
+   "shows": "Flip the gene's direction, change the spacer between the -35 and -10 boxes, and the RNA length: the promoter sets where and which way transcription runs, and which strand is the template",
+   "status": "pass",
+   "subject": "biology",
+   "title": "A transcription unit: promoter to terminator"
+  },
+  "translation": {
+   "checked": "2026-10-17T04:21:02",
+   "failures": [],
+   "shows": "Set the protein length, the ribosome speed and how often a ribosome starts: chains grow as ribosomes move 5\u2032 to 3\u2032, and the start rate sets how many ride the mRNA and how much protein it makes",
+   "status": "pass",
+   "subject": "biology",
+   "title": "Translation along an mRNA: the polysome"
+  },
+  "translation-elongation": {
+   "checked": "2026-10-17T04:21:02",
+   "failures": [],
+   "shows": "Step through one elongation cycle: EF-Tu brings a tRNA, a correct match triggers GTP hydrolysis, the chain moves onto the new amino acid and EF-G shifts the ribosome one codon; try a near-cognate tRNA to see it rejected",
+   "status": "pass",
+   "subject": "biology",
+   "title": "Translation elongation: one codon per cycle"
+  },
+  "translation-initiation": {
+   "checked": "2026-10-17T04:21:02",
+   "failures": [],
+   "shows": "Step through initiation in a bacterium (Shine-Dalgarno pairing) or a eukaryote (cap binding and scanning); weaken the start signal to see rare binding or leaky scanning",
+   "status": "pass",
+   "subject": "biology",
+   "title": "Translation initiation: finding the start codon"
+  },
+  "translation-termination": {
+   "checked": "2026-10-17T04:21:02",
+   "failures": [],
+   "shows": "Pick the stop codon and the cell, then step through: a release factor reads the stop codon, water cuts the finished chain off the tRNA and the ribosome comes apart",
+   "status": "pass",
+   "subject": "biology",
+   "title": "Translation termination: releasing the protein"
   },
   "trp-operon-corepressor-switch": {
    "checked": "2026-10-17T03:52:51",
