@@ -202,9 +202,14 @@ public enum HookDecision: Equatable {
             switch first {
             case "find": return !words.contains { ["-delete", "-exec", "-execdir", "-ok", "-okdir", "-fprint", "-fprint0", "-fprintf", "-fls"].contains($0) }
             case "sort": return !words.contains { $0 == "-o" || $0.hasPrefix("--output") }
+            // fd runs a command per hit, rg a preprocessor per file: either can write or delete.
+            case "fd": return !words.contains { ["-x", "-X", "--exec", "--exec-batch"].contains($0) || $0.hasPrefix("--exec") }
+            case "rg": return !words.contains { $0.hasPrefix("--pre") }
             case "git":
                 let sub = words.dropFirst().first { !$0.hasPrefix("-") } ?? ""
-                return lookingGitSubcommands.contains(sub) && !words.contains("--output")
+                // --output writes a file; -O / --open-files-in-pager runs a program on the hits.
+                return lookingGitSubcommands.contains(sub)
+                    && !words.contains { $0.hasPrefix("--output") || $0.hasPrefix("-O") || $0.hasPrefix("--open-files-in-pager") }
             default: return true
             }
         }

@@ -898,8 +898,8 @@ final class Talk {
             let resumed = resumeRoutines?(slug) ?? 0
             sayLocal(resumed > 0 ? "\(agentName(slug))'s routine is back on." : "\(agentName(slug)) has no paused routine.")
             return
-        case .askWhichCard(let answer):
-            pendingCardChoice = (answer, Date().addingTimeInterval(20))
+        case .askWhichCard:
+            pendingCardChoice = (text, Date().addingTimeInterval(20))
             sayLocal(AgentVoice.whichCard(hud.openConsents.map { (agent: $0.agent, act: $0.title) }))
             return
         case .morning(let yes, let adjust):
@@ -1344,7 +1344,7 @@ final class Talk {
     var focusedThread: (() -> String?)?
     var morningAnswer: ((Bool, String?) -> String?)?
     /// Several cards waited and his yes named none: his next words say which (VO-03).
-    private var pendingCardChoice: (answer: ConsentVoice.Answer, until: Date)?
+    private var pendingCardChoice: (said: String, until: Date)?
     /// The kind of session the turn in flight belongs to, for the cut-off note (VO-07).
     private var activeKind: SessionKind?
     /// The mode he named ("desk mode"); nil lets the detector decide (VI-03).
@@ -1410,7 +1410,10 @@ final class Talk {
             if Date() < pending.until,
                let slug = AgentVoice.cardAgent(in: text, among: hud.openConsents.map { (slug: $0.agentId, name: $0.agent) }) {
                 hud.bringConsentForward(agent: slug)
-                return .consentAnswer(pending.answer)
+                // His first words, judged against the card he picked: a guarded one still wants its act named.
+                guard let picked = hud.currentConsent else { return .dismiss }
+                let answer = ConsentVoice.interpret(pending.said, guarded: picked.guarded, card: picked.title + " " + picked.detail)
+                return .consentAnswer(answer == .none ? .needsExplicit : answer)
             }
         }
         // A card on show: "allow", "not now", "yes, send it" answer it (HeyClicky: "by voice too").
@@ -1440,7 +1443,10 @@ final class Talk {
             if answer != .none { return .consentAnswer(answer) }
         }
         // The morning card is up: "do it", "skip", "do it but ..." answer its first item (MB-07).
-        if hud.model.morning != nil, let reply = AgentVoice.morningAnswer(text) { return .morning(reply.yes, reply.adjust) }
+        // Not while a walkthrough, a lesson, board steps, a suggestion or a question of Dot's waits on his word.
+        let otherAsking = inWalkthrough || lessonCard != nil || board.hasHiddenSteps
+            || (pendingSuggestion.map { Date() < $0.1 } ?? false) || Date().timeIntervalSince(askedHimAt) < 45
+        if hud.model.morning != nil, !otherAsking, let reply = AgentVoice.morningAnswer(text) { return .morning(reply.yes, reply.adjust) }
         // He named an agent: tell it, stop it, or ask how it is doing (G2).
         if let match = AgentAddress.find(in: text, roster: addressBook) {
             switch match.intent {
@@ -1453,16 +1459,20 @@ final class Talk {
             case .resumeRoutine: return .resumeRoutine(match.slug)
             }
         }
-        // His Home thread for an agent is in front of him: his words are for that agent (VO-04).
-        if let slug = focusedThread?(), addressBook.contains(where: { $0.slug == slug }) { return .homeThread(slug) }
-        // "stop, do X instead" for the agent at work; "retry" for the one he last spoke to (VO-09, VO-06).
+        // "stop, do X instead" for the agent at work; "retry" for the one he spoke to in the last 15
+        // minutes, never into a turn still running. The agent whose Home thread is open comes first (VO-09, VO-06).
+        let focused = focusedThread?().flatMap { slug in addressBook.contains(where: { $0.slug == slug }) ? slug : nil }
+        let working = agents.runningAgents()
         if let instruction = AgentVoice.steer(text) {
-            let working = agents.runningAgents()
-            if let slug = working.first(where: { $0.slug == agents.lastAddressed })?.slug ?? (working.count == 1 ? working[0].slug : nil) {
-                return .steerAgent(slug, instruction)
-            }
+            let target = working.first(where: { $0.slug == focused })?.slug ?? working.first(where: { $0.slug == agents.lastAddressed })?.slug
+                ?? (working.count == 1 ? working[0].slug : nil)
+            if let target { return .steerAgent(target, instruction) }
         }
-        if AgentVoice.isRetry(text), let slug = agents.lastAddressed ?? agents.justReported(within: 900)?.slug { return .retryAgent(slug) }
+        if AgentVoice.isRetry(text) {
+            let idle = { (slug: String) in !working.contains(where: { $0.slug == slug }) }
+            let recent = Date().timeIntervalSince(agents.lastAddressedAt) < 900 ? agents.lastAddressed : nil
+            if let slug = [focused, recent, agents.justReported(within: 900)?.slug].compactMap({ $0 }).first(where: idle) { return .retryAgent(slug) }
+        }
         if AgentAddress.isProgressAsk(text), !agents.runningAgents().isEmpty || !hud.openConsents.isEmpty {
             return .agentStatus(nil)
         }
@@ -1489,6 +1499,9 @@ final class Talk {
             let spelled = (text as NSString).substring(with: match.range(at: 2)).replacingOccurrences(of: #"[\s\-.,]"#, with: "", options: .regularExpression)
             if spelled.count >= 2, spelled.count <= 40 { return .dictionary(heard: heard, correct: spelled) }
         }
+        // His Home thread for an agent is in front of him: what is left is for that agent (VO-04), after
+        // Dot's own commands above (stop, listen, close, a mode, the dictionary).
+        if let focused { return .homeThread(focused) }
         if let match = Self.findWords.firstMatch(in: text, range: range), DocumentReader.key(for: context) != nil {
             let query = (text as NSString).substring(with: match.range(at: 1))
             if !query.lowercased().contains("explain") { return .find(query) }

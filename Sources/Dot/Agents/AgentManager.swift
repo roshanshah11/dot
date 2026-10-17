@@ -60,7 +60,9 @@ final class AgentManager {
     /// What each working agent is doing now, for the orb (VI-04).
     private var activities: [String: AgentActivity] = [:]
     /// The agent he last spoke to by name or replied to: a follow-up with no name goes there (G2).
-    private(set) var lastAddressed: String?
+    private(set) var lastAddressed: String? { didSet { lastAddressedAt = Date() } }
+    /// When he last named or replied to an agent: "retry" reaches back only so far (review, 10/17).
+    private(set) var lastAddressedAt = Date.distantPast
     /// Set after init: Atlas's view of his day rides along with every brief.
     var atlas: AtlasBridge?
     /// Set after init: clears unrecognised shell commands that are plainly harmless.
@@ -250,7 +252,7 @@ final class AgentManager {
     func handoff(brief: String, agentName: String?, context: ScreenContext?, shots: [ScreenShot]?,
                  extraImages: [(data: Data, mediaType: String)] = [], note: String? = nil, routine: Bool = false, agent known: Agent? = nil) {
         let agent = known ?? ensureAgent(named: agentName ?? "Dot")
-        if known != nil || agentName != nil { lastAddressed = agent.slug }
+        if known != nil || agentName != nil, !routine { lastAddressed = agent.slug }
         let run: Run
         if let live = runs[agent.slug], live.session.isRunning, !live.isWorking {
             run = live
@@ -416,13 +418,17 @@ final class AgentManager {
             }
         case .result(let result):
             try? FileManager.default.setAttributes([.modificationDate: Date()], ofItemAtPath: agent.folder.appendingPathComponent(".dot/session-id").path)
+            saveHostSeq(run)
             if let steer = run.pendingSteer {
                 run.pendingSteer = nil
                 run.turnsOwed = 0
+                // A routine run he paused or redirected still reports back, or the scheduler waits on it forever.
+                if run.isRoutine { run.isRoutine = false; routineOutcome?(agent.slug, false, nil) }
                 appendTranscript(agent, role: "progress", text: steer.isEmpty ? "paused by him" : "stopped there; he changed course")
                 if steer.isEmpty {
                     hud.upsertAgent(run.row("paused; tell it what next", state: .done))
                     postActivity()
+                    scheduleIdleStop(run)
                     Log.info("agent[\(agent.slug)] paused by him; session kept")
                 } else {
                     Log.info("agent[\(agent.slug)] changed course: \(Log.short(steer))")
@@ -563,15 +569,7 @@ final class AgentManager {
         atlas?.refreshSoon()
         onRunFinished?(agent)
 
-        run.idleWork?.cancel()
-        let work = DispatchWorkItem { [weak self, weak run] in
-            guard let self, let run, !run.isWorking, !self.hud.hasConsent(agent: run.agent.slug) else { return }
-            run.session.stop()
-            if self.runs[run.agent.slug] === run { self.runs[run.agent.slug] = nil }
-            Log.info("agent[\(run.agent.slug)] idle, session closed")
-        }
-        run.idleWork = work
-        DispatchQueue.main.asyncAfter(deadline: .now() + Double(max(config.agentIdleMinutes, 1)) * 60, execute: work)
+        scheduleIdleStop(run)
         // A finished row stays two minutes, or as long as he has it open to read.
         DispatchQueue.main.asyncAfter(deadline: .now() + 120) { [weak self] in
             guard let self, self.runs[agent.slug]?.isWorking != true, self.hud.model.expanded != agent.slug else { return }
@@ -671,7 +669,8 @@ final class AgentManager {
             // copied instruction becomes a card naming it. Jev missing or slow changes nothing.
             let scratch = Sentinel.isScratchWrite(toolName: request.toolName, input: request.toolRequest.input,
                                                   scratchRoots: [run.agent.folder.path, NSTemporaryDirectory(), "/tmp", "/private/tmp"])
-            if let jev, Sentinel.judges(cls, behavior: behavior, decision: .allow, scratch: scratch) {
+            let allowed = guardKey.map { run.allowances.contains($0) } ?? false
+            if let jev, !allowed, Sentinel.judges(cls, behavior: behavior, decision: .allow, scratch: scratch) {
                 jev.sentinel(toolName: request.toolName, input: request.toolRequest.input) { [weak self] verdict in
                     guard let self else { completion(false, "Dot is gone."); return }
                     guard self.runs[run.agent.slug] === run, run.session.isRunning else { completion(false, "The task was stopped."); return }
@@ -1033,6 +1032,28 @@ final class AgentManager {
 
     /// One line for him on how an agent is doing (nil slug: every agent that is busy or waiting), from
     /// what Dot already knows: no turn for the agent, nothing spent (G2, "progress?").
+    /// An idle session closes after `agentIdleMinutes`; a new brief cancels it.
+    private func scheduleIdleStop(_ run: Run) {
+        run.idleWork?.cancel()
+        let work = DispatchWorkItem { [weak self, weak run] in
+            guard let self, let run, !run.isWorking, !self.hud.hasConsent(agent: run.agent.slug) else { return }
+            run.session.stop()
+            if self.runs[run.agent.slug] === run { self.runs[run.agent.slug] = nil }
+            Log.info("agent[\(run.agent.slug)] idle, session closed")
+        }
+        run.idleWork = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + Double(max(config.agentIdleMinutes, 1)) * 60, execute: work)
+    }
+
+    /// The agent host's last line seen, kept on every result so a crash (no clean quit) loses no turn (AG-12).
+    private func saveHostSeq(_ run: Run) {
+        guard run.session.isHosted else { return }
+        let saved: [String: Any] = ["seq": run.session.lastHostSeq, "savedAt": Date().timeIntervalSince1970]
+        if let data = try? JSONSerialization.data(withJSONObject: saved) {
+            try? data.write(to: run.agent.folder.appendingPathComponent(".dot/host.json"), options: .atomic)
+        }
+    }
+
     /// "retry" (VO-06): the agent's last brief again, told first to check what already happened.
     @discardableResult
     func retry(_ slug: String) -> Bool {

@@ -80,8 +80,10 @@ public extension AgentVoice {
             return (true, change)
         }
         let plain = said.trimmingCharacters(in: CharacterSet(charactersIn: ".!?,; "))
-        if AgentAddress.matches(#"^(?:yes,? |ok(?:ay)?,? |sure,? )?(?:do (?:it|that|that one|the first one)|go ahead|yes(?: please)?|sure|let'?s do (?:it|that))$"#, plain) { return (true, nil) }
-        if AgentAddress.matches(#"^(?:skip(?: it| that(?: one)?)?|not (?:that one|today|this one)|no(?:pe)?|next(?: one)?|pass)$"#, plain) { return (false, nil) }
+        // Only words that name the card's own moves: a bare "yes", "no" or "next" belongs to whatever
+        // else is going on (a lesson, a question of Dot's), and "no" would retire the brief for a week.
+        if AgentAddress.matches(#"^(?:yes,? |ok(?:ay)?,? |sure,? )?(?:do (?:it|that|that one|the first one)|let'?s do (?:it|that))(?: please)?$"#, plain) { return (true, nil) }
+        if AgentAddress.matches(#"^(?:skip(?: it| that(?: one)?| this one)?|not (?:that one|this one))$"#, plain) { return (false, nil) }
         return nil
     }
 }
