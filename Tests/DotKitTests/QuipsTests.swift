@@ -157,6 +157,28 @@ final class QuipsTests: XCTestCase {
         XCTAssertNotNil(pick(.deadlineToday, at("2026-10-18 13:00"), first.history))
     }
 
+    func testTheMischiefGuard() {
+        XCTAssertTrue(Quips.gatesOpen(secondsSinceKey: 30, onCall: false, busy: false, reduceMotion: false))
+        XCTAssertFalse(Quips.gatesOpen(secondsSinceKey: 1.9, onCall: false, busy: false, reduceMotion: false), "typing: a key in the last 2 s")
+        XCTAssertTrue(Quips.gatesOpen(secondsSinceKey: 2, onCall: false, busy: false, reduceMotion: false))
+        XCTAssertFalse(Quips.gatesOpen(secondsSinceKey: 30, onCall: true, busy: false, reduceMotion: false), "on a call")
+        XCTAssertFalse(Quips.gatesOpen(secondsSinceKey: 30, onCall: false, busy: true, reduceMotion: false), "talking, or recording")
+        XCTAssertFalse(Quips.gatesOpen(secondsSinceKey: 30, onCall: false, busy: false, reduceMotion: true), "reduce motion")
+    }
+
+    func testWhatAnAppSwitchQuipsAbout() {
+        let afternoon = at("2026-10-17 15:00")
+        XCTAssertEqual(Quips.atSwitch(now: afternoon, history: QuipHistory(), dueToday: false, repeated: false, calendar: calendar), [],
+                       "an ordinary switch gets no quip")
+        XCTAssertEqual(Quips.atSwitch(now: afternoon, history: QuipHistory(), dueToday: true, repeated: true, calendar: calendar),
+                       [.deadlineToday, .sameAppRepeat])
+        let morning = Quips.sawBreak(at: at("2026-10-17 08:00"), history: QuipHistory(), calendar: calendar)
+        XCTAssertEqual(Quips.atSwitch(now: at("2026-10-17 08:00"), history: morning, dueToday: true, repeated: false, calendar: calendar),
+                       [.morning, .deadlineToday], "the time of day comes first")
+        XCTAssertEqual(Quips.atSwitch(now: at("2026-10-18 01:30"), history: QuipHistory(), dueToday: false, repeated: true, calendar: calendar),
+                       [.lateNight, .sameAppRepeat])
+    }
+
     func testFifthSwitchToTheSameAppWithinTenMinutes() {
         var count = SwitchCount()
         let start = at("2026-10-17 14:00")

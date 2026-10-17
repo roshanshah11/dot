@@ -5,6 +5,7 @@ import Foundation
 /// The proactive beat: when he switches to something that touches a deadline or a commitment
 /// Atlas knows about, Dot says one quiet line beside the cursor. Jev decides whether the
 /// window relates to any item (a fraction of a cent, no Claude call); strict cooldowns keep it rare.
+/// A switch with nothing to say is a break, and may get a quip (docs/persona.md).
 @MainActor
 final class Noticer {
     private let config: DotConfig
@@ -16,6 +17,7 @@ final class Noticer {
     private var noticed: [String: BackOff.Seen] = [:]
     private var debounce: DispatchWorkItem?
     private var lastKey = ""
+    private var switches = SwitchCount()
 
     /// His `chattiness` (0 to 3) mapped onto the knobs below; each still needs its own setting on.
     private var chat: Chattiness { Chattiness(config.chattiness) }
@@ -40,7 +42,8 @@ final class Noticer {
         }
         // App switches carry the deadline notices (Jev) and the skill offers (a table, no Jev).
         let deadlineNotices = notices && jev != nil
-        guard deadlineNotices || offers else {
+        let quips = chat.quipCooldown != nil
+        guard deadlineNotices || offers || quips else {
             Log.info("noticer: off (\(chat.level == 0 ? "chattiness 0" : notices ? "no jev key" : "disabled in config"))")
             return
         }
@@ -49,28 +52,36 @@ final class Noticer {
                   app.processIdentifier != ProcessInfo.processInfo.processIdentifier else { return }
             Task { @MainActor in self?.appChanged(app) }
         }
-        Log.info("noticer: watching app switches\(deadlineNotices ? " against Atlas deadlines" : "")\(offers ? " for skill offers" : "") (chattiness \(chat.level))")
+        Log.info("noticer: watching app switches\(deadlineNotices ? " against Atlas deadlines" : "")\(offers ? " for skill offers" : "")\(quips ? " for quips" : "") (chattiness \(chat.level))")
     }
 
     private func appChanged(_ app: NSRunningApplication) {
+        // Counted as they happen, so flipping back and forth counts even inside the debounce.
+        let repeated = switches.switched(to: app.bundleIdentifier ?? app.localizedName ?? "?", at: Date())
         debounce?.cancel()
-        let work = DispatchWorkItem { [weak self] in self?.consider(app) }
+        let work = DispatchWorkItem { [weak self] in self?.consider(app, repeated: repeated) }
         debounce = work
         DispatchQueue.main.asyncAfter(deadline: .now() + 2.5, execute: work)
     }
 
-    private func consider(_ app: NSRunningApplication) {
+    private func consider(_ app: NSRunningApplication, repeated: Bool) {
         if config.quietOnCalls, CallPresence.isOnCall() { return }
         let context = AccessibilityContext.capture(maxElements: 0, timeBudget: 0.15)
         if offers, offerSkill(app: app, context: context) { return }
-        guard notices, let jev, let brief = atlas.brief else { return }
-        guard Date().timeIntervalSince(lastNoticeAt) > chat.cooldown(minutes: config.noticeCooldownMinutes) else { return }
+        // One line per switch: a deadline notice comes first; with none to give, the switch is a break.
+        notice(app: app, context: context) { [weak self] in self?.quipAtSwitch(repeated: repeated) }
+    }
+
+    /// A deadline notice for the window in front, or `otherwise` when there is none to give.
+    private func notice(app: NSRunningApplication, context: ScreenContext, otherwise: @escaping () -> Void) {
+        guard notices, let jev, let brief = atlas.brief,
+              Date().timeIntervalSince(lastNoticeAt) > chat.cooldown(minutes: config.noticeCooldownMinutes) else { return otherwise() }
         let items = Array((brief.deadlines(withinDays: 2) + brief.commitments.prefix(4)).prefix(8))
-        guard !items.isEmpty else { return }
+        guard !items.isEmpty else { return otherwise() }
         let title = context.windowTitle ?? ""
         let appID = app.bundleIdentifier ?? app.localizedName ?? "?"
         let key = "\(appID)|\(title.prefix(60))"
-        guard key != lastKey else { return }
+        guard key != lastKey else { return otherwise() }
         lastKey = key
         var criteria: [String: String] = ["none": "nothing on screen relates to these items"]
         for (index, item) in items.enumerated() { criteria["i\(index + 1)"] = String(item.prefix(220)) }
@@ -81,20 +92,82 @@ final class Noticer {
         jev.evaluate("notice", state: state, questions: [
             "item": .choice(instructions: "The user just switched to this app and window. Does it clearly relate to one of these deadlines or commitments (the same firm, form, course or person)? Pick that item, else none.", criteria: criteria),
         ]) { [weak self] answers in
-            guard let self, let choice = answers?["item"]?.choice, choice.choice != "none",
+            guard let self else { return }
+            guard let choice = answers?["item"]?.choice, choice.choice != "none",
                   choice.probability >= 0.7, choice.confidence >= 0.55,
-                  let index = Int(choice.choice.dropFirst()), items.indices.contains(index - 1) else { return }
+                  let index = Int(choice.choice.dropFirst()), items.indices.contains(index - 1) else { return otherwise() }
             let item = items[index - 1]
             // Not again until its due date or the app in front changes (persona-C7), and never within four hours.
             let (id, due) = BackOff.item(item)
             let here = BackOff.Context(due: due, app: appID)
-            guard BackOff.mayNotice(id, in: here, now: Date(), seen: self.noticed) else { return }
+            guard BackOff.mayNotice(id, in: here, now: Date(), seen: self.noticed) else { return otherwise() }
             self.noticed[id] = BackOff.Seen(context: here, at: Date())
             self.lastNoticeAt = Date()
             let line = Self.line(for: item)
             Log.info("notice: \(app.localizedName ?? "?") -> \(Log.short(item, 80))")
             self.overlay.greet(line, for: 9)
         }
+    }
+
+    // MARK: Quips (docs/persona.md)
+    // His call 2026-10-17: one cheeky line at a break, at most every 40 minutes, a bubble with no voice.
+    // The lines and every rule about which one are DotKit's Quips; this is where the gates live.
+
+    private static let quipKey = "dot.quips.history"
+    private var quipHistory: QuipHistory = Noticer.loadQuips() {
+        didSet {
+            guard quipHistory != oldValue, let data = try? JSONEncoder().encode(quipHistory) else { return }
+            UserDefaults.standard.set(data, forKey: Self.quipKey)
+        }
+    }
+
+    private static func loadQuips() -> QuipHistory {
+        guard let data = UserDefaults.standard.data(forKey: quipKey),
+              let history = try? JSONDecoder().decode(QuipHistory.self, from: data) else { return QuipHistory() }
+        return history
+    }
+
+    /// One quip at a break, through every gate: chattiness, not while he types (a key in the last two
+    /// seconds), on a call, while Talk is busy or something records, or with Reduce Motion on; then the
+    /// cooldown and the week without repeats (Quips.pick). A return from idle becomes "morning" or
+    /// "lateNight" when one is due. A bubble, never the voice. The animator side calls this for
+    /// backShort, backLong, petted, agentDone and agentFailed; app switches come in from here.
+    @discardableResult
+    func quip(_ situation: QuipSituation) -> Bool {
+        quip(among: { history in [Quips.refine(situation, now: Date(), history: history)] })
+    }
+
+    /// A switch with nothing to notice: the time of day, a deadline due today, or the fifth visit to
+    /// one app in ten minutes may each have a line, in that order.
+    private func quipAtSwitch(repeated: Bool) {
+        let dueToday = !(atlas.brief?.deadlines(withinDays: 0).isEmpty ?? true)
+        quip(among: { history in Quips.atSwitch(now: Date(), history: history, dueToday: dueToday, repeated: repeated) })
+    }
+
+    /// Notes the break (the morning's first sight counts even when nothing shows), then the first
+    /// situation with a line gets it.
+    @discardableResult
+    private func quip(among situations: (QuipHistory) -> [QuipSituation]) -> Bool {
+        let now = Date()
+        var history = Quips.sawBreak(at: now, history: quipHistory)
+        defer { quipHistory = history }
+        guard chat.quipCooldown != nil, quipGatesOpen else { return false }
+        for situation in situations(history) {
+            guard let pick = Quips.pick(situation, now: now, chattiness: chat.level, history: history) else { continue }
+            history = pick.history
+            Log.info("quip: \(situation.rawValue): \(pick.line)")
+            overlay.greet(pick.line, for: 6)
+            return true
+        }
+        return false
+    }
+
+    /// The mischief guard for quips (docs/alive.md, Phase 2 item 8), read from the system.
+    private var quipGatesOpen: Bool {
+        Quips.gatesOpen(secondsSinceKey: CGEventSource.secondsSinceLastEventType(.hidSystemState, eventType: .keyDown),
+                        onCall: config.quietOnCalls && CallPresence.isOnCall(),
+                        busy: !(canSpeakUp?() ?? true),
+                        reduceMotion: NSWorkspace.shared.accessibilityDisplayShouldReduceMotion)
     }
 
     // MARK: Suggestions in context
@@ -208,7 +281,7 @@ final class Noticer {
         Self.pending = offer
         DispatchQueue.main.asyncAfter(deadline: .now() + seconds) { [weak self] in
             guard let self, Self.pending == offer, self.canSpeakUp?() ?? true,
-                  CGEventSource.secondsSinceLastEventType(.hidSystemState, eventType: .keyDown) >= 2 else { return }
+                  CGEventSource.secondsSinceLastEventType(.hidSystemState, eventType: .keyDown) >= Quips.typingWindow else { return }
             self.overlay.greet("ok, later.", for: 2)
         }
         DispatchQueue.main.asyncAfter(deadline: .now() + BackOff.replyWindow + 1) {

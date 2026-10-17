@@ -74,6 +74,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         talk = Talk(config: config, hud: hud, overlay: overlay, speaker: speaker, transcriber: transcriber, agents: agents, ledger: ledger, atlas: atlas, jev: jev)
         noticer = Noticer(config: config, atlas: atlas, overlay: overlay, jev: jev)
         noticer.onSuggest = { [weak self] suggestion in Task { @MainActor in self?.talk.offerSuggestion(suggestion) } }
+        // Quips and an offer's "ok, later." wait while Dot is busy, a lecture is heard or Murmur records.
+        noticer.canSpeakUp = { [weak self] in
+            guard let self else { return false }
+            return self.talk.isIdle && !self.talk.lecture.isListening && !(self.murmur?.isRecording ?? false)
+        }
         hud.setPresence(config.notchPresence)
         applyRecordingVisibility()
         home = HomeWindowController(agents: agents, ledger: ledger, config: config, atlas: atlas)

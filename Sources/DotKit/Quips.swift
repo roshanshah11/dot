@@ -224,6 +224,21 @@ public enum Quips {
         return history.days[situation.rawValue] == day(now, calendar) ? nil : situation
     }
 
+    /// A key within this many seconds means he is typing.
+    public static let typingWindow: TimeInterval = 2
+
+    /// The mischief guard for quips (docs/alive.md, Phase 2 item 8): never while he types, on a call,
+    /// while Dot is busy or something records, or with Reduce Motion on.
+    public static func gatesOpen(secondsSinceKey: TimeInterval, onCall: Bool, busy: Bool, reduceMotion: Bool) -> Bool {
+        secondsSinceKey >= typingWindow && !onCall && !busy && !reduceMotion
+    }
+
+    /// What an app switch with nothing to notice may quip about, in order: the time of day, a deadline
+    /// due today, the fifth visit to one app in ten minutes. An ordinary switch gets none.
+    public static func atSwitch(now: Date, history: QuipHistory, dueToday: Bool, repeated: Bool, calendar: Calendar = .current) -> [QuipSituation] {
+        [timeOfDay(now: now, history: history, calendar: calendar), dueToday ? .deadlineToday : nil, repeated ? .sameAppRepeat : nil].compactMap { $0 }
+    }
+
     /// A return from idle takes the time of day when one is due ("morning" for the first sight);
     /// every other situation is about an event and stays as it is.
     public static func refine(_ situation: QuipSituation, now: Date, history: QuipHistory, calendar: Calendar = .current) -> QuipSituation {
