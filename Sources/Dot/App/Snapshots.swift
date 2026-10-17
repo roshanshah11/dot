@@ -93,6 +93,21 @@ enum Snapshots {
             ("agent-done", make { m in m.agents = [agentDone]; m.glow = true }),
             ("agent-open", make { m in m.agents = [agentDone]; m.expanded = "research-buddy" }),
             ("consent", make { m in m.consent = ConsentCard(agent: "mail buddy", title: "send an email to emily parker", detail: "outlook send: \"Re: Summer 2028 internship, availability\"", onAllow: {}, onDeny: {}) }),
+            // Round seven: two more questions wait behind the one on show; the asking agents' rows say "needs you".
+            ("consent-queued", make { m in
+                m.consent = ConsentCard(agentId: "email", agent: "Email", title: "use atlas: calendar delete", detail: "outward: delete the 4 pm hold on friday", guarded: true,
+                                        onAllow: {}, onDeny: {}, onAlways: {})
+                m.consentWaiting = 2
+                m.agents = [AgentRow(id: "email", name: "Email", line: "waiting for you: outward: delete the 4 pm hold on friday", state: .waiting, startedAt: Date().addingTimeInterval(-64)),
+                            AgentRow(id: "physics", name: "Physics", line: "waiting for you: run a command", state: .waiting, startedAt: Date().addingTimeInterval(-30))]
+            }),
+            // Round seven: a turn a restart cut short, with the way back in.
+            ("agent-interrupted", make { m in
+                m.agents = [AgentRow(id: "dot", name: "Dot", line: "interrupted when Dot closed", state: .failed,
+                                     result: "Dot closed while Dot was working on: go through my gmail and trash the marketing mail\n\nIts conversation is saved; continue picks it up where it stopped.",
+                                     nextAction: "continue where you left off")]
+                m.expanded = "dot"
+            }),
             ("walkthrough", make { m in m.agents = [AgentRow(id: "walkthrough", name: "walkthrough", line: "step 3: click schedule", state: .running, kind: .walkthrough, steps: ["clicked displays", "clicked night shift"], canStop: true, startedAt: Date().addingTimeInterval(-40))] }),
         ]
     }

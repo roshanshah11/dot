@@ -14,6 +14,8 @@ public enum StreamEvent: Equatable {
     case controlResponse(requestId: String?, subtype: String)
     case result(ResultInfo)
     case rateLimit(status: String, resetsAt: Double?, kind: String?)
+    /// How many background tasks (helpers, long shell commands) the session has open now.
+    case backgroundTasks(count: Int)
     case other(type: String)
 }
 
@@ -80,6 +82,12 @@ public enum StreamJSON {
             let subtype = object["subtype"] as? String ?? ""
             if subtype == "init" {
                 return .systemInit(sessionId: object["session_id"] as? String ?? "", model: object["model"] as? String)
+            }
+            if subtype == "background_tasks_changed" {
+                // Ambient entries (watchers the runtime keeps on its own) are not work the agent is doing;
+                // the runtime's schema says hosts leave them out of "background work is running".
+                let tasks = (object["tasks"] as? [[String: Any]]) ?? []
+                return .backgroundTasks(count: tasks.filter { ($0["ambient"] as? Bool) != true }.count)
             }
             return .systemStatus
         case "stream_event":

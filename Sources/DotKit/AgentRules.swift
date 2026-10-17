@@ -117,10 +117,14 @@ public struct AgentRules: Codable, Equatable, Sendable {
     // MARK: Which class a tool call falls in
 
     static let systemWords = try! NSRegularExpression(pattern: #"(^|[\s;&|(])(sudo|brew\s+(install|uninstall|upgrade|services|tap)|pip3?\s+install|npm\s+(i|install)\s+-g|gem\s+install|defaults\s+write|launchctl|tccutil|csrutil|spctl|chsh|dscl|systemsetup|networksetup|softwareupdate|xcode-select\s+--install|killall)\b"#)
-    static let outwardCommandWords = try! NSRegularExpression(pattern: #"(^|[\s;&|(])(git\s+push|gh\s+(pr\s+create|pr\s+merge|release\s+create|issue\s+create|repo\s+(create|delete))|npm\s+publish|vercel(\s+deploy|\s+--prod|\s*$)|imsg\s+send|gmail\s+send|outlook\s+send|sendmail|rm\s+-rf?\s+(~|/|\$HOME))\b|curl\s[^\n]*(-X\s*(POST|PUT|DELETE|PATCH)|--data|-d\s)"#, options: [.caseInsensitive])
-    static let outwardToolWords = try! NSRegularExpression(pattern: #"(^|_)(send|reply|forward|submit|apply|post|publish|pay|purchase|checkout|order|book|delete|trash|remove|cancel|transfer|unsubscribe)(_|$)"#, options: [.caseInsensitive])
-    static let writeToolWords = try! NSRegularExpression(pattern: #"(^|_)(create|update|write|edit|draft|label|unlabel|add|set|upsert|move|rename|archive|mark|insert|append|copy|upload|share|star|snooze|schedule)(_|$)"#, options: [.caseInsensitive])
+    /// Round seven fixed the delete branch: its `\b` sat after `~` or `/`, so `rm -rf ~/x` never matched.
+    static let outwardCommandWords = try! NSRegularExpression(pattern: #"(^|[\s;&|(])((git\s+push|gh\s+(pr\s+create|pr\s+merge|release\s+create|issue\s+create|repo\s+(create|delete))|npm\s+publish|vercel(\s+deploy|\s+--prod|\s*$)|imsg\s+send|gmail\s+send|outlook\s+send|sendmail)\b|rm\s+(-[a-zA-Z]+\s+)*(~|/|\$HOME))|curl\s[^\n]*(-X\s*(POST|PUT|DELETE|PATCH)|--data|-d\s)"#, options: [.caseInsensitive])
+    static let outwardToolWords = try! NSRegularExpression(pattern: #"(^|_)(send|reply|forward|submit|apply|post|publish|pay|purchase|checkout|order|book|delete|trash|remove|cancel|transfer|unsubscribe|respond|share|invite)(_|$)"#, options: [.caseInsensitive])
+    static let writeToolWords = try! NSRegularExpression(pattern: #"(^|_)(create|update|write|edit|draft|label|unlabel|add|set|upsert|move|rename|archive|mark|insert|append|copy|upload|star|snooze|schedule)(_|$)"#, options: [.caseInsensitive])
     static let computerServers: Set<String> = ["cua-driver", "cua-computer-use", "computer-use", "cmux-cua"]
+    /// Computer-use tools that change the Mac rather than drive an app: quitting an app (unsaved work),
+    /// installing, running a script (a shell by another name), raising the driver's own powers (F4).
+    static let computerSystemTools: Set<String> = ["kill_app", "install_extension", "install_ffmpeg", "run_script", "escalate_session", "set_config"]
     static let readTools: Set<String> = ["Read", "Grep", "Glob", "LS", "WebSearch", "WebFetch", "TodoWrite", "TodoRead", "Skill", "Agent", "Task", "ToolSearch", "NotebookRead", "ListMcpResourcesTool", "ReadMcpResourceTool"]
     static let writeTools: Set<String> = ["Write", "Edit", "MultiEdit", "NotebookEdit"]
 
@@ -129,8 +133,10 @@ public struct AgentRules: Codable, Equatable, Sendable {
     }
 
     /// The class of one tool call. `flattened` is the whole input as text (for a click whose
-    /// target names a send or a purchase).
-    public static func classify(toolName: String, command: String?, flattened: String) -> ActionClass {
+    /// target names a send or a purchase); `input` lets an event with guests count as sending;
+    /// `knownServers` (Dot's own MCP servers) makes a tool from any other server a change to the Mac.
+    public static func classify(toolName: String, command: String?, flattened: String,
+                                input: [String: AnyCodableValue] = [:], knownServers: Set<String>? = nil) -> ActionClass {
         if readTools.contains(toolName) { return .read }
         if writeTools.contains(toolName) { return .write }
         if toolName == "Bash" {
@@ -146,8 +152,12 @@ public struct AgentRules: Codable, Equatable, Sendable {
             let parts = toolName.split(separator: "__").map(String.init)
             let server = parts.count > 1 ? parts[1] : ""
             let tool = parts.count > 2 ? parts[2...].joined(separator: "_") : toolName
-            if computerServers.contains(server) { return ConsentPolicy.mentionsCommit(flattened) ? .outward : .computer }
-            if matches(outwardToolWords, tool) { return .outward }
+            if computerServers.contains(server) {
+                if computerSystemTools.contains(tool) { return .system }
+                return ConsentPolicy.mentionsCommit(flattened) ? .outward : .computer
+            }
+            if let knownServers, !knownServers.contains(server), !server.hasPrefix("claude_ai_") { return .system }
+            if matches(outwardToolWords, tool) || ConsentPolicy.isOutwardMCP(tool: tool, input: input) { return .outward }
             if matches(writeToolWords, tool) { return .write }
             return .read
         }

@@ -752,3 +752,332 @@ final class RoutineTests: XCTestCase {
         XCTAssertEqual(tags, [.routine(agent: "Email", when: "every morning at 8", brief: "draft replies to anyone waiting on him")])
     }
 }
+
+// MARK: - Round seven: agents managed the way HeyClicky manages them
+
+final class ConsentQueueTests: XCTestCase {
+    func testSecondQuestionWaitsInsteadOfReplacingTheFirst() {
+        var queue = ConsentQueue<String>()
+        let email = UUID(), physics = UUID(), email2 = UUID()
+        queue.add(id: email, agent: "email", item: "delete a calendar event")
+        queue.add(id: physics, agent: "physics", item: "save a draft")
+        queue.add(id: email, agent: "email", item: "a repeat is ignored")
+        XCTAssertEqual(queue.current?.id, email)
+        XCTAssertEqual(queue.waitingBehind, 1)
+        // Answering the physics card (say from its row) leaves the email agent's question on show.
+        XCTAssertEqual(queue.remove(id: physics)?.agent, "physics")
+        XCTAssertEqual(queue.current?.id, email)
+        XCTAssertEqual(queue.waitingBehind, 0)
+        queue.add(id: email2, agent: "email", item: "delete another event")
+        queue.add(id: physics, agent: "physics", item: "save a draft")
+        XCTAssertTrue(queue.bringForward(agent: "physics"))
+        XCTAssertEqual(queue.current?.id, physics)
+        XCTAssertFalse(queue.bringForward(agent: "homework"))
+        // Stopping the email agent takes both of its questions with it.
+        XCTAssertEqual(queue.removeAll(agent: "email").count, 2)
+        XCTAssertEqual(queue.current?.id, physics)
+        XCTAssertTrue(queue.isWaiting(agent: "physics"))
+        XCTAssertFalse(queue.isWaiting(agent: "email"))
+        queue.remove(id: physics)
+        XCTAssertTrue(queue.isEmpty)
+        XCTAssertNil(queue.current)
+    }
+}
+
+final class AgentConsentRoundSevenTests: XCTestCase {
+    private let agent = "/Users/test/Dot/agents/email"
+
+    private func policy() -> ConsentPolicy {
+        ConsentPolicy(allowToolPrefixes: ["mcp__cua-driver__", "mcp__claude_ai_Gmail__", "mcp__claude_ai_Google_Calendar__", "mcp__claude_ai_Google_Drive__"],
+                      writableRoots: [agent, "/Users/test"], protectedRoots: ["/Users/test/roshan/Atlas/private"],
+                      workingDirectory: agent, deletableRoots: [agent, "/tmp"],
+                      undeletableRoots: [agent + "/.dot", agent + "/CLAUDE.md"], knownServers: ["atlas", "cua-driver"])
+    }
+
+    private func bash(_ command: String) -> ConsentDecision {
+        policy().decide(ToolRequest(toolName: "Bash", input: ["command": .string(command)], description: "d"))
+    }
+
+    func testDeletesInsideTheAgentsFolderPassAndTheRestAsk() {
+        XCTAssertEqual(bash("rm -rf ./tmp/probe-nothing"), .allow)
+        XCTAssertEqual(bash("rm -rf tmp/*"), .allow)
+        XCTAssertEqual(bash("rm -f output/old.md 2>/dev/null"), .allow)
+        XCTAssertEqual(bash("rm -rf \(agent)/tmp/renders && ls output"), .allow)
+        XCTAssertEqual(bash("rm -rf /tmp/dot-scratch-1"), .allow)
+        XCTAssertEqual(bash("rm -rf *"), .ask(reason: "d"))
+        XCTAssertEqual(bash("rm -rf /tmp"), .ask(reason: "d"))
+        XCTAssertEqual(bash("rm -rf /tmp/*"), .ask(reason: "d"))
+        XCTAssertEqual(bash("rm -rf .dot"), .ask(reason: "d"))
+        XCTAssertEqual(bash("rm CLAUDE.md"), .ask(reason: "d"))
+        XCTAssertEqual(bash("rm -rf ~/roshan/Career/old"), .ask(reason: "d"))
+        XCTAssertEqual(bash("rm /Users/test/roshan/notes.md"), .ask(reason: "d"))
+        XCTAssertEqual(bash("cd tmp && rm -rf x"), .ask(reason: "d"))
+        XCTAssertEqual(bash("rm -rf \"$OUT\""), .ask(reason: "d"))
+        XCTAssertEqual(bash("rm -rf ../other-agent/output"), .ask(reason: "d"))
+        XCTAssertEqual(bash("find ~/roshan -name '*.tmp' -delete"), .ask(reason: "d"))
+        XCTAssertEqual(bash("ls output && mkdir -p tmp/a"), .allow)
+    }
+
+    func testDeletesOutsideTheFolderAlwaysComeAsCards() {
+        let p = policy()
+        // A delete outside the scratch roots, however it is spelled or wrapped, is never left to a judge.
+        for command in ["rm ../../Downloads/x.pdf", "rm output/../../../Downloads/x.pdf", "rm \"$HOME/Downloads/x.pdf\"", "rm CLAUDE.md",
+                        "unlink ~/Downloads/x.pdf", "shred -u ~/x", "trash ~/Desktop/x.png", "command rm ~/x", "\\rm ~/x", "nohup rm -f ~/x",
+                        "ls | xargs rm", "xargs rm < tmp/list.txt", "echo $(rm ~/x)", "bash -c 'rm ~/x'", "sh -c '/bin/rm ~/x'",
+                        "find tmp -name '*.log' -delete", "find . -exec rm {} +", "git -C ~/Projects/dot clean -fdx"] {
+            XCTAssertTrue(p.mustAsk(command), command)
+            if command.hasPrefix("git") { continue }
+            XCTAssertTrue(p.deletesOutsideScratch(command), command)
+            XCTAssertNil(p.commandWithoutScratchDeletes(command), command)
+            XCTAssertNotEqual(bash(command), .allow, command)
+        }
+        // Inside them: the agent tidying up, nothing to ask.
+        for command in ["rm -rf tmp/build output/old.md", "rmdir tmp/empty", "unlink tmp/link", "trash tmp/x.png", "rm -f /tmp/dot-x 2>/dev/null",
+                        "command rm tmp/a", "/bin/rm -rf tmp/b", "git rm --cached notes.md", "mkdir -p output/charts && rm -rf tmp/x"] {
+            XCTAssertFalse(p.deletesOutsideScratch(command), command)
+            XCTAssertFalse(p.mustAsk(command), command)
+        }
+        XCTAssertEqual(bash("rmdir tmp/empty"), .allow)
+        XCTAssertEqual(bash("unlink tmp/link"), .allow)
+        XCTAssertEqual(p.commandWithoutScratchDeletes("mkdir -p output/charts && rm -rf tmp/x"), "mkdir -p output/charts")
+        // Braces and ~user expand to what the check cannot place; a 2>&1 is a redirect, not a split.
+        XCTAssertTrue(p.deletesOutsideScratch("rm -rf {tmp,../dot}"))
+        XCTAssertTrue(p.deletesOutsideScratch("rm -rf ~root/x"))
+        XCTAssertFalse(p.deletesOutsideScratch("rm -rf tmp/x >/dev/null 2>&1"))
+        XCTAssertFalse(p.mustAsk("rm -rf tmp/x >/dev/null 2>&1"))
+        XCTAssertEqual(bash("rm -rf tmp/x >/dev/null 2>&1"), .allow)
+        XCTAssertEqual(ConsentPolicy.commandWord("nohup git push origin main 2>&1"), "git")
+        // A change of folder: deletes before it, or with absolute targets, still read (from the Dot agent's 10/16 run).
+        XCTAssertFalse(p.deletesOutsideScratch("rm -f \(agent)/tmp/history.db; cd \(agent)/tmp && curl -sL https://example.com -o page.html"))
+        XCTAssertFalse(p.deletesOutsideScratch("cd \(agent)/tmp && rm -rf \(agent)/tmp/x"))
+        XCTAssertTrue(p.deletesOutsideScratch("rm -rf tmp/a; cd .. && rm -rf b"))
+        XCTAssertTrue(p.deletesOutsideScratch("(cd tmp && rm -rf x)"))
+        // The always-ask list still holds on its own.
+        XCTAssertTrue(p.mustAsk("git push origin main"))
+        XCTAssertFalse(p.mustAsk("python3 tmp/make_chart.py"))
+    }
+
+    func testPrivateTmpSpellingsCompareAlike() {
+        // A file that does not exist yet under /private/tmp is still inside /tmp (Foundation strips
+        // "/private" only for paths that exist).
+        let missing = "/private/tmp/dot-test-\(UUID().uuidString)/x.txt"
+        XCTAssertEqual(ConsentPolicy.canonical(missing), String(missing.dropFirst("/private".count)))
+        XCTAssertEqual(bash("rm -f \(missing)"), .allow)
+        let p = ConsentPolicy(writableRoots: ["/tmp"])
+        XCTAssertEqual(p.decide(ToolRequest(toolName: "Write", input: ["file_path": .string(missing)], description: nil)), .allow)
+        XCTAssertEqual(ConsentPolicy.canonical("/Users/test/Dot/agents/x/../y"), "/Users/test/Dot/agents/y")
+    }
+
+    func testWhatIsLeftOnceScratchDeletesAreSetAside() {
+        let p = policy()
+        XCTAssertEqual(p.commandWithoutScratchDeletes("rm -rf \(agent)/tmp/x && git push origin main"), "git push origin main")
+        XCTAssertEqual(p.commandWithoutScratchDeletes("rm -rf tmp/x"), "")
+        XCTAssertNil(p.commandWithoutScratchDeletes("rm -rf ~/roshan/x && ls"))
+        XCTAssertNil(p.commandWithoutScratchDeletes("ls output"))
+        XCTAssertNil(p.commandWithoutScratchDeletes("cd tmp && rm -rf x"))
+    }
+
+    func testSendsSharesInvitationsAndUnknownServersAsk() {
+        let p = policy()
+        func mcp(_ name: String, _ input: [String: AnyCodableValue] = [:]) -> ConsentDecision {
+            p.decide(ToolRequest(toolName: name, input: input, description: nil))
+        }
+        // The connector prefixes no longer wave a send through.
+        XCTAssertEqual(mcp("mcp__claude_ai_Gmail__send_message"), .ask(reason: "claude_ai_Gmail: send_message"))
+        XCTAssertEqual(mcp("mcp__claude_ai_Gmail__search_threads"), .allow)
+        XCTAssertEqual(mcp("mcp__claude_ai_Google_Calendar__respond_to_event", ["response": .string("declined")]), .ask(reason: "claude_ai_Google_Calendar: respond_to_event"))
+        XCTAssertEqual(mcp("mcp__claude_ai_Google_Calendar__create_event", ["attendees": .array([.string("banker@firm.com")])]), .ask(reason: "claude_ai_Google_Calendar: create_event"))
+        XCTAssertEqual(mcp("mcp__claude_ai_Google_Calendar__create_event", ["summary": .string("finish riverside")]), .allow)
+        XCTAssertEqual(mcp("mcp__claude_ai_Google_Drive__share_file", ["role": .string("writer")]), .ask(reason: "claude_ai_Google_Drive: share_file"))
+        XCTAssertEqual(mcp("mcp__rea__capture_process_scenario", ["executable": .string("git")]), .ask(reason: "rea: capture_process_scenario (a tool Dot doesn't know)"))
+        XCTAssertEqual(mcp("mcp__atlas__search"), .allow)
+    }
+
+    func testClassesRoundSeven() {
+        let known: Set<String> = ["atlas", "cua-driver"]
+        XCTAssertEqual(AgentRules.classify(toolName: "Bash", command: "rm -rf ~/Documents/old-drafts", flattened: ""), .outward)
+        XCTAssertEqual(AgentRules.classify(toolName: "Bash", command: "rm -rf ~", flattened: ""), .outward)
+        XCTAssertEqual(AgentRules.classify(toolName: "Bash", command: "rm -r -f $HOME/x", flattened: ""), .outward)
+        XCTAssertEqual(AgentRules.classify(toolName: "mcp__claude_ai_Google_Calendar__respond_to_event", command: nil, flattened: "declined", knownServers: known), .outward)
+        XCTAssertEqual(AgentRules.classify(toolName: "mcp__claude_ai_Google_Calendar__create_event", command: nil, flattened: "",
+                                           input: ["attendees": .array([.string("a@b.com")])], knownServers: known), .outward)
+        XCTAssertEqual(AgentRules.classify(toolName: "mcp__claude_ai_Google_Calendar__create_event", command: nil, flattened: "",
+                                           input: ["summary": .string("study")], knownServers: known), .write)
+        XCTAssertEqual(AgentRules.classify(toolName: "mcp__claude_ai_Google_Drive__share_file", command: nil, flattened: "", knownServers: known), .outward)
+        XCTAssertEqual(AgentRules.classify(toolName: "mcp__cua-driver__kill_app", command: nil, flattened: "", knownServers: known), .system)
+        XCTAssertEqual(AgentRules.classify(toolName: "mcp__cua-driver__run_script", command: nil, flattened: "do shell script", knownServers: known), .system)
+        XCTAssertEqual(AgentRules.classify(toolName: "mcp__cua-driver__click", command: nil, flattened: "Next page", knownServers: known), .computer)
+        XCTAssertEqual(AgentRules.classify(toolName: "mcp__rea__capture_process_scenario", command: nil, flattened: "git push", knownServers: known), .system)
+        XCTAssertEqual(AgentRules.classify(toolName: "mcp__blender__execute_blender_code", command: nil, flattened: "", knownServers: known), .system)
+        XCTAssertEqual(AgentRules.classify(toolName: "mcp__claude_ai_Gmail__search_threads", command: nil, flattened: "", knownServers: known), .read)
+        XCTAssertEqual(AgentRules.classify(toolName: "mcp__atlas__search", command: nil, flattened: "", knownServers: known), .read)
+    }
+
+    func testANewRoutineRunsAtOnce() {
+        let now = Date(timeIntervalSince1970: 1_792_200_000)
+        let schedule = RoutineSchedule(kind: .daily, hour: 8)
+        let routine = Routine(agent: "email", agentName: "Email", brief: "draft replies", schedule: schedule, now: now)
+        XCTAssertEqual(routine.nextRun, now)
+        XCTAssertEqual(RoutineBook(routines: [routine]).due(at: now).map(\.id), [routine.id])
+        let later = Routine(agent: "email", agentName: "Email", brief: "draft replies", schedule: schedule, now: now, runFirstNow: false)
+        XCTAssertEqual(later.nextRun, schedule.next(after: now))
+    }
+}
+
+final class AgentVoiceTests: XCTestCase {
+    private let roster = [
+        AgentAddress.Agent(slug: "dot", name: "Dot"),
+        AgentAddress.Agent(slug: "email", name: "Email"),
+        AgentAddress.Agent(slug: "inbox-keeper", name: "Inbox Keeper"),
+        AgentAddress.Agent(slug: "lab-desk", name: "Lab Desk"),
+    ]
+
+    func testFindsTheAgentHeIsTalkingTo() {
+        XCTAssertEqual(AgentAddress.find(in: "tell inbox keeper to also check spam", roster: roster), .init(slug: "inbox-keeper", intent: .tell))
+        XCTAssertEqual(AgentAddress.find(in: "ask the email agent whether the draft went out", roster: roster), .init(slug: "email", intent: .tell))
+        XCTAssertEqual(AgentAddress.find(in: "inbox keeper, skip the newsletters", roster: roster), .init(slug: "inbox-keeper", intent: .tell))
+        XCTAssertEqual(AgentAddress.find(in: "tell inbox to skip the newsletters", roster: roster), .init(slug: "inbox-keeper", intent: .tell))
+        XCTAssertEqual(AgentAddress.find(in: "for Lab Desk: redo figure two", roster: roster), .init(slug: "lab-desk", intent: .tell))
+        XCTAssertEqual(AgentAddress.find(in: "stop the email agent", roster: roster), .init(slug: "email", intent: .stop))
+        XCTAssertEqual(AgentAddress.find(in: "stop lab desk now", roster: roster), .init(slug: "lab-desk", intent: .stop))
+        XCTAssertEqual(AgentAddress.find(in: "is email done yet?", roster: roster), .init(slug: "email", intent: .status))
+        XCTAssertEqual(AgentAddress.find(in: "how's inbox keeper doing", roster: roster), .init(slug: "inbox-keeper", intent: .status))
+        XCTAssertEqual(AgentAddress.find(in: "what's lab desk working on", roster: roster), .init(slug: "lab-desk", intent: .status))
+        // Not an agent: him, the companion, a word that only looks like a name.
+        XCTAssertNil(AgentAddress.find(in: "tell me about the discount rate", roster: roster))
+        XCTAssertNil(AgentAddress.find(in: "dot, what's on my screen", roster: roster))
+        XCTAssertNil(AgentAddress.find(in: "stop emailing professors so late", roster: roster))
+        XCTAssertNil(AgentAddress.find(in: "what's the email from sebastian about", roster: roster))
+    }
+
+    func testAgentNamedInPassing() {
+        XCTAssertEqual(AgentAddress.mentioned(in: "pass a note to the lab desk agent that the deadline moved", roster: roster)?.slug, "lab-desk")
+        XCTAssertNil(AgentAddress.mentioned(in: "draft a reply to the dean", roster: roster))
+        XCTAssertNil(AgentAddress.mentioned(in: "have email and lab desk compare notes", roster: roster))
+        XCTAssertNil(AgentAddress.mentioned(in: "dot please look this up", roster: roster))
+    }
+
+    func testFirstWordAliasesOnlyInPlainAddress() {
+        let roster = self.roster + [AgentAddress.Agent(slug: "deck-shop", name: "Deck Shop")]
+        // "deck" is a common word: it means Deck Shop only after tell/ask/remind/message, or with "agent".
+        XCTAssertNil(AgentAddress.find(in: "have the deck on the board", roster: roster))
+        XCTAssertNil(AgentAddress.find(in: "stop the deck", roster: roster))
+        XCTAssertNil(AgentAddress.find(in: "how's the deck doing", roster: roster))
+        XCTAssertNil(AgentAddress.find(in: "deck, make the title bigger", roster: roster))
+        XCTAssertEqual(AgentAddress.find(in: "stop the deck agent", roster: roster), .init(slug: "deck-shop", intent: .stop))
+        XCTAssertEqual(AgentAddress.find(in: "tell deck to use the blue template", roster: roster), .init(slug: "deck-shop", intent: .tell))
+        XCTAssertEqual(AgentAddress.find(in: "how's deck shop doing", roster: roster), .init(slug: "deck-shop", intent: .status))
+        XCTAssertEqual(AgentAddress.find(in: "have deck shop redo slide three", roster: roster), .init(slug: "deck-shop", intent: .tell))
+        // A name two agents share is a question, not a third agent.
+        let labs = roster + [AgentAddress.Agent(slug: "lab-notes", name: "Lab Notes")]
+        XCTAssertEqual(AgentAddress.candidates(named: "lab", in: labs).map(\.slug).sorted(), ["lab-desk", "lab-notes"])
+        XCTAssertNil(AgentAddress.agent(named: "lab", in: labs))
+        XCTAssertEqual(AgentAddress.candidates(named: "lab notes", in: labs).map(\.slug), ["lab-notes"])
+    }
+
+    func testNodsAreNotInstructions() {
+        for said in ["ok", "thanks!", "cool, thanks", "got it", "okay thank you", "sounds good"] {
+            XCTAssertTrue(AgentAddress.isAcknowledgment(said), said)
+        }
+        for said in ["ok draft the reply", "thanks, now send it to her", "good, do the next one"] {
+            XCTAssertFalse(AgentAddress.isAcknowledgment(said), said)
+        }
+    }
+
+    func testLegacyForPrefixAndNames() {
+        XCTAssertEqual(AgentAddress.leadingFor("for Email: draft the reply to the club", roster: roster)?.slug, "email")
+        XCTAssertEqual(AgentAddress.leadingFor("for Email: draft the reply to the club", roster: roster)?.brief, "draft the reply to the club")
+        XCTAssertNil(AgentAddress.leadingFor("draft the reply for email", roster: roster))
+        XCTAssertEqual(AgentAddress.agent(named: "the inbox keeper agent", in: roster)?.slug, "inbox-keeper")
+        XCTAssertEqual(AgentAddress.agent(named: "lab", in: roster)?.slug, "lab-desk")
+        XCTAssertNil(AgentAddress.agent(named: "physics", in: roster))
+    }
+
+    func testProgressQuestions() {
+        for said in ["progress?", "is it done", "what do i need to do rn", "how's it going", "any update", "do they need anything from me"] {
+            XCTAssertTrue(AgentAddress.isProgressAsk(said), said)
+        }
+        for said in ["what's the progress of the french revolution", "is it raining", "how do i do this"] {
+            XCTAssertFalse(AgentAddress.isProgressAsk(said), said)
+        }
+    }
+
+    func testSpokenAnswersToACard() {
+        XCTAssertEqual(ConsentVoice.interpret("allow", guarded: false), .allow)
+        XCTAssertEqual(ConsentVoice.interpret("yeah go ahead", guarded: false), .allow)
+        XCTAssertEqual(ConsentVoice.interpret("allow it for the rest of this task", guarded: false), .allowForTask)
+        XCTAssertEqual(ConsentVoice.interpret("not now", guarded: true), .decline)
+        XCTAssertEqual(ConsentVoice.interpret("No, don’t send it.", guarded: true), .decline)
+        // A guarded card wants the act named.
+        XCTAssertEqual(ConsentVoice.interpret("yes", guarded: true), .needsExplicit)
+        XCTAssertEqual(ConsentVoice.interpret("do it", guarded: true), .needsExplicit)
+        let send = "use claude_ai_Gmail: send message", delete = "a delete outside its folder: run a command"
+        XCTAssertEqual(ConsentVoice.interpret("yes, send it", guarded: true, card: send), .allow)
+        XCTAssertEqual(ConsentVoice.interpret("go ahead and delete them", guarded: true, card: delete), .allow)
+        XCTAssertEqual(ConsentVoice.interpret("send it", guarded: true, card: send), .allow)
+        XCTAssertEqual(ConsentVoice.interpret("yes, delete it", guarded: true, card: "run a command rm -rf ~/Downloads/old"), .allow)
+        // The act has to be the card's own, and "run" is never one (every command card says "run a command").
+        XCTAssertEqual(ConsentVoice.interpret("yes, run it", guarded: true, card: delete), .needsExplicit)
+        XCTAssertEqual(ConsentVoice.interpret("yes, delete it", guarded: true, card: send), .needsExplicit)
+        XCTAssertEqual(ConsentVoice.interpret("yes, push it", guarded: true, card: "run a command git push origin main"), .allow)
+        XCTAssertEqual(ConsentVoice.acts(in: "claude_ai_Gmail: send_message, calendar_delete"), ["send", "delete"])
+        // A no or a pause after the yes takes it back.
+        XCTAssertEqual(ConsentVoice.interpret("yes, don't send it", guarded: true, card: send), .decline)
+        XCTAssertEqual(ConsentVoice.interpret("yeah, hold off", guarded: false), .decline)
+        XCTAssertEqual(ConsentVoice.interpret("okay wait", guarded: false), .none)
+        XCTAssertEqual(ConsentVoice.interpret("ok stop", guarded: false), .none)
+        XCTAssertEqual(ConsentVoice.interpret("sure, no problem", guarded: false), .allow)
+        // Not answers.
+        XCTAssertEqual(ConsentVoice.interpret("yes, what is this page", guarded: false), .none)
+        XCTAssertEqual(ConsentVoice.interpret("send it later", guarded: true), .none)
+        XCTAssertEqual(ConsentVoice.interpret("explain the second paragraph to me", guarded: false), .none)
+        // During a walkthrough "ok" moves the walkthrough on; "allow" and "yes, send it" still reach the card.
+        XCTAssertFalse(ConsentVoice.isAimedAtCard("ok"))
+        XCTAssertTrue(ConsentVoice.isAimedAtCard("allow"))
+        XCTAssertTrue(ConsentVoice.isAimedAtCard("yes, send it"))
+    }
+
+    func testTellAndStopTags() {
+        let parsed = TagParser.parse("passing that on. [TELL:Inbox Keeper:also check the spam folder]")
+        XCTAssertEqual(parsed.spoken, "passing that on.")
+        XCTAssertEqual(parsed.tags, [.tell(agent: "Inbox Keeper", message: "also check the spam folder")])
+        XCTAssertEqual(TagParser.parse("stopping it. [STOP_AGENT:Email]").tags, [.stopAgent(name: "Email")])
+        XCTAssertEqual(TagParser.parse("[STOP_AGENT:]").tags, [])
+    }
+}
+
+final class AgentRecoveryTests: XCTestCase {
+    func testFindsOrphanedAgentSessions() {
+        let ps = """
+          501     1 /Users/r/.local/bin/claude -p --input-format stream-json --session-id 6F1C2B6A-1111-4222-8333-944455556666 --model opus
+          502   400 /Users/r/.local/bin/claude -p --input-format stream-json --resume 6f1c2b6a-1111-4222-8333-944455556677 --model opus
+          503     1 /Users/r/.local/bin/claude -p --resume 6f1c2b6a-1111-4222-8333-944455556677 --model opus
+          504     1 /Users/r/.local/bin/claude -p --session-id 0F1C2B6A-1111-4222-8333-944455556600 --model sonnet
+          505     1 /usr/sbin/cfprefsd agent
+        """
+        let processes = AgentRecovery.parsePS(ps)
+        XCTAssertEqual(processes.count, 5)
+        let orphans = AgentRecovery.orphans(in: processes, sessionIds: ["6f1c2b6a-1111-4222-8333-944455556666", "6F1C2B6A-1111-4222-8333-944455556677"])
+        XCTAssertEqual(orphans.map(\.pid), [501, 503])
+    }
+
+    func testTurnThatNeverFinished() {
+        XCTAssertEqual(AgentRecovery.unfinishedBrief([("user", "go through my gmail"), ("tool", "searching"), ("assistant", "about 200 threads")]), "go through my gmail")
+        XCTAssertNil(AgentRecovery.unfinishedBrief([("user", "go through my gmail"), ("result", "success in 1 ms, $0.1")]))
+        XCTAssertEqual(AgentRecovery.unfinishedBrief([("user", "a"), ("result", "success"), ("user", "b"), ("cleared", "Bash: x")]), "b")
+        XCTAssertNil(AgentRecovery.unfinishedBrief([]))
+    }
+
+    func testTurnArtifacts() {
+        let t0 = Date(timeIntervalSince1970: 100), t1 = Date(timeIntervalSince1970: 200)
+        XCTAssertEqual(TurnArtifacts.changed(before: ["a.pdf": t0, "b.md": t0], after: ["a.pdf": t0, "b.md": t1, "c/d.png": t1]), ["b.md", "c/d.png"])
+        XCTAssertEqual(TurnArtifacts.changed(before: [:], after: [:]), [])
+    }
+
+    func testBackgroundTasksEvent() {
+        XCTAssertEqual(StreamJSON.parse(line: #"{"type":"system","subtype":"background_tasks_changed","tasks":[{"task_id":"a"},{"task_id":"b"}]}"#), .backgroundTasks(count: 2))
+        XCTAssertEqual(StreamJSON.parse(line: #"{"type":"system","subtype":"background_tasks_changed","tasks":[]}"#), .backgroundTasks(count: 0))
+        // The runtime's own watchers (ambient) are not the agent's work.
+        XCTAssertEqual(StreamJSON.parse(line: #"{"type":"system","subtype":"background_tasks_changed","tasks":[{"task_id":"a","ambient":true},{"task_id":"b","ambient":false},{"task_id":"c"}]}"#), .backgroundTasks(count: 2))
+    }
+}

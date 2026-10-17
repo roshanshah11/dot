@@ -118,6 +118,12 @@ struct DotConfig: Codable {
     /// An agent may hand independent parts to helpers (Claude Code subagents on Opus, two at most).
     var agentHelpers = true
 
+    // Round seven.
+    /// Claude Code's permission mode for agents. "default" sends every edit and command to Dot's own
+    /// rules; "acceptEdits" (round six) let Claude Code approve edits and deletes inside the agent's
+    /// folder and ~/roshan by itself, so Dot never saw them (F3, replayed 2026-10-16).
+    var agentPermissionMode = "default"
+
     /// Atlas tools a talk turn may call without asking: everything that reads, remembers or drafts.
     /// Sends, submits, posts and harness administration stay with agents and his yes.
     static let talkAtlasTools = [
@@ -204,6 +210,7 @@ struct DotConfig: Codable {
         routines = get(.routines, d.routines)
         routinesFile = get(.routinesFile, d.routinesFile)
         agentHelpers = get(.agentHelpers, d.agentHelpers)
+        agentPermissionMode = get(.agentPermissionMode, d.agentPermissionMode)
     }
 
     static var directory: URL {

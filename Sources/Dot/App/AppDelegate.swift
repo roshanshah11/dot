@@ -48,6 +48,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         agents = AgentManager(config: config, hud: hud, speaker: speaker, ledger: ledger)
         agents.atlas = atlas
         agents.jev = jev
+        quitCleanlyOnSignals()
+        agents.recoverAfterLaunch()
         talk = Talk(config: config, hud: hud, overlay: overlay, speaker: speaker, transcriber: transcriber, agents: agents, ledger: ledger, atlas: atlas, jev: jev)
         noticer = Noticer(config: config, atlas: atlas, overlay: overlay, jev: jev)
         noticer.onSuggest = { [weak self] suggestion in Task { @MainActor in self?.talk.offerSuggestion(suggestion) } }
@@ -205,7 +207,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             guard let text = note.userInfo?["text"] as? String else { return }
             let quiet = (note.userInfo?["quiet"] as? Bool) ?? false
             let drive = (note.userInfo?["drive"] as? Bool) ?? false
-            Task { @MainActor in self?.talk.askTyped(text, quiet: quiet, drive: drive) }
+            let dry = (note.userInfo?["dry"] as? Bool) ?? false
+            Task { @MainActor in self?.talk.askTyped(text, quiet: quiet || dry, drive: drive, dry: dry) }
         }
         center.addObserver(forName: DotIPC.agent, object: nil, queue: .main) { [weak self] note in
             guard let text = note.userInfo?["text"] as? String else { return }
@@ -269,7 +272,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationWillTerminate(_ notification: Notification) {
-        agents.stopAll()
+        agents.prepareForQuit()
+    }
+
+    /// launchd stops Dot with SIGTERM (build.sh, Home's relaunch, logout), which by default ends the
+    /// process at once: applicationWillTerminate never ran and agents ran on without Dot (F2,
+    /// 2026-10-15). The signal now goes through AppKit's normal quit.
+    private var signalSources: [DispatchSourceSignal] = []
+    private func quitCleanlyOnSignals() {
+        for sig in [SIGTERM, SIGINT, SIGHUP] {
+            signal(sig, SIG_IGN)
+            let source = DispatchSource.makeSignalSource(signal: sig, queue: .main)
+            source.setEventHandler {
+                Log.info("quit on signal \(sig)")
+                NSApp.terminate(nil)
+            }
+            source.resume()
+            signalSources.append(source)
+        }
     }
 
     // MARK: Permissions and start

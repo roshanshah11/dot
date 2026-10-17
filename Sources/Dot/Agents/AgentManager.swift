@@ -27,11 +27,18 @@ final class AgentManager {
         var idleWork: DispatchWorkItem?
         /// A scheduled run: quiet when it finishes, and its outcome goes back to the routine.
         var isRoutine = false
-        /// Kinds of action he allowed for the rest of this task ("Allow for this task").
-        var allowances: Set<ActionClass> = []
+        /// What he allowed for the rest of this task ("Allow for this task"), by allowanceKey; a new
+        /// brief starts with none.
+        var allowances: Set<String> = []
         /// Helpers (subagents) this brief has started.
         var helpers = 0
+        /// The output folder when the turn began, so the turn's own files can be named (G1).
+        var outputBaseline: [String: Date] = [:]
+        /// A result that came while helpers still worked in the background (F5), kept in case no turn follows.
+        var deferredResult: ResultInfo?
         init(agent: Agent, session: ClaudeSession) { self.agent = agent; self.session = session }
+        /// A turn in flight, or helpers still at work in the background after one (F5).
+        var isWorking: Bool { session.turnInFlight || session.backgroundTasks > 0 }
         func step(_ line: String) { steps.append(line); if steps.count > 6 { steps.removeFirst(steps.count - 6) } }
         func row(_ line: String, state: AgentRow.State = .running) -> AgentRow {
             let shown = helpers > 0 && state == .running ? "with \(helpers) helper\(helpers == 1 ? "" : "s"): \(line)" : line
@@ -44,7 +51,8 @@ final class AgentManager {
     private let speaker: TTSProvider
     private let ledger: Ledger
     private var runs: [String: Run] = [:]
-    private var pendingConsent: [UUID: (String, Bool, String?) -> Void] = [:]
+    /// The agent he last spoke to by name or replied to: a follow-up with no name goes there (G2).
+    private(set) var lastAddressed: String?
     /// Set after init: Atlas's view of his day rides along with every brief.
     var atlas: AtlasBridge?
     /// Set after init: clears unrecognised shell commands that are plainly harmless.
@@ -59,7 +67,7 @@ final class AgentManager {
 
     /// Agents with a turn in flight, newest first.
     func runningAgents() -> [Running] {
-        runs.values.filter { $0.session.turnInFlight }
+        runs.values.filter { $0.isWorking }
             .sorted { $0.startedAt > $1.startedAt }
             .map { Running(slug: $0.agent.slug, name: $0.agent.name, task: Log.short($0.lastBrief, 120)) }
     }
@@ -74,8 +82,10 @@ final class AgentManager {
     /// Running agents and those that finished within `minutes`, newest first.
     func recentRuns(minutes: Double = 45) -> [Recent] {
         var out: [Recent] = []
-        for run in runs.values where run.session.turnInFlight {
-            out.append(Recent(name: run.agent.name, task: Log.short(run.lastBrief, 160), state: "working", line: run.lastLine, result: nil, when: run.startedAt))
+        for run in runs.values where run.isWorking || hud.hasConsent(agent: run.agent.slug) {
+            let waiting = hud.openConsents.first { $0.agentId == run.agent.slug }
+            out.append(Recent(name: run.agent.name, task: Log.short(run.lastBrief, 160), state: waiting.map { "waiting for his yes to \($0.title)" } ?? "working",
+                              line: run.lastLine, result: nil, when: run.startedAt))
         }
         let cutoff = Date().addingTimeInterval(-minutes * 60)
         for (slug, when) in finishedAt where when >= cutoff && !out.contains(where: { $0.name.lowercased() == Self.displayName(for: config.agentsRootURL.appendingPathComponent(slug))?.lowercased() }) {
@@ -109,11 +119,21 @@ final class AgentManager {
         hud.model.onDismissAgent = { [weak self] slug in
             Task { @MainActor in self?.hud.removeAgent(id: slug) }
         }
+        hud.model.onFocusConsent = { [weak self] slug in
+            Task { @MainActor in self?.hud.bringConsentForward(agent: slug) }
+        }
+        hud.onConsentShown = { [weak self] card in
+            guard let self, self.config.speakAgentResults else { return }
+            self.speaker.speak("\(card.agent) wants to \(card.title).")
+        }
     }
 
     /// Stop from the task bar: the session ends now; the folder and notes stay.
     func stop(_ slug: String) {
         guard let run = runs[slug] else { return }
+        // Its questions leave with it (F1): an answer would go to a session that is gone.
+        let withdrawn = hud.withdrawConsent(agent: slug)
+        if withdrawn > 0 { Log.info("agent[\(slug)] stopped with \(withdrawn) question(s) open; withdrawn") }
         run.session.stop()
         runs[slug] = nil
         hud.upsertAgent(run.row("stopped", state: .failed))
@@ -123,10 +143,20 @@ final class AgentManager {
 
     /// A typed follow-up from the notch or Home continues the agent's own conversation.
     func reply(to slug: String, text: String) {
-        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        var trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty, let agent = roster().first(where: { $0.slug == slug }) else { return }
-        handoff(brief: trimmed, agentName: agent.name, context: nil, shots: nil)
+        lastAddressed = slug
+        // The button on a turn a restart cut short (F2): say what it was, in case the thread is older than 12 h.
+        if trimmed == Self.continueLabel, let brief = interruptedBriefs.removeValue(forKey: slug) {
+            trimmed = "Dot closed while you were working on this, so that turn stopped part-way: \"\(brief)\". Pick up where you left off; check what is already done (files in output/, drafts, Atlas) before doing anything again."
+        }
+        handoff(brief: trimmed, agentName: agent.name, context: nil, shots: nil, agent: agent)
     }
+
+    /// The button an interrupted turn offers.
+    static let continueLabel = "continue where you left off"
+    /// Briefs of turns a restart cut short, by agent, for the continue button.
+    private var interruptedBriefs: [String: String] = [:]
 
     func outputFiles(for agent: Agent) -> [URL] {
         let fm = FileManager.default
@@ -177,17 +207,34 @@ final class AgentManager {
         do { try rules.save(to: rulesURL) } catch { Log.error("rules: could not save: \(error)") }
     }
 
+    /// `agent`: an agent already on the roster, by its folder, so a renamed one is not founded again
+    /// under its new name.
     func handoff(brief: String, agentName: String?, context: ScreenContext?, shots: [ScreenShot]?,
-                 extraImages: [(data: Data, mediaType: String)] = [], note: String? = nil, routine: Bool = false) {
-        let agent = ensureAgent(named: agentName ?? "Dot")
+                 extraImages: [(data: Data, mediaType: String)] = [], note: String? = nil, routine: Bool = false, agent known: Agent? = nil) {
+        let agent = known ?? ensureAgent(named: agentName ?? "Dot")
+        if known != nil || agentName != nil { lastAddressed = agent.slug }
         let run: Run
-        if let live = runs[agent.slug], live.session.isRunning, !live.session.turnInFlight {
+        if let live = runs[agent.slug], live.session.isRunning, !live.isWorking {
             run = live
             run.idleWork?.cancel()
-        } else if let live = runs[agent.slug], live.session.isRunning, live.session.turnInFlight {
-            hud.flash(status: "\(agent.name) is still busy; queued")
-            // Claude Code queues a second user message behind the turn in flight.
-            run = live
+        } else if let live = runs[agent.slug], live.session.isRunning, live.isWorking {
+            // Mid-turn: Claude Code hands the message to the turn at its next step (probed 2026-10-16:
+            // a message sent during a running command was acted on before the next one). The turn,
+            // its brief and its steps carry on; only the row says what came in.
+            if hud.hasConsent(agent: agent.slug) {
+                hud.bringConsentForward(agent: agent.slug)
+                hud.flash(status: "\(agent.name) is waiting for your yes first; it gets this after", for: 4)
+            } else {
+                hud.flash(status: "passed to \(agent.name) while it works", for: 3)
+            }
+            live.step(Log.short("he added: \(brief)", 90))
+            // A routine run by hand into a busy agent still reports back to its routine when the turn ends.
+            if routine { live.isRoutine = true }
+            hud.upsertAgent(liveRow(live, live.lastLine))
+            appendTranscript(agent, role: "user", text: brief)
+            live.session.send(text: brief)
+            Log.info("agent[\(agent.slug)] follow-up mid-turn: \(Log.short(brief))")
+            return
         } else {
             guard let fresh = startRun(for: agent) else { return }
             run = fresh
@@ -200,6 +247,8 @@ final class AgentManager {
         run.steps = []
         run.helpers = 0
         run.isRoutine = routine
+        run.allowances = []
+        run.outputBaseline = TurnArtifacts.listing(of: agent.outputFolder)
         hud.upsertAgent(run.row(Log.short(brief, 90)))
 
         var text = brief
@@ -231,7 +280,16 @@ final class AgentManager {
         options.appendSystemPrompt = appended
         Log.info("agent[\(agent.slug)] system prompt \(appended.count) chars (atlas chat prompt \(atlas?.chatPrompt().count ?? 0))")
         options.extraArguments = ["--add-dir", DotConfig.expand(config.atlasRoot)]
-        options.permissionMode = "acceptEdits"
+        // Round seven (F3): every edit and command comes to Dot's rules; under acceptEdits Claude Code
+        // approved deletes and writes inside the agent's folder and ~/roshan without asking anyone.
+        options.permissionMode = config.agentPermissionMode
+        // F5: helpers run in the foreground, side by side, so the turn ends when the work does.
+        options.environment["CLAUDE_CODE_DISABLE_BACKGROUND_TASKS"] = "1"
+        // Every command starts in the agent's folder: Claude Code otherwise keeps a cd between commands
+        // (inside the folders it may work in, ~/roshan among them), and a later relative rm would land there.
+        options.environment["CLAUDE_BASH_MAINTAIN_PROJECT_WORKING_DIR"] = "1"
+        // F4: a script runner is a shell with no gate, and an extension install changes the browser.
+        options.disallowedTools = Self.disallowedAgentTools
         options.permissionPromptOverStdio = true
         options.maxTurns = 200
         options.mcpConfigPath = config.mcpConfigPath(config.agentMCPConfig)
@@ -261,7 +319,10 @@ final class AgentManager {
         }
         session.onExit = { [weak self, weak run] status in
             guard let self, let run else { return }
-            if self.runs[run.agent.slug] === run { self.runs[run.agent.slug] = nil }
+            if self.runs[run.agent.slug] === run {
+                self.runs[run.agent.slug] = nil
+                self.hud.withdrawConsent(agent: run.agent.slug)
+            }
             if status != 0, self.hud.model.agents.first(where: { $0.id == run.agent.slug })?.state == .running {
                 self.hud.upsertAgent(run.row("stopped (exit \(status))", state: .failed))
             }
@@ -285,19 +346,36 @@ final class AgentManager {
             if !id.isEmpty {
                 try? id.write(to: agent.folder.appendingPathComponent(".dot/session-id"), atomically: true, encoding: .utf8)
             }
-        case .result:
+        case .result(let result):
             try? FileManager.default.setAttributes([.modificationDate: Date()], ofItemAtPath: agent.folder.appendingPathComponent(".dot/session-id").path)
-            finished(run, result: {
-                if case .result(let result) = event { return result }
-                fatalError("unreachable")
-            }())
+            if run.session.backgroundTasks > 0 {
+                // Helpers still at work in the background (F5): these words are progress, not the result.
+                let said = run.finalText.isEmpty ? (result.resultText ?? "") : run.finalText
+                ledger.record(kind: "agent", agent: agent.slug, model: config.agentModel, result: result, summary: "(helpers still working) " + Log.short(said, 160))
+                run.lastLine = Log.short(Self.firstSentence(of: said), 90)
+                hud.upsertAgent(liveRow(run, run.lastLine))
+                appendTranscript(agent, role: "progress", text: "helpers still working: \(Log.short(said, 300))")
+                Log.info("agent[\(agent.slug)] turn ended with \(run.session.backgroundTasks) background task(s) open; waiting for them")
+                run.deferredResult = result
+                return
+            }
+            run.deferredResult = nil
+            finished(run, result: result)
             return
+        case .backgroundTasks(let count):
+            // The helpers are done; the runtime normally starts a turn to report them. If none comes, finish with what was said.
+            guard count == 0, run.deferredResult != nil else { break }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 30) { [weak self, weak run] in
+                guard let self, let run, !run.session.turnInFlight, let deferred = run.deferredResult else { return }
+                run.deferredResult = nil
+                self.finished(run, result: deferred)
+            }
         case .textDelta(let delta):
             run.buffer += delta
             let line = run.buffer.split(separator: "\n").last.map(String.init) ?? run.buffer
             if line.count > 12 {
                 run.lastLine = Log.short(line, 90)
-                hud.upsertAgent(run.row(run.lastLine))
+                hud.upsertAgent(liveRow(run, run.lastLine))
             }
         case .assistantText(let text):
             if !text.isEmpty {
@@ -311,7 +389,7 @@ final class AgentManager {
             let line = Self.describe(tool: name, input: input)
             run.lastLine = line
             run.step(Log.short(line, 90))
-            hud.upsertAgent(run.row(line))
+            hud.upsertAgent(liveRow(run, line))
             appendTranscript(agent, role: "tool", text: line)
         case .toolResult(let content, let isError):
             // What the tool said back, trimmed: Home shows it under the step when he opens it.
@@ -320,6 +398,12 @@ final class AgentManager {
         default:
             break
         }
+    }
+
+    /// The row for a working agent: "needs you" while one of its cards is open (a helper's step must
+    /// not turn it back to working and hide that it waits on him).
+    private func liveRow(_ run: Run, _ line: String) -> AgentRow {
+        run.row(line, state: hud.hasConsent(agent: run.agent.slug) ? .waiting : .running)
     }
 
     private func finished(_ run: Run, result: ResultInfo) {
@@ -334,9 +418,17 @@ final class AgentManager {
         finishedAt[agent.slug] = Date()
         lastBriefs[agent.slug] = run.lastBrief
         let outputs = outputFiles(for: agent)
+        // The turn's own files first (G1); the folder's newest otherwise.
+        let made = TurnArtifacts.changed(before: run.outputBaseline, after: TurnArtifacts.listing(of: agent.outputFolder))
+        let shown = made.isEmpty ? Array(outputs.prefix(4)) : made.prefix(4).map { agent.outputFolder.appendingPathComponent($0) }
         hud.upsertAgent(AgentRow(id: agent.slug, name: agent.name, line: failed ? "failed: \(summary)" : summary, state: failed ? .failed : .done,
-                                 result: text, outputCount: outputs.count, outputs: Array(outputs.prefix(4)), nextAction: parsed.nextAction))
+                                 result: text, outputCount: outputs.count, outputs: shown, nextAction: parsed.nextAction))
         appendTranscript(agent, role: "result", text: "\(result.subtype) in \(result.durationMs) ms, $\(String(format: "%.3f", result.costUSD))")
+        // The turn's record keeps what HeyClicky's does (G1): the next step it offered and the files it made.
+        if let next = parsed.nextAction { appendTranscript(agent, role: "next", text: next) }
+        for name in made { appendTranscript(agent, role: "artifact", text: name) }
+        // A second result in the same brief (a message that came in during the last reply) names only its own files.
+        run.outputBaseline = TurnArtifacts.listing(of: agent.outputFolder)
         let quiet = run.isRoutine   // a scheduled run lands in the thread without a chime or a word (HeyClicky's routines do the same)
         run.isRoutine = false
         if quiet { routineOutcome?(agent.slug, failed, failed ? summary : nil) }
@@ -352,7 +444,7 @@ final class AgentManager {
 
         run.idleWork?.cancel()
         let work = DispatchWorkItem { [weak self, weak run] in
-            guard let self, let run, !run.session.turnInFlight else { return }
+            guard let self, let run, !run.isWorking, !self.hud.hasConsent(agent: run.agent.slug) else { return }
             run.session.stop()
             if self.runs[run.agent.slug] === run { self.runs[run.agent.slug] = nil }
             Log.info("agent[\(run.agent.slug)] idle, session closed")
@@ -361,7 +453,7 @@ final class AgentManager {
         DispatchQueue.main.asyncAfter(deadline: .now() + Double(max(config.agentIdleMinutes, 1)) * 60, execute: work)
         // A finished row stays two minutes, or as long as he has it open to read.
         DispatchQueue.main.asyncAfter(deadline: .now() + 120) { [weak self] in
-            guard let self, self.runs[agent.slug]?.session.turnInFlight != true, self.hud.model.expanded != agent.slug else { return }
+            guard let self, self.runs[agent.slug]?.isWorking != true, self.hud.model.expanded != agent.slug else { return }
             if self.hud.model.agents.first(where: { $0.id == agent.slug })?.state == .done { self.hud.removeAgent(id: agent.slug) }
         }
     }
@@ -371,16 +463,26 @@ final class AgentManager {
     private func permission(_ request: PermissionRequest, run: Run, completion: @escaping (Bool, String?) -> Void) {
         let policy = consentPolicy(for: run.agent)
         // His rules first (dots' custom rules): the class of the action decides whether it runs, asks or stays his.
-        let cls = AgentRules.classify(toolName: request.toolName, command: request.toolRequest.string("command"), flattened: ConsentPolicy.flatten(request.toolRequest.input))
+        // A delete inside the agent's own folder or a temp folder is the agent tidying up, not a delete of his;
+        // any other delete is "a delete outside the agent's folder", which the outward class names (F3).
+        var command = request.toolRequest.string("command")
+        let deletesOutside = request.toolName == "Bash" && command.map(policy.deletesOutsideScratch) == true
+        if request.toolName == "Bash", let full = command, let rest = policy.commandWithoutScratchDeletes(full) { command = rest }
+        let cls: ActionClass = deletesOutside ? .outward
+            : request.toolName == "Bash" && command?.isEmpty == true ? .write
+            : AgentRules.classify(toolName: request.toolName, command: command, flattened: ConsentPolicy.flatten(request.toolRequest.input),
+                                  input: request.toolRequest.input, knownServers: knownServers)
+        let label = deletesOutside ? "a delete outside its folder" : cls.title.lowercased()
         let behavior = rules.behavior(for: cls, agent: run.agent.slug)
+        let classKey = allowanceKey(request, cls: cls, deletesOutside: deletesOutside, classAsks: true)
         switch behavior {
         case .mine:
-            appendTranscript(run.agent, role: "denied", text: "\(request.toolName): \(cls.title.lowercased()) is his to do")
-            hud.upsertAgent(run.row("left \(cls.title.lowercased()) to him"))
-            completion(false, "That step (\(cls.title.lowercased())) is Roshan's to do, by his rules: prepare everything for it, stop there, and say what is ready for him.")
+            appendTranscript(run.agent, role: "denied", text: "\(request.toolName): \(label) is his to do")
+            hud.upsertAgent(run.row("left \(label) to him"))
+            completion(false, "That step (\(label)) is Roshan's to do, by his rules: prepare everything for it, stop there, and say what is ready for him.")
             return
         case .ask, .ifAsked:
-            if run.allowances.contains(cls) {
+            if let classKey, run.allowances.contains(classKey) {
                 appendTranscript(run.agent, role: "allowed", text: "\(request.toolName): allowed for this task")
                 completion(true, nil)
                 return
@@ -395,11 +497,12 @@ final class AgentManager {
                 completion(false, "Dot refused: \(reason)")
                 return
             }
-            askCard(request, run: run, reason: "\(cls.title.lowercased()): \(Self.consentTitle(request))", cls: cls, completion: completion)
+            askCard(request, run: run, reason: "\(label): \(Self.consentTitle(request))", cls: cls, allowanceKey: classKey, completion: completion)
             return
         case .act:
             break
         }
+        let guardKey = allowanceKey(request, cls: cls, deletesOutside: deletesOutside, classAsks: false)
         switch policy.decide(request.toolRequest) {
         case .allow:
             completion(true, nil)
@@ -407,7 +510,12 @@ final class AgentManager {
             appendTranscript(run.agent, role: "denied", text: "\(request.toolName): \(reason)")
             completion(false, "Dot refused: \(reason)")
         case .ask(let reason):
-            if let jev, request.toolName == "Bash", let command = request.toolRequest.string("command"), !ConsentPolicy.isAlwaysAsk(command) {
+            if let guardKey, run.allowances.contains(guardKey) {
+                appendTranscript(run.agent, role: "allowed", text: "\(request.toolName): allowed for this task")
+                completion(true, nil)
+                return
+            }
+            if let jev, request.toolName == "Bash", let command = request.toolRequest.string("command"), !policy.mustAsk(command) {
                 // Unrecognised, not on the always-ask list: let Jev judge whether it is plainly harmless.
                 let state: [String: Any] = [
                     "command": String(command.prefix(1500)), "description": request.description ?? "",
@@ -417,50 +525,124 @@ final class AgentManager {
                     "risky": .yesNo(instructions: "Would running this shell command send a message or mail, submit or post something, pay for something, delete or overwrite the user's own files outside the agent's folder, or install or change something system-wide? Reading, computing, writing files under the user's home, opening apps and pages, and driving an app to look at it are not risky.", yes: "yes, it goes outward or cannot be undone", no: "no, it stays on this Mac and can be undone"),
                 ]) { [weak self] answers in
                     guard let self else { completion(false, "Dot is gone."); return }
+                    // Stopped or archived while Jev thought: no card for a session that is gone.
+                    guard self.runs[run.agent.slug] === run, run.session.isRunning else { completion(false, "The task was stopped."); return }
                     if let p = answers?["risky"]?.probability, p <= 0.4 {
                         Log.info("consent: jev cleared `\(Log.short(command, 80))` (risk \(String(format: "%.2f", p)))")
                         self.appendTranscript(run.agent, role: "cleared", text: "\(request.toolName): \(reason)")
                         completion(true, nil)
                     } else {
-                        self.askCard(request, run: run, reason: reason, cls: cls, completion: completion)
+                        self.askCard(request, run: run, reason: reason, cls: cls, allowanceKey: guardKey, completion: completion)
                     }
                 }
                 return
             }
-            askCard(request, run: run, reason: reason, cls: cls, completion: completion)
+            askCard(request, run: run, reason: reason, cls: cls, allowanceKey: guardKey, completion: completion)
         }
     }
 
-    private func askCard(_ request: PermissionRequest, run: Run, reason: String, cls: ActionClass?, completion: @escaping (Bool, String?) -> Void) {
+    /// What "Allow for this task" on a request's card covers. A class he set to ask covers that class,
+    /// except that deletes outside the agent's folder and each MCP server Dot doesn't hand agents get
+    /// their own (one yes to a send must not pass a delete, one yes to a lookup must not pass sudo). A
+    /// request his rules let run but a guard stopped covers its command word or tool; a write into a
+    /// protected folder covers nothing, so it asks each time.
+    private func allowanceKey(_ request: PermissionRequest, cls: ActionClass, deletesOutside: Bool, classAsks: Bool) -> String? {
+        if deletesOutside { return "delete" }
+        let name = request.toolName
+        if name.hasPrefix("mcp__") {
+            let server = name.split(separator: "__").dropFirst().first.map(String.init) ?? ""
+            if !server.hasPrefix("claude_ai_"), !knownServers.contains(server) { return "mcp:\(server)" }
+            return classAsks ? cls.rawValue : "tool:\(name)"
+        }
+        if classAsks { return cls.rawValue }
+        if name == "Bash" {
+            let word = ConsentPolicy.commandWord(request.toolRequest.string("command") ?? "")
+            return word.isEmpty ? nil : "bash:\(word)"
+        }
+        if ["Write", "Edit", "MultiEdit", "NotebookEdit"].contains(name) { return nil }
+        return "tool:\(name)"
+    }
+
+    private func askCard(_ request: PermissionRequest, run: Run, reason: String, cls: ActionClass?, allowanceKey: String?, completion: @escaping (Bool, String?) -> Void) {
         do {
             let title = Self.consentTitle(request)
-            hud.upsertAgent(AgentRow(id: run.agent.slug, name: run.agent.name, line: "waiting for you: \(reason)", state: .waiting))
-            var card = ConsentCard(agent: run.agent.name, title: title, detail: reason, onAllow: { [weak self] in
-                self?.hud.dismissConsent()
-                self?.hud.upsertAgent(AgentRow(id: run.agent.slug, name: run.agent.name, line: reason, state: .running))
-                self?.appendTranscript(run.agent, role: "allowed", text: "\(request.toolName): \(reason)")
-                completion(true, nil)
-            }, onDeny: { [weak self] in
-                self?.hud.dismissConsent()
-                self?.hud.upsertAgent(AgentRow(id: run.agent.slug, name: run.agent.name, line: run.lastLine, state: .running))
-                self?.appendTranscript(run.agent, role: "declined", text: "\(request.toolName): \(reason)")
-                completion(false, "The user said not now. Do the rest of the task without this step and say what you skipped.")
+            let cardId = UUID()
+            let agent = run.agent
+            // One answer per card: a click and a spoken answer can arrive together.
+            var answered = false
+            func answer(_ allow: Bool, _ message: String?) {
+                guard !answered else { return }
+                answered = true
+                completion(allow, message)
+            }
+            // A spoken yes to these has to name the act (G2): sends, payments, deletes, pushes, changes to the Mac.
+            let guarded = cls == .outward || cls == .system
+                || (request.toolName == "Bash" && consentPolicy(for: run.agent).mustAsk(request.toolRequest.string("command") ?? ""))
+            hud.upsertAgent(run.row("waiting for you: \(reason)", state: .waiting))
+            var card = ConsentCard(id: cardId, agentId: agent.slug, agent: agent.name, title: title, detail: reason, guarded: guarded, onAllow: { [weak self, weak run] in
+                guard !answered else { return }
+                self?.settleCard(cardId, run: run, line: reason)
+                self?.appendTranscript(agent, role: "allowed", text: "\(request.toolName): \(reason)")
+                answer(true, nil)
+            }, onDeny: { [weak self, weak run] in
+                guard !answered else { return }
+                self?.settleCard(cardId, run: run, line: run?.lastLine ?? reason)
+                self?.appendTranscript(agent, role: "declined", text: "\(request.toolName): \(reason)")
+                answer(false, "The user said not now. Do the rest of the task without this step and say what you skipped.")
             })
-            if let cls {
+            if let allowanceKey {
                 // HeyClicky's "your yes covers one conversation": the same kind of action passes for the rest of this task.
                 card.onAlways = { [weak self, weak run] in
-                    run?.allowances.insert(cls)
-                    self?.hud.dismissConsent()
-                    self?.hud.upsertAgent(AgentRow(id: run?.agent.slug ?? "", name: run?.agent.name ?? "", line: reason, state: .running))
-                    if let run { self?.appendTranscript(run.agent, role: "allowed", text: "\(request.toolName): \(cls.title.lowercased()) allowed for the rest of this task") }
-                    completion(true, nil)
+                    guard !answered else { return }
+                    run?.allowances.insert(allowanceKey)
+                    self?.settleCard(cardId, run: run, line: reason)
+                    self?.appendTranscript(agent, role: "allowed", text: "\(request.toolName): \(Self.allowanceWords(allowanceKey)) allowed for the rest of this task")
+                    answer(true, nil)
                 }
             }
+            // Spoken when it comes on show (NotchHUD.onConsentShown), not now: one queued behind
+            // another would be announced while the other is the one a spoken yes answers.
             hud.present(card)
-            if config.speakAgentResults {
-                speaker.speak("\(run.agent.name) wants to \(title).")
-            }
         }
+    }
+
+    /// An allowance key in words, for the transcript.
+    static func allowanceWords(_ key: String) -> String {
+        if key == "delete" { return "deletes outside its folder" }
+        if key.hasPrefix("mcp:") { return "\(key.dropFirst(4)) tools" }
+        if key.hasPrefix("bash:") { return "`\(key.dropFirst(5))` commands" }
+        if key.hasPrefix("tool:") { return String(key.dropFirst(5)) }
+        return ActionClass(rawValue: key)?.title.lowercased() ?? key
+    }
+
+    /// A card was answered: it leaves the queue, and the agent's row says waiting while it has another.
+    private func settleCard(_ id: UUID, run: Run?, line: String) {
+        hud.dismissConsent(id: id)
+        guard let run else { return }
+        if hud.hasConsent(agent: run.agent.slug) {
+            hud.upsertAgent(run.row("waiting for you: another question", state: .waiting))
+        } else {
+            hud.upsertAgent(run.row(line))
+        }
+    }
+
+    /// MCP servers Dot hands agents itself (its mcp config) plus the computer-use servers; a tool from
+    /// any other server the agent inherits from his Claude Code setup asks first (F4).
+    private var knownServers: Set<String> {
+        let configured = config.mcpToolNames(config.agentMCPConfig).map { name -> String in
+            var server = name
+            if server.hasPrefix("mcp__") { server.removeFirst(5) }
+            if server.hasSuffix("__") { server.removeLast(2) }
+            return server
+        }
+        return Set(configured).union(["cua-driver", "cua-computer-use", "computer-use", "cmux-cua"])
+    }
+
+    /// Computer-use tools agents never get (F4): a script runner is a shell with no gate (osascript
+    /// through Bash covers AppleScript, with Jev and the rules watching), and an extension install
+    /// changes his browser.
+    static let disallowedAgentTools: [String] = ["cua-driver", "cua-computer-use", "computer-use", "cmux-cua"].flatMap { server in
+        ["run_script", "install_extension"].map { "mcp__\(server)__\($0)" }
     }
 
     func consentPolicy(for agent: Agent) -> ConsentPolicy {
@@ -488,7 +670,11 @@ final class AgentManager {
         let protected = ["\(home)/roshan/Atlas/private", "\(home)/roshan/Atlas/objects", "\(home)/roshan/Atlas/qmd-state", "\(home)/.ssh",
                          "\(home)/.claude", "\(home)/.claude-1", "\(home)/.claude-2", "\(home)/.config", "\(home)/Library/Keychains",
                          "\(home)/Library/Application Support", "\(home)/Library/Preferences", "\(home)/Projects/browser-agent/.env"]
-        return ConsentPolicy(allowTools: allow, allowToolPrefixes: prefixes, denyTools: Set(config.denyTools), writableRoots: writable, protectedRoots: protected)
+        let temp = FileManager.default.temporaryDirectory.path
+        return ConsentPolicy(allowTools: allow, allowToolPrefixes: prefixes, denyTools: Set(config.denyTools), writableRoots: writable, protectedRoots: protected,
+                             workingDirectory: agent.folder.path, deletableRoots: [agent.folder.path, temp, "/private/tmp", "/tmp"],
+                             undeletableRoots: [agent.folder.appendingPathComponent(".dot").path, agent.claudeMD.path],
+                             knownServers: knownServers)
     }
 
     static func consentTitle(_ request: PermissionRequest) -> String {
@@ -521,10 +707,11 @@ final class AgentManager {
         }
     }
 
-    func hasTurnInFlight(_ agent: Agent) -> Bool { runs[agent.slug]?.session.turnInFlight ?? false }
+    func hasTurnInFlight(_ agent: Agent) -> Bool { runs[agent.slug]?.isWorking ?? false }
 
     /// Archive: the folder moves under `.archive/` with the date; the roster no longer lists it.
     func archive(_ agent: Agent) {
+        hud.withdrawConsent(agent: agent.slug)
         if let run = runs[agent.slug] { run.session.stop(); runs[agent.slug] = nil }
         let archive = config.agentsRootURL.appendingPathComponent(".archive", isDirectory: true)
         try? FileManager.default.createDirectory(at: archive, withIntermediateDirectories: true)
@@ -574,9 +761,94 @@ final class AgentManager {
         }
     }
 
-    func stopAll() {
-        for run in runs.values { run.session.stop() }
+    /// Dot is quitting (F2): each agent's process ends now instead of running on alone. A turn cut
+    /// short this way is found and marked at the next launch, the same way a crash's is.
+    func prepareForQuit() {
+        for run in runs.values {
+            if run.isWorking { Log.info("agent[\(run.agent.slug)] stopped by quit mid-turn: \(Log.short(run.lastBrief, 80))") }
+            run.session.terminateNow()
+        }
         runs = [:]
+    }
+
+    /// Dot just started (F2): end agent sessions left running without it, and mark a turn that never
+    /// got its result as interrupted, with a button to pick it up again. On 2026-10-15 a relaunch
+    /// left the dot agent's Gmail clean-up running unseen, with no record that the turn ended.
+    func recoverAfterLaunch() {
+        let agents = roster()
+        let sessionIds = Set(agents.compactMap { agent -> String? in
+            (try? String(contentsOf: agent.folder.appendingPathComponent(".dot/session-id"), encoding: .utf8))?.trimmingCharacters(in: .whitespacesAndNewlines)
+        }.filter { !$0.isEmpty })
+        if !sessionIds.isEmpty, let listing = Self.output(of: "/bin/ps", ["-axo", "pid=,ppid=,command="]) {
+            for orphan in AgentRecovery.orphans(in: AgentRecovery.parsePS(listing), sessionIds: sessionIds) {
+                kill(orphan.pid, SIGTERM)
+                Log.warn("agent: ended pid \(orphan.pid), a session left running without Dot")
+            }
+        }
+        let dayAgo = Date().addingTimeInterval(-24 * 3600)
+        for agent in agents {
+            let entries = transcriptEntries(for: agent, limit: 400)
+            guard let brief = AgentRecovery.unfinishedBrief(entries.map { ($0.role, $0.text) }) else { continue }
+            appendTranscript(agent, role: "result", text: "stopped: Dot closed while this was running")
+            let asked = entries.last(where: { $0.role == "user" })?.time ?? .distantPast
+            Log.info("agent[\(agent.slug)] a turn was cut short by a restart: \(Log.short(brief, 80))")
+            // An old one is written down quietly; a recent one gets a row with the way back in.
+            guard asked > dayAgo else { continue }
+            interruptedBriefs[agent.slug] = brief
+            hud.upsertAgent(AgentRow(id: agent.slug, name: agent.name, line: "interrupted when Dot closed", state: .failed,
+                                     result: "Dot closed while \(agent.name) was working on: \(Log.short(brief, 240))\n\nIts conversation is saved; continue picks it up where it stopped.",
+                                     nextAction: Self.continueLabel))
+        }
+    }
+
+    /// The agent whose result came in last, within `seconds`, and is not at work again: his next words
+    /// may be for it ("good, now draft the reply"), the way HeyClicky binds a reply to the agent that
+    /// just reported (G2).
+    func justReported(within seconds: TimeInterval = 120) -> (slug: String, name: String, said: String)? {
+        guard let (slug, when) = finishedAt.max(by: { $0.value < $1.value }), Date().timeIntervalSince(when) <= seconds,
+              runs[slug]?.isWorking != true, !hud.hasConsent(agent: slug) else { return nil }
+        let name = roster().first(where: { $0.slug == slug })?.name ?? slug
+        return (slug, name, Self.firstSentence(of: lastResults[slug] ?? ""))
+    }
+
+    /// One line for him on how an agent is doing (nil slug: every agent that is busy or waiting), from
+    /// what Dot already knows: no turn for the agent, nothing spent (G2, "progress?").
+    func statusLine(for slug: String?) -> String {
+        let cards = hud.openConsents
+        func one(_ agent: Agent) -> String {
+            if let card = cards.first(where: { $0.agentId == agent.slug }) {
+                return "\(agent.name) is waiting for your yes to \(card.title)."
+            }
+            if let run = runs[agent.slug], run.isWorking {
+                let minutes = Int(Date().timeIntervalSince(run.startedAt) / 60)
+                let elapsed = minutes < 1 ? "just started" : "\(minutes) minute\(minutes == 1 ? "" : "s") in"
+                return "\(agent.name) is still on it, \(elapsed): \(run.lastLine)."
+            }
+            if let result = lastResults[agent.slug], let when = finishedAt[agent.slug], Date().timeIntervalSince(when) < 6 * 3600 {
+                return "\(agent.name) finished: \(Self.firstSentence(of: result))"
+            }
+            return "\(agent.name) isn't working on anything right now."
+        }
+        let all = roster()
+        if let slug, let agent = all.first(where: { $0.slug == slug }) { return one(agent) }
+        let busy = all.filter { agent in cards.contains { $0.agentId == agent.slug } || runs[agent.slug]?.isWorking == true }
+        guard !busy.isEmpty else { return "no agents are working right now." }
+        let waiting = busy.filter { agent in cards.contains { $0.agentId == agent.slug } }
+        let lead = waiting.isEmpty ? "" : "\(waiting.count == 1 ? "one thing needs" : "\(waiting.count) things need") you. "
+        return lead + busy.prefix(3).map(one).joined(separator: " ")
+    }
+
+    private static func output(of executable: String, _ arguments: [String]) -> String? {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: executable)
+        process.arguments = arguments
+        let pipe = Pipe()
+        process.standardOutput = pipe
+        process.standardError = FileHandle.nullDevice
+        do { try process.run() } catch { return nil }
+        let data = pipe.fileHandleForReading.readDataToEndOfFile()
+        process.waitUntilExit()
+        return String(data: data, encoding: .utf8)
     }
 
     // MARK: Helpers

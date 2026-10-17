@@ -28,6 +28,8 @@ final class ClaudeSession {
         var includePartialMessages = true
         var effort: String? = nil
         var extraArguments: [String] = []
+        /// Added to the process environment (agents: CLAUDE_CODE_DISABLE_BACKGROUND_TASKS).
+        var environment: [String: String] = [:]
     }
 
     let options: Options
@@ -43,6 +45,8 @@ final class ClaudeSession {
     private(set) var isRunning = false
     private(set) var turnInFlight = false
     private(set) var lastActivity = Date()
+    /// Background tasks (helpers, long shell commands) the session reports open right now.
+    private(set) var backgroundTasks = 0
 
     /// Main thread.
     var onEvent: ((StreamEvent) -> Void)?
@@ -68,7 +72,7 @@ final class ClaudeSession {
         process.executableURL = claudePath
         process.arguments = arguments()
         process.currentDirectoryURL = options.cwd
-        process.environment = Self.environment()
+        process.environment = Self.environment().merging(options.environment) { _, added in added }
 
         let stdin = Pipe(), stdout = Pipe(), stderr = Pipe()
         process.standardInput = stdin
@@ -119,6 +123,18 @@ final class ClaudeSession {
         DispatchQueue.global().asyncAfter(deadline: .now() + 8) {
             if process.isRunning { kill(pid, SIGKILL) }
         }
+        self.process = nil
+        isRunning = false
+        turnInFlight = false
+    }
+
+    /// Dot is quitting: end the process now. `stop()` waits three seconds before its signal, and a
+    /// quitting app never gets there, which left agents running on without Dot (F2, 2026-10-15).
+    func terminateNow() {
+        guard let process else { return }
+        try? stdinHandle?.close()
+        stdinHandle = nil
+        if process.isRunning { kill(process.processIdentifier, SIGTERM) }
         self.process = nil
         isRunning = false
         turnInFlight = false
@@ -179,6 +195,11 @@ final class ClaudeSession {
                                        durationMs: info.durationMs, durationApiMs: info.durationApiMs, numTurns: info.numTurns,
                                        inputTokens: info.inputTokens, outputTokens: info.outputTokens, cacheReadTokens: info.cacheReadTokens,
                                        cacheCreationTokens: info.cacheCreationTokens, resultText: info.resultText))
+        case .backgroundTasks(let count):
+            backgroundTasks = count
+        case .textDelta, .assistantText, .toolUse, .contentBlockStart:
+            // The runtime started a turn on its own (helpers' notifications come back as one).
+            if !turnInFlight, isRunning { turnInFlight = true }
         case .permissionRequest(let request):
             guard let handler = permissionHandler else {
                 answerPermission(requestId: request.requestId, allow: false, input: request.input, message: "Dot has no one to ask.")

@@ -733,9 +733,10 @@ final class Talk {
 
     /// `fromField`: he typed in the notch, so the answer is text there (and spoken only when
     /// `speakTypedAnswers` is on); the command line keeps the voice unless `quiet`.
-    func askTyped(_ text: String, quiet: Bool = false, drive: Bool = false, fromField: Bool = false) {
+    func askTyped(_ text: String, quiet: Bool = false, drive: Bool = false, fromField: Bool = false, dry: Bool = false) {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
+        dryRun = dry
         if phase == .speaking || phase == .thinking { stopSpeaking(); activeSession?.interrupt() }
         quietTurn = quiet || (fromField && !config.speakTypedAnswers)
         textSurface = fromField
@@ -757,6 +758,7 @@ final class Talk {
     private var lastAskWasLecture = false
 
     private func ask(_ text: String, typed: Bool) async {
+        if !typed { dryRun = false }
         lastAskWasTyped = typed
         lastAskWasLecture = false
         lastAsked = text
@@ -776,19 +778,69 @@ final class Talk {
         }
         Log.info("context: app \(context.appName ?? "?") window \(Log.short(context.windowTitle ?? "", 60)) url \(context.url != nil) selected \(context.selectedText?.count ?? 0) elements \(context.elements.count) shots \(shots.count)\(region != nil ? " box" : "")")
 
+        if mode == .agent, dryRun {
+            // The last hotkey press held shift; a dry run still hands nothing to an agent.
+            let named = AgentAddress.find(in: text, roster: addressBook).flatMap { $0.intent == .tell ? $0.slug : nil }
+                ?? AgentAddress.mentioned(in: text, roster: addressBook)?.slug
+            Log.info("dry-run: agent mode, would go to \(named ?? "a new handoff") for \"\(Log.short(text, 100))\"")
+            hud.flash(status: "dry run: agent mode", for: 4)
+            phase = .idle
+            settle()
+            return
+        }
         if mode == .agent {
             phase = .idle
             hud.set(phase: .hidden)
             overlay.setPhase(.idle)
             speaker.speak("on it.")
-            agents.handoff(brief: text, agentName: nil, context: context, shots: shots)
+            // Held shift and named an agent: it goes to that one (G2).
+            if let slug = AgentAddress.find(in: text, roster: addressBook).flatMap({ $0.intent == .tell ? $0.slug : nil })
+                ?? AgentAddress.mentioned(in: text, roster: addressBook)?.slug {
+                agents.reply(to: slug, text: text)
+            } else {
+                agents.handoff(brief: text, agentName: nil, context: context, shots: shots)
+            }
             region = nil
             settle()
             return
         }
 
         let route = await self.route(text)
+        if dryRun {
+            Log.info("dry-run: route \(route) for \"\(Log.short(text, 100))\"")
+            switch route {
+            case .answer, .think: break   // the model turn runs; its tags are logged, not acted on
+            default:
+                hud.flash(status: "dry run: \(route)", for: 4)
+                phase = .idle
+                settle()
+                return
+            }
+        }
         switch route {
+        case .consentAnswer(let answer):
+            answerConsent(answer)
+            return
+        case .tellAgent(let slug):
+            phase = .idle
+            let name = agents.roster().first(where: { $0.slug == slug })?.name ?? slug
+            sayLocal("passing that to \(name.lowercased()).")
+            agents.reply(to: slug, text: text)
+            region = nil
+            return
+        case .stopAgent(let slug):
+            let name = agents.roster().first(where: { $0.slug == slug })?.name ?? slug
+            if agents.runningAgents().contains(where: { $0.slug == slug }) || hud.hasConsent(agent: slug) {
+                agents.stop(slug)
+                sayLocal("stopped \(name.lowercased()).")
+            } else {
+                sayLocal("\(name.lowercased()) isn't working on anything right now.")
+            }
+            return
+        case .agentStatus(let slug):
+            sayLocal(agents.statusLine(for: slug).lowercased())
+            if let slug, hud.hasConsent(agent: slug) { hud.bringConsentForward(agent: slug) }
+            return
         case .continueWalkthrough:
             if walkthrough != nil { continueWalkthrough(said: text) } else { continueBoard(said: text) }
             return
@@ -1122,7 +1174,49 @@ final class Talk {
         sendTurn(built, images: images, to: session, kind: .talk)
     }
 
-    private enum Route { case answer, agent, think, followUp(String), continueWalkthrough, drive, closeBoard, lessonNext, lessonBack, lessonAgain, lecture, suggestion(String), dismiss, find(String), listen, stopListening, recapLecture, dictionary(heard: String?, correct: String), place(what: String, whereWord: String?), images(String) }
+    private enum Route: CustomStringConvertible {
+        case answer, agent, think, followUp(String), continueWalkthrough, drive, closeBoard, lessonNext, lessonBack, lessonAgain, lecture, suggestion(String), dismiss, find(String), listen, stopListening, recapLecture, dictionary(heard: String?, correct: String), place(what: String, whereWord: String?), images(String)
+        /// Round seven (G2): his spoken answer to the card on show; a named agent told, stopped or asked after.
+        case consentAnswer(ConsentVoice.Answer), tellAgent(String), stopAgent(String), agentStatus(String?)
+        var description: String {
+            switch self {
+            case .answer: return "answer"
+            case .agent: return "agent"
+            case .think: return "think"
+            case .followUp(let slug): return "followUp(\(slug))"
+            case .continueWalkthrough: return "continueWalkthrough"
+            case .drive: return "drive"
+            case .closeBoard: return "closeBoard"
+            case .lessonNext: return "lessonNext"
+            case .lessonBack: return "lessonBack"
+            case .lessonAgain: return "lessonAgain"
+            case .lecture: return "lecture"
+            case .suggestion: return "suggestion"
+            case .dismiss: return "dismiss"
+            case .find: return "find"
+            case .listen: return "listen"
+            case .stopListening: return "stopListening"
+            case .recapLecture: return "recapLecture"
+            case .dictionary: return "dictionary"
+            case .place: return "place"
+            case .images: return "images"
+            case .consentAnswer(let answer): return "consentAnswer(\(answer))"
+            case .tellAgent(let slug): return "tellAgent(\(slug))"
+            case .stopAgent(let slug): return "stopAgent(\(slug))"
+            case .agentStatus(let slug): return "agentStatus(\(slug ?? "all"))"
+            }
+        }
+    }
+
+    /// `Dot --ask --dry`: the route and the tags are logged, nothing is handed to an agent, stopped or
+    /// answered (round seven: checks voice routing at night without starting agents).
+    private var dryRun = false
+
+    /// When Dot last ended an answer on a question: a "yes" or "no" soon after is his answer to it.
+    private var askedHimAt = Date.distantPast
+
+    /// The roster in AgentAddress's terms.
+    private var addressBook: [AgentAddress.Agent] { agents.roster().map { AgentAddress.Agent(slug: $0.slug, name: $0.name) } }
 
     /// "find the part about x", "where does it talk about x", "go to the section on x": Dot reads
     /// the document itself and scrolls there, no model needed when the words are plainly in it.
@@ -1171,6 +1265,29 @@ final class Talk {
     private func route(_ text: String) async -> Route {
         let inWalkthrough = walkthrough != nil
         let range = NSRange(location: 0, length: (text as NSString).length)
+        // A card on show: "allow", "not now", "yes, send it" answer it (HeyClicky: "by voice too").
+        if let card = hud.currentConsent {
+            var answer = ConsentVoice.interpret(text, guarded: card.guarded, card: card.title + " " + card.detail)
+            // A bare "ok", "yes" or "no" answers the card only when it just came on show and nothing else
+            // is waiting on one: a walkthrough, a lesson, board steps, a suggestion, or a question Dot just
+            // asked. Otherwise only words aimed at the card ("allow", "not now", "yes, send it") answer it.
+            let suggestionLive = pendingSuggestion.map { Date() < $0.1 } ?? false
+            let fresh = hud.consentShownAt.map { Date().timeIntervalSince($0) < 20 } ?? false
+            let otherAsk = inWalkthrough || lessonCard != nil || board.hasHiddenSteps || suggestionLive || Date().timeIntervalSince(askedHimAt) < 45
+            if !ConsentVoice.isAimedAtCard(text), !fresh || otherAsk { answer = .none }
+            if answer != .none { return .consentAnswer(answer) }
+        }
+        // He named an agent: tell it, stop it, or ask how it is doing (G2).
+        if let match = AgentAddress.find(in: text, roster: addressBook) {
+            switch match.intent {
+            case .tell: return .tellAgent(match.slug)
+            case .stop: return .stopAgent(match.slug)
+            case .status: return .agentStatus(match.slug)
+            }
+        }
+        if AgentAddress.isProgressAsk(text), !agents.runningAgents().isEmpty || !hud.openConsents.isEmpty {
+            return .agentStatus(nil)
+        }
         if !board.isEmpty, Self.closeWords.firstMatch(in: text, range: range) != nil { return .closeBoard }
         if Self.listenWords.firstMatch(in: text, range: range) != nil { return .listen }
         if lecture.isListening, Self.stopListenWords.firstMatch(in: text, range: range) != nil { return .stopListening }
@@ -1219,6 +1336,8 @@ final class Talk {
             return .answer
         }
         let running = agents.runningAgents()
+        // No agent at work, but one just reported: his next words may be for it (G2).
+        let reporter = running.isEmpty ? agents.justReported() : nil
         var state: [String: Any] = [
             "user_said": text,
             "frontmost_app": context.appName ?? "",
@@ -1227,6 +1346,7 @@ final class Talk {
             "elements_on_screen": context.elements.prefix(40).map { "\($0.role.dropFirst(2)) \($0.title)" },
         ]
         if let selected = context.selectedText, !selected.isEmpty { state["selected_text"] = String(selected.prefix(200)) }
+        if let reporter { state["agent_just_reported"] = ["name": reporter.name, "said": reporter.said] }
         if let step = walkthrough {
             state["walkthrough_in_progress"] = ["last_instruction": "\(step.kind == .hover ? "rest on" : "click") \(step.label)", "steps_done": step.history]
         }
@@ -1248,6 +1368,8 @@ final class Talk {
         ]
         if !running.isEmpty {
             questions["followup"] = .yesNo(instructions: "Is this a follow-up, a steer or a question for the agent that is already working, rather than a new request?", yes: "it continues the agent's current task", no: "a new request or a question about the screen")
+        } else if reporter != nil {
+            questions["followup"] = .yesNo(instructions: "An agent just reported back (agent_just_reported). Is what the user said a reply to it or more work for that same agent (a correction, a next step, a 'now do this'), rather than a new request or a question about the screen?", yes: "it continues that agent's work", no: "a new request or a question about the screen")
         }
         if inWalkthrough {
             questions["walkthrough"] = .yesNo(instructions: "A step-by-step walkthrough is in progress (see walkthrough_in_progress). Is what the user said part of it: saying they did the step, asking what's next, a question about this step, or a request to show it or do it for them?", yes: "it continues the current walkthrough", no: "a new, unrelated question or request")
@@ -1279,9 +1401,24 @@ final class Talk {
             Log.info("jev: on-screen task (\(String(format: "%.2f", onScreen))); dot will click it through")
             return .answer
         }
-        if let follow = answers["followup"]?.probability, follow >= 0.7, let live = running.first {
-            Log.info("jev: follow-up for \(live.name) (\(String(format: "%.2f", follow)))")
-            return .followUp(live.slug)
+        if route.choice == "ignore", route.probability >= 0.7, route.confidence >= 0.5 {
+            // Before any follow-up: an "ok" or a "thanks" is not a message for an agent.
+            Log.info("jev: nothing asked (\(String(format: "%.2f", route.probability))): \(Log.short(text, 60))")
+            hud.flash(status: "didn't catch a question", for: 2)
+            return .dismiss
+        }
+        if let follow = answers["followup"]?.probability, follow >= 0.7 {
+            // The agent he last spoke to when it is still working, else the newest; with none working,
+            // the one that just reported (G2), but never for a bare acknowledgment, which its offered
+            // next step would read as a yes.
+            if let live = running.first(where: { $0.slug == agents.lastAddressed }) ?? running.first {
+                Log.info("jev: follow-up for \(live.name) (\(String(format: "%.2f", follow)))")
+                return .followUp(live.slug)
+            }
+            if let reporter, !AgentAddress.isAcknowledgment(text) {
+                Log.info("jev: reply to \(reporter.name), which just reported (\(String(format: "%.2f", follow)))")
+                return .followUp(reporter.slug)
+            }
         }
         if let element = answers["element"]?.choice, element.choice != "none", element.probability >= 0.5, element.confidence >= 0.5,
            let index = Int(element.choice.dropFirst()), context.elements.indices.contains(index) {
@@ -1289,13 +1426,12 @@ final class Talk {
             Log.info("jev: pre-pointing at \(hit.role) \"\(hit.title)\" (\(String(format: "%.2f", element.probability)))")
             overlay.point(at: CGPoint(x: hit.frame.midX, y: hit.frame.midY), label: String(hit.title.prefix(24)))
         }
-        if route.choice == "ignore", route.probability >= 0.7, route.confidence >= 0.5 {
-            Log.info("jev: nothing asked (\(String(format: "%.2f", route.probability))): \(Log.short(text, 60))")
-            hud.flash(status: "didn't catch a question", for: 2)
-            return .dismiss
-        }
         if route.choice == "lecture", route.probability >= 0.6, route.confidence >= 0.5 { return .lecture }
-        if route.choice == "agent", route.probability >= config.jevRouteThreshold, route.confidence >= 0.6 { return .agent }
+        if route.choice == "agent", route.probability >= config.jevRouteThreshold, route.confidence >= 0.6 {
+            // Agent work that names one of his agents goes to that agent (G2), not the default one.
+            if let named = AgentAddress.mentioned(in: text, roster: addressBook) { return .tellAgent(named.slug) }
+            return .agent
+        }
         if route.choice == "think", route.probability >= 0.75, route.confidence >= 0.6 { return .think }
         return .answer
     }
@@ -1402,6 +1538,12 @@ final class Talk {
                 else if !run.line.isEmpty { line += "; now: \(Log.short(run.line, 80))" }
                 return line
             }.joined(separator: " | "))
+        }
+        // Every agent he has, not only the last 45 minutes' (G2): an idle one is reached by name, not founded twice.
+        let busy = Set(recent.map { $0.name.lowercased() })
+        let idle = agents.roster().filter { $0.slug != "dot" && !busy.contains($0.name.lowercased()) }.map(\.name)
+        if !idle.isEmpty {
+            lines.append("his other agents, idle (reach one with [TELL:name:message]): " + idle.joined(separator: ", "))
         }
         if lecture.isListening {
             lines.append("dot's ear is on: listening to the lecture for \(lecture.elapsedMinutes) min; the last minute: \"\(Log.short(lecture.recent(seconds: 60), 600))\"")
@@ -1713,6 +1855,35 @@ final class Talk {
         return "here are some pictures of \(query)."
     }
 
+    /// His spoken answer to the card on show (G2): allow, allow for the rest of the task, or not now.
+    /// A guarded card (a send, a payment, a delete, a push, a change to the Mac) wants the act named,
+    /// so a bare yes gets one sentence saying how instead.
+    private func answerConsent(_ answer: ConsentVoice.Answer) {
+        guard let card = hud.currentConsent else { return }
+        let agent = card.agent.lowercased()
+        Log.info("consent by voice: \(answer) for \(card.agent): \(card.title)")
+        switch answer {
+        case .allow:
+            card.onAllow()
+            sayLocal("okay, \(agent) can \(card.title).")
+        case .allowForTask:
+            if let always = card.onAlways {
+                always()
+                sayLocal("okay, \(agent) can do that for the rest of this task.")
+            } else {
+                card.onAllow()
+                sayLocal("okay, \(agent) can \(card.title).")
+            }
+        case .decline:
+            card.onDeny()
+            sayLocal("okay, \(agent) won't.")
+        case .needsExplicit:
+            sayLocal("that one goes out or can't be undone, so say it in words, like yes, send it, or click allow.")
+        case .none:
+            break
+        }
+    }
+
     /// A local answer with no model turn: the line in the notch and the voice, then settle.
     private func sayLocal(_ line: String) {
         phase = .idle
@@ -1745,6 +1916,7 @@ final class Talk {
         }
         let tags = streamer.allTags
         let spoken = streamer.spokenSoFar
+        if spoken.trimmingCharacters(in: .whitespacesAndNewlines).hasSuffix("?") { askedHimAt = Date() }
         if config.hudShowsResponse { hud.model.response = spoken }
         if textSurface, !spoken.isEmpty {
             hud.model.response = ""
@@ -1777,12 +1949,41 @@ final class Talk {
         }
 
         var escalated = false
+        if dryRun, !tags.isEmpty {
+            Log.info("dry-run: tags \(tags.filter { !$0.isVisual })")
+        }
         for tag in tags {
+            if dryRun, !tag.isVisual { continue }
             switch tag {
             case .agent(let brief):
-                agents.handoff(brief: brief, agentName: nil, context: context, shots: shots)
+                // "for <name>: ..." was the prompt's way to reach a named agent before [TELL]; honour it.
+                if let named = AgentAddress.leadingFor(brief, roster: addressBook) {
+                    agents.reply(to: named.slug, text: named.brief)
+                } else {
+                    agents.handoff(brief: brief, agentName: nil, context: context, shots: shots)
+                }
             case .newAgent(let name, let brief):
                 agents.handoff(brief: brief, agentName: name, context: context, shots: shots)
+            case .tell(let name, let message):
+                let fits = AgentAddress.candidates(named: name, in: addressBook)
+                if fits.count == 1 {
+                    agents.reply(to: fits[0].slug, text: message)
+                } else if fits.count > 1 {
+                    // "Lab" with Lab Desk and Lab Notes: ask, rather than found a third agent called Lab.
+                    let names = fits.map { $0.name.lowercased() }
+                    hud.flash(status: "which one: \(names.joined(separator: " or "))?", for: 6)
+                    Log.warn("tell tag for \"\(name)\" fits \(names.joined(separator: ", ")); asked which")
+                } else {
+                    // No agent by that name yet: the message founds one, the way NEW_AGENT does.
+                    agents.handoff(brief: message, agentName: name, context: context, shots: shots)
+                }
+            case .stopAgent(let name):
+                if let agent = AgentAddress.agent(named: name, in: addressBook) {
+                    agents.stop(agent.slug)
+                    hud.flash(status: "stopped \(agent.name.lowercased())", for: 3)
+                } else {
+                    Log.warn("stop tag for an unknown agent: \(name)")
+                }
             case .routine(let agentName, let when, let brief):
                 if let scheduler {
                     if let routine = scheduler.add(agentName: agentName, when: when, brief: brief) {

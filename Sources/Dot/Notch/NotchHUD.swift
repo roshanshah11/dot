@@ -23,14 +23,31 @@ struct AgentRow: Identifiable, Equatable {
 }
 
 struct ConsentCard: Identifiable {
-    let id = UUID()
+    let id: UUID
+    /// The asking agent's slug: its cards leave with it when it stops, and its row brings them forward.
+    let agentId: String
     let agent: String
     let title: String
     let detail: String
+    /// A send, a payment, a delete, a push or a change to the Mac: a spoken yes has to name the act.
+    let guarded: Bool
     let onAllow: () -> Void
     let onDeny: () -> Void
     /// HeyClicky's "your yes covers one conversation": allow this kind of action for the rest of the task.
     var onAlways: (() -> Void)? = nil
+
+    init(id: UUID = UUID(), agentId: String = "", agent: String, title: String, detail: String, guarded: Bool = false,
+         onAllow: @escaping () -> Void, onDeny: @escaping () -> Void, onAlways: (() -> Void)? = nil) {
+        self.id = id
+        self.agentId = agentId
+        self.agent = agent
+        self.title = title
+        self.detail = detail
+        self.guarded = guarded
+        self.onAllow = onAllow
+        self.onDeny = onDeny
+        self.onAlways = onAlways
+    }
 }
 
 /// A typed notice under the notch, after HeyClicky's notch surfaces (dictation on the clipboard,
@@ -79,6 +96,11 @@ final class HUDModel: ObservableObject {
     @Published var error: String?
     @Published var agents: [AgentRow] = []
     @Published var consent: ConsentCard?
+    /// Questions waiting behind the one on show (round seven: one card per request, never replaced).
+    @Published var consentWaiting = 0
+    /// When the card on show came on show: a tap in its first half second was aimed at the card before
+    /// it (the buttons sit in the same place), and a bare yes or no soon after it is about this card.
+    var consentShownAt = Date.distantPast
     @Published var showInput = false
     @Published var inputText = ""
     /// What the field asks for; cleared after a submit.
@@ -122,6 +144,8 @@ final class HUDModel: ObservableObject {
     var onReply: ((String, String) -> Void)?
     var onDismissAgent: ((String) -> Void)?
     var onStopAgent: ((String) -> Void)?
+    /// A "needs you" row was tapped: show that agent's question.
+    var onFocusConsent: ((String) -> Void)?
     var onMorningDecision: ((MorningCard.Item, Bool) -> Void)?
     var onMorningDismiss: (() -> Void)?
     /// Running tasks fold into pills on the idle tab after a while; a change or a hover unfolds them.
@@ -381,16 +405,62 @@ final class NotchHUD {
         scheduleCollapse()
     }
 
-    func present(_ card: ConsentCard) {
-        model.consent = card
-        refreshVisibility()
-        NSSound(named: "Tink")?.play()
+    // MARK: Consent: one card per request, oldest first (round seven, F1)
+
+    /// Before round seven a second card replaced the first and nothing ever answered the first; on
+    /// 2026-10-16 that left the email agent waiting 78 minutes with no card on screen.
+    private var consentQueue = ConsentQueue<ConsentCard>()
+
+    func present(_ card: ConsentCard, chime: Bool = true) {
+        consentQueue.add(id: card.id, agent: card.agentId, item: card)
+        syncConsent()
+        if chime { NSSound(named: "Tink")?.play() }
     }
 
-    func dismissConsent() {
-        model.consent = nil
+    /// The card was answered (or withdrawn): it leaves, and the next question in line shows.
+    func dismissConsent(id: UUID) {
+        consentQueue.remove(id: id)
+        syncConsent()
+    }
+
+    /// The agent stopped or its session ended: its questions leave with it. Returns how many.
+    @discardableResult
+    func withdrawConsent(agent: String) -> Int {
+        let gone = consentQueue.removeAll(agent: agent).count
+        if gone > 0 { syncConsent() }
+        return gone
+    }
+
+    func bringConsentForward(agent: String) {
+        if consentQueue.bringForward(agent: agent) { syncConsent() }
+    }
+
+    /// The card on show, for an answer by voice.
+    var currentConsent: ConsentCard? { consentQueue.current?.item }
+
+    func hasConsent(agent: String) -> Bool { consentQueue.isWaiting(agent: agent) }
+
+    /// How many questions are open, and from whom (for "what do i need to do").
+    var openConsents: [ConsentCard] { consentQueue.entries.map(\.item) }
+
+    /// A card came on show (first in line, or next after an answer): the place to announce it, so a
+    /// spoken answer goes to the card he just heard about.
+    var onConsentShown: ((ConsentCard) -> Void)?
+
+    private func syncConsent() {
+        let shown = consentQueue.current?.item
+        let changed = shown?.id != model.consent?.id
+        model.consent = shown
+        model.consentWaiting = consentQueue.waitingBehind
+        if changed, let shown {
+            model.consentShownAt = Date()
+            onConsentShown?(shown)
+        }
         refreshVisibility()
     }
+
+    /// When the card on show came on show.
+    var consentShownAt: Date? { model.consent == nil ? nil : model.consentShownAt }
 
     /// Escape, HeyClicky's way (1.0.50): the cards under the notch go away. A consent card stays,
     /// since it needs a choice.
@@ -810,16 +880,30 @@ struct NotchHUDView: View {
         .background(Color.white.opacity(0.07), in: RoundedRectangle(cornerRadius: 10))
     }
 
+    /// A tap that lands in a card's first half second was meant for the card before it.
+    private func settled(_ action: @escaping () -> Void) {
+        guard Date().timeIntervalSince(model.consentShownAt) >= 0.5 else { return }
+        action()
+    }
+
     private func consent(_ card: ConsentCard) -> some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("\(card.agent) wants to \(card.title)").font(.system(size: 13, weight: .semibold)).foregroundStyle(text)
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                Text("\(card.agent) wants to \(card.title)").font(.system(size: 13, weight: .semibold)).foregroundStyle(text)
+                Spacer(minLength: 4)
+                if model.consentWaiting > 0 {
+                    Text("+\(model.consentWaiting) waiting").font(.system(size: 10.5, weight: .semibold)).foregroundStyle(NotchInk.warn)
+                        .padding(.horizontal, 7).padding(.vertical, 2)
+                        .background(NotchInk.warn.opacity(0.14), in: Capsule())
+                }
+            }
             if !card.detail.isEmpty {
                 Text(card.detail).font(.system(size: 12, design: .monospaced)).foregroundStyle(text.opacity(0.65)).lineLimit(3)
             }
             HStack(spacing: 8) {
-                GelButton(title: "Allow", accent: model.accent, primary: true, action: card.onAllow)
-                if let always = card.onAlways { GelButton(title: "Allow for this task", accent: model.accent, primary: false, action: always) }
-                GelButton(title: "Not now", accent: model.accent, primary: false, action: card.onDeny)
+                GelButton(title: "Allow", accent: model.accent, primary: true, action: { settled(card.onAllow) })
+                if let always = card.onAlways { GelButton(title: "Allow for this task", accent: model.accent, primary: false, action: { settled(always) }) }
+                GelButton(title: "Not now", accent: model.accent, primary: false, action: { settled(card.onDeny) })
             }
         }
         .padding(12)
@@ -873,6 +957,7 @@ struct NotchHUDView: View {
             }
             .contentShape(Rectangle())
             .onTapGesture {
+                if row.state == .waiting { model.onFocusConsent?(row.id); return }
                 guard row.result != nil else { return }
                 withAnimation(.easeOut(duration: 0.18)) { model.expanded = model.expanded == row.id ? nil : row.id }
             }
@@ -890,7 +975,7 @@ struct NotchHUDView: View {
         case .running: return row.kind == .walkthrough ? "step by step" : (row.kind == .lesson ? "on the board" : "working")
         case .waiting: return "needs you"
         case .done: return "done"
-        case .failed: return "failed"
+        case .failed: return row.line.hasPrefix("interrupted") ? "interrupted" : "failed"
         }
     }
 
@@ -899,7 +984,7 @@ struct NotchHUDView: View {
         case .running: return accent
         case .waiting: return NotchInk.warn
         case .done: return NotchInk.good
-        case .failed: return NotchInk.red
+        case .failed: return row.line.hasPrefix("interrupted") ? NotchInk.warn : NotchInk.red
         }
     }
 

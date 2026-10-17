@@ -19,12 +19,14 @@ case "--help", "-h":
       Dot --ask <q>     ask the running Dot by text      Dot --agent <brief>   hand a job to an agent
       Dot --ask --quiet <q>   same, with no voice (beats pace themselves)
       Dot --ask --drive <q>   a walkthrough Dot clicks through itself (tests; by voice say "do it")
+      Dot --ask --dry <q>     log the route and the tags only: no agent is started, told, stopped or answered
       Dot --home        open the Dot window              Dot --stop            stop talking
       Dot --refresh     re-read today from Atlas         Dot --input           open the typed-question field
       Dot --find <phrase>      search the app in front and highlight the match
       Dot --listen [title]     start the lecture ear       Dot --stop-listening  stop it and save the transcript
       Dot --dictionary "heard => correct"   add a term the recognizer should write your way
       Dot --snapshot [folder]  render every notch state, mark and card to PNG (no screen turn)
+      Dot --selftest           check the notch's permission-card queue (no agents, no model)
       Dot --version
 
     Hold control+option and talk; drag while holding to draw a box to ask about.
@@ -80,6 +82,12 @@ case "--snapshot":
     let group = arguments.dropFirst(2).first   // notch | overlay | cards
     MainActor.assumeIsolated { Snapshots.run(into: folder, only: group) }
     exit(0)
+case "--selftest":
+    let selfTestApp = NSApplication.shared
+    selfTestApp.setActivationPolicy(.accessory)
+    selfTestApp.finishLaunching()
+    let passed = MainActor.assumeIsolated { SelfTest.run() }
+    exit(passed ? 0 : 1)
 case "--voices":
     for voice in AppleSpeaker.availableVoices() {
         print("\(voice.quality.padding(toLength: 9, withPad: " ", startingAt: 0)) \(voice.name)\n          \(voice.id)")
@@ -89,15 +97,17 @@ case "--ask", "--agent":
     // Talk to the running app: `Dot --ask "what's in front?"`, `Dot --agent "sort my downloads"`.
     // `--ask --quiet` runs the turn with the bubble and marks but no voice (tests at night).
     var rest = Array(arguments.dropFirst())
-    var quiet = false, drive = false
+    var quiet = false, drive = false, dry = false
     while let flag = rest.first, flag.hasPrefix("--") {
-        if flag == "--quiet" { quiet = true } else if flag == "--drive" { drive = true } else { break }
+        if flag == "--quiet" { quiet = true } else if flag == "--drive" { drive = true } else if flag == "--dry" { dry = true } else { break }
         rest.removeFirst()
     }
     let text = rest.joined(separator: " ").trimmingCharacters(in: .whitespacesAndNewlines)
-    guard !text.isEmpty else { print("usage: Dot --ask [--quiet] [--drive] <question> | Dot --agent <brief>"); exit(2) }
+    guard !text.isEmpty else { print("usage: Dot --ask [--quiet] [--drive] [--dry] <question> | Dot --agent <brief>"); exit(2) }
+    // --dry is for --ask: a brief sent with --agent would still start the agent.
+    guard !(dry && arguments.first == "--agent") else { print("--dry works with --ask only; Dot --agent always starts the agent"); exit(2) }
     let name = arguments.first == "--ask" ? DotIPC.ask : DotIPC.agent
-    DistributedNotificationCenter.default().postNotificationName(name, object: nil, userInfo: ["text": text, "quiet": quiet, "drive": drive], deliverImmediately: true)
+    DistributedNotificationCenter.default().postNotificationName(name, object: nil, userInfo: ["text": text, "quiet": quiet, "drive": drive, "dry": dry], deliverImmediately: true)
     print("sent to Dot")
     exit(0)
 case "--type", "--stt", "--card", "--find", "--dictionary", "--listen":

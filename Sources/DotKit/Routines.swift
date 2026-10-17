@@ -160,7 +160,10 @@ public struct Routine: Codable, Identifiable, Equatable, Sendable {
     public var failures: Int
     public var lastNote: String?
 
-    public init(id: String = UUID().uuidString.lowercased(), agent: String, agentName: String, brief: String, schedule: RoutineSchedule, now: Date = Date()) {
+    /// A new routine runs once right away unless `runFirstNow` is false (round seven, G3: HeyClicky's
+    /// first run happens at once, so he sees what the routine makes); after that it keeps its schedule.
+    public init(id: String = UUID().uuidString.lowercased(), agent: String, agentName: String, brief: String, schedule: RoutineSchedule,
+                now: Date = Date(), runFirstNow: Bool = true) {
         self.id = id
         self.agent = agent
         self.agentName = agentName
@@ -169,7 +172,7 @@ public struct Routine: Codable, Identifiable, Equatable, Sendable {
         self.paused = false
         self.created = now
         self.lastRun = nil
-        self.nextRun = schedule.next(after: now)
+        self.nextRun = runFirstNow ? now : schedule.next(after: now)
         self.failures = 0
         self.lastNote = nil
     }

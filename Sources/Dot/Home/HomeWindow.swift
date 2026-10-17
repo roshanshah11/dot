@@ -690,6 +690,33 @@ struct HomeView: View {
             }
         case "output", "tool_error":
             EmptyView()
+        case "artifact":
+            // A file the turn made or changed (round seven, G1): open it or drag it out.
+            let url = model.selected?.outputFolder.appendingPathComponent(entry.text)
+            HStack(spacing: 8) {
+                Image(systemName: "doc").font(.system(size: 10)).foregroundStyle(accent).frame(width: 14)
+                Text(entry.text).font(.system(size: 11.5)).lineLimit(1)
+                if let url, FileManager.default.fileExists(atPath: url.path) {
+                    Button("open") { NSWorkspace.shared.open(url) }.buttonStyle(.link).font(.system(size: 11))
+                }
+                Spacer()
+            }
+            .padding(.leading, 6)
+            .onDrag { url.map { NSItemProvider(object: $0 as NSURL) } ?? NSItemProvider() }
+        case "next":
+            HStack(spacing: 8) {
+                Image(systemName: "arrow.turn.down.right").font(.system(size: 10)).foregroundStyle(.secondary).frame(width: 14)
+                Text("offered next: \(entry.text)").font(.system(size: 11.5)).foregroundStyle(.secondary).lineLimit(1)
+                Spacer()
+            }
+            .padding(.leading, 6)
+        case "progress":
+            HStack(alignment: .top, spacing: 8) {
+                Image(systemName: "person.2").font(.system(size: 10)).foregroundStyle(.secondary).frame(width: 14)
+                Text(entry.text).font(.system(size: 11.5)).foregroundStyle(.secondary).lineLimit(2)
+                Spacer()
+            }
+            .padding(.leading, 6)
         default:
             HStack(alignment: .top, spacing: 8) {
                 Image(systemName: "hand.raised").font(.system(size: 10)).foregroundStyle(.orange).frame(width: 14)

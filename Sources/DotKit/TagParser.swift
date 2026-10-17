@@ -15,6 +15,8 @@ import Foundation
 ///   [CLEAR_BOARD]                  take every card down
 ///   [AGENT:brief]                  hand the task to a background agent
 ///   [NEW_AGENT:name:brief]         create a named agent for this kind of work, then hand off
+///   [TELL:name:message]            pass a message to an agent he already has (a follow-up, a change, a question)
+///   [STOP_AGENT:name]              stop that agent's work now
 ///   [THINK]                        the question deserves the stronger model; Dot re-asks it
 ///   [FIND:phrase]                  find the phrase in the document in front, scroll to it and highlight it
 ///   [STOCK:NVDA]                   a live quote card on the board
@@ -36,6 +38,10 @@ public enum DotTag: Equatable {
     case clearBoard
     case agent(brief: String)
     case newAgent(name: String, brief: String)
+    /// A message for an agent he already has, by name (round seven, G2).
+    case tell(agent: String, message: String)
+    /// Stop that agent now (round seven, G2: a stop used to be a click only).
+    case stopAgent(name: String)
     /// A standing agent's task on a schedule: the agent's name, when in plain words, the brief.
     case routine(agent: String, when: String, brief: String)
     case think
@@ -71,7 +77,7 @@ public extension DotTag {
     var isVisual: Bool {
         switch self {
         case .point, .highlight, .target, .hover, .shape, .card, .reveal, .clearBoard, .type, .web, .find, .stock, .place, .images: return true
-        case .pointNone, .agent, .newAgent, .routine, .think: return false
+        case .pointNone, .agent, .newAgent, .tell, .stopAgent, .routine, .think: return false
         }
     }
 
@@ -105,11 +111,11 @@ public struct ParsedResponse: Equatable {
 }
 
 public enum TagParser {
-    static let tagNames = ["POINT", "HIGHLIGHT", "TARGET", "HOVER", "SHAPE", "CARD", "REVEAL", "CLEAR_BOARD", "TYPE", "WEB", "FIND", "STOCK", "PLACE", "IMAGES", "AGENT", "NEW_AGENT", "ROUTINE", "THINK"]
+    static let tagNames = ["POINT", "HIGHLIGHT", "TARGET", "HOVER", "SHAPE", "CARD", "REVEAL", "CLEAR_BOARD", "TYPE", "WEB", "FIND", "STOCK", "PLACE", "IMAGES", "AGENT", "NEW_AGENT", "TELL", "STOP_AGENT", "ROUTINE", "THINK"]
 
     // swiftlint:disable:next force_try
     static let pattern = try! NSRegularExpression(
-        pattern: #"\[(POINT|HIGHLIGHT|TARGET|HOVER|SHAPE|CARD|REVEAL|CLEAR_BOARD|TYPE|WEB|FIND|STOCK|PLACE|IMAGES|AGENT|NEW_AGENT|ROUTINE|THINK)(?::([^\]]*))?\]"#,
+        pattern: #"\[(POINT|HIGHLIGHT|TARGET|HOVER|SHAPE|CARD|REVEAL|CLEAR_BOARD|TYPE|WEB|FIND|STOCK|PLACE|IMAGES|AGENT|NEW_AGENT|TELL|STOP_AGENT|ROUTINE|THINK)(?::([^\]]*))?\]"#,
         options: []
     )
 
@@ -207,6 +213,14 @@ public enum TagParser {
                 .map { String($0).trimmingCharacters(in: .whitespacesAndNewlines) }
             guard parts.count == 2, !parts[0].isEmpty, !parts[1].isEmpty else { return nil }
             return .newAgent(name: parts[0], brief: parts[1])
+        case "TELL":
+            let parts = payload.split(separator: ":", maxSplits: 1, omittingEmptySubsequences: false)
+                .map { String($0).trimmingCharacters(in: .whitespacesAndNewlines) }
+            guard parts.count == 2, !parts[0].isEmpty, !parts[1].isEmpty else { return nil }
+            return .tell(agent: parts[0], message: parts[1])
+        case "STOP_AGENT":
+            let name = payload.trimmingCharacters(in: .whitespacesAndNewlines)
+            return name.isEmpty ? nil : .stopAgent(name: name)
         case "ROUTINE":
             let parts = payload.split(separator: ":", maxSplits: 2, omittingEmptySubsequences: false)
                 .map { String($0).trimmingCharacters(in: .whitespacesAndNewlines) }
