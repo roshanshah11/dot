@@ -92,10 +92,10 @@ final class MorningSuggestions {
         hud.morningDecided(item)
         guard yes else { Log.info("morning: skipped: \(item.id): \(Log.short(item.text, 70))"); return }
         let suggestion = offered[item.id] ?? MorningSuggestion(key: item.id, text: item.text, brief: item.brief)
-        // A scout brief names its agent; handoff founds it when it is new. A template goes to Dot.
+        // A scout brief names its agent; handoff founds it when it is new. A template gets a job agent of its own.
         let change = adjust.map { "\n\nHis change when he said yes: \($0)" } ?? ""
-        agents.handoff(brief: suggestion.handoffBrief + change, agentName: suggestion.agentName, context: nil, shots: nil)
-        let who = suggestion.agentName ?? "Dot"
+        let used = agents.handoff(brief: suggestion.handoffBrief + change, agentName: suggestion.agentName, context: nil, shots: nil)
+        let who = suggestion.agentName ?? used.name   // an unnamed one founded a job agent; its routine goes there
         var line = "morning: do it: \(item.id) to \(who)" + (suggestion.agentRole.map { " (new, \($0))" } ?? "")
         if let routine = suggestion.routine {
             let brief = suggestion.routineBrief ?? suggestion.brief

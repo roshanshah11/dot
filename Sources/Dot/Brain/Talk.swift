@@ -2205,7 +2205,7 @@ final class Talk {
                     agents.handoff(brief: brief, agentName: nil, context: context, shots: shots)
                 }
             case .newAgent(let name, let brief):
-                agents.handoff(brief: brief, agentName: name, context: context, shots: shots)
+                agents.handoff(brief: brief, agentName: name, context: context, shots: shots, fresh: true)
             case .tell(let name, let message):
                 let fits = AgentAddress.candidates(named: name, in: addressBook)
                 if fits.count == 1 {

@@ -128,6 +128,7 @@ final class AgentManager {
         self.rules = AgentRules.load(from: rulesURL)
         try? FileManager.default.createDirectory(at: config.agentsRootURL, withIntermediateDirectories: true)
         _ = ensureAgent(named: "Dot")
+        archiveStaleJobs()
         hud.model.onOpenAgent = { [weak self] slug in
             Task { @MainActor in
                 guard let self, let agent = self.roster().first(where: { $0.slug == slug }) else { return }
@@ -249,10 +250,24 @@ final class AgentManager {
 
     /// `agent`: an agent already on the roster, by its folder, so a renamed one is not founded again
     /// under its new name.
+    /// `fresh`: new work (NEW_AGENT, or nothing named it). It gets an agent of its own: an unnamed job is named from
+    /// its brief, and a name whose agent is busy gets a number, so a second job never lands in the middle of the
+    /// first one's turn (2026-10-17: "start another agent on that, not you" was poured into the busy "Dot" agent).
+    @discardableResult
     func handoff(brief: String, agentName: String?, context: ScreenContext?, shots: [ScreenShot]?,
-                 extraImages: [(data: Data, mediaType: String)] = [], note: String? = nil, routine: Bool = false, agent known: Agent? = nil) {
-        let agent = known ?? ensureAgent(named: agentName ?? "Dot")
-        if known != nil || agentName != nil, !routine { lastAddressed = agent.slug }
+                 extraImages: [(data: Data, mediaType: String)] = [], note: String? = nil, routine: Bool = false, agent known: Agent? = nil,
+                 fresh: Bool = false) -> Agent {
+        let agent: Agent
+        if let known {
+            agent = known
+        } else if agentName == nil, !routine {
+            agent = foundJob(named: JobName.make(from: brief, taken: busyNames()))
+        } else if let agentName, fresh, busyNames().contains(agentName.lowercased()) {
+            agent = foundJob(named: Self.numbered(agentName, taken: busyNames()))
+        } else {
+            agent = ensureAgent(named: agentName ?? "Dot")
+        }
+        if !routine { lastAddressed = agent.slug }
         let run: Run
         if let live = runs[agent.slug], live.session.isRunning, !live.isWorking {
             run = live
@@ -275,9 +290,9 @@ final class AgentManager {
             appendTranscript(agent, role: "user", text: brief)
             live.session.send(text: brief)
             Log.info("agent[\(agent.slug)] follow-up mid-turn: \(Log.short(brief))")
-            return
+            return agent
         } else {
-            guard let fresh = startRun(for: agent) else { return }
+            guard let fresh = startRun(for: agent) else { return agent }
             run = fresh
         }
         run.startedAt = Date()
@@ -316,6 +331,16 @@ final class AgentManager {
         run.session.send(text: text, images: Array(images))
         postActivity(agent.slug)
         Log.info("agent[\(agent.slug)] handoff: \(Log.short(brief))")
+        return agent
+    }
+
+    /// Atlas's private folder and the browser profile's cookies, closed to every agent (Atlas chats deny the same).
+    static func privateDeny(atlasRoot: String) -> [String] {
+        let home = NSHomeDirectory()
+        return ["\(atlasRoot)/Atlas/private/**", "\(home)/.atlas-browser/**"].flatMap { path -> [String] in
+            let abs = "/" + path   // Claude Code reads //absolute as an absolute path
+            return ["Read(\(abs))", "Edit(\(abs))"]
+        }
     }
 
     /// `attachFrom`: the agent host already runs this agent's process (a relaunch, AG-12); the run
@@ -344,8 +369,17 @@ final class AgentManager {
         // approve on its own included (the stdio prompt never sees those), and web, shell and MCP
         // results come back for the injection check. With no socket the agent runs as before.
         if let socket = controlSocket {
-            options.settings = HookDecision.settingsJSON(executable: Gate.executablePath, arguments: ["--gate", "--agent", agent.slug])
+            // Atlas's way (his call 2026-10-17, "bypass permissions typical to atlas"): bypassPermissions, never auto
+            // mode, his private Atlas folder and the browser's cookies denied; every call still goes through the gate,
+            // so sends, submits and deletes outside the agent's folder ask on a card as before.
+            let deny = Self.privateDeny(atlasRoot: DotConfig.expand(config.atlasRoot))
+            options.settings = HookDecision.settingsJSON(executable: Gate.executablePath, arguments: ["--gate", "--agent", agent.slug],
+                                                         deny: deny, defaultMode: options.permissionMode == "bypassPermissions" ? "bypassPermissions" : nil)
             options.environment[ControlServer.pathVariable] = socket
+        } else if options.permissionMode == "bypassPermissions" {
+            // No gate to ask: an agent never runs ungated.
+            options.permissionMode = "default"
+            Log.warn("agent[\(agent.slug)] no control socket for the gate; running in default mode instead of bypassPermissions")
         }
         options.maxTurns = 200
         options.mcpConfigPath = config.mcpConfigPath(config.agentMCPConfig)
@@ -894,6 +928,52 @@ final class AgentManager {
     }
 
     func hasTurnInFlight(_ agent: Agent) -> Bool { runs[agent.slug]?.isWorking ?? false }
+
+    // MARK: Job agents
+
+    /// Names (lowercased) of agents that are mid-turn or waiting on his yes: a new job does not join them.
+    private func busyNames() -> Set<String> {
+        Set(roster().filter { a in (runs[a.slug]?.isWorking ?? false) || hud.hasConsent(agent: a.slug) }.map { $0.name.lowercased() })
+    }
+
+    static func numbered(_ name: String, taken: Set<String>) -> String {
+        guard taken.contains(name.lowercased()) else { return name }
+        var n = 2
+        while taken.contains("\(name) \(n)".lowercased()) { n += 1 }
+        return "\(name) \(n)"
+    }
+
+    /// A job's own agent: founded like any other, marked as a job so it is archived after it has sat finished for a while.
+    private func foundJob(named name: String) -> Agent {
+        // an agent he already has under this name stays his (it is reused, never marked for archiving)
+        let existed = FileManager.default.fileExists(atPath: config.agentsRootURL.appendingPathComponent(Self.slugify(name)).path)
+        let agent = ensureAgent(named: name)
+        let marker = agent.folder.appendingPathComponent(".dot/job")
+        if !existed, !FileManager.default.fileExists(atPath: marker.path) {
+            try? FileManager.default.createDirectory(at: marker.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try? Data().write(to: marker)
+            Log.info("agent[\(agent.slug)] is a job agent")
+        }
+        return agent
+    }
+
+    /// Job agents idle for `days` (no turn running, no card, no routine naming them) move to `.archive/`, so the
+    /// roster stays the agents he uses. Their folders, files and notes are kept there.
+    func archiveStaleJobs(days: Double = 3) {
+        let routines = (try? Data(contentsOf: URL(fileURLWithPath: DotConfig.expand(config.routinesFile))))
+            .flatMap { String(data: $0, encoding: .utf8) }?.lowercased() ?? ""
+        let cutoff = Date().addingTimeInterval(-days * 86_400)
+        for agent in roster() where agent.slug != "dot" {
+            let fm = FileManager.default
+            guard fm.fileExists(atPath: agent.folder.appendingPathComponent(".dot/job").path),
+                  runs[agent.slug]?.session.isRunning != true, !hud.hasConsent(agent: agent.slug),
+                  !routines.contains("\"\(agent.name.lowercased())\""), !routines.contains("\"\(agent.slug)\"") else { continue }
+            let touched = [".dot/transcript.jsonl", "CLAUDE.md", ".dot/job"].compactMap {
+                (try? fm.attributesOfItem(atPath: agent.folder.appendingPathComponent($0).path))?[.modificationDate] as? Date
+            }.max() ?? .distantPast
+            if touched < cutoff { archive(agent) }
+        }
+    }
 
     /// Archive: the folder moves under `.archive/` with the date; the roster no longer lists it.
     func archive(_ agent: Agent) {

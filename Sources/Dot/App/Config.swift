@@ -122,7 +122,8 @@ struct DotConfig: Codable {
     /// Claude Code's permission mode for agents. "default" sends every edit and command to Dot's own
     /// rules; "acceptEdits" (round six) let Claude Code approve edits and deletes inside the agent's
     /// folder and ~/roshan by itself, so Dot never saw them (F3, replayed 2026-10-16).
-    var agentPermissionMode = "default"
+    /// Atlas's mode (his call 2026-10-17): bypassPermissions behind Dot's gate; falls back to default with no gate.
+    var agentPermissionMode = "bypassPermissions"
 
     // B2b.
     /// Agents run in Dot's agent host (`Dot --host`, LaunchAgent com.roshan.dot-host) and keep going

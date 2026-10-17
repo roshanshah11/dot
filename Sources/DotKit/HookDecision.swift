@@ -232,8 +232,10 @@ public enum HookDecision: Equatable {
     /// The `--settings` JSON that sends every tool call through `<executable> --gate` (AG-07) and
     /// web, shell and MCP results through it again after they run. Shell form, the form the probe
     /// ran: the executable and every argument single-quoted.
+    /// `deny` and `defaultMode` go in as `permissions` (Atlas chats run with bypassPermissions and a deny list).
     public static func settingsJSON(executable: String, arguments: [String] = ["--gate"],
-                                    timeout: Int = gateTimeout, postMatcher: String? = HookDecision.postMatcher) -> String {
+                                    timeout: Int = gateTimeout, postMatcher: String? = HookDecision.postMatcher,
+                                    deny: [String] = [], defaultMode: String? = nil) -> String {
         let command = ([executable] + arguments).map(shellQuoted).joined(separator: " ")
         var hooks: [String: Any] = [
             "PreToolUse": [["matcher": "*", "hooks": [["type": "command", "command": command, "timeout": timeout]]]],
@@ -241,7 +243,12 @@ public enum HookDecision: Equatable {
         if let postMatcher {
             hooks["PostToolUse"] = [["matcher": postMatcher, "hooks": [["type": "command", "command": command, "timeout": postTimeout]]]]
         }
-        guard let data = try? JSONSerialization.data(withJSONObject: ["hooks": hooks], options: [.sortedKeys, .withoutEscapingSlashes]),
+        var settings: [String: Any] = ["hooks": hooks]
+        var permissions: [String: Any] = [:]
+        if !deny.isEmpty { permissions["deny"] = deny }
+        if let defaultMode { permissions["defaultMode"] = defaultMode }
+        if !permissions.isEmpty { settings["permissions"] = permissions }
+        guard let data = try? JSONSerialization.data(withJSONObject: settings, options: [.sortedKeys, .withoutEscapingSlashes]),
               let text = String(data: data, encoding: .utf8) else { return "{}" }
         return text
     }
