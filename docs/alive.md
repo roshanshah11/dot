@@ -390,7 +390,7 @@ Where the build departs from the spec above, and why. Each one is in the run's d
 - **Agent pace (2.10):** not built. Output tokens reach Dot only when a turn ends (the ledger), so a live rate needs new plumbing.
 - **Before reels:** only main's stills are in `before/`. The old orb's motion lived in its timers, not in a pose that can be
   replayed frame by frame.
-- **Recording guard:** macOS has no public "the screen is being recorded" signal, so `recording` stays false and the
-  quiet-on-calls check covers shares, which mostly happen on calls.
+- **Recording guard:** Dot has no signal for a screen recording or share outside a call, so `recording` stays false and the
+  quiet-on-calls check covers shares made on calls. A share outside a call can still show antics (open item).
 
 Previews: `Dot --snapshot <folder> alive` (stills at 20/24/28 px, eye gaps 0.16/0.20/0.24, and nine GIF reels).
