@@ -5,6 +5,9 @@ import Foundation
 let arguments = CommandLine.arguments.dropFirst()
 
 switch arguments.first {
+case "--gate":
+    // Claude Code's PreToolUse and PostToolUse hook for Dot's agents (AG-07): hook JSON in, decision out.
+    Gate.run(Array(arguments.dropFirst()))
 case "--version", "-v":
     print("Dot \(Version.string)")
     exit(0)
@@ -27,6 +30,7 @@ case "--help", "-h":
       Dot --dictionary "heard => correct"   add a term the recognizer should write your way
       Dot --snapshot [folder]  render every notch state, mark and card to PNG (no screen turn)
       Dot --selftest           check the notch's permission-card queue (no agents, no model)
+      Dot --gate               the agents' tool-call hook (Claude Code runs it; JSON on stdin)
       Dot --version
 
     Hold control+option and talk; drag while holding to draw a box to ask about.

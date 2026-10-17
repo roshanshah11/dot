@@ -65,6 +65,8 @@ final class AgentManager {
     var atlas: AtlasBridge?
     /// Set after init: clears unrecognised shell commands that are plainly harmless.
     var jev: Jev?
+    /// Set after init when the control socket listens: agents started after it get the gate (AG-07).
+    var controlSocket: String?
     /// What agents do on their own, ask about, or leave to him (~/Dot/rules.json); Home edits it.
     var rules: AgentRules
     private let rulesURL: URL
@@ -334,6 +336,13 @@ final class AgentManager {
         // F4: a script runner is a shell with no gate, and an extension install changes the browser.
         options.disallowedTools = Self.disallowedAgentTools
         options.permissionPromptOverStdio = true
+        // AG-07: a PreToolUse hook sends every tool call through Dot first, the ones Claude Code would
+        // approve on its own included (the stdio prompt never sees those), and web, shell and MCP
+        // results come back for the injection check. With no socket the agent runs as before.
+        if let socket = controlSocket {
+            options.settings = HookDecision.settingsJSON(executable: Gate.executablePath, arguments: ["--gate", "--agent", agent.slug])
+            options.environment[ControlServer.pathVariable] = socket
+        }
         options.maxTurns = 200
         options.mcpConfigPath = config.mcpConfigPath(config.agentMCPConfig)
         options.strictMCP = false
@@ -358,6 +367,11 @@ final class AgentManager {
         }
         session.permissionHandler = { [weak self, weak run] request, completion in
             guard let self, let run else { completion(false, "Dot is gone."); return }
+            // The gate already has this call (a hook that timed out, a removal no hook may allow): one answer, one card.
+            if let id = request.toolUseId {
+                if let answer = self.gateAnswers[id] { completion(answer.allow, answer.message); return }
+                if self.gateWaiting[id] != nil { self.gateWaiting[id]?.append(completion); return }
+            }
             self.permission(request, run: run, completion: completion)
         }
         session.onExit = { [weak self, weak run] status in
@@ -552,6 +566,45 @@ final class AgentManager {
         DispatchQueue.main.asyncAfter(deadline: .now() + 120) { [weak self] in
             guard let self, self.runs[agent.slug]?.isWorking != true, self.hud.model.expanded != agent.slug else { return }
             if self.hud.model.agents.first(where: { $0.id == agent.slug })?.state == .done { self.hud.removeAgent(id: agent.slug) }
+        }
+    }
+
+    // MARK: The gate (AG-07)
+
+    /// Calls the gate is deciding, by tool_use_id, with any stdio prompts for the same call waiting
+    /// on that answer; and the answers of the last ten minutes, for a prompt that comes after.
+    private var gateWaiting: [String: [(Bool, String?) -> Void]] = [:]
+    private var gateAnswers: [String: (allow: Bool, message: String?)] = [:]
+
+    /// A PreToolUse call from `Dot --gate`: the same path a stdio prompt takes (his rules, the policy,
+    /// the sentinel, Jev, a card), answered allow or deny. A card holds the reply until he answers.
+    /// A session that is none of Dot's runs gets no opinion, and Claude Code's own flow applies.
+    func gate(_ input: HookInput, agent slug: String?, reply: @escaping (HookDecision) -> Void) {
+        let run = runs.values.first { $0.session.sessionId == input.sessionId } ?? slug.flatMap { runs[$0] }
+        guard let run, run.session.isRunning else { reply(.pass); return }
+        let key = input.toolUseId
+        if let key { gateWaiting[key] = gateWaiting[key] ?? [] }
+        permission(input.permissionRequest, run: run) { [weak self] allow, message in
+            reply(allow ? .allow(nil) : .deny(message ?? "Dot said no."))
+            guard let self, let key else { return }
+            let joined = self.gateWaiting.removeValue(forKey: key) ?? []
+            joined.forEach { $0(allow, message) }
+            self.gateAnswers[key] = (allow, message)
+            DispatchQueue.main.asyncAfter(deadline: .now() + 600) { [weak self] in self?.gateAnswers[key] = nil }
+        }
+    }
+
+    /// A PostToolUse call: a web, browser or mail output Jev reads as carrying instructions gets a
+    /// line telling the agent it is data (AG-13). Everything else, and Jev missing or slow, passes.
+    func checkOutput(_ input: HookInput, reply: @escaping (HookDecision) -> Void) {
+        guard let jev, Sentinel.checksOutput(toolName: input.toolName, input: input.toolInput) else { reply(.pass); return }
+        jev.injectionCheck(toolName: input.toolName, output: input.responseText()) { [weak self] line in
+            guard let line else { reply(.pass); return }
+            if let self, let run = self.runs.values.first(where: { $0.session.sessionId == input.sessionId }) {
+                self.appendTranscript(run.agent, role: "flagged", text: "\(input.toolName): its output reads like instructions; told the agent it is data")
+            }
+            Log.info("sentinel: \(input.toolName) output carries instructions; context added")
+            reply(.context(line))
         }
     }
 
@@ -763,9 +816,9 @@ final class AgentManager {
 
     /// Computer-use tools agents never get (F4): a script runner is a shell with no gate (osascript
     /// through Bash covers AppleScript, with Jev and the rules watching), and an extension install
-    /// changes his browser.
+    /// changes his browser. A trajectory replay clicks through a recorded run with no gate per step (CU-05).
     static let disallowedAgentTools: [String] = ["cua-driver", "cua-computer-use", "computer-use", "cmux-cua"].flatMap { server in
-        ["run_script", "install_extension"].map { "mcp__\(server)__\($0)" }
+        ["run_script", "install_extension", "replay_trajectory"].map { "mcp__\(server)__\($0)" }
     }
 
     func consentPolicy(for agent: Agent) -> ConsentPolicy {
