@@ -1019,6 +1019,13 @@ struct HomeView: View {
                 Toggle("Speak the first sentence while the rest is still coming", isOn: $model.settings.eagerSpeech)
                 Toggle("Good-morning line once a day", isOn: $model.settings.morningGreeting)
             }
+            HomeSection("Speaking up") {
+                ChattinessPicker(level: $model.settings.chattiness)
+                SettingToggle("Context lines", detail: "a small model writes each quip for the moment: the app, the next event, the time; off keeps to the written lines",
+                              isOn: $model.settings.contextQuips)
+                    .disabled(model.settings.chattiness == 0)
+                    .padding(.top, 4)
+            }
             HomeSection("Agents") {
                 Toggle("Say when an agent finishes", isOn: $model.settings.speakAgentResults)
                 Toggle("Dot may move the cursor and click the ringed steps on \"do it\"", isOn: $model.settings.driveEnabled)
@@ -1027,6 +1034,7 @@ struct HomeView: View {
             HomeSection("Models") {
                 HStack { Text("Talk").frame(width: 60, alignment: .leading); TextField("sonnet", text: $model.settings.talkModel).frame(width: 160); Text("effort"); TextField("low", text: Binding(get: { model.settings.talkEffort ?? "" }, set: { model.settings.talkEffort = $0.isEmpty ? nil : $0 })).frame(width: 70) }
                 HStack { Text("Think").frame(width: 60, alignment: .leading); TextField("opus", text: $model.settings.thinkModel).frame(width: 160) }
+                HStack { Text("Quips").frame(width: 60, alignment: .leading); TextField("haiku", text: $model.settings.quipModel).frame(width: 160) }
                 HStack { Text("Agents").frame(width: 60, alignment: .leading); TextField("opus", text: $model.settings.agentModel).frame(width: 160); Text("effort"); TextField("", text: Binding(get: { model.settings.agentEffort ?? "" }, set: { model.settings.agentEffort = $0.isEmpty ? nil : $0 })).frame(width: 70) }
             }
             HomeSection("What Dot knows") {
