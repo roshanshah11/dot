@@ -462,7 +462,9 @@ final class OrbAnimatorTests: XCTestCase {
         let orb = CGPoint(x: 200, y: 200)
         XCTAssertTrue(zone.shouldHold(cursor: CGPoint(x: 170, y: 175), velocity: CGVector(dx: 300, dy: 250), orb: orb, approach: 50, now: 0, rubbing: false))
         XCTAssertTrue(zone.shouldHold(cursor: CGPoint(x: 190, y: 192), velocity: CGVector(dx: 100, dy: 80), orb: orb, approach: 50, now: 1.0, rubbing: false))
-        XCTAssertFalse(zone.shouldHold(cursor: CGPoint(x: 195, y: 195), velocity: .zero, orb: orb, approach: 50, now: 1.6, rubbing: false), "lets go after 1.5 s")
+        XCTAssertFalse(zone.shouldHold(cursor: CGPoint(x: 195, y: 195), velocity: .zero, orb: orb, approach: 50, now: 1.3, rubbing: false), "lets go after 1.2 s")
+        var quick = LazyZone()
+        XCTAssertFalse(quick.shouldHold(cursor: CGPoint(x: 170, y: 175), velocity: CGVector(dx: 900, dy: 700), orb: orb, approach: 50, now: 0, rubbing: false), "an ordinary quick move down-right does not freeze Dot")
         var away = LazyZone()
         XCTAssertFalse(away.shouldHold(cursor: CGPoint(x: 170, y: 175), velocity: CGVector(dx: -300, dy: -250), orb: orb, approach: 50, now: 0, rubbing: false), "moving away")
     }

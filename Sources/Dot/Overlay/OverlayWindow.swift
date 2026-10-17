@@ -1489,7 +1489,7 @@ final class OverlayManager {
         let model = models[index]
         let cursor = Coordinates.overlayPoint(fromScreen: mouse, screenFrame: windows[index].screenFrame)
         let rubOn = rubs[index].add(cursor: cursor, at: now, orb: model.position, radius: orbSize / 2)
-        let approach = hypot(followOffset.dx, followOffset.dy) * 1.6
+        let approach = hypot(followOffset.dx, followOffset.dy) * 1.25
         let hold = lazyZones[index].shouldHold(cursor: cursor, velocity: velocity, orb: model.position, approach: approach, now: now, rubbing: rubOn)
         if rubOn != rubbing[index] {
             rubbing[index] = rubOn
@@ -1558,8 +1558,8 @@ final class OverlayManager {
     private func flung(_ event: FlingDetector.Event, now: Double) {
         switch event {
         case .began:
-            guard parkedScreen == nil, sinceKey > 2, !quiet, animators.allSatisfy({ $0.guardsAllowAntics || !$0.isBusy }),
-                  models.contains(where: { $0.visible && !$0.reduceMotion && $0.phase == .idle }) else { return }
+            guard parkedScreen == nil, sinceKey > 2, !quiet, let index = models.firstIndex(where: { $0.visible }),
+                  animators[index].guardsAllowAntics else { return }
             chasing = true
         case .stopped:
             guard chasing else { return }

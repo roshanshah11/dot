@@ -266,8 +266,9 @@ public struct RubDetector {
 /// So he can reach Dot to pet it: while the cursor is coming toward the orb and is close, the orb holds
 /// still instead of following, for up to `maxHold` seconds or until the cursor goes away.
 public struct LazyZone {
-    public var maxHold: Double = 1.5
-    public var maxApproachSpeed: Double = 1500
+    // Slow and deliberate only: an ordinary move down and to the right should not freeze Dot (design call).
+    public var maxHold: Double = 1.2
+    public var maxApproachSpeed: Double = 600
     private var holdStart: Double?
 
     public init() {}
