@@ -102,6 +102,9 @@ extension Snapshots {
                                   events: { t, a in if t == 0 { a.perched(at: 0, edge: .windowTop) } }) }),
             ("waking", { m in run(m, seconds: 0.35, configure: { _, i in i.motion = .perched; i.sinceInput = 0 },
                                   events: { t, a in if t == 0 { a.perched(at: 0, edge: .windowTop); a.woke(at: 0) } }) }),
+            ("held", { m in run(m, seconds: 0.6, configure: { _, i in i.motion = .held }) }),
+            ("dizzy", { m in run(m, seconds: 0.5, events: { t, a in if t == 0 { a.landed(at: 0) } }) }),
+            ("boop", { m in run(m, seconds: 0.3, events: { t, a in if t == 0 { a.react(.boop, at: 0) } }) }),
         ]
     }
 
@@ -146,6 +149,11 @@ extension Snapshots {
         var landed = false
         /// Where a multi-step reel is (the pet routine's walk, nap, wake and return).
         var stage = 0
+        var leash = Leash(radius: 90)
+        var rub = RubDetector()
+        var callOver = CallOverDetector()
+        var toss: Toss?
+        var samples: [(point: CGPoint, time: Double)] = []
 
         init(model: CompanionModel) {
             self.model = model
@@ -164,6 +172,26 @@ extension Snapshots {
             input.motion = .following
             input.lead = CGVector(dx: desired.x - model.position.x, dy: desired.y - model.position.y)
             input.speed = spring.speed
+        }
+
+        /// Follow on the leash, as OverlayManager does now: sit while the cursor is near, trot when it goes far.
+        func leashed(_ cursor: CGPoint, at t: Double, dt: Double) {
+            self.cursor = cursor
+            let desired = CGPoint(x: cursor.x + 29, y: cursor.y + 31)
+            let rubOn = rub.add(cursor: cursor, at: t, orb: model.position, radius: 12)
+            animator.setRubbing(rubOn, direction: Double(rub.lastDirection), at: t)
+            model.motion = .following
+            input.motion = .following
+            if !animator.isRecovering, leash.update(cursor: cursor, orb: model.position, target: desired) {
+                spring.step(toward: desired, dt: dt)
+                model.position = spring.position
+                input.lead = CGVector(dx: desired.x - model.position.x, dy: desired.y - model.position.y)
+                input.speed = spring.speed
+            } else {
+                spring.snap(to: model.position)
+                input.lead = .zero
+                input.speed = 0
+            }
         }
 
         func fly(to point: CGPoint, at t: Double, style: FlightPath.Style = .flight) {
@@ -241,12 +269,78 @@ extension Snapshots {
                 s.advanceFlight(t)
                 if s.landed { s.model.look = CGPoint(x: -0.7, y: -0.5); s.input.parkedLook = s.model.look }
             },
-            Reel(name: "fling-chase-pounce", seconds: 4.5, stage: true, fakeWindow: nil) { t, dt, s in
-                // Scripted: the cursor is flung 320 px in a quarter second, then rests (no click).
-                let x = 70 + 320 * min(max((t - 0.8) / 0.25, 0), 1)
-                let eased = 70 + (x - 70) * 1
-                s.follow(CGPoint(x: eased, y: 160), dt: dt, loose: t > 0.8 && t < 2.2)
-                if abs(t - 1.55) < 0.5 / 30 { s.animator.react(.pounce, at: t) }
+            Reel(name: "leash-then-pet-then-follow", seconds: 9, stage: true, fakeWindow: nil) { t, dt, s in
+                // The cursor wanders near Dot (it stays), moves onto it and wiggles (a pet), then goes far (it trots after).
+                let home = CGPoint(x: 211, y: 159)
+                if t < 0.05 { s.model.position = CGPoint(x: 240, y: 190); s.spring.snap(to: s.model.position) }
+                var c: CGPoint
+                if t < 2.6 { c = CGPoint(x: home.x + 40 * cos(t * 2.4), y: home.y + 25 * sin(t * 2.4)) }
+                else if t < 3.2 { let p = (t - 2.6) / 0.6; c = CGPoint(x: home.x + 40 + (240 - home.x - 40) * p, y: home.y + (190 - home.y) * p) }
+                else if t < 5.4 { c = CGPoint(x: 240 + 5 * sin((t - 3.2) * 2 * .pi * 2.6), y: 190) }
+                else { let p = min((t - 5.4) / 0.5, 1); c = CGPoint(x: 240 + (400 - 240) * p, y: 190 - 80 * p) }
+                s.input.sinceInput = 0
+                s.input.cursorRest = 0
+                s.leashed(c, at: t, dt: dt)
+            },
+            Reel(name: "boop", seconds: 2, stage: false, fakeWindow: nil) { t, _, s in
+                if abs(t - 0.4) < 0.5 / 30 { s.animator.react(.boop, at: t) }
+            },
+            Reel(name: "grab-and-toss", seconds: 6, stage: true, fakeWindow: nil) { t, dt, s in
+                // Press on Dot, carry it up and to the left, flick it right: it flies, bounces, lands dizzy, comes back.
+                let start = CGPoint(x: 220, y: 200)
+                switch s.stage {
+                case 0:
+                    if t < 0.05 { s.model.position = CGPoint(x: 240, y: 214); s.spring.snap(to: s.model.position) }
+                    s.leashed(start, at: t, dt: dt)
+                    if t >= 0.6 { s.stage = 1 }
+                case 1:
+                    let p = min((t - 0.6) / 0.7, 1)
+                    let flick = t > 1.15
+                    let c = CGPoint(x: start.x - 90 * p + (flick ? (t - 1.15) * 1500 : 0), y: start.y - 60 * p)
+                    s.cursor = c
+                    s.samples.append((c, t))
+                    s.model.position = CGPoint(x: c.x, y: c.y + 13)
+                    s.model.motion = .held
+                    s.input.motion = .held
+                    if t >= 1.3 {
+                        s.toss = Toss(position: s.model.position, velocity: Toss.releaseVelocity(s.samples))
+                        s.stage = 2
+                    }
+                case 2:
+                    guard var toss = s.toss else { return }
+                    let result = toss.step(dt: dt, bounds: CGRect(x: 13, y: 13, width: 454, height: 274))
+                    s.model.position = toss.position
+                    s.model.motion = .tossed
+                    s.input.motion = .tossed
+                    s.input.lead = toss.velocity
+                    s.input.speed = toss.speed
+                    if let normal = result.bounce { s.animator.bounced(normal: normal, at: t) }
+                    s.toss = toss
+                    if result.done { s.animator.landed(at: t); s.spring.snap(to: toss.position); s.leash.sit(); s.stage = 3 }
+                default:
+                    s.leashed(s.cursor ?? start, at: t, dt: dt)
+                }
+            },
+            Reel(name: "call-over", seconds: 4.5, stage: true, fakeWindow: nil) { t, dt, s in
+                // Dot sits on the left; a gentle wiggle on the right calls it over, and the wiggle becomes a pet.
+                if t < 0.05 { s.model.position = CGPoint(x: 90, y: 230); s.spring.snap(to: s.model.position) }
+                let spot = CGPoint(x: 380, y: 140)
+                let c = t < 0.8 ? spot : CGPoint(x: spot.x + 10 * sin((t - 0.8) * 2 * .pi * 2.8), y: spot.y)
+                s.cursor = c
+                switch s.stage {
+                case 0:
+                    s.model.motion = .following
+                    s.input.motion = .following
+                    if s.callOver.add(cursor: c, at: t, orb: s.model.position, radius: 12) {
+                        s.fly(to: CGPoint(x: c.x, y: c.y + 6), at: t, style: .hop)
+                        s.stage = 1
+                    }
+                case 1:
+                    if s.advanceFlight(t, landedMotion: .following) { s.leash.sit(); s.stage = 2 }
+                default:
+                    let rubOn = s.rub.add(cursor: c, at: t, orb: s.model.position, radius: 12)
+                    s.animator.setRubbing(rubOn, direction: Double(s.rub.lastDirection), at: t)
+                }
             },
             Reel(name: "rub", seconds: 4, stage: false, fakeWindow: nil) { t, _, s in
                 s.input.sinceInput = 0
