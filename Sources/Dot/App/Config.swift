@@ -130,6 +130,12 @@ struct DotConfig: Codable {
     /// across a quit or relaunch (AG-12). Off, or with no host answering, they are Dot's own children.
     var agentsOutliveDot = true
 
+    // The alive pass, phase 3: the persona (docs/persona.md).
+    /// How much Dot says before he asks, 0 to 3 (DotKit's Chattiness): 0 nothing, 1 deadline notices only
+    /// and a quip every 2 hours, 2 today's notices and offers and a quip every 40 minutes, 3 twice as often
+    /// and a quip every 20 minutes. It scales the knobs above; `proactiveNotices` and `suggestions` still apply.
+    var chattiness = 2
+
     /// Atlas tools a talk turn may call without asking: everything that reads, remembers or drafts.
     /// Sends, submits, posts and harness administration stay with agents and his yes.
     static let talkAtlasTools = [
@@ -218,6 +224,7 @@ struct DotConfig: Codable {
         agentHelpers = get(.agentHelpers, d.agentHelpers)
         agentPermissionMode = get(.agentPermissionMode, d.agentPermissionMode)
         agentsOutliveDot = get(.agentsOutliveDot, d.agentsOutliveDot)
+        chattiness = min(max(get(.chattiness, d.chattiness), 0), 3)
     }
 
     static var directory: URL {
