@@ -102,6 +102,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return self.talk.isIdle && !self.talk.lecture.isListening && !(self.murmur?.isRecording ?? false)
         }
         wireAlive()
+        wireContextQuips()
         hud.setPresence(config.notchPresence)
         applyRecordingVisibility()
         home = HomeWindowController(agents: agents, ledger: ledger, config: config, atlas: atlas)
@@ -239,7 +240,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         if changed.notchPresence != before.notchPresence { hud.setPresence(changed.notchPresence) }
         if changed.microphoneName != before.microphoneName { talk.setMicrophone(name: changed.microphoneName) }
+        applyAliveSettings(changed, before: before)
         Log.info("settings: applied from the dot window")
+    }
+
+    /// Context lines (docs/alive.md, round two): what a just-finished agent said, for the quip after it.
+    /// It runs before the quip, which the observer in applicationDidFinishLaunching starts in a Task.
+    private func wireContextQuips() {
+        NotificationCenter.default.addObserver(forName: .dotAgentFinished, object: nil, queue: .main) { [weak self] note in
+            let line = (note.userInfo?["line"] as? String) ?? ""
+            let failed = (note.userInfo?["failed"] as? Bool) ?? false
+            MainActor.assumeIsolated { self?.noticer.agentFinished(line: line, failed: failed) }
+        }
+    }
+
+    /// Home's size and chattiness pickers apply without a relaunch, and so does everything else Noticer
+    /// reads (the quip settings, the notice and offer switches on the Suggestions page).
+    private func applyAliveSettings(_ changed: DotConfig, before: DotConfig) {
+        if changed.orbSize != before.orbSize { overlay.setOrbSize(CGFloat(changed.orbSize)) }
+        noticer.update(config)
     }
 
     private var noticedMeetings: Set<String> = []
