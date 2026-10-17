@@ -316,7 +316,9 @@ final class AgentManager {
         Log.info("agent[\(agent.slug)] handoff: \(Log.short(brief))")
     }
 
-    private func startRun(for agent: Agent) -> Run? {
+    /// `attachFrom`: the agent host already runs this agent's process (a relaunch, AG-12); the run
+    /// takes it over from that seq instead of starting one.
+    private func startRun(for agent: Agent, attachFrom seq: Int? = nil, turnInFlight: Bool = false) -> Run? {
         var options = ClaudeSession.Options(cwd: agent.folder, model: config.agentModel)
         var appended = Prompts.agent(name: agent.name) + Prompts.agentExtras(helpers: config.agentHelpers, rulesLine: rules.briefLine(for: agent.slug))
         if let atlasPrompt = atlas?.chatPrompt(), !atlasPrompt.isEmpty {
@@ -359,6 +361,9 @@ final class AgentManager {
         } else if !fresh {
             Log.info("agent[\(agent.slug)] thread is older than 12 h; starting a fresh conversation (notes in CLAUDE.md carry over)")
         }
+        if seq != nil, let saved = try? String(contentsOf: sessionFile, encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines), !saved.isEmpty {
+            options.sessionId = saved   // the conversation the hosted process is on, however old
+        }
         let session = ClaudeSession(label: "agent:\(agent.slug)", claudePath: config.claudeExecutable, options: options)
         let run = Run(agent: agent, session: session)
         session.onEvent = { [weak self, weak run] event in
@@ -385,11 +390,16 @@ final class AgentManager {
                 self.hud.upsertAgent(run.row("stopped (exit \(status))", state: .failed))
             }
         }
-        do {
-            try session.start()
-        } catch {
-            hud.flash(error: "Could not start \(agent.name): \(error.localizedDescription)")
-            return nil
+        if let seq {
+            guard session.attachToHost(id: agent.slug, from: seq, turnInFlight: turnInFlight) else { return nil }
+        } else {
+            if config.agentsOutliveDot { session.hostID = agent.slug }
+            do {
+                try session.start()
+            } catch {
+                hud.flash(error: "Could not start \(agent.name): \(error.localizedDescription)")
+                return nil
+            }
         }
         runs[agent.slug] = run
         return run
@@ -941,6 +951,16 @@ final class AgentManager {
     /// short this way is found and marked at the next launch, the same way a crash's is.
     func prepareForQuit() {
         for run in runs.values {
+            if run.session.isHosted, run.isWorking || hud.hasConsent(agent: run.agent.slug) {
+                // AG-12: the agent host keeps it running; the next launch picks up after the last line seen here.
+                let seq = run.session.detachFromHost()
+                let saved: [String: Any] = ["seq": seq, "savedAt": Date().timeIntervalSince1970]
+                if let data = try? JSONSerialization.data(withJSONObject: saved) {
+                    try? data.write(to: run.agent.folder.appendingPathComponent(".dot/host.json"), options: .atomic)
+                }
+                Log.info("agent[\(run.agent.slug)] left running in the agent host at seq \(seq): \(Log.short(run.lastBrief, 80))")
+                continue
+            }
             if run.isWorking { Log.info("agent[\(run.agent.slug)] stopped by quit mid-turn: \(Log.short(run.lastBrief, 80))") }
             run.session.terminateNow()
         }
@@ -952,6 +972,28 @@ final class AgentManager {
     /// left the dot agent's Gmail clean-up running unseen, with no record that the turn ended.
     func recoverAfterLaunch() {
         let agents = roster()
+        // AG-12: what the agent host still runs (or finished while Dot was away) is taken over from the
+        // line after the last one seen; its waiting requests come back as cards. The rest below is the fallback.
+        var hosted = Set<String>()
+        for info in AgentHostClient().list() ?? [] {
+            guard let agent = agents.first(where: { $0.slug == info.id }), runs[agent.slug] == nil else { continue }
+            let file = agent.folder.appendingPathComponent(".dot/host.json")
+            let saved = (try? Data(contentsOf: file)).flatMap { (try? JSONSerialization.jsonObject(with: $0)) as? [String: Any] }
+            try? FileManager.default.removeItem(at: file)
+            // A seq saved for this very process; with none (Dot crashed) only what comes next, so nothing is said twice.
+            var from = info.lastSeq
+            if let seq = (saved?["seq"] as? NSNumber)?.intValue, let at = (saved?["savedAt"] as? NSNumber)?.doubleValue,
+               at >= info.started.timeIntervalSince1970, seq <= info.lastSeq { from = seq }
+            let brief = AgentRecovery.unfinishedBrief(transcriptEntries(for: agent, limit: 400).map { ($0.role, $0.text) })
+            guard let run = startRun(for: agent, attachFrom: from, turnInFlight: info.alive && brief != nil) else { continue }
+            hosted.insert(agent.slug)
+            run.lastBrief = brief ?? ""
+            run.turnsOwed = brief == nil ? 0 : 1
+            run.outputBaseline = TurnArtifacts.listing(of: agent.outputFolder)
+            run.lastLine = "back after Dot restarted"
+            if brief != nil || !info.pending.isEmpty { hud.upsertAgent(run.row(run.lastLine)) }
+            Log.info("agent[\(agent.slug)] taken back from the agent host (pid \(info.pid), \(info.alive ? "running" : "ended"), from seq \(from) of \(info.lastSeq), \(info.pending.count) waiting)")
+        }
         let sessionIds = Set(agents.compactMap { agent -> String? in
             (try? String(contentsOf: agent.folder.appendingPathComponent(".dot/session-id"), encoding: .utf8))?.trimmingCharacters(in: .whitespacesAndNewlines)
         }.filter { !$0.isEmpty })
@@ -962,7 +1004,7 @@ final class AgentManager {
             }
         }
         let dayAgo = Date().addingTimeInterval(-24 * 3600)
-        for agent in agents {
+        for agent in agents where !hosted.contains(agent.slug) {
             let entries = transcriptEntries(for: agent, limit: 400)
             guard let brief = AgentRecovery.unfinishedBrief(entries.map { ($0.role, $0.text) }) else { continue }
             appendTranscript(agent, role: "result", text: "stopped: Dot closed while this was running")

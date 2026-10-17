@@ -8,6 +8,16 @@ switch arguments.first {
 case "--gate":
     // Claude Code's PreToolUse and PostToolUse hook for Dot's agents (AG-07): hook JSON in, decision out.
     Gate.run(Array(arguments.dropFirst()))
+case "--host":
+    // The agent host (AG-12, LaunchAgent com.roshan.dot-host): it owns the agents' claude processes so
+    // they outlive Dot. `--host list` prints what it runs (install-host.sh asks before a restart).
+    let socket = HostProtocol.socketPath()
+    if arguments.dropFirst().first == "list" {
+        guard let found = AgentHostCore.describe(path: socket) else { print("host: not running at \(socket)"); exit(3) }
+        found.lines.forEach { print($0) }
+        exit(0)
+    }
+    AgentHostCore.serve(path: socket)
 case "--version", "-v":
     print("Dot \(Version.string)")
     exit(0)
@@ -31,6 +41,7 @@ case "--help", "-h":
       Dot --snapshot [folder]  render every notch state, mark and card to PNG (no screen turn)
       Dot --selftest           check the notch's permission-card queue (no agents, no model)
       Dot --gate               the agents' tool-call hook (Claude Code runs it; JSON on stdin)
+      Dot --host [list]        the agent host that keeps agents running across a relaunch (launchd runs it)
       Dot --version
 
     Hold control+option and talk; drag while holding to draw a box to ask about.

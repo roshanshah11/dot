@@ -73,6 +73,9 @@ rm -rf "$INSTALLED"
 cp -R "$APP" "$INSTALLED"
 mkdir -p ~/.local/bin
 ln -sf "$INSTALLED/Contents/MacOS/Dot" ~/.local/bin/dotctl
+# The agent host's LaunchAgent (AG-12), before Dot starts so its agents find it. A host with live agents
+# is left running; it is restarted on the new binary only when it runs none.
+scripts/install-host.sh || echo "host: install failed; run scripts/install-host.sh to see why (agents run inside Dot meanwhile)" >&2
 
 PLIST=~/Library/LaunchAgents/com.roshan.dot.plist
 sed "s|__HOME__|$HOME|g" com.roshan.dot.plist > "$PLIST"

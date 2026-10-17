@@ -124,6 +124,11 @@ struct DotConfig: Codable {
     /// folder and ~/roshan by itself, so Dot never saw them (F3, replayed 2026-10-16).
     var agentPermissionMode = "default"
 
+    // B2b.
+    /// Agents run in Dot's agent host (`Dot --host`, LaunchAgent com.roshan.dot-host) and keep going
+    /// across a quit or relaunch (AG-12). Off, or with no host answering, they are Dot's own children.
+    var agentsOutliveDot = true
+
     /// Atlas tools a talk turn may call without asking: everything that reads, remembers or drafts.
     /// Sends, submits, posts and harness administration stay with agents and his yes.
     static let talkAtlasTools = [
@@ -211,6 +216,7 @@ struct DotConfig: Codable {
         routinesFile = get(.routinesFile, d.routinesFile)
         agentHelpers = get(.agentHelpers, d.agentHelpers)
         agentPermissionMode = get(.agentPermissionMode, d.agentPermissionMode)
+        agentsOutliveDot = get(.agentsOutliveDot, d.agentsOutliveDot)
     }
 
     static var directory: URL {

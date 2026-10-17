@@ -35,12 +35,39 @@ enum Gate {
             decision = pre ? .deny("No answer from Roshan in time. Skip this step, finish the rest and say what is waiting on him.") : .pass
             note("no answer in \(Int(timeout)) s")
         } catch {
-            decision = HookDecision.offline(input)
-            note("dot unreachable at \(path) (\(error)); offline rule: \(decision.wire["decision"] ?? "")")
+            if pre, case .deny = HookDecision.offline(input), let answer = waitForDot(request, path: path, timeout: timeout) {
+                decision = answer
+            } else {
+                decision = HookDecision.offline(input)
+                note("dot unreachable at \(path) (\(error)); offline rule: \(decision.wire["decision"] ?? "")")
+            }
         }
         let line = decision.output(for: input.event)
         if !line.isEmpty { FileHandle.standardOutput.write(Data((line + "\n").utf8)) }
         exit(0)
+    }
+
+    /// An agent in the agent host (AG-12) outlives Dot: a call that needs Dot asks again until a
+    /// relaunched Dot answers (its card comes back there), and is denied by the host's 30-minute rule
+    /// when none does. nil for an agent Dot runs itself: the offline rule decides at once.
+    private static func waitForDot(_ request: [String: Any], path: String, timeout: TimeInterval) -> HookDecision? {
+        let environment = ProcessInfo.processInfo.environment
+        guard environment["DOT_AGENT_HOST"] == "1" else { return nil }
+        let after = environment["DOT_HOST_DENY_AFTER"].flatMap(Double.init) ?? HostPending.denyAfter
+        let deadline = Date().addingTimeInterval(after)
+        note("dot unreachable; waiting up to \(Int(after)) s for it to come back")
+        while Date() < deadline {
+            Thread.sleep(forTimeInterval: min(2, max(0.1, deadline.timeIntervalSinceNow)))
+            do {
+                let reply = try UnixSocketClient.send(request, to: path, timeout: timeout)
+                return HookDecision(wire: reply) ?? .pass
+            } catch UnixSocketError.timedOut {
+                return .deny("No answer from Roshan in time. Skip this step, finish the rest and say what is waiting on him.")
+            } catch {
+                continue
+            }
+        }
+        return .deny(HostPending.denyMessage(after: after))
     }
 
     private static func note(_ text: String) {
