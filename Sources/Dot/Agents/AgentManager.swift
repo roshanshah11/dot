@@ -602,6 +602,24 @@ final class AgentManager {
         let guardKey = allowanceKey(request, cls: cls, deletesOutside: deletesOutside, classAsks: false)
         switch policy.decide(request.toolRequest) {
         case .allow:
+            // The sentinel (AG-13): what the rules let run on its own (writing, using apps) goes past Jev
+            // once, with only the tool and its input; a likely send, share, delete, buy, system change or
+            // copied instruction becomes a card naming it. Jev missing or slow changes nothing.
+            let scratch = Sentinel.isScratchWrite(toolName: request.toolName, input: request.toolRequest.input,
+                                                  scratchRoots: [run.agent.folder.path, NSTemporaryDirectory(), "/tmp", "/private/tmp"])
+            if let jev, Sentinel.judges(cls, behavior: behavior, decision: .allow, scratch: scratch) {
+                jev.sentinel(toolName: request.toolName, input: request.toolRequest.input) { [weak self] verdict in
+                    guard let self else { completion(false, "Dot is gone."); return }
+                    guard self.runs[run.agent.slug] === run, run.session.isRunning else { completion(false, "The task was stopped."); return }
+                    if case .ask(let effect, _, let probability) = verdict {
+                        Log.info("sentinel: \(request.toolName) \(effect) (\(String(format: "%.2f", probability))); asking him")
+                        self.askCard(request, run: run, reason: "\(label): \(Self.consentTitle(request)); \(effect)", cls: cls, allowanceKey: guardKey, completion: completion)
+                    } else {
+                        completion(true, nil)
+                    }
+                }
+                return
+            }
             completion(true, nil)
         case .deny(let reason):
             appendTranscript(run.agent, role: "denied", text: "\(request.toolName): \(reason)")
