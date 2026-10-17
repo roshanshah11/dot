@@ -1437,6 +1437,7 @@ final class OverlayManager {
         if let event = fling.add(CGPoint(x: mouse.x, y: -mouse.y), at: now) { flung(event, now: now) }
         if let check = pounceCheckAt, now >= check {
             pounceCheckAt = nil
+            readInput(now)   // the click times are read at 4 Hz; this decision needs them fresh
             // A fling that ended in a click was pointing, not play.
             if sinceClick > now - flingStoppedAt, sinceKey > 2, parkedScreen == nil { react(.pounce) }
         }
