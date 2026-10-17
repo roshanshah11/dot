@@ -16,6 +16,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var home: HomeWindowController!
     private var atlas: AtlasBridge!
     private var jev: Jev?
+    private var control: ControlServer?
     private var noticer: Noticer!
     private var murmur: MurmurWatcher?
     private var morning: MorningSuggestions!
@@ -55,6 +56,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         Chimes.shared.isSilenced = { [weak self] in self.map { $0.config.quietOnCalls && CallPresence.isOnCall() } ?? false }
         agents.atlas = atlas
         agents.jev = jev
+        // AG-07: every agent tool call asks Dot here first (`Dot --gate`), before it runs.
+        let control = ControlServer(path: ControlServer.path(dotHome: config.dotHome))
+        control.register("gate") { [weak self] request, reply in
+            guard let self, let input = (request["input"] as? [String: Any]).flatMap(HookInput.init(object:)) else { reply(HookDecision.pass.wire); return }
+            self.agents.gate(input, agent: request["agent"] as? String) { reply($0.wire) }
+        }
+        control.register("post") { [weak self] request, reply in
+            guard let self, let input = (request["input"] as? [String: Any]).flatMap(HookInput.init(object:)) else { reply(HookDecision.pass.wire); return }
+            self.agents.checkOutput(input) { reply($0.wire) }
+        }
+        if control.start() { agents.controlSocket = control.path }
+        self.control = control
         quitCleanlyOnSignals()
         agents.recoverAfterLaunch()
         talk = Talk(config: config, hud: hud, overlay: overlay, speaker: speaker, transcriber: transcriber, agents: agents, ledger: ledger, atlas: atlas, jev: jev)
@@ -299,6 +312,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationWillTerminate(_ notification: Notification) {
         agents.prepareForQuit()
+        control?.stop()
         Log.info("quit: agents ended")
         Log.flush()
     }

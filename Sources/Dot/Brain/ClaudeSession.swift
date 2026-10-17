@@ -30,6 +30,8 @@ final class ClaudeSession {
         var extraArguments: [String] = []
         /// Added to the process environment (agents: CLAUDE_CODE_DISABLE_BACKGROUND_TASKS).
         var environment: [String: String] = [:]
+        /// `--settings`: a path or inline JSON, layered over the setting sources (agents: the gate's hooks, AG-07).
+        var settings: String? = nil
     }
 
     let options: Options
@@ -238,6 +240,7 @@ final class ClaudeSession {
         }
         if options.strictMCP { args.append("--strict-mcp-config") }
         if let sources = options.settingSources { args += ["--setting-sources", sources] }
+        if let settings = options.settings { args += ["--settings", settings] }
         if let effort = options.effort { args += ["--effort", effort] }
         args += options.extraArguments
         return args
