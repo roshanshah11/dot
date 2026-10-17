@@ -394,3 +394,39 @@ Where the build departs from the spec above, and why. Each one is in the run's d
   quiet-on-calls check covers shares made on calls. A share outside a call can still show antics (open item).
 
 Previews: `Dot --snapshot <folder> alive` (stills at 20/24/28 px, eye gaps 0.16/0.20/0.24, and nine GIF reels).
+
+## Round two (2026-10-17, decided with Roshan)
+
+Research for this round: `~/roshan/Learning/Research/2026-10-17-dot-petting-fling/` (answer.md, ledger.json). Pets people touch
+stay put until you go far (oneko.js idles within 48 px, cute-C45). Every throw found is a grab and release: VS Code Pets'
+"click and throw" launches the ball on mouse-up with the last movement as its velocity, Shimeji is "dragged around by hand and
+thrown", Android measures a fling's velocity. A fast cursor move alone can't be told apart from aimed pointing.
+
+**Petting: the leash and the call-over** (his pick: both)
+- The leash: Dot stays where it is while the cursor is within about 90 px (scaled by orbSize / 24), and trots to its spot beside the
+  cursor once the cursor goes past that. Then it sits again. Pointing, talking and the pet routine are unchanged.
+- To pet, move onto Dot and wiggle (the rub detector). To boop, rest on Dot and click: a squish, a giggle wobble, a happy squint.
+- The call-over: a gentle wiggle anywhere (3+ horizontal reversals in 1.2 s, within about 40 px, under 800 px/s, not on Dot)
+  makes Dot scoot under the cursor so the wiggle becomes a pet. macOS's shake-to-find is big and fast, so it doesn't call it.
+- Dot's body takes clicks only after the cursor has rested on it for 0.3 s or is rubbing it (a small panel over the orb that is
+  otherwise click-through). A fast approach (over 900 px/s) makes Dot hop aside, so a click meant for what is under it lands.
+
+**Throwing: grab and toss Dot** (his pick)
+- Press on Dot and drag: it's picked up and dangles under the cursor (stretched a little, eyes wide).
+- Let go: the release speed (averaged over the drag's last 50 ms, capped at 4,000 px/s) throws it. It slows with friction rather
+  than falling, bounces off the screen edges with a squash at 60% speed, lands dizzy for about 1 s (spiral eyes), shakes it off and
+  trots back on the leash. A release under 300 px/s just sets it down there.
+- The cursor-speed fling guess and its chase are removed.
+
+**Context lines (Haiku)** (his idea: "good luck on math!!", "u gonna ace this test")
+- A small model writes the quip for the moment instead of the written bank: `quipModel` (default "haiku") through Dot's own
+  `claude -p` sessions, no tools. It sees the front app and window title, the next Atlas event or deadline within 24 h, the time of
+  day and a just-finished agent; no screenshot.
+- Lowercase, texting-casual like his examples, 60 characters or fewer, no emoji, encouragement welcome, no flattery about his work,
+  never teasing grades, people, money or looks (docs/persona.md). Each line is checked before it shows; a failed check, an error or
+  more than 6 s falls back to the written bank.
+- Same gates: a bubble, at breaks, at most every 40 minutes, never while typing or on calls. New: about 30-60 minutes before an Atlas
+  event or deadline, one line for it ("good luck on math!!") at the next break, once per event, past the 40-minute cap.
+- Home Settings gains a chattiness picker (0-3) and a size picker (20, 24, 28).
+
+**Ship:** tests, an independent review, previews and the CPU check; then merge `alive` into main, push, and install from main.
