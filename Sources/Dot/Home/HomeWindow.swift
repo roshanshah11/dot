@@ -694,7 +694,7 @@ struct HomeView: View {
             // A file the turn made or changed (round seven, G1): open it or drag it out.
             let url = model.selected?.outputFolder.appendingPathComponent(entry.text)
             HStack(spacing: 8) {
-                Image(systemName: "doc").font(.system(size: 10)).foregroundStyle(accent).frame(width: 14)
+                Image(systemName: url.map(Self.fileIcon) ?? "doc").font(.system(size: 10)).foregroundStyle(url.flatMap(Theme.fileColor) ?? accent).frame(width: 14)
                 Text(entry.text).font(.system(size: 11.5)).lineLimit(1)
                 if let url, FileManager.default.fileExists(atPath: url.path) {
                     Button("open") { NSWorkspace.shared.open(url) }.buttonStyle(.link).font(.system(size: 11))
@@ -872,7 +872,7 @@ struct HomeView: View {
                         HStack(spacing: 6) {
                             Button { model.previewURL = url } label: {
                                 HStack(spacing: 8) {
-                                    Image(systemName: Self.fileIcon(url)).foregroundStyle(.secondary).frame(width: 16)
+                                    Image(systemName: Self.fileIcon(url)).foregroundStyle(Theme.fileColor(url) ?? .secondary).frame(width: 16)
                                     VStack(alignment: .leading, spacing: 1) {
                                         Text(url.lastPathComponent).font(.system(size: 12)).lineLimit(1)
                                         Text(Self.fileMeta(url)).font(.system(size: 10)).foregroundStyle(.secondary)

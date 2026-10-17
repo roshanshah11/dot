@@ -422,7 +422,7 @@ final class NotchHUD {
     }
 
     /// The card chime; `Dot --selftest` counts it instead of playing it.
-    var playConsentChime: () -> Void = { NSSound(named: "Tink")?.play() }
+    var playConsentChime: () -> Void = { Chimes.shared.play(.needsYou) }
 
     /// The card was answered (or withdrawn): it leaves, and the next question in line shows.
     func dismissConsent(id: UUID) {
@@ -706,7 +706,7 @@ struct NotchHUDView: View {
 
     private func fileTile(_ url: URL) -> some View {
         VStack(spacing: 3) {
-            Image(systemName: Self.symbol(forFile: url)).font(.system(size: 14)).foregroundStyle(model.accent)
+            Image(systemName: Self.symbol(forFile: url)).font(.system(size: 14)).foregroundStyle(Theme.fileColor(url) ?? model.accent)
             Text(url.lastPathComponent).font(.system(size: 9.5)).foregroundStyle(text.opacity(0.8)).lineLimit(1).truncationMode(.middle)
         }
         .frame(width: 72, height: 44)
@@ -1008,7 +1008,7 @@ struct NotchHUDView: View {
             .frame(maxHeight: 220)
             ForEach(row.outputs, id: \.self) { url in
                 HStack(spacing: 6) {
-                    Image(systemName: Self.symbol(forFile: url)).font(.system(size: 10)).foregroundStyle(model.accent)
+                    Image(systemName: Self.symbol(forFile: url)).font(.system(size: 10)).foregroundStyle(Theme.fileColor(url) ?? model.accent)
                     Text(url.lastPathComponent).font(.system(size: 11.5)).foregroundStyle(text.opacity(0.85)).lineLimit(1)
                     Spacer()
                     smallButton("open") { NSWorkspace.shared.open(url) }

@@ -54,6 +54,8 @@ final class AgentManager {
     private let speaker: TTSProvider
     private let ledger: Ledger
     private var runs: [String: Run] = [:]
+    /// What each working agent is doing now, for the orb (VI-04).
+    private var activities: [String: AgentActivity] = [:]
     /// The agent he last spoke to by name or replied to: a follow-up with no name goes there (G2).
     private(set) var lastAddressed: String?
     /// Set after init: Atlas's view of his day rides along with every brief.
@@ -141,6 +143,7 @@ final class AgentManager {
         if withdrawn > 0 { Log.info("agent[\(slug)] stopped with \(withdrawn) question(s) open; withdrawn") }
         run.session.stop()
         runs[slug] = nil
+        postActivity()
         hud.upsertAgent(run.row("stopped", state: .failed))
         appendTranscript(run.agent, role: "result", text: "stopped from the task bar")
         Log.info("agent[\(slug)] stopped from the task bar")
@@ -273,6 +276,8 @@ final class AgentManager {
         run.isRoutine = routine
         run.allowances = []
         run.turnsOwed = 1
+        activities[agent.slug] = .thinking
+        if !routine { Chimes.shared.play(.launch) }
         run.outputBaseline = TurnArtifacts.listing(of: agent.outputFolder)
         hud.upsertAgent(run.row(Log.short(brief, 90)))
 
@@ -293,6 +298,7 @@ final class AgentManager {
         let images = (shots ?? []).filter { $0.isCursorScreen }.prefix(1).map { (data: $0.jpeg, mediaType: "image/jpeg") } + extraImages
         appendTranscript(agent, role: "user", text: brief)
         run.session.send(text: text, images: Array(images))
+        postActivity(agent.slug)
         Log.info("agent[\(agent.slug)] handoff: \(Log.short(brief))")
     }
 
@@ -347,6 +353,7 @@ final class AgentManager {
             if self.runs[run.agent.slug] === run {
                 self.runs[run.agent.slug] = nil
                 self.hud.withdrawConsent(agent: run.agent.slug)
+                self.postActivity()
             }
             if status != 0, self.hud.model.agents.first(where: { $0.id == run.agent.slug })?.state == .running {
                 self.hud.upsertAgent(run.row("stopped (exit \(status))", state: .failed))
@@ -412,6 +419,10 @@ final class AgentManager {
         case .toolUse(_, let name, let input):
             if name == "Agent" || name == "Task" { run.helpers += 1 }
             let line = Self.describe(tool: name, input: input)
+            var command: String?
+            if case .string(let text)? = input["command"] { command = text }
+            activities[agent.slug] = AgentActivity.of(tool: name, command: command)
+            postActivity(agent.slug)
             run.lastLine = line
             run.step(Log.short(line, 90))
             hud.upsertAgent(liveRow(run, line))
@@ -423,6 +434,17 @@ final class AgentManager {
         default:
             break
         }
+    }
+
+    /// The orb's view of the agents (VI-04): the step the agent that just moved is on (else any
+    /// working one's), and how many wait on his yes. Each post is the whole state.
+    private func postActivity(_ slug: String? = nil) {
+        let working = runs.values.filter { $0.isWorking }.map(\.agent.slug)
+        activities = activities.filter { working.contains($0.key) }
+        let activity = slug.flatMap { activities[$0] } ?? working.compactMap { activities[$0] }.first
+        let waiting = Set(hud.openConsents.map(\.agentId)).count
+        NotificationCenter.default.post(name: .dotAgentActivity, object: nil,
+                                        userInfo: AgentActivityReport(activity: activity, waiting: waiting, agent: slug).userInfo)
     }
 
     /// The row for a working agent: "needs you" while one of its cards is open (a helper's step must
@@ -464,7 +486,9 @@ final class AgentManager {
         // On a call the result waits in the notch: no chime, no voice (FX-11).
         let onCall = config.quietOnCalls && CallPresence.isOnCall()
         let silent = quiet || unprompted || onCall
-        if !silent { NSSound(named: failed ? "Basso" : "Glass")?.play() }
+        if !silent { Chimes.shared.play(failed ? .failed : .done) }
+        activities[agent.slug] = nil
+        postActivity()
         NotificationCenter.default.post(name: .dotAgentFinished, object: nil, userInfo: ["failed": failed])
         if config.speakAgentResults, !summary.isEmpty, !silent {
             let more = SpeechText.clean(text).count > summary.count + 40 ? " the rest is in the notch." : ""
@@ -641,6 +665,7 @@ final class AgentManager {
                 if run?.session.isRunning == true { answer(false, "The task was stopped.") } else { answered = true }
             }
             hud.present(card, chime: !(config.quietOnCalls && CallPresence.isOnCall()))
+            postActivity(agent.slug)
         }
     }
 
@@ -656,6 +681,7 @@ final class AgentManager {
     /// A card was answered: it leaves the queue, and the agent's row says waiting while it has another.
     private func settleCard(_ id: UUID, run: Run?, line: String) {
         hud.dismissConsent(id: id)
+        defer { postActivity(run?.agent.slug) }
         guard let run else { return }
         if hud.hasConsent(agent: run.agent.slug) {
             hud.upsertAgent(run.row("waiting for you: another question", state: .waiting))
