@@ -32,7 +32,7 @@ final class QuipsTests: XCTestCase {
     func testEverySituationHasItsLines() {
         XCTAssertEqual(Set(Quips.lines.keys), Set(QuipSituation.allCases))
         XCTAssertEqual(QuipSituation.allCases.map(\.rawValue),
-                       ["backShort", "backLong", "morning", "lateNight", "sameAppRepeat", "agentDone", "agentFailed", "deadlineToday", "petted"])
+                       ["backShort", "backLong", "morning", "lateNight", "sameAppRepeat", "agentDone", "agentFailed", "deadlineToday", "petted", "upcoming"])
         for situation in QuipSituation.allCases {
             let lines = Quips.lines[situation] ?? []
             XCTAssertGreaterThanOrEqual(lines.count, 8, situation.rawValue)
