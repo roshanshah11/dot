@@ -16,6 +16,11 @@ final class Noticer {
     private var debounce: DispatchWorkItem?
     private var lastKey = ""
 
+    /// His `chattiness` (0 to 3) mapped onto the knobs below; each still needs its own setting on.
+    private var chat: Chattiness { Chattiness(config.chattiness) }
+    private var notices: Bool { config.proactiveNotices && chat.notices }
+    private var offers: Bool { config.suggestions && chat.offers }
+
     init(config: DotConfig, atlas: AtlasBridge, overlay: OverlayManager, jev: Jev?) {
         self.config = config
         self.atlas = atlas
@@ -24,16 +29,16 @@ final class Noticer {
     }
 
     func start() {
-        if config.suggestions, jev != nil {
+        if offers, jev != nil {
             titleTimer = Timer.scheduledTimer(withTimeInterval: 5, repeats: true) { [weak self] _ in
                 Task { @MainActor in self?.pollDocument() }
             }
             Log.info("noticer: suggestions on, watching for documents")
         }
         // App switches carry the deadline notices (Jev) and the skill offers (a table, no Jev).
-        let notices = config.proactiveNotices && jev != nil
-        guard notices || config.suggestions else {
-            Log.info("noticer: off (\(config.proactiveNotices ? "no jev key" : "disabled in config"))")
+        let deadlineNotices = notices && jev != nil
+        guard deadlineNotices || offers else {
+            Log.info("noticer: off (\(chat.level == 0 ? "chattiness 0" : notices ? "no jev key" : "disabled in config"))")
             return
         }
         NSWorkspace.shared.notificationCenter.addObserver(forName: NSWorkspace.didActivateApplicationNotification, object: nil, queue: .main) { [weak self] note in
@@ -41,7 +46,7 @@ final class Noticer {
                   app.processIdentifier != ProcessInfo.processInfo.processIdentifier else { return }
             Task { @MainActor in self?.appChanged(app) }
         }
-        Log.info("noticer: watching app switches\(notices ? " against Atlas deadlines" : "")\(config.suggestions ? " for skill offers" : "")")
+        Log.info("noticer: watching app switches\(deadlineNotices ? " against Atlas deadlines" : "")\(offers ? " for skill offers" : "") (chattiness \(chat.level))")
     }
 
     private func appChanged(_ app: NSRunningApplication) {
@@ -54,9 +59,9 @@ final class Noticer {
     private func consider(_ app: NSRunningApplication) {
         if config.quietOnCalls, CallPresence.isOnCall() { return }
         let context = AccessibilityContext.capture(maxElements: 0, timeBudget: 0.15)
-        if config.suggestions, offerSkill(app: app, context: context) { return }
-        guard config.proactiveNotices, let jev, let brief = atlas.brief else { return }
-        guard Date().timeIntervalSince(lastNoticeAt) > Double(config.noticeCooldownMinutes) * 60 else { return }
+        if offers, offerSkill(app: app, context: context) { return }
+        guard notices, let jev, let brief = atlas.brief else { return }
+        guard Date().timeIntervalSince(lastNoticeAt) > chat.cooldown(minutes: config.noticeCooldownMinutes) else { return }
         let items = Array((brief.deadlines(withinDays: 2) + brief.commitments.prefix(4)).prefix(8))
         guard !items.isEmpty else { return }
         let title = context.windowTitle ?? ""
@@ -105,7 +110,7 @@ final class Noticer {
     private static let documentWords = try! NSRegularExpression(pattern: #"(?i)\.pdf\b|\.pptx?\b|\.docx?\b|\blecture\b|\bslides?\b|\bproblem set\b|\bpset\b|\bhomework\b|\bchapter\b|\bsyllabus\b|arxiv|\bpaper\b|\breading\b|\bworksheet\b|\bexam\b|\bmidterm\b|canvas\.uchicago|\.edu/.*\.pdf"#)
 
     private func pollDocument() {
-        guard config.suggestions, jev != nil else { return }
+        guard offers, jev != nil else { return }
         let context = AccessibilityContext.capture(maxElements: 0, timeBudget: 0.12)
         let title = context.windowTitle ?? ""
         let url = context.url ?? ""
@@ -114,7 +119,7 @@ final class Noticer {
         lastDocKey = key
         let probe = title + " " + url
         guard Self.documentWords.firstMatch(in: probe, range: NSRange(location: 0, length: (probe as NSString).length)) != nil else { return }
-        guard Date().timeIntervalSince(lastSuggestAt) > Double(config.suggestionCooldownMinutes) * 60 else { return }
+        guard Date().timeIntervalSince(lastSuggestAt) > chat.cooldown(minutes: config.suggestionCooldownMinutes) else { return }
         if config.quietOnCalls, CallPresence.isOnCall() { return }
         suggest(app: context.appName ?? "", title: title, url: url)
     }
@@ -170,7 +175,7 @@ final class Noticer {
         let today = AppSkillOffers.day(Date())
         var offered = UserDefaults.standard.dictionary(forKey: Self.offeredKey) as? [String: String] ?? [:]
         guard AppSkillOffers.isDue(offer.row, lastOffered: offered, today: today),
-              Date().timeIntervalSince(lastSuggestAt) > Double(config.suggestionCooldownMinutes) * 60 else { return false }
+              Date().timeIntervalSince(lastSuggestAt) > chat.cooldown(minutes: config.suggestionCooldownMinutes) else { return false }
         offered[offer.row] = today
         UserDefaults.standard.set(offered, forKey: Self.offeredKey)
         lastSuggestAt = Date()
