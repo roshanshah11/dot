@@ -41,6 +41,7 @@ case "--help", "-h":
       Dot --snapshot [folder]  render every notch state, mark and card to PNG (no screen turn)
       Dot --panel file.ui      show a UI-language explanation in the explainer panel (Dot --panel close hides it)
       Dot --prompt talk|think  print a session's system prompt
+      Dot --quip-test          three sample moments through the quip model (quipModel), each line and its check
       Dot --track-selftest     the running Dot checks that marks stay on scrolled content (posts real scrolls; run while away)
       Dot --selftest           check the notch's permission-card queue (no agents, no model)
       Dot --gate               the agents' tool-call hook (Claude Code runs it; JSON on stdin)
@@ -106,6 +107,11 @@ case "--prompt":
     let which = arguments.dropFirst().first ?? "think"
     print((which == "talk" ? Prompts.talk : Prompts.think) + Prompts.contextFiles(in: config.talkRootURL))
     exit(0)
+case "--quip-test":
+    // Context lines (docs/alive.md, round two): the real writer on three made-up moments, outside the app.
+    let config = DotConfig.load()
+    let passed = MainActor.assumeIsolated { QuipWriter.selfTest(config: config) }
+    exit(passed ? 0 : 1)
 case "--selftest":
     let selfTestApp = NSApplication.shared
     selfTestApp.setActivationPolicy(.accessory)
