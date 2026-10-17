@@ -68,6 +68,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         talk.scheduler = routines
         home.scheduler = routines
         morning = MorningSuggestions(config: config, atlas: atlas, hud: hud, agents: agents)
+        // A scout brief's "do it" hands the brief over (run one) and registers its routine (MB-03).
+        morning.addRoutine = { [weak self] name, when, brief in
+            self?.routines.add(agentName: name, when: when, brief: brief, runFirstNow: false) != nil
+        }
         morning.canShow = { [weak self] in
             guard let self else { return false }
             return self.talk.isIdle && !(self.config.quietOnCalls && CallPresence.isOnCall())

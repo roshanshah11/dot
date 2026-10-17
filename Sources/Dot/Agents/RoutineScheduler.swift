@@ -52,10 +52,12 @@ final class RoutineScheduler {
 
     /// Adds a routine from plain words; nil when the words do not say when.
     @discardableResult
-    func add(agentName: String, when: String, brief: String) -> Routine? {
+    /// `runFirstNow: false` when the brief that founded it was just handed to the agent (a morning
+    /// suggestion's "do it" is run one, MB-03), so the first scheduled run is the next one.
+    func add(agentName: String, when: String, brief: String, runFirstNow: Bool = true) -> Routine? {
         guard let schedule = RoutineSchedule.parse(when) else { return nil }
         let agent = agents.ensureAgent(named: agentName)
-        let routine = Routine(agent: agent.slug, agentName: agent.name, brief: brief, schedule: schedule)
+        let routine = Routine(agent: agent.slug, agentName: agent.name, brief: brief, schedule: schedule, runFirstNow: runFirstNow)
         book.routines.append(routine)
         save()
         Log.info("routines: added \(routine.id) for \(agent.slug): \(schedule.words): \(Log.short(brief, 80))")
