@@ -369,3 +369,28 @@ random seed.
    - "tune `orbSize` (20/24/28) after looking at the previews".
 8. **The morning report** lists every *my call* value the run changed and why, the before and after
    CPU numbers, and the path to the previews.
+
+## As built (2026-10-17, overnight run)
+
+Where the build departs from the spec above, and why. Each one is in the run's decision log with how to undo it.
+
+- **Fling threshold:** 6,000 px/s held for 100 ms over 900 px, not 2,500 px/s for 80 ms. A simulated fast pointing move (1,500 px in
+  0.5 s) peaks at 5,600 px/s and covers about 700 px at speed; a fling covers about 1,200. The pounce also waits 0.5 s and is
+  skipped if he clicks, because a pointing move ends in a click. `FlingDetector` in `Sources/DotKit/OrbKit.swift`.
+- **Follow spring:** 0.25 s with bounce 0.12, not 0.3 s. Main's lerp settled in about 0.05 s; 0.3 s trailed noticeably.
+- **Speaking blinks:** 0.85 of sentence starts get a blink, plus a 4.5 s base interval, not 0.7. At 0.7 the rate came out at
+  14.4/min, under the 15-30 band; people blink 26/min in conversation (science-C1).
+- **Lazy zone (petting):** holds only for a slow approach (under 600 px/s) within 1.25x the follow distance, for at most 1.2 s
+  unless a rub starts. The spec's version would have frozen Dot on any slow move down and to the right.
+- **Listening squint:** dropped. A 10% upper lid carved small notches into the eyes at 20-28 px.
+- **Faces:** happy and petted eyes hand over to a stroked arch (^ ^) as the lower lid rises, and the upper lid's edge bows down so
+  a drowsy eye reads sleepy, not bored. The speaking mouth is a small round "o" that grows with the voice.
+- **Quiet-on-calls check:** every 10 s, not every frame or 2 s. `CallPresence.isOnCall()` can read the front window's title
+  through Accessibility on the main thread.
+- **Agent pace (2.10):** not built. Output tokens reach Dot only when a turn ends (the ledger), so a live rate needs new plumbing.
+- **Before reels:** only main's stills are in `before/`. The old orb's motion lived in its timers, not in a pose that can be
+  replayed frame by frame.
+- **Recording guard:** macOS has no public "the screen is being recorded" signal, so `recording` stays false and the
+  quiet-on-calls check covers shares, which mostly happen on calls.
+
+Previews: `Dot --snapshot <folder> alive` (stills at 20/24/28 px, eye gaps 0.16/0.20/0.24, and nine GIF reels).
