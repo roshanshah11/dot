@@ -384,7 +384,7 @@ struct HomeView: View {
                         outputsColumn(agent).frame(width: 300)
                     }
                 } else {
-                    VStack { Spacer(); Text("No agent yet. Make one, or hold control+option and say \"agent, …\".").foregroundStyle(.secondary); Spacer() }
+                    VStack { Spacer(); Text("No agent yet. Make one, or hold control+option+shift and say what it should do.").foregroundStyle(.secondary); Spacer() }
                         .frame(maxWidth: .infinity)
                 }
             case .day: dayView
@@ -588,7 +588,7 @@ struct HomeView: View {
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 10) {
                     if model.entries.isEmpty {
-                        Text("Nothing yet. Say \"agent, …\" with the key held, or type below.").font(.callout).foregroundStyle(.secondary).padding(.top, 20)
+                        Text("Nothing yet. Hold shift as well to send it to an agent, or type below.").font(.callout).foregroundStyle(.secondary).padding(.top, 20)
                     }
                     ForEach(model.items) { item in entryView(item) }
                     if running {
@@ -1032,7 +1032,7 @@ struct HomeView: View {
         VStack(alignment: .leading, spacing: 12) {
             Text("New agent").font(.title3.weight(.semibold))
             Text("A named agent keeps its own folder, notes and conversation. Give it a job and it keeps that job.").font(.callout).foregroundStyle(.secondary)
-            TextField("Name, like Recruiting or Notes", text: $model.newAgentName)
+            TextField("Name, like Inbox Keeper or Lab Desk", text: $model.newAgentName)
             TextField("First task or what it is for (optional)", text: $model.newAgentBrief, axis: .vertical).lineLimit(3...6)
             HStack {
                 Spacer()
