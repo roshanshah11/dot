@@ -99,6 +99,7 @@ final class ClaudeSession {
                 self.isRunning = false
                 self.turnInFlight = false
                 self.process = nil
+                self.stdinHandle = nil
                 Log.info("session[\(self.label)] exited \(proc.terminationStatus)")
                 self.onExit?(proc.terminationStatus)
             }
@@ -107,6 +108,9 @@ final class ClaudeSession {
         try process.run()
         self.process = process
         self.stdinHandle = stdin.fileHandleForWriting
+        // A late write (an answer to a card after the process died) fails with EPIPE instead of
+        // SIGPIPE, which would end Dot itself.
+        _ = fcntl(stdin.fileHandleForWriting.fileDescriptor, F_SETNOSIGPIPE, 1)
         isRunning = true
         lastActivity = Date()
         Log.info("session[\(label)] started pid \(process.processIdentifier) model \(options.model) cwd \(options.cwd.path)")

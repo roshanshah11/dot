@@ -35,6 +35,8 @@ struct ConsentCard: Identifiable {
     let onDeny: () -> Void
     /// HeyClicky's "your yes covers one conversation": allow this kind of action for the rest of the task.
     var onAlways: (() -> Void)? = nil
+    /// Its agent stopped or its session ended: the question is answered no (FX-07).
+    var onWithdraw: (() -> Void)? = nil
 
     init(id: UUID = UUID(), agentId: String = "", agent: String, title: String, detail: String, guarded: Bool = false,
          onAllow: @escaping () -> Void, onDeny: @escaping () -> Void, onAlways: (() -> Void)? = nil) {
@@ -412,10 +414,15 @@ final class NotchHUD {
     private var consentQueue = ConsentQueue<ConsentCard>()
 
     func present(_ card: ConsentCard, chime: Bool = true) {
+        let before = consentQueue.current?.id
         consentQueue.add(id: card.id, agent: card.agentId, item: card)
         syncConsent()
-        if chime { NSSound(named: "Tink")?.play() }
+        // One chime when a question comes on show, not one for each queued behind it (FX-09).
+        if chime, before != card.id, consentQueue.current?.id == card.id { playConsentChime() }
     }
+
+    /// The card chime; `Dot --selftest` counts it instead of playing it.
+    var playConsentChime: () -> Void = { NSSound(named: "Tink")?.play() }
 
     /// The card was answered (or withdrawn): it leaves, and the next question in line shows.
     func dismissConsent(id: UUID) {
@@ -426,9 +433,10 @@ final class NotchHUD {
     /// The agent stopped or its session ended: its questions leave with it. Returns how many.
     @discardableResult
     func withdrawConsent(agent: String) -> Int {
-        let gone = consentQueue.removeAll(agent: agent).count
-        if gone > 0 { syncConsent() }
-        return gone
+        let gone = consentQueue.removeAll(agent: agent)
+        if !gone.isEmpty { syncConsent() }
+        for entry in gone { entry.item.onWithdraw?() }
+        return gone.count
     }
 
     func bringConsentForward(agent: String) {

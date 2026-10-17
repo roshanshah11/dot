@@ -207,7 +207,8 @@ final class Talk {
         options.permissionMode = "default"
         options.mcpConfigPath = config.mcpConfigPath(config.talkMCPConfig)
         options.strictMCP = true
-        options.allowedTools = options.mcpConfigPath == nil ? [] : config.talkAllowedTools
+        // Events with guests go out to them (FX-08): those two tools are judged per call below, never pre-allowed.
+        options.allowedTools = options.mcpConfigPath == nil ? [] : config.talkAllowedTools.filter { !Talk.guestTools.contains($0) }
         if kind == .talk { options.effort = config.talkEffort }
         let session = ClaudeSession(label: kind.rawValue, claudePath: config.claudeExecutable, options: options)
         session.onEvent = { [weak self, weak session] event in
@@ -216,7 +217,10 @@ final class Talk {
         }
         let allowed = Set(config.talkAllowedTools + ["WebSearch", "WebFetch"])
         session.permissionHandler = { request, completion in
-            if allowed.contains(request.toolName) || Talk.isComputation(request) {
+            if Talk.guestTools.contains(request.toolName), ConsentPolicy.isOutwardMCP(tool: request.toolName, input: request.toolRequest.input) {
+                completion(false, "an event with guests sends them an invitation, which needs his yes on a card; hand it to an agent with [AGENT:...].")
+                Log.warn("talk: refused \(request.toolName) with guests")
+            } else if allowed.contains(request.toolName) || Talk.isComputation(request) {
                 completion(true, nil)
             } else {
                 completion(false, "dot's talk mode only reads, remembers and computes with python; hand this to an agent with [AGENT:...].")
@@ -778,9 +782,13 @@ final class Talk {
         }
         Log.info("context: app \(context.appName ?? "?") window \(Log.short(context.windowTitle ?? "", 60)) url \(context.url != nil) selected \(context.selectedText?.count ?? 0) elements \(context.elements.count) shots \(shots.count)\(region != nil ? " box" : "")")
 
-        if mode == .agent, dryRun {
+        // Held shift but said "stop the email agent" or "is inbox keeper done": that is for Dot, not a
+        // message to the agent (FX-02); it takes the ordinary route, which stops it or answers.
+        let addressed = AgentAddress.find(in: text, roster: addressBook)
+        let agentMode = mode == .agent && (addressed.map { $0.intent == .tell } ?? true)
+        if agentMode, dryRun {
             // The last hotkey press held shift; a dry run still hands nothing to an agent.
-            let named = AgentAddress.find(in: text, roster: addressBook).flatMap { $0.intent == .tell ? $0.slug : nil }
+            let named = addressed.flatMap { $0.intent == .tell ? $0.slug : nil }
                 ?? AgentAddress.mentioned(in: text, roster: addressBook)?.slug
             Log.info("dry-run: agent mode, would go to \(named ?? "a new handoff") for \"\(Log.short(text, 100))\"")
             hud.flash(status: "dry run: agent mode", for: 4)
@@ -788,13 +796,13 @@ final class Talk {
             settle()
             return
         }
-        if mode == .agent {
+        if agentMode {
             phase = .idle
             hud.set(phase: .hidden)
             overlay.setPhase(.idle)
             speaker.speak("on it.")
             // Held shift and named an agent: it goes to that one (G2).
-            if let slug = AgentAddress.find(in: text, roster: addressBook).flatMap({ $0.intent == .tell ? $0.slug : nil })
+            if let slug = addressed.flatMap({ $0.intent == .tell ? $0.slug : nil })
                 ?? AgentAddress.mentioned(in: text, roster: addressBook)?.slug {
                 agents.reply(to: slug, text: text)
             } else {
@@ -1435,6 +1443,9 @@ final class Talk {
         if route.choice == "think", route.probability >= 0.75, route.confidence >= 0.6 { return .think }
         return .answer
     }
+
+    /// Talk may make and move his own events, but one with guests goes through an agent and a card.
+    static let guestTools: Set<String> = ["mcp__atlas__calendar_create", "mcp__atlas__calendar_update"]
 
     private func sendTurn(_ message: String, images: [(data: Data, mediaType: String)], to session: ClaudeSession, kind: SessionKind) {
         // A new question supersedes the one still being answered, like talking over someone.

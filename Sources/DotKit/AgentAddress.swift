@@ -88,7 +88,11 @@ public enum AgentAddress {
             let name = normalize(agent.name)
             return !name.isEmpty && words.contains(" " + name + " ")
         }
-        return named.count == 1 ? named[0] : nil
+        // A one-word name is a common word ("draft an email to Prof Lee" with an agent named Email): it
+        // never picks its agent here, only in address form, which `find` handles (FX-03). It still makes
+        // the words ambiguous when another agent is named too.
+        let full = named.filter { normalize($0.name).split(separator: " ").count >= 2 }
+        return full.count == 1 && named.count == 1 ? full[0] : nil
     }
 
     /// The roster agent a spoken or written name means: the name or slug outright, else the one
@@ -223,7 +227,34 @@ public enum ConsentVoice {
             && acts(in: String(said.split(separator: " ").first ?? "")) == named
         guard affirm || actCommand else { return .none }
         let forTask = AgentAddress.matches(#"\b(?:for (?:the rest of )?(?:this|the) (?:task|job|run)|for (?:all|everything)|all of (?:them|those|these)|every time|always)\b"#, said)
+        // A yes that goes on into a new request ("ok so explain this", "sure, run the numbers") is that
+        // request, not an answer: after the yes only the act, its object, words from the card and filler.
+        guard isAnswerShaped(said, card: card) else { return .none }
         if guarded, named.isDisjoint(with: acts(in: card)) { return .needsExplicit }
         return forTask ? .allowForTask : .allow
+    }
+
+    /// Words that may follow a yes in an answer to a card.
+    static let answerFiller: Set<String> = [
+        "yes", "yeah", "yep", "yup", "sure", "ok", "okay", "fine", "allow", "approve", "approved", "go", "ahead", "for",
+        "do", "it", "to", "that", "them", "those", "this", "these", "the", "one", "now", "please", "thanks", "thank", "you",
+        "then", "and", "just", "let", "him", "her", "of", "rest", "task", "job", "all", "everything", "every", "time",
+        "always", "sounds", "good", "that's", "card", "request", "agent", "email", "mail", "message", "invite", "event",
+        "file", "files", "folder", "draft", "go-ahead",
+    ]
+
+    /// After the leading yes, every word is filler, an act word, or a word from the card itself (a
+    /// recipient, a file name, the agent's name). Anything else makes it a request that starts with a yes.
+    static func isAnswerShaped(_ said: String, card: String) -> Bool {
+        var rest = said
+        if let regex = try? NSRegularExpression(pattern: #"^(?:yes|yeah|yep|yup|sure|ok(?:ay)?|allow|approve|go ahead|go for it|do it|fine|that'?s fine|sounds good|please do)\b"#, options: [.caseInsensitive]) {
+            rest = regex.stringByReplacingMatches(in: rest, range: NSRange(location: 0, length: (rest as NSString).length), withTemplate: "")
+        }
+        let cardWords = Set(card.lowercased().replacingOccurrences(of: "_", with: " ")
+            .split(whereSeparator: { !$0.isLetter && !$0.isNumber && $0 != "'" }).map(String.init).filter { $0.count >= 3 })
+        let words = rest.split(whereSeparator: { !$0.isLetter && !$0.isNumber && $0 != "'" && $0 != "-" }).map(String.init)
+        return words.allSatisfy { word in
+            answerFiller.contains(word) || cardWords.contains(word) || !acts(in: word).isEmpty
+        }
     }
 }

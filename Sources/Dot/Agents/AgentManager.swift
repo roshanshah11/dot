@@ -36,6 +36,9 @@ final class AgentManager {
         var outputBaseline: [String: Date] = [:]
         /// A result that came while helpers still worked in the background (F5), kept in case no turn follows.
         var deferredResult: ResultInfo?
+        /// Messages he sent that have not had their result yet. A result with none owed (a helper's
+        /// notice, or a message the last turn already folded in) updates the row without a chime or a word (FX-05).
+        var turnsOwed = 0
         init(agent: Agent, session: ClaudeSession) { self.agent = agent; self.session = session }
         /// A turn in flight, or helpers still at work in the background after one (F5).
         var isWorking: Bool { session.turnInFlight || session.backgroundTasks > 0 }
@@ -125,7 +128,7 @@ final class AgentManager {
             Task { @MainActor in self?.hud.bringConsentForward(agent: slug) }
         }
         hud.onConsentShown = { [weak self] card in
-            guard let self, self.config.speakAgentResults else { return }
+            guard let self, self.config.speakAgentResults, !(self.config.quietOnCalls && CallPresence.isOnCall()) else { return }
             self.speaker.speak("\(card.agent) wants to \(card.title).")
         }
     }
@@ -149,7 +152,7 @@ final class AgentManager {
         guard !trimmed.isEmpty, let agent = roster().first(where: { $0.slug == slug }) else { return }
         lastAddressed = slug
         // The button on a turn a restart cut short (F2): say what it was, in case the thread is older than 12 h.
-        if trimmed == Self.continueLabel, let brief = interruptedBriefs.removeValue(forKey: slug) {
+        if trimmed == Self.continueLabel, let brief = takeInterruptedBrief(for: agent) {
             trimmed = "Dot closed while you were working on this, so that turn stopped part-way: \"\(brief)\". Pick up where you left off; check what is already done (files in output/, drafts, Atlas) before doing anything again."
         }
         handoff(brief: trimmed, agentName: agent.name, context: nil, shots: nil, agent: agent)
@@ -157,8 +160,26 @@ final class AgentManager {
 
     /// The button an interrupted turn offers.
     static let continueLabel = "continue where you left off"
-    /// Briefs of turns a restart cut short, by agent, for the continue button.
+    /// Briefs of turns a restart cut short, by agent, for the continue button. Kept in
+    /// `<agent>/.dot/interrupted.json` too, so a second restart before he taps it loses nothing (FX-06).
     private var interruptedBriefs: [String: String] = [:]
+
+    private func interruptedFile(_ agent: Agent) -> URL { agent.folder.appendingPathComponent(".dot/interrupted.json") }
+
+    private func keepInterruptedBrief(_ brief: String, for agent: Agent) {
+        interruptedBriefs[agent.slug] = brief
+        let record: [String: Any] = ["brief": brief, "at": ISO8601DateFormatter().string(from: Date())]
+        if let data = try? JSONSerialization.data(withJSONObject: record) { try? data.write(to: interruptedFile(agent), options: .atomic) }
+    }
+
+    private func takeInterruptedBrief(for agent: Agent) -> String? {
+        let file = interruptedFile(agent)
+        defer { try? FileManager.default.removeItem(at: file) }
+        if let brief = interruptedBriefs.removeValue(forKey: agent.slug) { return brief }
+        guard let data = try? Data(contentsOf: file),
+              let record = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return nil }
+        return record["brief"] as? String
+    }
 
     func outputFiles(for agent: Agent) -> [URL] {
         let fm = FileManager.default
@@ -230,6 +251,7 @@ final class AgentManager {
                 hud.flash(status: "passed to \(agent.name) while it works", for: 3)
             }
             live.step(Log.short("he added: \(brief)", 90))
+            live.turnsOwed += 1
             // A routine run by hand into a busy agent still reports back to its routine when the turn ends.
             if routine { live.isRoutine = true }
             hud.upsertAgent(liveRow(live, live.lastLine))
@@ -250,6 +272,7 @@ final class AgentManager {
         run.helpers = 0
         run.isRoutine = routine
         run.allowances = []
+        run.turnsOwed = 1
         run.outputBaseline = TurnArtifacts.listing(of: agent.outputFolder)
         hud.upsertAgent(run.row(Log.short(brief, 90)))
 
@@ -432,12 +455,18 @@ final class AgentManager {
         // A second result in the same brief (a message that came in during the last reply) names only its own files.
         run.outputBaseline = TurnArtifacts.listing(of: agent.outputFolder)
         let quiet = run.isRoutine   // a scheduled run lands in the thread without a chime or a word (HeyClicky's routines do the same)
-        if !quiet { reportedAt[agent.slug] = Date() }
+        let unprompted = run.turnsOwed == 0
+        run.turnsOwed = max(run.turnsOwed - 1, 0)
+        if unprompted { Log.info("agent[\(agent.slug)] a result nobody asked for (a helper's notice or a folded-in message): row updated, no chime or word") }
+        if !quiet, !unprompted { reportedAt[agent.slug] = Date() }
         run.isRoutine = false
         if quiet { routineOutcome?(agent.slug, failed, failed ? summary : nil) }
-        if !quiet { NSSound(named: failed ? "Basso" : "Glass")?.play() }
+        // On a call the result waits in the notch: no chime, no voice (FX-11).
+        let onCall = config.quietOnCalls && CallPresence.isOnCall()
+        let silent = quiet || unprompted || onCall
+        if !silent { NSSound(named: failed ? "Basso" : "Glass")?.play() }
         NotificationCenter.default.post(name: .dotAgentFinished, object: nil, userInfo: ["failed": failed])
-        if config.speakAgentResults, !summary.isEmpty, !quiet {
+        if config.speakAgentResults, !summary.isEmpty, !silent {
             let more = SpeechText.clean(text).count > summary.count + 40 ? " the rest is in the notch." : ""
             speaker.speak("\(agent.name) here. \(summary)\(more)")
         }
@@ -605,7 +634,13 @@ final class AgentManager {
             }
             // Spoken when it comes on show (NotchHUD.onConsentShown), not now: one queued behind
             // another would be announced while the other is the one a spoken yes answers.
-            hud.present(card)
+            // Each question is answered no if its agent stops or its session ends, so nothing waits on it (FX-07).
+            card.onWithdraw = { [weak self, weak run] in
+                guard !answered else { return }
+                self?.appendTranscript(agent, role: "declined", text: "\(request.toolName): \(reason) (the task stopped)")
+                if run?.session.isRunning == true { answer(false, "The task was stopped.") } else { answered = true }
+            }
+            hud.present(card, chime: !(config.quietOnCalls && CallPresence.isOnCall()))
         }
     }
 
@@ -797,7 +832,7 @@ final class AgentManager {
             Log.info("agent[\(agent.slug)] a turn was cut short by a restart: \(Log.short(brief, 80))")
             // An old one is written down quietly; a recent one gets a row with the way back in.
             guard asked > dayAgo else { continue }
-            interruptedBriefs[agent.slug] = brief
+            keepInterruptedBrief(brief, for: agent)
             hud.upsertAgent(AgentRow(id: agent.slug, name: agent.name, line: "interrupted when Dot closed", state: .failed,
                                      result: "Dot closed while \(agent.name) was working on: \(Log.short(brief, 240))\n\nIts conversation is saved; continue picks it up where it stopped.",
                                      nextAction: Self.continueLabel))
