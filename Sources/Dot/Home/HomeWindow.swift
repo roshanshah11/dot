@@ -221,6 +221,7 @@ final class HomeModel: ObservableObject {
     }
 
     func setRoutinePaused(_ id: String, _ paused: Bool) { scheduler?.setPaused(id, paused); refreshRoutines() }
+    func fixRoutine(_ id: String) { scheduler?.fix(id); refreshRoutines() }
     func runRoutineNow(_ id: String) { scheduler?.runNow(id); refreshRoutines(); refreshLive() }
     func removeRoutine(_ id: String) { scheduler?.remove(id); refreshRoutines() }
 

@@ -136,6 +136,8 @@ struct AgentsPage: View {
             }
             Spacer()
             HStack(spacing: 6) {
+                // A routine paused after failing: its agent reads the failed runs and fixes the brief (TC-11).
+                if routine.paused, routine.failures > 0 { Button("Fix") { model.fixRoutine(routine.id) } }
                 Button(routine.paused ? "Resume" : "Pause") { model.setRoutinePaused(routine.id, !routine.paused) }
                 Button("Run now") { model.runRoutineNow(routine.id) }
                 Button(role: .destructive) { model.removeRoutine(routine.id) } label: { Image(systemName: "trash") }
