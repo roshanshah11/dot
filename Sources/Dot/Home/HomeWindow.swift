@@ -37,6 +37,12 @@ final class HomeWindowController {
         agents.onRunFinished = { [weak self] _ in Task { @MainActor in self?.model.refreshLive() } }
     }
 
+    /// The agent thread he has open in front of him (VO-04): Home is the key window, on an agent's page.
+    var focusedThread: String? {
+        guard let window, window.isVisible, window.isKeyWindow, model.page == .agent else { return nil }
+        return model.selected?.slug
+    }
+
     func show(agent slug: String? = nil) {
         model.reload()
         if let slug, let agent = model.agents.first(where: { $0.slug == slug }) { model.select(agent); model.page = .agent }

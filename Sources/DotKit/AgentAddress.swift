@@ -19,12 +19,22 @@ public enum AgentAddress {
         case stop
         /// How it is doing: Dot answers from what the agent is doing, without bothering it.
         case status
+        /// Its thread in Home (VO-01).
+        case open
+        /// The newest file it made of a kind ("open the deck email made"); the kind is the match's detail.
+        case openArtifact
+        /// Interrupt the turn and keep the session (VO-09's soft stop).
+        case pause
+        /// Its paused routines run again (VO-13).
+        case resumeRoutine
     }
 
     public struct Match: Equatable, Sendable {
         public let slug: String
         public let intent: Intent
-        public init(slug: String, intent: Intent) { self.slug = slug; self.intent = intent }
+        /// The kind of file for `.openArtifact` ("deck", "sheet").
+        public let detail: String?
+        public init(slug: String, intent: Intent, detail: String? = nil) { self.slug = slug; self.intent = intent; self.detail = detail }
     }
 
     /// The agent his words address, and what he wants from it; nil when he names none.
@@ -40,7 +50,20 @@ public enum AgentAddress {
                     return Match(slug: agent.slug, intent: .stop)
                 }
                 let tag = isAlias ? " agent" : "(?: agent)?"
+                if matches(#"^(?:please |dot,? )?(?:open|show me|pull up|bring up)(?: the| my)? \#(name)\#(tag)(?:'s)?(?: (?:thread|chat|page|window|agent))?\W*$"#, said) {
+                    return Match(slug: agent.slug, intent: .open)
+                }
+                if let kind = firstGroup(#"^(?:please |dot,? )?(?:open|show me|pull up)(?: the| that| the last)? (deck|slides|sheet|spreadsheet|model|doc|document|memo|pdf|draft|page|chart|file)(?: that| which)? (?:the |my )?\#(name)\#(tag) (?:made|wrote|built|drafted|did)\W*$"#, said) {
+                    return Match(slug: agent.slug, intent: .openArtifact, detail: kind.lowercased())
+                }
+                if matches(#"^(?:please |dot,? )?(?:pause|hold)(?: the| my)? \#(name)\#(suffix)(?: for (?:now|a (?:sec|second|minute)))?\W*$"#, said) {
+                    return Match(slug: agent.slug, intent: .pause)
+                }
+                if matches(#"^(?:please |dot,? )?(?:resume|unpause|restart|turn (?:back )?on|start)(?: the| my)? \#(name)\#(tag)(?:'s)? routines?(?: again)?\W*$"#, said) {
+                    return Match(slug: agent.slug, intent: .resumeRoutine)
+                }
                 let status = [
+                    #"^what did (?:the |my )?\#(name)\#(tag) (?:find|say|come up with|get|turn up|make|do|figure out|send)\W*$"#,
                     #"^(?:is|has) (?:the |my )?\#(name)\#(tag) (?:done|finished|ready|still (?:working|going|running|at it))(?: yet)?\W*$"#,
                     #"^did (?:the |my )?\#(name)\#(tag) finish(?: yet)?\W*$"#,
                     #"^how(?:'s| is) (?:the |my )?\#(name)\#(tag) (?:doing|going|coming along|getting on)\W*$"#,
@@ -154,6 +177,14 @@ public enum AgentAddress {
         t = t.replacingOccurrences(of: #"[^a-z0-9 ]"#, with: "", options: .regularExpression)
         t = t.replacingOccurrences(of: #"\b(the|my|agent|helper)\b"#, with: " ", options: .regularExpression)
         return t.replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression).trimmingCharacters(in: .whitespaces)
+    }
+
+    static func firstGroup(_ pattern: String, _ text: String) -> String? {
+        guard let regex = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive]) else { return nil }
+        let ns = text as NSString
+        guard let match = regex.firstMatch(in: text, range: NSRange(location: 0, length: ns.length)), match.numberOfRanges > 1,
+              match.range(at: 1).location != NSNotFound else { return nil }
+        return ns.substring(with: match.range(at: 1))
     }
 
     static func matches(_ pattern: String, _ text: String) -> Bool {

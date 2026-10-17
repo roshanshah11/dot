@@ -78,13 +78,23 @@ final class MorningSuggestions {
         Log.info("morning: \(items.count) offer(s)\(scout != nil ? " from the scout" : ""): " + items.map { Log.short($0.text, 50) }.joined(separator: " | "))
     }
 
-    private func decided(_ item: MorningCard.Item, yes: Bool) {
+    /// By voice while the card is up (MB-07): "do it" takes the first item still on the card, "skip"
+    /// passes it, "do it but ..." takes it with his change. Returns what Dot says; nil with no card.
+    func decideFirst(yes: Bool, adjust: String? = nil) -> String? {
+        guard let item = hud.model.morning?.items.first else { return nil }
+        decided(item, yes: yes, adjust: adjust)
+        let what = item.text.lowercased().trimmingCharacters(in: CharacterSet(charactersIn: ". "))
+        return yes ? "on it: \(what)." : "skipped \(what)."
+    }
+
+    private func decided(_ item: MorningCard.Item, yes: Bool, adjust: String? = nil) {
         record(key: item.id, text: item.text, decision: yes ? "yes" : "skip")
         hud.morningDecided(item)
         guard yes else { Log.info("morning: skipped: \(item.id): \(Log.short(item.text, 70))"); return }
         let suggestion = offered[item.id] ?? MorningSuggestion(key: item.id, text: item.text, brief: item.brief)
         // A scout brief names its agent; handoff founds it when it is new. A template goes to Dot.
-        agents.handoff(brief: suggestion.handoffBrief, agentName: suggestion.agentName, context: nil, shots: nil)
+        let change = adjust.map { "\n\nHis change when he said yes: \($0)" } ?? ""
+        agents.handoff(brief: suggestion.handoffBrief + change, agentName: suggestion.agentName, context: nil, shots: nil)
         let who = suggestion.agentName ?? "Dot"
         var line = "morning: do it: \(item.id) to \(who)" + (suggestion.agentRole.map { " (new, \($0))" } ?? "")
         if let routine = suggestion.routine {

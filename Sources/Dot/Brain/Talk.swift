@@ -849,6 +849,41 @@ final class Talk {
             sayLocal(agents.statusLine(for: slug).lowercased())
             if let slug, hud.hasConsent(agent: slug) { hud.bringConsentForward(agent: slug) }
             return
+        case .openAgent(let slug):
+            openHome?(slug)
+            sayLocal("here's \(agentName(slug)).")
+            return
+        case .openArtifact(let slug, let kind):
+            if let file = agents.openNewest(slug, kind: kind) { sayLocal("opening \(file).") } else { sayLocal("\(agentName(slug)) hasn't made a \(kind) yet.") }
+            return
+        case .pauseAgent(let slug):
+            sayLocal(agents.steer(slug, to: nil) ? "paused \(agentName(slug))." : "\(agentName(slug)) isn't working on anything right now.")
+            return
+        case .steerAgent(let slug, let instruction):
+            sayLocal(agents.steer(slug, to: instruction) ? "changing course. \(agentName(slug)) has it." : "\(agentName(slug)) isn't working on anything right now.")
+            return
+        case .retryAgent(let slug):
+            sayLocal(agents.retry(slug) ? "trying that again with \(agentName(slug))." : "there's nothing to retry.")
+            return
+        case .resumeRoutine(let slug):
+            let resumed = resumeRoutines?(slug) ?? 0
+            sayLocal(resumed > 0 ? "\(agentName(slug))'s routine is back on." : "\(agentName(slug)) has no paused routine.")
+            return
+        case .askWhichCard(let answer):
+            pendingCardChoice = (answer, Date().addingTimeInterval(20))
+            sayLocal(AgentVoice.whichCard(hud.openConsents.map { (agent: $0.agent, act: $0.title) }))
+            return
+        case .morning(let yes, let adjust):
+            sayLocal(morningAnswer?(yes, adjust) ?? "the morning card is gone.")
+            return
+        case .homeThread(let slug):
+            // Typed or spoken, the open thread gets it; Dot says nothing (HeyClicky's thread focus).
+            phase = .idle
+            agents.reply(to: slug, text: text)
+            hud.flash(status: "sent to \(agentName(slug))", for: 2)
+            region = nil
+            settle()
+            return
         case .continueWalkthrough:
             if walkthrough != nil { continueWalkthrough(said: text) } else { continueBoard(said: text) }
             return
@@ -1186,6 +1221,9 @@ final class Talk {
         case answer, agent, think, followUp(String), continueWalkthrough, drive, closeBoard, lessonNext, lessonBack, lessonAgain, lecture, suggestion(String), dismiss, find(String), listen, stopListening, recapLecture, dictionary(heard: String?, correct: String), place(what: String, whereWord: String?), images(String)
         /// Round seven (G2): his spoken answer to the card on show; a named agent told, stopped or asked after.
         case consentAnswer(ConsentVoice.Answer), tellAgent(String), stopAgent(String), agentStatus(String?)
+        /// Tonight's voice verbs (VO-01 to VO-13, MB-07).
+        case openAgent(String), openArtifact(String, String), pauseAgent(String), steerAgent(String, String), retryAgent(String),
+             resumeRoutine(String), askWhichCard(ConsentVoice.Answer), morning(Bool, String?), homeThread(String)
         var description: String {
             switch self {
             case .answer: return "answer"
@@ -1212,6 +1250,15 @@ final class Talk {
             case .tellAgent(let slug): return "tellAgent(\(slug))"
             case .stopAgent(let slug): return "stopAgent(\(slug))"
             case .agentStatus(let slug): return "agentStatus(\(slug ?? "all"))"
+            case .openAgent(let slug): return "openAgent(\(slug))"
+            case .openArtifact(let slug, let kind): return "openArtifact(\(slug), \(kind))"
+            case .pauseAgent(let slug): return "pauseAgent(\(slug))"
+            case .steerAgent(let slug, let to): return "steerAgent(\(slug), \(to))"
+            case .retryAgent(let slug): return "retryAgent(\(slug))"
+            case .resumeRoutine(let slug): return "resumeRoutine(\(slug))"
+            case .askWhichCard(let answer): return "askWhichCard(\(answer))"
+            case .morning(let yes, let adjust): return "morning(\(yes ? "do it" : "skip")\(adjust.map { ", \($0)" } ?? ""))"
+            case .homeThread(let slug): return "homeThread(\(slug))"
             }
         }
     }
@@ -1219,6 +1266,17 @@ final class Talk {
     /// `Dot --ask --dry`: the route and the tags are logged, nothing is handed to an agent, stopped or
     /// answered (round seven: checks voice routing at night without starting agents).
     private var dryRun = false
+
+    /// Set by AppDelegate for the voice verbs: Home's thread for an agent (nil: Home itself), its
+    /// paused routines back on (how many), the agent thread open in front of him, the morning card.
+    var openHome: ((String?) -> Void)?
+    var resumeRoutines: ((String) -> Int)?
+    var focusedThread: (() -> String?)?
+    var morningAnswer: ((Bool, String?) -> String?)?
+    /// Several cards waited and his yes named none: his next words say which (VO-03).
+    private var pendingCardChoice: (answer: ConsentVoice.Answer, until: Date)?
+    /// The kind of session the turn in flight belongs to, for the cut-off note (VO-07).
+    private var activeKind: SessionKind?
 
     /// When Dot last ended an answer on a question: a "yes" or "no" soon after is his answer to it.
     private var askedHimAt = Date.distantPast
@@ -1273,8 +1331,17 @@ final class Talk {
     private func route(_ text: String) async -> Route {
         let inWalkthrough = walkthrough != nil
         let range = NSRange(location: 0, length: (text as NSString).length)
+        // He was just asked which card his yes was for (VO-03): his next words name the agent.
+        if let pending = pendingCardChoice {
+            pendingCardChoice = nil
+            if Date() < pending.until,
+               let slug = AgentVoice.cardAgent(in: text, among: hud.openConsents.map { (slug: $0.agentId, name: $0.agent) }) {
+                hud.bringConsentForward(agent: slug)
+                return .consentAnswer(pending.answer)
+            }
+        }
         // A card on show: "allow", "not now", "yes, send it" answer it (HeyClicky: "by voice too").
-        if let card = hud.currentConsent {
+        if var card = hud.currentConsent {
             var answer = ConsentVoice.interpret(text, guarded: card.guarded, card: card.title + " " + card.detail)
             // A bare "ok", "yes" or "no" answers the card only when it just came on show and nothing else
             // is waiting on one: a walkthrough, a lesson, board steps, a suggestion, or a question Dot just
@@ -1283,16 +1350,46 @@ final class Talk {
             let fresh = hud.consentShownAt.map { Date().timeIntervalSince($0) < 20 } ?? false
             let otherAsk = inWalkthrough || lessonCard != nil || board.hasHiddenSteps || suggestionLive || Date().timeIntervalSince(askedHimAt) < 45
             if !ConsentVoice.isAimedAtCard(text), !fresh || otherAsk { answer = .none }
+            if answer != .none, answer != .decline {
+                // Several agents wait (VO-03): a yes that names one answers that one; one that names none asks which.
+                let asking = hud.openConsents.map { (slug: $0.agentId, name: $0.agent) }
+                if Set(asking.map(\.slug)).count > 1 {
+                    guard let slug = AgentVoice.cardAgent(in: text, among: asking) else { return .askWhichCard(answer) }
+                    if slug != card.agentId {
+                        hud.bringConsentForward(agent: slug)
+                        if let named = hud.currentConsent {
+                            card = named
+                            answer = ConsentVoice.interpret(text, guarded: card.guarded, card: card.title + " " + card.detail)
+                        }
+                    }
+                }
+            }
             if answer != .none { return .consentAnswer(answer) }
         }
+        // The morning card is up: "do it", "skip", "do it but ..." answer its first item (MB-07).
+        if hud.model.morning != nil, let reply = AgentVoice.morningAnswer(text) { return .morning(reply.yes, reply.adjust) }
         // He named an agent: tell it, stop it, or ask how it is doing (G2).
         if let match = AgentAddress.find(in: text, roster: addressBook) {
             switch match.intent {
             case .tell: return .tellAgent(match.slug)
             case .stop: return .stopAgent(match.slug)
             case .status: return .agentStatus(match.slug)
+            case .open: return .openAgent(match.slug)
+            case .openArtifact: return .openArtifact(match.slug, match.detail ?? "file")
+            case .pause: return .pauseAgent(match.slug)
+            case .resumeRoutine: return .resumeRoutine(match.slug)
             }
         }
+        // His Home thread for an agent is in front of him: his words are for that agent (VO-04).
+        if let slug = focusedThread?(), addressBook.contains(where: { $0.slug == slug }) { return .homeThread(slug) }
+        // "stop, do X instead" for the agent at work; "retry" for the one he last spoke to (VO-09, VO-06).
+        if let instruction = AgentVoice.steer(text) {
+            let working = agents.runningAgents()
+            if let slug = working.first(where: { $0.slug == agents.lastAddressed })?.slug ?? (working.count == 1 ? working[0].slug : nil) {
+                return .steerAgent(slug, instruction)
+            }
+        }
+        if AgentVoice.isRetry(text), let slug = agents.lastAddressed ?? agents.justReported(within: 900)?.slug { return .retryAgent(slug) }
         if AgentAddress.isProgressAsk(text), !agents.runningAgents().isEmpty || !hud.openConsents.isEmpty {
             return .agentStatus(nil)
         }
@@ -1470,6 +1567,7 @@ final class Talk {
         turnModel = kind == .talk ? config.talkModel : config.thinkModel
         phase = .thinking
         hud.model.deeper = kind == .think
+        activeKind = kind
         hud.set(phase: .thinking)
         overlay.setPhase(.thinking)
         session.send(text: message, images: images)
@@ -1488,6 +1586,8 @@ final class Talk {
         var images = shots.map { (data: $0.jpeg, mediaType: "image/jpeg") }
         lines.append("[context]")
         lines.append("now: \(Self.nowLine())")
+        // This message cuts off the answer still being given in the same conversation (VO-07).
+        if activeSession?.turnInFlight == true, activeKind == kind { lines.append("note: the last question was cut off by this one; don't mention it.") }
         if let app = context.appName {
             lines.append("app: \(app)" + (context.bundleIdentifier.map { " (\($0))" } ?? ""))
         }
@@ -1896,6 +1996,10 @@ final class Talk {
     }
 
     /// A local answer with no model turn: the line in the notch and the voice, then settle.
+    private func agentName(_ slug: String) -> String {
+        (agents.roster().first(where: { $0.slug == slug })?.name ?? slug).lowercased()
+    }
+
     private func sayLocal(_ line: String) {
         phase = .idle
         overlay.setPhase(.speaking)

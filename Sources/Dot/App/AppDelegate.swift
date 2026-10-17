@@ -72,6 +72,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         morning.addRoutine = { [weak self] name, when, brief in
             self?.routines.add(agentName: name, when: when, brief: brief, runFirstNow: false) != nil
         }
+        // The voice verbs that reach past Talk (VO-01, VO-04, VO-13, MB-07).
+        talk.openHome = { [weak self] slug in self?.home.show(agent: slug) }
+        talk.focusedThread = { [weak self] in self?.home.focusedThread }
+        talk.resumeRoutines = { [weak self] slug in
+            guard let routines = self?.routines else { return 0 }
+            let paused = routines.routines(for: slug).filter(\.paused)
+            paused.forEach { routines.setPaused($0.id, false) }
+            return paused.count
+        }
+        talk.morningAnswer = { [weak self] yes, adjust in self?.morning.decideFirst(yes: yes, adjust: adjust) }
         morning.canShow = { [weak self] in
             guard let self else { return false }
             return self.talk.isIdle && !(self.config.quietOnCalls && CallPresence.isOnCall())

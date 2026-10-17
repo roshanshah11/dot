@@ -39,6 +39,9 @@ final class AgentManager {
         /// Messages he sent that have not had their result yet. A result with none owed (a helper's
         /// notice, or a message the last turn already folded in) updates the row without a chime or a word (FX-05).
         var turnsOwed = 0
+        /// He changed course mid-turn (VO-09): the interrupted turn's result is swallowed and this
+        /// starts the next one; empty means he paused it and the session waits for his next word.
+        var pendingSteer: String?
         init(agent: Agent, session: ClaudeSession) { self.agent = agent; self.session = session }
         /// A turn in flight, or helpers still at work in the background after one (F5).
         var isWorking: Bool { session.turnInFlight || session.backgroundTasks > 0 }
@@ -380,6 +383,20 @@ final class AgentManager {
             }
         case .result(let result):
             try? FileManager.default.setAttributes([.modificationDate: Date()], ofItemAtPath: agent.folder.appendingPathComponent(".dot/session-id").path)
+            if let steer = run.pendingSteer {
+                run.pendingSteer = nil
+                run.turnsOwed = 0
+                appendTranscript(agent, role: "progress", text: steer.isEmpty ? "paused by him" : "stopped there; he changed course")
+                if steer.isEmpty {
+                    hud.upsertAgent(run.row("paused; tell it what next", state: .done))
+                    postActivity()
+                    Log.info("agent[\(agent.slug)] paused by him; session kept")
+                } else {
+                    Log.info("agent[\(agent.slug)] changed course: \(Log.short(steer))")
+                    handoff(brief: steer, agentName: agent.name, context: nil, shots: nil, agent: agent)
+                }
+                return
+            }
             if run.session.backgroundTasks > 0 {
                 // Helpers still at work in the background (F5): these words are progress, not the result.
                 let said = run.finalText.isEmpty ? (result.resultText ?? "") : run.finalText
@@ -878,6 +895,46 @@ final class AgentManager {
 
     /// One line for him on how an agent is doing (nil slug: every agent that is busy or waiting), from
     /// what Dot already knows: no turn for the agent, nothing spent (G2, "progress?").
+    /// "retry" (VO-06): the agent's last brief again, told first to check what already happened.
+    @discardableResult
+    func retry(_ slug: String) -> Bool {
+        guard let agent = roster().first(where: { $0.slug == slug }) else { return false }
+        var brief = lastBriefs[slug] ?? runs[slug]?.lastBrief ?? transcript(for: agent).last(where: { $0.role == "user" })?.text ?? ""
+        if brief.hasPrefix("[retry]"), let cut = brief.range(of: "\n\n") { brief = String(brief[cut.upperBound...]) }
+        guard !brief.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return false }
+        handoff(brief: "[retry] Do this again. First check what already happened (Atlas's ledger, sent mail, drafts, output/) and never repeat a send, a submit or a post that went through.\n\n" + brief,
+                agentName: agent.name, context: nil, shots: nil, agent: agent)
+        return true
+    }
+
+    /// "stop, do X instead" (VO-09): the turn stops where it is, its open cards are answered no, and
+    /// the new instruction starts the next turn in the same conversation. `to: nil` is "pause": the
+    /// turn stops and the session waits for his next word. false when the agent has no session.
+    @discardableResult
+    func steer(_ slug: String, to instruction: String?) -> Bool {
+        guard let run = runs[slug], run.session.isRunning else { return false }
+        lastAddressed = slug
+        hud.withdrawConsent(agent: slug)
+        if run.session.turnInFlight {
+            run.pendingSteer = instruction ?? ""
+            run.session.interrupt()
+            hud.upsertAgent(run.row(instruction == nil ? "pausing" : "changing course"))
+        } else if let instruction {
+            handoff(brief: instruction, agentName: run.agent.name, context: nil, shots: nil, agent: run.agent)
+        }
+        return true
+    }
+
+    /// "open the deck email made" (VO-01): the newest file of that kind in the agent's output/, opened.
+    func openNewest(_ slug: String, kind: String) -> String? {
+        guard let agent = roster().first(where: { $0.slug == slug }) else { return nil }
+        let wanted = AgentVoice.extensions(forKind: kind)
+        guard let newest = outputFiles(for: agent).first(where: { wanted.isEmpty || wanted.contains($0.pathExtension.lowercased()) }) else { return nil }
+        NSWorkspace.shared.open(newest)
+        Log.info("agent[\(slug)] opened \(newest.lastPathComponent) by voice")
+        return newest.lastPathComponent
+    }
+
     func statusLine(for slug: String?) -> String {
         let cards = hud.openConsents
         func one(_ agent: Agent) -> String {
@@ -891,6 +948,10 @@ final class AgentManager {
             }
             if let result = lastResults[agent.slug], let when = finishedAt[agent.slug], Date().timeIntervalSince(when) < 6 * 3600 {
                 return "\(agent.name) finished: \(Self.firstSentence(of: result))"
+            }
+            // After a relaunch the memory is empty; its transcript still has what it last reported (VO-02).
+            if let found = AgentVoice.lastFinding(in: transcript(for: agent, limit: 150)) {
+                return "\(agent.name) last reported: \(Self.firstSentence(of: found))"
             }
             return "\(agent.name) isn't working on anything right now."
         }
