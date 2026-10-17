@@ -1,8 +1,8 @@
 {
  "counts": {
   "fail": 0,
-  "pass": 132,
-  "total": 132
+  "pass": 337,
+  "total": 337
  },
  "widgets": {
   "absorption-variable-costing-inventory-profit": {
@@ -37,6 +37,86 @@
    "subject": "stats",
    "title": "Accuracy vs precision"
   },
+  "actin-driven-cell-migration": {
+   "checked": "2026-10-17T07:49:11",
+   "failures": [],
+   "shows": "Step through protrude, adhere, contract and release; slide polymerization and rearward flow to see that the front moves at their difference",
+   "status": "pass",
+   "subject": "biology",
+   "title": "Actin-driven cell migration"
+  },
+  "actin-filament-polymerization": {
+   "checked": "2026-10-17T07:49:11",
+   "failures": [],
+   "shows": "Slide the actin concentration and the time: filaments form only after a slow nucleation lag, grow fast, then level off where free actin has fallen to the critical concentration; seeds skip the lag",
+   "status": "pass",
+   "subject": "biology",
+   "title": "Actin polymerization: lag, growth, plateau"
+  },
+  "actin-filament-treadmilling": {
+   "checked": "2026-10-17T07:49:11",
+   "failures": [],
+   "shows": "Slide the free ATP-actin concentration: each end grows at k_on c - k_off; between the two critical concentrations the barbed end gains while the pointed end loses, and at 0.17 \u00b5M the two cancel so the filament keeps its length while subunits flow through it",
+   "status": "pass",
+   "subject": "biology",
+   "title": "Actin treadmilling"
+  },
+  "active-vs-passive-immunity": {
+   "checked": "2026-10-17T07:49:11",
+   "failures": [],
+   "shows": "Pick an example: active immunity means your own B cells make antibody and memory cells, slowly at first; passive immunity is borrowed antibody that protects at once, fades with a half-life of weeks and leaves no memory",
+   "status": "pass",
+   "subject": "biology",
+   "title": "Active vs passive immunity"
+  },
+  "acute-inflammation": {
+   "checked": "2026-10-17T07:49:11",
+   "failures": [],
+   "shows": "Step through a splinter wound: the alarm, wider vessels (red, warm), leaky vessels (swollen, painful), neutrophils crossing the vessel wall to the bacteria, then cleanup and resolution",
+   "status": "pass",
+   "subject": "biology",
+   "title": "Acute inflammation"
+  },
+  "alternative-rna-splicing-isoforms": {
+   "checked": "2026-10-17T07:02:47",
+   "failures": [],
+   "shows": "Pick a splicing pattern and slide \u03a8: the same pre-mRNA is spliced two ways, giving mRNA isoforms of different lengths, and \u03a8 is the share that keeps the alternative piece",
+   "status": "pass",
+   "subject": "biology",
+   "title": "Alternative splicing patterns"
+  },
+  "alternative-rna-splicing-protein-isoforms": {
+   "checked": "2026-10-17T07:02:47",
+   "failures": [],
+   "shows": "Switch the three optional exons on and off: in-frame exons add or remove protein domains, while an exon whose length is not a multiple of 3 shifts the reading frame into an early stop codon",
+   "status": "pass",
+   "subject": "biology",
+   "title": "Splicing makes protein isoforms"
+  },
+  "amino-acid-side-chain-properties": {
+   "checked": "2026-10-17T06:25:48",
+   "failures": [],
+   "shows": "Pick an amino acid and a pH: side chains sort into nonpolar, polar, acidic and basic, from hydrophobic to hydrophilic, and the ionizable ones gain or lose charge with pH",
+   "status": "pass",
+   "subject": "biology",
+   "title": "Amino acid side chains: properties"
+  },
+  "amino-acid-structure": {
+   "checked": "2026-10-17T06:25:48",
+   "failures": [],
+   "shows": "Slide the pH: every amino acid is an alpha carbon carrying an amino group, a carboxyl group, an H and a side chain, and the two groups gain or lose H+ to give a cation, a zwitterion or an anion",
+   "status": "pass",
+   "subject": "biology",
+   "title": "Amino acid structure and charge"
+  },
+  "amino-acids-and-peptide-bonds": {
+   "checked": "2026-10-17T07:02:47",
+   "failures": [],
+   "shows": "Step through a condensation: the carboxyl OH of one amino acid and an H from the next one's amino group leave as water, and the new C\u2013N peptide bond joins them into a dipeptide with an N-terminus and a C-terminus",
+   "status": "pass",
+   "subject": "biology",
+   "title": "Amino acids and the peptide bond"
+  },
   "angular-frequency-relation": {
    "checked": "2026-10-17T04:09:03",
    "failures": [],
@@ -44,6 +124,38 @@
    "status": "pass",
    "subject": "physics",
    "title": "Angular frequency and period"
+  },
+  "animal-cell-cytokinesis-cleavage": {
+   "checked": "2026-10-17T06:57:54",
+   "failures": [],
+   "shows": "Step through cytokinesis in an animal cell: a contractile ring of actin and myosin forms over the spindle midzone and pinches the cell in two; move the spindle to make unequal daughters",
+   "status": "pass",
+   "subject": "biology",
+   "title": "Cytokinesis: the cleavage furrow"
+  },
+  "animal-cell-junction-functions": {
+   "checked": "2026-10-17T06:57:54",
+   "failures": [],
+   "shows": "Pick a junction: tight junctions seal, adherens junctions and desmosomes hold cells together through actin and keratin, gap junctions let small molecules pass, hemidesmosomes anchor cells to the basal lamina",
+   "status": "pass",
+   "subject": "biology",
+   "title": "Cell junctions and what they do"
+  },
+  "animal-cell-structure-and-function": {
+   "checked": "2026-10-17T06:25:48",
+   "failures": [],
+   "shows": "Pick an organelle to see where it sits and what it does; switch the cell type to see structure follow function, from enzyme-exporting pancreas cells to mitochondria-packed heart muscle",
+   "status": "pass",
+   "subject": "biology",
+   "title": "Animal cell: organelles and their jobs"
+  },
+  "animal-cell-tonicity-comparison": {
+   "checked": "2026-10-17T06:25:48",
+   "failures": [],
+   "shows": "Slide the salt outside a red blood cell: hypotonic swells it until it bursts, isotonic leaves it alone, hypertonic shrivels it; urea raises osmolarity but crosses the membrane, so it does not count toward tonicity",
+   "status": "pass",
+   "subject": "biology",
+   "title": "Tonicity: a cell in three solutions"
   },
   "anova-decomposition": {
    "checked": "2026-10-17T04:39:58",
@@ -85,6 +197,46 @@
    "subject": "biology",
    "title": "Antibody structure and classes"
   },
+  "antigen-presentation-pathways": {
+   "checked": "2026-10-17T06:57:54",
+   "failures": [],
+   "shows": "Pick a route and step through it: inside proteins go proteasome, ER and MHC I to CD8 T cells; engulfed proteins go endosome and MHC II to CD4 T cells; dendritic cells cross outside antigen onto MHC I",
+   "status": "pass",
+   "subject": "biology",
+   "title": "Antigen presentation: MHC I and MHC II"
+  },
+  "antigen-specific-clonal-selection-and-expansion": {
+   "checked": "2026-10-17T06:57:54",
+   "failures": [],
+   "shows": "Pick an antigen and step through: out of a pool of lymphocytes with different receptors only the matching one is selected, it divides into a clone, and the clone splits into effector and memory cells",
+   "status": "pass",
+   "subject": "biology",
+   "title": "Clonal selection and expansion"
+  },
+  "antiparallel-dna-strands": {
+   "checked": "2026-10-17T07:13:25",
+   "failures": [],
+   "shows": "The two strands of DNA run opposite ways, 5\u2032\u21923\u2032 against 3\u2032\u21925\u2032: read the partner 5\u2032\u21923\u2032 and you get the reverse complement; A\u2013T pairs hold by 2 hydrogen bonds, G\u2013C by 3",
+   "status": "pass",
+   "subject": "biology",
+   "title": "Antiparallel DNA strands"
+  },
+  "apoptosis": {
+   "checked": "2026-10-17T07:30:51",
+   "failures": [],
+   "shows": "Pick the trigger and step through apoptosis: damage inside releases cytochrome c from mitochondria, a death ligand outside builds the DISC, and both switch on caspases that package the cell neatly for phagocytes",
+   "status": "pass",
+   "subject": "biology",
+   "title": "Apoptosis: intrinsic and extrinsic pathways"
+  },
+  "apoptosis-versus-necrosis": {
+   "checked": "2026-10-17T07:30:51",
+   "failures": [],
+   "shows": "Step through two cell deaths side by side: apoptosis shrinks the cell and packages it into sealed bodies that are eaten quietly; necrosis swells it until it bursts and inflames the tissue",
+   "status": "pass",
+   "subject": "biology",
+   "title": "Apoptosis versus necrosis"
+  },
   "arithmetic-mean": {
    "checked": "2026-10-17T04:09:03",
    "failures": [],
@@ -93,6 +245,14 @@
    "subject": "stats",
    "title": "The arithmetic mean"
   },
+  "atp-driven-active-transport": {
+   "checked": "2026-10-17T07:13:25",
+   "failures": [],
+   "shows": "Step through one cycle of the Na\u207a/K\u207a pump (3 Na\u207a out, 2 K\u207a in per ATP) and change the gradients and membrane voltage to see what the cycle costs against the energy one ATP supplies",
+   "status": "pass",
+   "subject": "biology",
+   "title": "Active transport: the sodium-potassium pump"
+  },
   "autocorrelation": {
    "checked": "2026-10-17T04:39:58",
    "failures": [],
@@ -100,6 +260,22 @@
    "status": "pass",
    "subject": "stats",
    "title": "Autocorrelation and the correlogram"
+  },
+  "autocrine-cell-signaling": {
+   "checked": "2026-10-17T07:13:25",
+   "failures": [],
+   "shows": "Step through a cell secreting a ligand that binds its own receptors; raise the ligand level or the receptors' Kd to change how many are occupied, or block the receptors to break the loop",
+   "status": "pass",
+   "subject": "biology",
+   "title": "Autocrine signaling: a cell talks to itself"
+  },
+  "autophagy-lysosome-recycling": {
+   "checked": "2026-10-17T07:13:25",
+   "failures": [],
+   "shows": "Step through autophagy: a double membrane wraps worn-out parts, fuses with a lysosome, digests them and returns the building blocks; switch fed to starved to see mTORC1 release the brake",
+   "status": "pass",
+   "subject": "biology",
+   "title": "Autophagy: recycling through the lysosome"
   },
   "average-speed-distance-time": {
    "checked": "2026-10-17T04:39:58",
@@ -133,6 +309,70 @@
    "subject": "biology",
    "title": "Bacterial transformation: taking up free DNA"
   },
+  "basal-body-cilium-anchoring": {
+   "checked": "2026-10-17T07:13:25",
+   "failures": [],
+   "shows": "Drag the cut up a cilium: 9 triplets and a cartwheel in the basal body, transition fibers docking it to the membrane, 9 doublets in the transition zone, then a 9+2 or 9+0 axoneme and singlets at the tip",
+   "status": "pass",
+   "subject": "biology",
+   "title": "Basal body: how a cilium is anchored"
+  },
+  "bayes-theorem": {
+   "checked": "2026-10-17T05:36:47",
+   "failures": [],
+   "shows": "Set the prior and the two likelihoods: the shaded blocks are the ways B can happen, and P(A|B) is the share of them that came from A",
+   "status": "pass",
+   "subject": "stats",
+   "title": "Bayes' theorem as areas"
+  },
+  "bayesian-beta-binomial-updating": {
+   "checked": "2026-10-17T05:36:47",
+   "failures": [],
+   "shows": "Set a Beta prior and add successes and failures: the posterior Beta(\u03b1 + s, \u03b2 + f) lands between the prior and the data, weighted by how much of each you have",
+   "status": "pass",
+   "subject": "stats",
+   "title": "Beta-binomial Bayesian updating"
+  },
+  "binomial-distribution": {
+   "checked": "2026-10-17T05:36:47",
+   "failures": [],
+   "shows": "Set the number of trials and the success chance: the bars are the probability of each number of successes, centred on np",
+   "status": "pass",
+   "subject": "stats",
+   "title": "Binomial distribution"
+  },
+  "biological-calibration-curve-and-unknown-concentration": {
+   "checked": "2026-10-17T05:54:33",
+   "failures": [],
+   "shows": "Slide the unknown's absorbance: read across to the standard line and down to its concentration, then multiply back by the dilution",
+   "status": "pass",
+   "subject": "stats",
+   "title": "Standard curve: reading an unknown"
+  },
+  "biological-measurement-accuracy-and-precision": {
+   "checked": "2026-10-17T05:36:47",
+   "failures": [],
+   "shows": "Weigh repeated 100 \u00b5L dispenses: bias moves the whole cluster away from the true volume (accuracy), spread widens it (precision)",
+   "status": "pass",
+   "subject": "stats",
+   "title": "Pipette accuracy and precision"
+  },
+  "biological-outlier-effects-on-mean-and-median": {
+   "checked": "2026-10-17T05:54:33",
+   "failures": [],
+   "shows": "Drag one plate's colony count far from its replicates: the mean follows it without limit, the median barely moves",
+   "status": "pass",
+   "subject": "stats",
+   "title": "One odd plate: mean vs median"
+  },
+  "biological-random-sampling-and-selection-bias": {
+   "checked": "2026-10-17T05:36:47",
+   "failures": [],
+   "shows": "Sample snails at random or by picking the easiest to spot: random samples scatter around the true mean, biased ones land too high every time",
+   "status": "pass",
+   "subject": "stats",
+   "title": "Random sampling vs selection bias"
+  },
   "biotechnology": {
    "checked": "2026-10-17T02:39:51",
    "failures": [],
@@ -149,6 +389,158 @@
    "subject": "biology",
    "title": "Blue-white screening"
   },
+  "bootstrap-distribution": {
+   "checked": "2026-10-17T05:36:47",
+   "failures": [],
+   "shows": "Resample the data with replacement again and again: the spread of the recomputed statistic is its standard error, and its middle 95% is an interval",
+   "status": "pass",
+   "subject": "stats",
+   "title": "The bootstrap distribution"
+  },
+  "box-plot": {
+   "checked": "2026-10-17T05:22:41",
+   "failures": [],
+   "shows": "Pick a shape for class B: the box is the middle half (Q1 to Q3), the line the median, the whiskers run to the last score inside the 1.5 IQR fences",
+   "status": "pass",
+   "subject": "stats",
+   "title": "Box plots: reading shape and spread"
+  },
+  "calcium-second-messenger-relay": {
+   "checked": "2026-10-17T07:13:25",
+   "failures": [],
+   "shows": "Step through the relay from a Gq-coupled receptor to IP\u2083, an ER calcium release that lifts cytosolic Ca\u00b2\u207a tenfold, calmodulin and PKC, and the pumps that end the signal; block the pumps and the signal cannot switch off",
+   "status": "pass",
+   "subject": "biology",
+   "title": "Calcium as a second messenger"
+  },
+  "camp-second-messenger-relay": {
+   "checked": "2026-10-17T07:57:37",
+   "failures": [],
+   "shows": "Raise the hormone, slow the phosphodiesterase or add cholera toxin: adenylyl cyclase fills the cAMP pool, PDE drains it, and the level where the two match decides how much PKA turns on",
+   "status": "pass",
+   "subject": "biology",
+   "title": "cAMP: a second messenger in balance"
+  },
+  "cancer-cell-cycle-failure": {
+   "checked": "2026-10-17T07:57:37",
+   "failures": [],
+   "shows": "Pick the problem a dividing cell meets and compare a normal cell, whose checkpoint stops it, with a cancer cell, whose broken checkpoint lets it divide into daughters with a mutation, a broken chromosome or the wrong number",
+   "status": "pass",
+   "subject": "biology",
+   "title": "Cancer: when a checkpoint fails"
+  },
+  "cell-communication": {
+   "checked": "2026-10-17T07:57:37",
+   "failures": [],
+   "shows": "Pick contact, synaptic, paracrine or endocrine signaling: diffusion time grows with distance squared, which is why far signals need blood or an axon, and only cells with the matching receptor respond",
+   "status": "pass",
+   "subject": "biology",
+   "title": "How cells signal: by distance"
+  },
+  "cell-cycle": {
+   "checked": "2026-10-17T07:57:37",
+   "failures": [],
+   "shows": "Slide the clock through G1, S, G2 and mitosis: the DNA per cell climbs from 2C to 4C during S and halves at division, and changing G1 changes how fast the cells multiply",
+   "status": "pass",
+   "subject": "biology",
+   "title": "The cell cycle in hours"
+  },
+  "cell-cycle-and-regulation": {
+   "checked": "2026-10-17T07:57:37",
+   "failures": [],
+   "shows": "Slide through the cycle: CDK levels stay flat while cyclins D, E, A and B rise and fall in turn, each switching on the next step; remove growth factors or block APC/C to see where the cycle stops",
+   "status": "pass",
+   "subject": "biology",
+   "title": "Cyclins and CDKs drive the cycle"
+  },
+  "cell-cycle-checkpoint-decision-map": {
+   "checked": "2026-10-17T07:03:37",
+   "failures": [],
+   "shows": "Give the cell a problem: it runs round G1, S, G2 and M until the first checkpoint that says no, and the map shows why it stops and what happens next",
+   "status": "pass",
+   "subject": "biology",
+   "title": "Cell cycle checkpoints: go or stop"
+  },
+  "cell-cycle-checkpoints": {
+   "checked": "2026-10-17T07:57:37",
+   "failures": [],
+   "shows": "Step through the G1/S, G2/M and spindle checkpoints: each senses one problem and brakes one switch (cyclin E\u2013CDK2, cyclin B\u2013CDK1, APC/C); turn the problem off and the switch flips and the cell moves on",
+   "status": "pass",
+   "subject": "biology",
+   "title": "The three cell cycle checkpoints"
+  },
+  "cell-junctions": {
+   "checked": "2026-10-17T07:03:37",
+   "failures": [],
+   "shows": "Pick a junction: see where it sits on the cell, what crosses the gap, what it grips inside, and whether it seals, anchors or lets molecules through",
+   "status": "pass",
+   "subject": "biology",
+   "title": "Cell junctions, layer by layer"
+  },
+  "cell-membrane-transport": {
+   "checked": "2026-10-17T07:35:58",
+   "failures": [],
+   "shows": "Pick a mechanism and set the concentrations: passive transport only runs downhill (straight-line or saturating), a pump keeps moving solute in against the gradient by spending ATP",
+   "status": "pass",
+   "subject": "biology",
+   "title": "Membrane transport: diffusion, carriers, pumps"
+  },
+  "cell-organelles": {
+   "checked": "2026-10-17T07:03:37",
+   "failures": [],
+   "shows": "Switch between an animal and a plant cell and light up what only that type has (wall, chloroplasts, central vacuole versus centrioles and lysosomes) or what both share",
+   "status": "pass",
+   "subject": "biology",
+   "title": "Animal and plant cell organelles"
+  },
+  "cell-receptor-location-comparison": {
+   "checked": "2026-10-17T07:35:58",
+   "failures": [],
+   "shows": "Pick a hormone and a time: water-soluble ones stop at surface receptors and act in seconds; steroids cross the membrane, meet receptors inside and change genes over hours",
+   "status": "pass",
+   "subject": "biology",
+   "title": "Surface versus intracellular receptors"
+  },
+  "cell-signaling-pathway": {
+   "checked": "2026-10-17T07:03:37",
+   "failures": [],
+   "shows": "Step through epinephrine signaling in a liver cell: receptor, G protein, cAMP, a kinase cascade and glycogen breakdown, with the amplification at each stage and the switch-off at the end",
+   "status": "pass",
+   "subject": "biology",
+   "title": "Cell signaling: from receptor to response"
+  },
+  "cell-surface-movement-and-cytoskeleton": {
+   "checked": "2026-10-17T07:35:58",
+   "failures": [],
+   "shows": "Pick a surface structure: see how it moves (or doesn't), the cytoskeleton inside it in cross-section, and which of the three filament types it is built from",
+   "status": "pass",
+   "subject": "biology",
+   "title": "Cilia, flagella, microvilli and crawling"
+  },
+  "cell-surface-receptor-recognition": {
+   "checked": "2026-10-17T07:03:37",
+   "failures": [],
+   "shows": "Set the ligand's concentration, the receptor's Kd and the ligand's shape: half the receptors fill at [L] = Kd, agonists switch them on, antagonists only block, wrong shapes never bind",
+   "status": "pass",
+   "subject": "biology",
+   "title": "Receptor recognition: fit and affinity"
+  },
+  "cell-surface-recognition-adhesion": {
+   "checked": "2026-10-17T07:07:48",
+   "failures": [],
+   "shows": "Choose the molecule on each cell's surface and the calcium: cells stick only when the molecules recognize each other, and cadherins and selectins also need Ca\u00b2\u207a",
+   "status": "pass",
+   "subject": "biology",
+   "title": "Cell surface recognition and adhesion"
+  },
+  "cell-type-specific-gene-expression": {
+   "checked": "2026-10-17T07:07:48",
+   "failures": [],
+   "shows": "Pick a cell and switch between DNA and mRNA: every cell carries the same genes, but each transcribes the housekeeping genes plus its own tissue-specific ones",
+   "status": "pass",
+   "subject": "biology",
+   "title": "Cell-type-specific gene expression"
+  },
   "cell-type-specific-transcription-factors": {
    "checked": "2026-10-17T03:19:41",
    "failures": [],
@@ -157,6 +549,38 @@
    "subject": "biology",
    "title": "Cell-type-specific transcription factors"
   },
+  "cellular-compartmentalization": {
+   "checked": "2026-10-17T07:57:37",
+   "failures": [],
+   "shows": "Shut the same molecules into a smaller compartment: their concentration rises by one over the volume fraction, so partners kept together meet far more often than they would loose in the whole cell",
+   "status": "pass",
+   "subject": "biology",
+   "title": "Compartments concentrate molecules"
+  },
+  "cellular-structure-and-functions": {
+   "checked": "2026-10-17T07:57:37",
+   "failures": [],
+   "shows": "Pick a job (store DNA, make proteins, make ATP, hold the shape...) and see which structure does it in a bacterium, an animal cell and a plant cell; switch on true scale to see how much bigger eukaryotic cells are",
+   "status": "pass",
+   "subject": "biology",
+   "title": "Cell structures and their jobs"
+  },
+  "central-limit-theorem": {
+   "checked": "2026-10-17T06:10:20",
+   "failures": [],
+   "shows": "Pick a population and a sample size: the means of many samples pile up in a normal shape centred on \u03bc, with spread \u03c3/\u221an, whatever the population looks like",
+   "status": "pass",
+   "subject": "stats",
+   "title": "The central limit theorem"
+  },
+  "centripetal-force-mvr": {
+   "checked": "2026-10-17T06:10:20",
+   "failures": [],
+   "shows": "Change the mass, speed and radius: the pull toward the centre grows with m and with v squared, and falls as the circle widens",
+   "status": "pass",
+   "subject": "physics",
+   "title": "Centripetal force in circular motion"
+  },
   "change-of-basis": {
    "checked": "2026-10-17T03:44:55",
    "failures": [],
@@ -164,6 +588,102 @@
    "status": "pass",
    "subject": "linear-algebra",
    "title": "Change of basis"
+  },
+  "checkpoint-failure-uncontrolled-proliferation": {
+   "checked": "2026-10-17T07:07:48",
+   "failures": [],
+   "shows": "Break the G1/S brake or p53 and follow one cell's descendants: intact checkpoints cap the tissue and remove damaged cells, broken ones let damaged cells multiply",
+   "status": "pass",
+   "subject": "biology",
+   "title": "Checkpoint failure and uncontrolled growth"
+  },
+  "chi-square-distribution": {
+   "checked": "2026-10-17T06:10:20",
+   "failures": [],
+   "shows": "Set the degrees of freedom and drag the observed statistic: the shaded right tail is the p-value, and it falls below 5% once you pass the critical value",
+   "status": "pass",
+   "subject": "stats",
+   "title": "The chi-square distribution and its tail"
+  },
+  "chi-square-goodness-of-fit": {
+   "checked": "2026-10-17T05:22:41",
+   "failures": [],
+   "shows": "Drag the four counts: each one's gap from the equal-share expectation adds (O \u2212 E)\u00b2/E to \u03c7\u00b2, and the tail of \u03c7\u00b2 with 3 df past that sum is the p-value",
+   "status": "pass",
+   "subject": "stats",
+   "title": "Chi-square goodness of fit"
+  },
+  "chi-square-independence": {
+   "checked": "2026-10-17T05:22:41",
+   "failures": [],
+   "shows": "Change the four counts: if improving does not depend on the group, both groups split at the overall share and O = E in every cell; \u03c7\u00b2 measures how far they are from that",
+   "status": "pass",
+   "subject": "stats",
+   "title": "Chi-square test of independence"
+  },
+  "cholesterol-membrane-fluidity": {
+   "checked": "2026-10-17T07:28:02",
+   "failures": [],
+   "shows": "Change the temperature and the cholesterol: above the melting point cholesterol stiffens the membrane, below it cholesterol keeps it from freezing into a gel",
+   "status": "pass",
+   "subject": "biology",
+   "title": "Cholesterol and membrane fluidity"
+  },
+  "chromatin-accessibility-and-cell-identity": {
+   "checked": "2026-10-17T07:07:48",
+   "failures": [],
+   "shows": "Step a stem cell toward liver, muscle or neuron: the regions of open chromatin narrow to the cell's own program, and that pattern is its identity",
+   "status": "pass",
+   "subject": "biology",
+   "title": "Open chromatin and cell identity"
+  },
+  "chromatin-accessibility-gene-expression": {
+   "checked": "2026-10-17T07:07:48",
+   "failures": [],
+   "shows": "Acetylate or deacetylate the histones, methylate the promoter, add or remove the activator: the gene is transcribed only when its promoter is open and an activator binds",
+   "status": "pass",
+   "subject": "biology",
+   "title": "Chromatin accessibility and gene expression"
+  },
+  "chromosome-sister-chromatid-structure": {
+   "checked": "2026-10-17T07:28:02",
+   "failures": [],
+   "shows": "Step one chromosome from G1 to anaphase and move its centromere: one chromatid becomes two identical sisters joined at the centromere, then they split into two chromosomes",
+   "status": "pass",
+   "subject": "biology",
+   "title": "Chromosome and sister chromatids"
+  },
+  "cilia-versus-microvilli": {
+   "checked": "2026-10-17T07:18:45",
+   "failures": [],
+   "shows": "Step through a beat: the cilium's 9 + 2 microtubules and dynein make it sweep mucus, while the shorter, thinner microvilli are actin bundles that stay still and add absorbing surface",
+   "status": "pass",
+   "subject": "biology",
+   "title": "Cilia versus microvilli"
+  },
+  "ciliary-power-and-recovery-stroke": {
+   "checked": "2026-10-17T07:07:48",
+   "failures": [],
+   "shows": "Play one beat: the cilium sweeps forward straight and tall, then comes back bent and low, so each beat moves fluid one way; make it come back the same way and the flow cancels",
+   "status": "pass",
+   "subject": "biology",
+   "title": "Cilia: power and recovery strokes"
+  },
+  "classification-threshold": {
+   "checked": "2026-10-17T06:10:20",
+   "failures": [],
+   "shows": "Slide the threshold: lowering it catches more true positives but lets in more false alarms; raising it does the reverse, and the ROC dot slides along the curve",
+   "status": "pass",
+   "subject": "stats",
+   "title": "Classification threshold"
+  },
+  "clonal-selection-and-immune-memory": {
+   "checked": "2026-10-17T07:52:40",
+   "failures": [],
+   "shows": "Slide the day and the second exposure: the first response to an antigen is slow and small, the memory cells it leaves make the second fast and about a hundred times larger, and a new antigen starts from scratch",
+   "status": "pass",
+   "subject": "biology",
+   "title": "Immune memory: first and second response"
   },
   "coding-strand-mrna-sequence-relationship": {
    "checked": "2026-10-17T02:39:51",
@@ -197,6 +717,30 @@
    "subject": "biology",
    "title": "The genetic code: reading a codon"
   },
+  "cohens-d": {
+   "checked": "2026-10-17T06:10:20",
+   "failures": [],
+   "shows": "Pull the means apart or widen the spread: d counts how many standard deviations separate the groups, and the overlap of the two curves shrinks as d grows",
+   "status": "pass",
+   "subject": "stats",
+   "title": "Cohen's d: effect size"
+  },
+  "coin-flipping": {
+   "checked": "2026-10-17T05:17:38",
+   "failures": [],
+   "shows": "Flip a coin n times: the share of heads jumps around at first, then settles toward p inside a funnel that narrows like 1/\u221an",
+   "status": "pass",
+   "subject": "stats",
+   "title": "Coin flips and the law of large numbers"
+  },
+  "collision-simulation": {
+   "checked": "2026-10-17T05:39:54",
+   "failures": [],
+   "shows": "Set the carts' velocities and masses: total momentum survives every collision, kinetic energy only an elastic one",
+   "status": "pass",
+   "subject": "physics",
+   "title": "Cart collisions: momentum and energy"
+  },
   "column-space": {
    "checked": "2026-10-17T03:44:55",
    "failures": [],
@@ -204,6 +748,46 @@
    "status": "pass",
    "subject": "linear-algebra",
    "title": "Column space"
+  },
+  "combination-formula": {
+   "checked": "2026-10-17T05:39:54",
+   "failures": [],
+   "shows": "Pick r of n items: count the ordered picks slot by slot, then divide by r! because every group shows up in r! orders",
+   "status": "pass",
+   "subject": "stats",
+   "title": "Combinations: choosing r of n"
+  },
+  "common-normal-intervals": {
+   "checked": "2026-10-17T05:39:54",
+   "failures": [],
+   "shows": "Slide z: the shaded share of a normal curve within \u00b1z standard deviations of the mean, against the 68\u201395\u201399.7 rule",
+   "status": "pass",
+   "subject": "stats",
+   "title": "Normal intervals: the 68\u201395\u201399.7 rule"
+  },
+  "compartment-microenvironments": {
+   "checked": "2026-10-17T07:52:40",
+   "failures": [],
+   "shows": "Pick an organelle: each membrane-bound compartment keeps its own pH and chemistry, from the acidic lysosome (pH 4.7) to the basic mitochondrial matrix (pH 7.9), and the pH line shows how far each sits from the cytosol",
+   "status": "pass",
+   "subject": "biology",
+   "title": "Compartments keep their own chemistry"
+  },
+  "complement-opsonization-phagocyte-recognition": {
+   "checked": "2026-10-17T07:52:40",
+   "failures": [],
+   "shows": "Step through opsonization: C3 is cut into C3a and C3b, C3b coats the microbe, the phagocyte's complement receptors grip it and it is eaten; with no opsonin the microbe slips away, with IgG as well the grip is strongest",
+   "status": "pass",
+   "subject": "biology",
+   "title": "Complement opsonization"
+  },
+  "complementary-base-pairing": {
+   "checked": "2026-10-17T07:52:40",
+   "failures": [],
+   "shows": "Change the GC share and the partner strand: A always pairs with T (or U in RNA) by 2 hydrogen bonds and G with C by 3, a purine with a pyrimidine so every rung is the same width, and more G\u2013C means a stronger duplex",
+   "status": "pass",
+   "subject": "biology",
+   "title": "Complementary base pairing"
   },
   "compound-interest": {
    "checked": "2026-10-17T04:31:46",
@@ -213,6 +797,46 @@
    "subject": "finance",
    "title": "Compound interest"
   },
+  "conditional-probability-definition": {
+   "checked": "2026-10-17T05:39:54",
+   "failures": [],
+   "shows": "Set P(B) and P(A \u2229 B): knowing B happened shrinks the world to B, and P(A | B) is the share of B where A also happens",
+   "status": "pass",
+   "subject": "stats",
+   "title": "Conditional probability: P(A | B)"
+  },
+  "confidence-interval-proportion": {
+   "checked": "2026-10-17T05:17:38",
+   "failures": [],
+   "shows": "Slide p\u0302, n and the confidence level: the interval is p\u0302 \u00b1 z*\u00b7SE, wider for more confidence and narrower like 1/\u221an",
+   "status": "pass",
+   "subject": "stats",
+   "title": "Confidence interval for a proportion"
+  },
+  "confidence-vs-prediction-bands": {
+   "checked": "2026-10-17T05:17:38",
+   "failures": [],
+   "shows": "Around a regression line, the confidence band covers the mean y and the wider prediction band covers one new y; both flare away from x\u0304",
+   "status": "pass",
+   "subject": "stats",
+   "title": "Confidence band vs prediction band"
+  },
+  "confusion-matrix-metrics": {
+   "checked": "2026-10-17T05:17:38",
+   "failures": [],
+   "shows": "Change the four counts: precision asks how many flagged cases are real, recall how many real cases were caught",
+   "status": "pass",
+   "subject": "stats",
+   "title": "Confusion matrix: precision, recall and F1"
+  },
+  "continuous-uniform-distribution": {
+   "checked": "2026-10-17T05:30:38",
+   "failures": [],
+   "shows": "Move a and b: the density stays flat at 1/(b \u2212 a) so the area is always 1, and P(c \u2264 X \u2264 d) is the share of the width [c, d] covers",
+   "status": "pass",
+   "subject": "stats",
+   "title": "Continuous uniform distribution"
+  },
   "coordinates-in-a-basis": {
    "checked": "2026-10-17T02:45:03",
    "failures": [],
@@ -220,6 +844,30 @@
    "status": "pass",
    "subject": "linear-algebra",
    "title": "Coordinates in a basis"
+  },
+  "correlation": {
+   "checked": "2026-10-17T05:09:45",
+   "failures": [],
+   "shows": "Pick a pattern and add noise: r is the sum of the products (x \u2212 x\u0304)(y \u2212 \u0233), scaled to lie between \u22121 and 1, so its sign says which quadrants the cloud lives in",
+   "status": "pass",
+   "subject": "stats",
+   "title": "Correlation: positive, negative or none"
+  },
+  "correlation-causation-confounding": {
+   "checked": "2026-10-17T05:09:45",
+   "failures": [],
+   "shows": "Smoking raises both coffee drinking and heart risk, so coffee and risk correlate even when coffee does nothing; split by smoking and the fake part vanishes",
+   "status": "pass",
+   "subject": "stats",
+   "title": "Correlation vs causation: a confounder"
+  },
+  "correlation-matrix": {
+   "checked": "2026-10-17T05:09:45",
+   "failures": [],
+   "shows": "Every pair of variables gets one r: the diagonal is 1, the matrix is symmetric, color shows sign and strength, and each number has the scatter it summarizes",
+   "status": "pass",
+   "subject": "stats",
+   "title": "Correlation matrix"
   },
   "crispr-cas9": {
    "checked": "2026-10-17T03:36:38",
@@ -261,6 +909,22 @@
    "subject": "finance",
    "title": "Why a currency appreciates"
   },
+  "cytoskeletal-filament-comparison": {
+   "checked": "2026-10-17T07:18:45",
+   "failures": [],
+   "shows": "Pick a filament: actin (7 nm) and microtubules (25 nm) are polar, use ATP or GTP and carry motors, while intermediate filaments (10 nm) are unpolarized ropes built to bear tension",
+   "status": "pass",
+   "subject": "biology",
+   "title": "Three cytoskeletal filaments"
+  },
+  "cytotoxic-t-cell-infected-cell-killing": {
+   "checked": "2026-10-17T07:52:40",
+   "failures": [],
+   "shows": "Step through a kill: a CD8 T cell recognizes a viral peptide on MHC I, aims its granules and releases perforin and granzymes so the infected cell dies by apoptosis; a healthy cell is spared, and a cell hiding MHC I falls to an NK cell instead",
+   "status": "pass",
+   "subject": "biology",
+   "title": "Cytotoxic T cell killing"
+  },
   "dcf": {
    "checked": "2026-10-17T02:49:39",
    "failures": [],
@@ -269,6 +933,86 @@
    "subject": "finance",
    "title": "DCF: from free cash flows to enterprise value"
   },
+  "degrees-of-freedom": {
+   "checked": "2026-10-17T05:09:45",
+   "failures": [],
+   "shows": "Fix the mean and drag the first n \u2212 1 values: the last one is forced so the deviations sum to zero, which is why a sample variance divides by n \u2212 1",
+   "status": "pass",
+   "subject": "stats",
+   "title": "Degrees of freedom: n \u2212 1 free choices"
+  },
+  "dendritic-cell-antigen-presentation-helper-t-cell": {
+   "checked": "2026-10-17T07:52:40",
+   "failures": [],
+   "shows": "Step through it: a dendritic cell picks up antigen in a tissue, carries peptides on MHC II to a lymph node and gives a naive CD4 T cell three signals; without costimulation (B7) the T cell turns anergic, and the cytokines decide Th1, Th2 or Th17",
+   "status": "pass",
+   "subject": "biology",
+   "title": "Dendritic cell activates a helper T cell"
+  },
+  "density-dependent-contact-inhibition": {
+   "checked": "2026-10-17T07:49:46",
+   "failures": [],
+   "shows": "Run the days forward: normal cells fill the dish in one layer and stop dividing; cancer cells ignore the crowding and pile up",
+   "status": "pass",
+   "subject": "biology",
+   "title": "Density-dependent inhibition of cell division"
+  },
+  "desmosome-cell-anchoring": {
+   "checked": "2026-10-17T07:49:46",
+   "failures": [],
+   "shows": "Pull on the sheet: the force runs keratin, plaque, cadherins and back, so the junction holds; break the cadherins or the keratin and see where the tissue fails",
+   "status": "pass",
+   "subject": "biology",
+   "title": "Desmosomes: spot welds between cells"
+  },
+  "dice-rolling": {
+   "checked": "2026-10-17T05:30:38",
+   "failures": [],
+   "shows": "Add dice and rolls: the exact chance of each total is ways / 6^k (flat for one die, a triangle for two, a bell for more), and the rolled shares settle onto it",
+   "status": "pass",
+   "subject": "stats",
+   "title": "Rolling dice: chance vs what you see"
+  },
+  "difference-in-differences": {
+   "checked": "2026-10-17T05:09:45",
+   "failures": [],
+   "shows": "Set where each group starts, the trend they share and the policy's effect: the control's change stands in for what the treated group would have done, and the effect is what is left over",
+   "status": "pass",
+   "subject": "stats",
+   "title": "Difference-in-differences"
+  },
+  "direct-contact-cell-signaling": {
+   "checked": "2026-10-17T07:49:46",
+   "failures": [],
+   "shows": "Put the cells together or apart: a membrane-bound signal (Delta to Notch) or a gap junction only works while the cells touch",
+   "status": "pass",
+   "subject": "biology",
+   "title": "Signaling by direct contact"
+  },
+  "distance-traveled-vs-displacement": {
+   "checked": "2026-10-17T05:09:45",
+   "failures": [],
+   "shows": "Pick a route and scrub the trip: distance adds up every leg you walk, displacement is only the straight arrow from start to where you are, so a round trip ends with distance 280 m and displacement 0",
+   "status": "pass",
+   "subject": "physics",
+   "title": "Distance traveled vs displacement"
+  },
+  "dna-and-rna-structure": {
+   "checked": "2026-10-17T07:49:46",
+   "failures": [],
+   "shows": "Switch between DNA and RNA: two antiparallel strands versus one strand that folds back on itself; slide the G\u2013C share to see the hydrogen bonds add up",
+   "status": "pass",
+   "subject": "biology",
+   "title": "DNA and RNA structure"
+  },
+  "dna-damage-repair-versus-apoptosis": {
+   "checked": "2026-10-17T07:49:46",
+   "failures": [],
+   "shows": "Step from damage to decision: sensors raise p53, a little p53 pauses the cycle for repair, a lot triggers apoptosis, and mutant p53 does neither",
+   "status": "pass",
+   "subject": "biology",
+   "title": "DNA damage: repair or apoptosis"
+  },
   "dna-gel-fragment-migration": {
    "checked": "2026-10-17T03:36:38",
    "failures": [],
@@ -276,6 +1020,14 @@
    "status": "pass",
    "subject": "biology",
    "title": "Gel electrophoresis: how far a fragment runs"
+  },
+  "dna-methylation-transcriptional-silencing": {
+   "checked": "2026-10-17T07:49:46",
+   "failures": [],
+   "shows": "Methylate more of the promoter's CpGs: methyl groups block the transcription factor, MBD proteins bring in histone deacetylases, the chromatin closes and transcription stops",
+   "status": "pass",
+   "subject": "biology",
+   "title": "DNA methylation silences a gene"
   },
   "dna-replication": {
    "checked": "2026-10-17T03:36:38",
@@ -389,6 +1141,22 @@
    "subject": "biology",
    "title": "Replication vs transcription: what each one makes"
   },
+  "dna-rna-nucleotide-comparison": {
+   "checked": "2026-10-17T07:49:46",
+   "failures": [],
+   "shows": "Switch DNA and RNA and pick a base: the sugar differs by one oxygen on the 2\u2032 carbon, and thymine is uracil with a methyl group",
+   "status": "pass",
+   "subject": "biology",
+   "title": "DNA and RNA nucleotides compared"
+  },
+  "dna-sequence-change-rna-message": {
+   "checked": "2026-10-17T07:49:46",
+   "failures": [],
+   "shows": "Change one base of a gene: see the new mRNA codon and the protein it makes, from a silent change to a missense, a premature stop or a frameshift",
+   "status": "pass",
+   "subject": "biology",
+   "title": "Mutations: from DNA to protein"
+  },
   "dna-template-rna-complementarity": {
    "checked": "2026-10-17T04:19:30",
    "failures": [],
@@ -404,6 +1172,14 @@
    "status": "pass",
    "subject": "biology",
    "title": "Transcription: initiation, elongation, termination"
+  },
+  "dot-plot": {
+   "checked": "2026-10-17T05:09:29",
+   "failures": [],
+   "shows": "Pick a class: each dot is one student's count of books, so clusters, spread, gaps and unusual values show at a glance",
+   "status": "pass",
+   "subject": "stats",
+   "title": "Dot plot: shape, center and spread"
   },
   "dot-product-angle": {
    "checked": "2026-10-17T02:32:52",
@@ -445,6 +1221,14 @@
    "subject": "biology",
    "title": "Sandwich ELISA"
   },
+  "empirical-rule": {
+   "checked": "2026-10-17T05:09:29",
+   "failures": [],
+   "shows": "Set the mean and SD: about 68% of a normal distribution lies within one SD of the mean, 95% within two and 99.7% within three",
+   "status": "pass",
+   "subject": "stats",
+   "title": "The empirical rule (68-95-99.7)"
+  },
   "eukaryotic-enhancer-promoter-looping": {
    "checked": "2026-10-17T04:19:30",
    "failures": [],
@@ -469,6 +1253,46 @@
    "subject": "finance",
    "title": "Equity value to enterprise value"
   },
+  "expected-value-weighted-average": {
+   "checked": "2026-10-17T05:09:29",
+   "failures": [],
+   "shows": "Change how many tickets carry each prize: E[X] weights every prize by its probability, so common prizes pull it toward them",
+   "status": "pass",
+   "subject": "stats",
+   "title": "Expected value as a weighted average"
+  },
+  "exponential-distribution": {
+   "checked": "2026-10-17T05:53:03",
+   "failures": [],
+   "shows": "Slide the rate and the wait: the density starts at \u03bb and decays, the area past t is the chance of waiting longer than t, and the mean wait is 1/\u03bb",
+   "status": "pass",
+   "subject": "stats",
+   "title": "Exponential distribution: waiting times"
+  },
+  "extracellular-matrix-structure": {
+   "checked": "2026-10-17T07:36:37",
+   "failures": [],
+   "shows": "Pull or squeeze the matrix, or remove one part: collagen bears tension, elastin recoils, the proteoglycan gel resists compression, and fibronectin and integrins tie it all to the cell's actin",
+   "status": "pass",
+   "subject": "biology",
+   "title": "The extracellular matrix"
+  },
+  "facilitated-diffusion-carrier": {
+   "checked": "2026-10-17T08:09:51",
+   "failures": [],
+   "shows": "Step a carrier through bind, flip and release, and change the glucose on each side: net flow runs down the gradient and levels off at J\u2098\u2090\u2093 because each carrier can only turn over so fast",
+   "status": "pass",
+   "subject": "biology",
+   "title": "Facilitated diffusion: carrier proteins"
+  },
+  "facilitated-diffusion-channel": {
+   "checked": "2026-10-17T08:09:51",
+   "failures": [],
+   "shows": "Open or close a K\u207a channel and change the concentrations and membrane voltage: ions run through the pore down their electrochemical gradient, with no carrier cycle to saturate and no ATP",
+   "status": "pass",
+   "subject": "biology",
+   "title": "Facilitated diffusion: channel proteins"
+  },
   "fifo-lifo-cost-flow": {
    "checked": "2026-10-17T03:33:36",
    "failures": [],
@@ -476,6 +1300,14 @@
    "status": "pass",
    "subject": "finance",
    "title": "FIFO vs LIFO cost flow"
+  },
+  "fluid-mosaic-membrane": {
+   "checked": "2026-10-17T07:36:37",
+   "failures": [],
+   "shows": "A bilayer of phospholipids with cholesterol and proteins drifting in it: warm it, add kinked unsaturated tails or change the cholesterol, and watch the tails pack into a gel or loosen into a fluid",
+   "status": "pass",
+   "subject": "biology",
+   "title": "The fluid mosaic membrane"
   },
   "foreign-exchange-market": {
    "checked": "2026-10-17T03:33:36",
@@ -485,6 +1317,14 @@
    "subject": "finance",
    "title": "The foreign exchange market"
   },
+  "free-fall": {
+   "checked": "2026-10-17T05:53:03",
+   "failures": [],
+   "shows": "Set the starting height and speed, then scrub time: gravity takes 9.8 m/s off the velocity every second, so the height traces a downward parabola",
+   "status": "pass",
+   "subject": "physics",
+   "title": "Free fall: height against time"
+  },
   "futures-hedge-locked-revenue": {
    "checked": "2026-10-17T03:33:36",
    "failures": [],
@@ -492,6 +1332,30 @@
    "status": "pass",
    "subject": "finance",
    "title": "Futures hedge: locking in revenue"
+  },
+  "g1-dna-damage-checkpoint-arrest": {
+   "checked": "2026-10-17T08:09:51",
+   "failures": [],
+   "shows": "Step through the G1 DNA damage checkpoint: ATM senses breaks, p53 builds up, p21 shuts off cyclin E\u2013CDK2, Rb keeps E2F bound and the cell waits, repairs or dies; break p53 and the cell divides with damaged DNA",
+   "status": "pass",
+   "subject": "biology",
+   "title": "G1 checkpoint: DNA damage arrest"
+  },
+  "g2-replication-completion-checkpoint": {
+   "checked": "2026-10-17T08:09:51",
+   "failures": [],
+   "shows": "Slide how much of the DNA is copied: while any fork is still open, ATR and Chk1 keep cyclin B\u2013CDK1 switched off and the cell waits in G2; finish replication, or block Chk1, and it enters mitosis",
+   "status": "pass",
+   "subject": "biology",
+   "title": "G2/M replication checkpoint"
+  },
+  "gap-junction-cell-communication": {
+   "checked": "2026-10-17T08:09:51",
+   "failures": [],
+   "shows": "Pick what cell 1 holds and whether the channels are open: ions and small molecules under about 1 kDa pass straight into the next cell through connexon pores and spread along the row; proteins are too big, and Ca\u00b2\u207a or acid closes the gates",
+   "status": "pass",
+   "subject": "biology",
+   "title": "Gap junctions: cell-to-cell channels"
   },
   "gel-electrophoresis-apparatus": {
    "checked": "2026-10-17T04:37:24",
@@ -525,6 +1389,150 @@
    "subject": "biology",
    "title": "Gene expression: control at every stage"
   },
+  "genomic-imprinting-parent-of-origin": {
+   "checked": "2026-10-17T08:09:51",
+   "failures": [],
+   "shows": "Choose which parent's copy of an imprinted gene is read and who carries a deletion: marks are erased and reset in each parent's germline, so the child's fate depends on which parent passed the deletion on",
+   "status": "pass",
+   "subject": "biology",
+   "title": "Genomic imprinting: parent of origin"
+  },
+  "geometric-distribution": {
+   "checked": "2026-10-17T05:09:29",
+   "failures": [],
+   "shows": "Set the success chance and pick a trial: the first success lands on trial k only after k \u2212 1 failures, so each bar is (1 \u2212 p) times the one before",
+   "status": "pass",
+   "subject": "stats",
+   "title": "Geometric distribution: waiting for the first success"
+  },
+  "golgi-apparatus-structure-and-sorting": {
+   "checked": "2026-10-17T08:18:04",
+   "failures": [],
+   "shows": "Pick a cargo and step it through: COPII vesicles bring it from the ER to the cis face, each cisterna edits its sugar chain, and the trans-Golgi network sends it out of the cell, into the membrane or to the lysosome, while ER proteins with KDEL are sent back",
+   "status": "pass",
+   "subject": "biology",
+   "title": "Golgi apparatus: processing and sorting"
+  },
+  "gpcr-signaling": {
+   "checked": "2026-10-17T08:18:04",
+   "failures": [],
+   "shows": "Pick Gs, Gi or Gq and step through: the ligand-bound receptor swaps GDP for GTP on G\u03b1, the subunits split and change cAMP or Ca\u00b2\u207a, and GTP hydrolysis switches the G protein off",
+   "status": "pass",
+   "subject": "biology",
+   "title": "GPCR signaling: Gs, Gi and Gq"
+  },
+  "helper-t-cell-coordinates-adaptive-immunity": {
+   "checked": "2026-10-17T08:18:04",
+   "failures": [],
+   "shows": "Pick the helper subset and the CD4 count: a dendritic cell activates the CD4 T cell with three signals, the cytokines it then makes decide which cells it helps, and losing CD4 cells (as in HIV) takes that help away from all of them",
+   "status": "pass",
+   "subject": "biology",
+   "title": "Helper T cells coordinate adaptive immunity"
+  },
+  "heteroskedasticity": {
+   "checked": "2026-10-17T05:09:29",
+   "failures": [],
+   "shows": "Pick how the error spread behaves: constant spread leaves an even band of residuals, while a fan or a bulge is heteroskedasticity, and White's test picks it up",
+   "status": "pass",
+   "subject": "stats",
+   "title": "Heteroskedasticity: when the spread changes"
+  },
+  "histogram": {
+   "checked": "2026-10-17T05:53:03",
+   "failures": [],
+   "shows": "Pick a shape and a bin width: the bars count scores per interval, so symmetry, a long tail, two peaks or a gap with an outlier show up, unless the bins are too wide",
+   "status": "pass",
+   "subject": "stats",
+   "title": "Histogram: the shape of a distribution"
+  },
+  "histone-acetylation-chromatin-opening": {
+   "checked": "2026-10-17T08:18:04",
+   "failures": [],
+   "shows": "Step through it: positive lysines on the histone tails hold DNA tight, acetyl groups from a HAT cancel those charges so the chromatin opens and the gene is read, and HDACs remove them again unless an HDAC inhibitor blocks them",
+   "status": "pass",
+   "subject": "biology",
+   "title": "Histone acetylation opens chromatin"
+  },
+  "hookes-law": {
+   "checked": "2026-10-17T05:36:59",
+   "failures": [],
+   "shows": "Drag the block or slide k and x: the spring's force always points back toward x = 0 and is k times as big as the stretch",
+   "status": "pass",
+   "subject": "physics",
+   "title": "Hooke's law: the spring pulls back"
+  },
+  "humoral-versus-cell-mediated-immunity": {
+   "checked": "2026-10-17T08:18:04",
+   "failures": [],
+   "shows": "Pick a threat: antibodies from B cells (humoral) work in blood and lymph on toxins, bacteria and free virus, while T cells (cell-mediated) kill infected cells or arm macrophages against microbes hiding inside cells",
+   "status": "pass",
+   "subject": "biology",
+   "title": "Humoral versus cell-mediated immunity"
+  },
+  "hypergeometric-distribution": {
+   "checked": "2026-10-17T05:36:59",
+   "failures": [],
+   "shows": "Set the population, its successes and the sample size, then pick k: the chance is the number of samples with exactly k successes over all samples of n",
+   "status": "pass",
+   "subject": "stats",
+   "title": "Hypergeometric distribution: drawing without replacement"
+  },
+  "immune-acute-inflammation-neutrophil-recruitment": {
+   "checked": "2026-10-17T08:18:04",
+   "failures": [],
+   "shows": "Step a neutrophil out of an inflamed venule: selectins capture it, it rolls, a chemokine switches its integrins on, it stops on ICAM-1 and squeezes through to the bacteria; switch on LAD I or LAD II to see which step fails",
+   "status": "pass",
+   "subject": "biology",
+   "title": "Neutrophil recruitment: the adhesion cascade"
+  },
+  "immune-cell-phagocytosis": {
+   "checked": "2026-10-17T08:18:04",
+   "failures": [],
+   "shows": "Step a phagocyte through eating a bacterium: receptors grip it, pseudopods wrap it into a phagosome, lysosomes and the oxidative burst kill it, and a macrophage shows its pieces to T cells; switch off NADPH oxidase to see chronic granulomatous disease",
+   "status": "pass",
+   "subject": "biology",
+   "title": "Phagocytosis: engulf, fuse, kill"
+  },
+  "immune-memory-secondary-response": {
+   "checked": "2026-10-17T08:18:04",
+   "failures": [],
+   "shows": "Set the size of the memory pool, how fast memory cells get going and how fast cells divide: the second response clears the detection line sooner because it skips the slow start and needs fewer doublings",
+   "status": "pass",
+   "subject": "biology",
+   "title": "Immune memory: why the second response is faster"
+  },
+  "inclined-plane-acceleration": {
+   "checked": "2026-10-17T06:31:41",
+   "failures": [],
+   "shows": "Tilt the slope or change the mass: the pull down the slope is mg sin \u03b8, so the acceleration is g sin \u03b8 and the mass cancels out",
+   "status": "pass",
+   "subject": "physics",
+   "title": "Sliding down a frictionless incline"
+  },
+  "independent-probability-intersection": {
+   "checked": "2026-10-17T05:36:59",
+   "failures": [],
+   "shows": "Drag the corner or slide P(A) and P(B): for independent events the overlap is a rectangle, so its area is P(A) times P(B)",
+   "status": "pass",
+   "subject": "stats",
+   "title": "Independent events: multiply the probabilities"
+  },
+  "joint-marginal-conditional-table": {
+   "checked": "2026-10-17T05:36:59",
+   "failures": [],
+   "shows": "Pick a question about the 120 students: the amber count goes on top, and the blue group it is counted out of goes underneath",
+   "status": "pass",
+   "subject": "stats",
+   "title": "Joint, marginal and conditional probability"
+  },
+  "kaplan-meier-survival-curve": {
+   "checked": "2026-10-17T05:36:59",
+   "failures": [],
+   "shows": "Step through the event times: each event multiplies the curve by 1 \u2212 d/n of those still at risk, while a censored subject just leaves the risk set",
+   "status": "pass",
+   "subject": "stats",
+   "title": "Kaplan-Meier survival curve"
+  },
   "kernel-image": {
    "checked": "2026-10-17T01:48:09",
    "failures": [],
@@ -533,8 +1541,24 @@
    "subject": "linear-algebra",
    "title": "Kernel and image of a linear map"
   },
+  "kinematics-displacement-uniform-acceleration": {
+   "checked": "2026-10-17T06:31:41",
+   "failures": [],
+   "shows": "Slide v\u1d62, a and t: the area under the velocity line is a rectangle v\u1d62\u00b7t plus a triangle \u00bdat\u00b2, and together they are the displacement",
+   "status": "pass",
+   "subject": "physics",
+   "title": "Displacement under constant acceleration"
+  },
+  "kinematics-position": {
+   "checked": "2026-10-17T06:31:41",
+   "failures": [],
+   "shows": "Slide v\u1d62, a and t: under constant acceleration the average velocity is the plain average of the start and end velocities, so the trapezoid under the line equals a rectangle v\u0304\u00b7t",
+   "status": "pass",
+   "subject": "physics",
+   "title": "Displacement from average velocity"
+  },
   "kinematics-velocity": {
-   "checked": "2026-10-17T04:35:19",
+   "checked": "2026-10-17T06:23:08",
    "failures": [],
    "shows": "Slide v_i, a and t: the velocity line starts at v_i, climbs by a every second, and after t seconds has gained a\u00b7t",
    "status": "pass",
@@ -549,6 +1573,14 @@
    "subject": "physics",
    "title": "Speed squared over a distance"
   },
+  "kinesin-dynein-vesicle-transport": {
+   "checked": "2026-10-17T08:19:09",
+   "failures": [],
+   "shows": "Switch the motor and spend ATP: kinesin walks to the microtubule's plus end, out to the axon tip; dynein walks to the minus end, back to the cell body; about 8 nm per ATP",
+   "status": "pass",
+   "subject": "biology",
+   "title": "Kinesin and dynein: vesicle transport"
+  },
   "kinetic-and-potential-energy": {
    "checked": "2026-10-17T04:35:19",
    "failures": [],
@@ -558,7 +1590,7 @@
    "title": "Potential energy into kinetic energy"
   },
   "kinetic-energy": {
-   "checked": "2026-10-17T04:35:19",
+   "checked": "2026-10-17T06:23:08",
    "failures": [],
    "shows": "Slide the mass and the velocity: KE = \u00bdmv\u00b2 grows with the square of the speed, and the direction of motion doesn't matter",
    "status": "pass",
@@ -598,7 +1630,7 @@
    "title": "LBO returns: IRR and MOIC"
   },
   "least-square-regression": {
-   "checked": "2026-10-17T04:35:19",
+   "checked": "2026-10-17T06:23:08",
    "failures": [],
    "shows": "Move the trial line: each residual becomes a square, and the least squares line is the one with the smallest total area",
    "status": "pass",
@@ -606,7 +1638,7 @@
    "title": "Least squares regression line"
   },
   "likelihood-function": {
-   "checked": "2026-10-17T04:35:19",
+   "checked": "2026-10-17T06:23:08",
    "failures": [],
    "shows": "Set the successes and trials: the likelihood p^k(1\u2212p)^(n\u2212k) peaks at p\u0302 = k/n and narrows as the trials grow",
    "status": "pass",
@@ -630,20 +1662,36 @@
    "title": "Span and linear independence"
   },
   "logistic-regression": {
-   "checked": "2026-10-17T04:35:19",
+   "checked": "2026-10-17T06:23:08",
    "failures": [],
    "shows": "Slide \u03b2\u2080 and \u03b2\u2081: the log-odds \u03b2\u2080 + \u03b2\u2081x is a straight line, and the logistic function bends it into a probability between 0 and 1",
    "status": "pass",
    "subject": "stats",
    "title": "Logistic regression curve"
   },
+  "lymphocyte-development-recirculation": {
+   "checked": "2026-10-17T08:19:09",
+   "failures": [],
+   "shows": "Pick T or B cells and step through a life: born in the bone marrow, tested in the thymus or marrow, then blood, lymph node, lymph and back to blood until they meet their antigen",
+   "status": "pass",
+   "subject": "biology",
+   "title": "Lymphocytes: development and recirculation"
+  },
   "mass-spring-shm": {
-   "checked": "2026-10-17T04:35:19",
+   "checked": "2026-10-17T06:23:08",
    "failures": [],
    "shows": "Slide the mass, stiffness and amplitude: the period T = 2\u03c0\u221a(m/k) depends on m and k only, never on how far it swings",
    "status": "pass",
    "subject": "physics",
    "title": "Mass on a spring: simple harmonic motion"
+  },
+  "matched-pairs-design": {
+   "checked": "2026-10-17T05:39:47",
+   "failures": [],
+   "shows": "Pair similar units (or use each unit twice) and analyse the differences: between-unit spread drops out of the comparison",
+   "status": "pass",
+   "subject": "stats",
+   "title": "Matched pairs design"
   },
   "matrix-inverse-2d": {
    "checked": "2026-10-17T02:32:52",
@@ -677,6 +1725,158 @@
    "subject": "linear-algebra",
    "title": "A matrix as a map of the plane"
   },
+  "mature-mrna-structure": {
+   "checked": "2026-10-17T08:19:09",
+   "failures": [],
+   "shows": "Step from the 5\u2032 cap to the poly(A) tail of a spliced mRNA and change the lengths: only the stretch from AUG to the stop codon is translated, 3 nt per amino acid",
+   "status": "pass",
+   "subject": "biology",
+   "title": "Mature mRNA: cap, UTRs, coding sequence, tail"
+  },
+  "mean-as-balance-point": {
+   "checked": "2026-10-17T05:39:47",
+   "failures": [],
+   "shows": "Move the fulcrum: the beam balances only at the mean, where the distances to the left and right weigh the same",
+   "status": "pass",
+   "subject": "stats",
+   "title": "The mean as a balance point"
+  },
+  "mean-vs-median": {
+   "checked": "2026-10-17T05:11:17",
+   "failures": [],
+   "shows": "Add one extreme score: the mean is pulled toward it, while the median, the middle value, barely moves",
+   "status": "pass",
+   "subject": "stats",
+   "title": "Mean vs median"
+  },
+  "mediation-indirect-effect": {
+   "checked": "2026-10-17T05:39:47",
+   "failures": [],
+   "shows": "Set the paths a, b and c\u2032: the indirect effect is a \u00d7 b, and the total effect of X on Y is c = c\u2032 + ab",
+   "status": "pass",
+   "subject": "stats",
+   "title": "Mediation: direct and indirect effects"
+  },
+  "membrane-bilayer-polarity": {
+   "checked": "2026-10-17T08:19:09",
+   "failures": [],
+   "shows": "Move an ion through the bilayer: polar heads face the water on both sides, the tails make a nonpolar core, and the energy to put a charge there climbs to about 170 kJ/mol (Born model)",
+   "status": "pass",
+   "subject": "biology",
+   "title": "Bilayer polarity: polar faces, nonpolar core"
+  },
+  "membrane-channel-carrier-specificity": {
+   "checked": "2026-10-17T08:19:09",
+   "failures": [],
+   "shows": "Pick a protein, a solute and a concentration: a K\u207a channel sorts by size and charge in its filter and runs at millions per second; a glucose carrier sorts by shape, flips for every molecule and tops out near 10\u00b3",
+   "status": "pass",
+   "subject": "biology",
+   "title": "Channels vs carriers: how each picks its solute"
+  },
+  "membrane-selective-permeability": {
+   "checked": "2026-10-17T08:19:09",
+   "failures": [],
+   "shows": "Pick a molecule and a cell size: gases cross bare lipid in microseconds, water and urea in seconds to minutes, glucose in weeks and ions in years, which is why cells need transport proteins",
+   "status": "pass",
+   "subject": "biology",
+   "title": "Selective permeability of the lipid bilayer"
+  },
+  "meta-analysis": {
+   "checked": "2026-10-17T05:39:47",
+   "failures": [],
+   "shows": "Spread the six study results apart: heterogeneity (I\u00b2, \u03c4\u00b2) grows, and random effects evens out the weights and widens the pooled interval",
+   "status": "pass",
+   "subject": "stats",
+   "title": "Meta-analysis: fixed vs random effects"
+  },
+  "meta-analysis-forest-weights": {
+   "checked": "2026-10-17T05:39:47",
+   "failures": [],
+   "shows": "Change the study weights or drag a result: the pooled effect is the weighted mean, pulled toward the heaviest, most precise studies",
+   "status": "pass",
+   "subject": "stats",
+   "title": "Forest plot: how weights pool studies"
+  },
+  "mhc-i-vs-mhc-ii-presentation": {
+   "checked": "2026-10-17T08:19:09",
+   "failures": [],
+   "shows": "Step both routes side by side: inside proteins go proteasome, TAP, ER and MHC I to CD8 T cells; engulfed proteins go endosome, CLIP swap and MHC II to CD4 T cells",
+   "status": "pass",
+   "subject": "biology",
+   "title": "MHC I vs MHC II: two routes to the surface"
+  },
+  "microrna-mrna-translational-silencing": {
+   "checked": "2026-10-17T08:19:09",
+   "failures": [],
+   "shows": "Step from Dicer to silencing and change the sites in the 3\u2032 UTR: seed-paired miRNAs trim the tail and block translation, a little more per site; a full match lets Argonaute slice the mRNA",
+   "status": "pass",
+   "subject": "biology",
+   "title": "MicroRNA silencing of an mRNA"
+  },
+  "microtubule-polarity-and-growth": {
+   "checked": "2026-10-17T08:09:23",
+   "failures": [],
+   "shows": "Slide the free tubulin and switch each end between growth and catastrophe: the beta-exposed plus end grows about twice as fast as the minus end while its GTP cap lasts, and either end shrinks over ten times faster than it grows once the cap is lost",
+   "status": "pass",
+   "subject": "biology",
+   "title": "Microtubule polarity and dynamic instability"
+  },
+  "mitochondrion-structure-and-atp-production": {
+   "checked": "2026-10-17T08:09:23",
+   "failures": [],
+   "shows": "The folded inner membrane carries the electron transport chain: complexes I, III and IV pump 10 protons per NADH into the intermembrane space and ATP synthase spends about 4 per ATP; change the shuttle, let protons leak or block complex IV and watch the yield per glucose",
+   "status": "pass",
+   "subject": "biology",
+   "title": "Mitochondrion: structure and ATP production"
+  },
+  "mitosis": {
+   "checked": "2026-10-17T08:09:23",
+   "failures": [],
+   "shows": "Step a cell with 2n chromosomes through prophase, prometaphase, metaphase, anaphase and telophase: duplicated chromosomes line up, sister chromatids split to opposite poles, and each daughter ends with the same 2n chromosomes as the mother",
+   "status": "pass",
+   "subject": "biology",
+   "title": "Mitosis: one cell becomes two"
+  },
+  "mitosis-chromosome-segregation": {
+   "checked": "2026-10-17T08:09:23",
+   "failures": [],
+   "shows": "Pick how one chromosome's sister kinetochores attach and step through anaphase: an unattached or tensionless kinetochore keeps the checkpoint on and anaphase waits; bi-orientation lets separase cut cohesin; a merotelic chromatid slips past the checkpoint and lags",
+   "status": "pass",
+   "subject": "biology",
+   "title": "Chromosome segregation and the spindle checkpoint"
+  },
+  "mitosis-phase-sequence-overview": {
+   "checked": "2026-10-17T08:09:23",
+   "failures": [],
+   "shows": "Step through prophase, prometaphase, metaphase, anaphase, telophase and cytokinesis: what the envelope, the chromosomes and the spindle do in each, and how M phase is only about an hour of a 24-hour cycle",
+   "status": "pass",
+   "subject": "biology",
+   "title": "Mitosis: the phases in order"
+  },
+  "momentum": {
+   "checked": "2026-10-17T05:39:47",
+   "failures": [],
+   "shows": "Set the masses and speed: cart 1 brings momentum m1\u00b7v, and after the collision the carts share exactly that much",
+   "status": "pass",
+   "subject": "physics",
+   "title": "Momentum in a collision"
+  },
+  "mosaic-plot": {
+   "checked": "2026-10-17T05:11:17",
+   "failures": [],
+   "shows": "Change the four counts: tile areas are the counts, and when the splits line up across columns the two variables are independent",
+   "status": "pass",
+   "subject": "stats",
+   "title": "Mosaic plot of a two-way table"
+  },
+  "motile-cilium-axoneme-structure": {
+   "checked": "2026-10-17T08:09:23",
+   "failures": [],
+   "shows": "Bend the cilium: dynein arms on one half of the 9+2 ring push their neighbors toward the tip, nexin links turn that sliding into a bend with tip offset d times theta, and with the links digested the doublets just slide apart",
+   "status": "pass",
+   "subject": "biology",
+   "title": "Motile cilium: the 9+2 axoneme"
+  },
   "mrna-codon-amino-acid-sequence": {
    "checked": "2026-10-17T04:11:19",
    "failures": [],
@@ -693,6 +1893,118 @@
    "subject": "biology",
    "title": "Translation: mRNA to protein"
   },
+  "mutation-base-substitution": {
+   "checked": "2026-10-17T08:09:23",
+   "failures": [],
+   "shows": "Change one base in the start of the beta-globin gene: the new codon may still code for the same amino acid, swap it for another (GAG to GTG gives the sickle-cell Glu6Val) or become a stop; and A-G or C-T swaps are transitions, the rest transversions",
+   "status": "pass",
+   "subject": "biology",
+   "title": "Base substitution: silent, missense or nonsense"
+  },
+  "mutation-codon-reading-frame": {
+   "checked": "2026-10-17T08:30:29",
+   "failures": [],
+   "shows": "Move the start base: the ribosome cuts the same mRNA into triplets from there, so starts 1, 4, 7 share one frame and starts 2 or 3 read different codons and a different chain",
+   "status": "pass",
+   "subject": "biology",
+   "title": "Reading frames: where the codons start"
+  },
+  "mutation-deletion-frameshift": {
+   "checked": "2026-10-17T08:30:29",
+   "failures": [],
+   "shows": "Delete one or two bases anywhere after the start codon: every later base slides left, the triplets regroup, and the chain is wrong from there until a premature stop",
+   "status": "pass",
+   "subject": "biology",
+   "title": "Deletion frameshift"
+  },
+  "mutation-dna-rna-protein-phenotype": {
+   "checked": "2026-10-17T08:30:29",
+   "failures": [],
+   "shows": "Change codon 6 of beta-globin and follow it down: DNA, mRNA, protein, hemoglobin and red cells; GAG to GTG makes HbS, which sickles cells when oxygen is low",
+   "status": "pass",
+   "subject": "biology",
+   "title": "From DNA to trait: one base in beta-globin"
+  },
+  "mutation-frameshift-versus-in-frame": {
+   "checked": "2026-10-17T08:30:29",
+   "failures": [],
+   "shows": "Add or remove 1 to 6 bases after codon 4: only multiples of 3 keep the triplets in step, so the protein just gains or loses amino acids; any other size garbles everything after the site until a stop",
+   "status": "pass",
+   "subject": "biology",
+   "title": "Frameshift or in frame?"
+  },
+  "mutation-in-frame-indels": {
+   "checked": "2026-10-17T08:30:29",
+   "failures": [],
+   "shows": "Delete or duplicate 3 or 6 bases in the CFTR gene: the frame survives, so the protein just loses or gains whole amino acids (CTT gone is F508del, the common cystic fibrosis allele)",
+   "status": "pass",
+   "subject": "biology",
+   "title": "In-frame insertions and deletions"
+  },
+  "mutation-insertion-frameshift": {
+   "checked": "2026-10-17T08:30:29",
+   "failures": [],
+   "shows": "Insert one or two bases anywhere after the start codon: every later base slides right, the triplets regroup, and the chain is wrong from there until a premature stop",
+   "status": "pass",
+   "subject": "biology",
+   "title": "Insertion frameshift"
+  },
+  "mutation-missense-substitution": {
+   "checked": "2026-10-17T08:30:29",
+   "failures": [],
+   "shows": "Change one base in the first codons of beta-globin: a missense change swaps one amino acid, and how much it matters depends on whether the new side chain is like the old one (GAG to GTG is the sickle-cell Glu6Val)",
+   "status": "pass",
+   "subject": "biology",
+   "title": "Missense substitution"
+  },
+  "mutation-nonsense-premature-stop": {
+   "checked": "2026-10-17T08:30:29",
+   "failures": [],
+   "shows": "Slide a premature stop codon along the beta-globin gene: the chain is cut short at that codon, and a stop well before the last exon junction gets the mRNA destroyed by nonsense-mediated decay",
+   "status": "pass",
+   "subject": "biology",
+   "title": "Nonsense mutation: a premature stop"
+  },
+  "mutations": {
+   "checked": "2026-10-17T08:09:23",
+   "failures": [],
+   "shows": "Substitute, insert or delete bases anywhere in a short gene: one changed codon is silent, missense or nonsense, while inserting or deleting anything but a multiple of 3 bases shifts the reading frame and garbles everything downstream until a stop",
+   "status": "pass",
+   "subject": "biology",
+   "title": "Mutations: substitutions and frameshifts"
+  },
+  "newton-first-law": {
+   "checked": "2026-10-17T06:21:25",
+   "failures": [],
+   "shows": "Give the puck a speed and a surface: with no net force it keeps the same velocity forever; friction is a net force and slows it to a stop",
+   "status": "pass",
+   "subject": "physics",
+   "title": "Newton's first law: inertia"
+  },
+  "newton-second-law": {
+   "checked": "2026-10-17T06:21:25",
+   "failures": [],
+   "shows": "Change the net force and the mass: the acceleration is F/m, so it grows in step with the force and shrinks as the mass grows",
+   "status": "pass",
+   "subject": "physics",
+   "title": "Newton's second law: F = ma"
+  },
+  "newton-third-law": {
+   "checked": "2026-10-17T06:35:19",
+   "failures": [],
+   "shows": "Pick an interaction and set its force: each object pushes the other with the same size force in the opposite direction, acting on different objects",
+   "status": "pass",
+   "subject": "physics",
+   "title": "Newton's third law: interaction pairs"
+  },
+  "normal-approximation-to-binomial": {
+   "checked": "2026-10-17T06:21:25",
+   "failures": [],
+   "shows": "Set n, p and an event: the bell curve with the same mean and SD stands in for the binomial bars, with k \u00b1 0.5 as the continuity correction",
+   "status": "pass",
+   "subject": "stats",
+   "title": "Normal approximation to the binomial"
+  },
   "null-space": {
    "checked": "2026-10-17T03:35:57",
    "failures": [],
@@ -700,6 +2012,38 @@
    "status": "pass",
    "subject": "linear-algebra",
    "title": "Null space and column space"
+  },
+  "ogive": {
+   "checked": "2026-10-17T06:21:25",
+   "failures": [],
+   "shows": "Pick a percentile: read across from it to the cumulative frequency curve and down to the value; steep stretches are where the data are dense",
+   "status": "pass",
+   "subject": "stats",
+   "title": "Ogive: cumulative frequency"
+  },
+  "one-sample-t-test": {
+   "checked": "2026-10-17T06:21:25",
+   "failures": [],
+   "shows": "Set the sample's mean, SD and size against a hypothesized mean: t counts standard errors from \u03bc0, and the shaded tail is the p-value",
+   "status": "pass",
+   "subject": "stats",
+   "title": "One-sample t test"
+  },
+  "outlier-leverage-influence": {
+   "checked": "2026-10-17T06:21:25",
+   "failures": [],
+   "shows": "Drag the amber point: leverage grows with its distance from x\u0304, the residual with its distance from the trend, and only together do they swing the line",
+   "status": "pass",
+   "subject": "stats",
+   "title": "Outliers, leverage and influence"
+  },
+  "paired-t-test": {
+   "checked": "2026-10-17T06:21:25",
+   "failures": [],
+   "shows": "Each student is measured twice: the test runs on the differences, so t is the mean change over its standard error",
+   "status": "pass",
+   "subject": "stats",
+   "title": "Paired t test"
   },
   "pcr-cycle": {
    "checked": "2026-10-17T01:50:55",
@@ -733,6 +2077,30 @@
    "subject": "biology",
    "title": "PCR: the temperature program"
   },
+  "period-frequency-relation": {
+   "checked": "2026-10-17T06:43:07",
+   "failures": [],
+   "shows": "Set the period T: one cycle takes T seconds, so 1/T cycles fit in each second, and f = 1/T is a straight line of slope \u22121 on log axes",
+   "status": "pass",
+   "subject": "physics",
+   "title": "Period and frequency"
+  },
+  "permutation-formula": {
+   "checked": "2026-10-17T07:23:26",
+   "failures": [],
+   "shows": "Fill r places in order from n items: n choices, then n \u2212 1, and so on, which is n! with the last (n \u2212 r)! factors cancelled",
+   "status": "pass",
+   "subject": "stats",
+   "title": "Permutation formula"
+  },
+  "permutations-vs-combinations": {
+   "checked": "2026-10-17T07:23:26",
+   "failures": [],
+   "shows": "Toggle whether order matters: each column is one group of r, and its r! orders are the cells under it, so permutations = combinations \u00d7 r!",
+   "status": "pass",
+   "subject": "stats",
+   "title": "Permutations vs combinations"
+  },
   "plasmid-sticky-end-ligation": {
    "checked": "2026-10-17T03:49:27",
    "failures": [],
@@ -740,6 +2108,22 @@
    "status": "pass",
    "subject": "biology",
    "title": "Sticky ends and ligation"
+  },
+  "poisson-distribution": {
+   "checked": "2026-10-17T07:23:26",
+   "failures": [],
+   "shows": "Set the average rate \u03bb and pick a count k: each bar is the chance of exactly that many events, centred on \u03bb with spread \u221a\u03bb",
+   "status": "pass",
+   "subject": "stats",
+   "title": "Poisson distribution"
+  },
+  "potential-energy": {
+   "checked": "2026-10-17T07:23:26",
+   "failures": [],
+   "shows": "Set the mass, the height and the planet: lifting weight mg through height h stores PE = mgh, the area of a force-times-distance rectangle",
+   "status": "pass",
+   "subject": "physics",
+   "title": "Gravitational potential energy"
   },
   "power-iteration": {
    "checked": "2026-10-17T04:31:46",
@@ -756,6 +2140,30 @@
    "status": "pass",
    "subject": "finance",
    "title": "Present value: discounting a future cash flow"
+  },
+  "probability-intersection": {
+   "checked": "2026-10-17T06:43:07",
+   "failures": [],
+   "shows": "Set P(A) and P(B | A): the chance both happen is the share P(B | A) of the share P(A), so P(A \u2229 B) = P(A) \u00b7 P(B | A)",
+   "status": "pass",
+   "subject": "stats",
+   "title": "P(A and B): the multiplication rule"
+  },
+  "probability-tree": {
+   "checked": "2026-10-17T07:23:26",
+   "failures": [],
+   "shows": "Set the bag and whether the first ball goes back: multiply along each path for a leaf, then add the leaves that make up an event",
+   "status": "pass",
+   "subject": "stats",
+   "title": "Probability tree: two draws"
+  },
+  "projectile-motion": {
+   "checked": "2026-10-17T07:23:26",
+   "failures": [],
+   "shows": "Set the launch speed and angle: the horizontal speed stays fixed while gravity takes 9.81 m/s off the vertical speed every second, so the path is a parabola",
+   "status": "pass",
+   "subject": "physics",
+   "title": "Projectile motion"
   },
   "prokaryotic-operon-architecture": {
    "checked": "2026-10-17T04:34:14",
@@ -780,6 +2188,22 @@
    "status": "pass",
    "subject": "biology",
    "title": "qPCR: \u0394\u0394Ct to fold change"
+  },
+  "randomized-controlled-trial-flow": {
+   "checked": "2026-10-17T06:08:52",
+   "failures": [],
+   "shows": "Step through a trial: screen, randomize, allocate, follow up and analyze; random allocation is what lets the final gap be read as the treatment's effect",
+   "status": "pass",
+   "subject": "stats",
+   "title": "Randomized controlled trial: the flow"
+  },
+  "randomized-experiment": {
+   "checked": "2026-10-17T06:08:52",
+   "failures": [],
+   "shows": "Set the number of units and the true effect: a random split makes the groups alike, so the difference in their means estimates the effect, give or take chance",
+   "status": "pass",
+   "subject": "stats",
+   "title": "A randomized experiment"
   },
   "rank-nullity": {
    "checked": "2026-10-17T02:45:03",
@@ -861,6 +2285,14 @@
    "subject": "biology",
    "title": "Which strand is the template?"
   },
+  "roc-curve": {
+   "checked": "2026-10-17T06:08:52",
+   "failures": [],
+   "shows": "Slide the AUC to separate the two score distributions and the threshold to move along the curve: each threshold is one (FPR, TPR) point",
+   "status": "pass",
+   "subject": "stats",
+   "title": "ROC curve and AUC"
+  },
   "row-reduction-stepper": {
    "checked": "2026-10-17T03:44:55",
    "failures": [],
@@ -868,6 +2300,46 @@
    "status": "pass",
    "subject": "linear-algebra",
    "title": "Row reduction, one step at a time"
+  },
+  "sample-space-grid": {
+   "checked": "2026-10-17T06:08:52",
+   "failures": [],
+   "shows": "Pick an event: its outcomes light up among the 36 equally likely (die 1, die 2) pairs, and P(A) is the shaded share",
+   "status": "pass",
+   "subject": "stats",
+   "title": "Sample space of two dice"
+  },
+  "sample-variance": {
+   "checked": "2026-10-17T06:08:52",
+   "failures": [],
+   "shows": "Drag the data: each value's squared distance from the mean adds to a total, and s\u00b2 is that total shared among n \u2212 1",
+   "status": "pass",
+   "subject": "stats",
+   "title": "Sample variance"
+  },
+  "sampling-distribution": {
+   "checked": "2026-10-17T06:08:52",
+   "failures": [],
+   "shows": "Set the population and the sample size: the means of samples are centred on \u03bc and spread \u03c3/\u221an, and even a skewed population gives nearly normal means once n is large",
+   "status": "pass",
+   "subject": "stats",
+   "title": "Sampling distribution of the mean"
+  },
+  "sampling-sample-mean": {
+   "checked": "2026-10-17T06:20:38",
+   "failures": [],
+   "shows": "Draw random samples from a population of 50: each sample's mean lands near \u03bc, and the means pile up far more tightly than single values",
+   "status": "pass",
+   "subject": "stats",
+   "title": "Sampling: the sample mean"
+  },
+  "sampling-without-replacement": {
+   "checked": "2026-10-17T06:08:52",
+   "failures": [],
+   "shows": "Set the urn: the second draw's chances change with what the first draw took out, so the draws are dependent",
+   "status": "pass",
+   "subject": "stats",
+   "title": "Sampling without replacement"
   },
   "sanger-sequencing": {
    "checked": "2026-10-17T02:43:14",
@@ -885,6 +2357,22 @@
    "subject": "linear-algebra",
    "title": "Shifted and inverse iteration"
   },
+  "side-by-side-box-plots": {
+   "checked": "2026-10-17T06:08:13",
+   "failures": [],
+   "shows": "Pick a comparison: the median lines tell you which section scored higher, the box heights (IQR) which one is more spread out",
+   "status": "pass",
+   "subject": "stats",
+   "title": "Side-by-side box plots: center vs spread"
+  },
+  "simple-pendulum": {
+   "checked": "2026-10-17T06:08:13",
+   "failures": [],
+   "shows": "Slide the length and the release angle: the period grows with the square root of L, and T = 2\u03c0\u221a(L/g) holds only for small swings",
+   "status": "pass",
+   "subject": "physics",
+   "title": "Simple pendulum: period and the small-angle rule"
+  },
   "singular-value-decomposition": {
    "checked": "2026-10-17T02:35:01",
    "failures": [],
@@ -892,6 +2380,14 @@
    "status": "pass",
    "subject": "linear-algebra",
    "title": "SVD: rebuilding a matrix from its biggest pieces"
+  },
+  "skewness-direction": {
+   "checked": "2026-10-17T06:08:13",
+   "failures": [],
+   "shows": "Pick a direction and slide the strength: the long tail drags the mean toward it, past the median, while the peak (mode) stays on the other side",
+   "status": "pass",
+   "subject": "stats",
+   "title": "Skewness: which way the tail points"
   },
   "span-membership": {
    "checked": "2026-10-17T03:44:55",
@@ -901,6 +2397,14 @@
    "subject": "linear-algebra",
    "title": "Is b in the span?"
   },
+  "standard-deviation": {
+   "checked": "2026-10-17T06:33:27",
+   "failures": [],
+   "shows": "Slide \u03c3: the values spread out, each squared distance from the mean grows, and \u03c3 is the side of the average square",
+   "status": "pass",
+   "subject": "stats",
+   "title": "Standard deviation: the root mean square distance"
+  },
   "standard-error-vs-sd": {
    "checked": "2026-10-17T04:09:03",
    "failures": [],
@@ -908,6 +2412,22 @@
    "status": "pass",
    "subject": "stats",
    "title": "Standard deviation vs standard error"
+  },
+  "standard-score-z": {
+   "checked": "2026-10-17T06:33:27",
+   "failures": [],
+   "shows": "Move x, \u03bc and \u03c3: the z ruler starts at the mean and counts in standard deviations, so z is where x lands on it",
+   "status": "pass",
+   "subject": "stats",
+   "title": "Standard score (z-score)"
+  },
+  "stopping-distance-safe-following": {
+   "checked": "2026-10-17T06:08:13",
+   "failures": [],
+   "shows": "Slide speed and reaction time and pick the road: reaction distance grows with v, braking distance with v\u00b2, and slick roads multiply the braking part",
+   "status": "pass",
+   "subject": "physics",
+   "title": "Stopping distance and safe following"
   },
   "straight-line-depreciation": {
    "checked": "2026-10-17T03:33:36",
@@ -941,6 +2461,22 @@
    "subject": "linear-algebra",
    "title": "Solving two equations by elimination"
   },
+  "t-distribution": {
+   "checked": "2026-10-17T06:40:42",
+   "failures": [],
+   "shows": "Set the degrees of freedom and the middle share: the t curve's cutoffs \u00b1t* sit wider than the normal's \u00b1z*, and close in on them as df grows",
+   "status": "pass",
+   "subject": "stats",
+   "title": "The t distribution vs the normal"
+  },
+  "t-stat-p-score": {
+   "checked": "2026-10-17T06:40:42",
+   "failures": [],
+   "shows": "Drag t and set the degrees of freedom: the red tail area beyond t is the p-value, doubled for a two-sided test",
+   "status": "pass",
+   "subject": "stats",
+   "title": "From a t statistic to a p-value"
+  },
   "three-statement-flow": {
    "checked": "2026-10-17T02:33:22",
    "failures": [],
@@ -948,6 +2484,14 @@
    "status": "pass",
    "subject": "finance",
    "title": "One transaction through the three statements"
+  },
+  "torque": {
+   "checked": "2026-10-17T06:33:27",
+   "failures": [],
+   "shows": "Change r, F and the angle: only the part of the force perpendicular to the wrench turns it, so \u03c4 peaks at 90\u00b0 and vanishes along the arm",
+   "status": "pass",
+   "subject": "physics",
+   "title": "Torque on a wrench"
   },
   "transcription-and-rna-processing": {
    "checked": "2026-10-17T04:34:48",
@@ -1029,6 +2573,62 @@
    "subject": "biology",
    "title": "trp operon: tryptophan as corepressor"
   },
+  "two-cable-static-equilibrium": {
+   "checked": "2026-10-17T06:08:13",
+   "failures": [],
+   "shows": "Change the cable angles and the weight: the tensions' horizontal parts cancel and their vertical parts add to W, so flatter cables pull much harder",
+   "status": "pass",
+   "subject": "physics",
+   "title": "Two cables holding a weight"
+  },
+  "two-sample-difference": {
+   "checked": "2026-10-17T06:40:42",
+   "failures": [],
+   "shows": "Set each group's mean, SD and size: the difference x\u0304\u2081 \u2212 x\u0304\u2082 is noisier than either mean (SE\u00b2 adds), and its 95% interval either clears 0 or straddles it",
+   "status": "pass",
+   "subject": "stats",
+   "title": "Difference of two means: 95% interval"
+  },
+  "two-sample-t-test": {
+   "checked": "2026-10-17T06:40:42",
+   "failures": [],
+   "shows": "Set the difference in means, its standard error and the df: t counts the standard errors between the difference and 0, and the red tails beyond it are the p-value",
+   "status": "pass",
+   "subject": "stats",
+   "title": "Two-sample t test"
+  },
+  "type-i-type-ii-power": {
+   "checked": "2026-10-17T06:40:42",
+   "failures": [],
+   "shows": "Set \u03b1, the true effect and the sample size: red is the false-alarm rate \u03b1, amber the miss rate \u03b2, green the power 1 \u2212 \u03b2, all split by the same cutoff",
+   "status": "pass",
+   "subject": "stats",
+   "title": "Type I error, Type II error and power"
+  },
+  "union-probability-inclusion-exclusion": {
+   "checked": "2026-10-17T06:40:42",
+   "failures": [],
+   "shows": "Set P(A), P(B) and their overlap: adding P(A) and P(B) counts the overlap twice, so P(A \u222a B) subtracts it once",
+   "status": "pass",
+   "subject": "stats",
+   "title": "P(A or B): inclusion-exclusion"
+  },
+  "variance": {
+   "checked": "2026-10-17T06:40:42",
+   "failures": [],
+   "shows": "Set the weights on the values 1 to 5: the variance is the gap between E(X\u00b2) and E(X)\u00b2, and it grows as probability moves away from the mean",
+   "status": "pass",
+   "subject": "stats",
+   "title": "Variance: E(X\u00b2) minus E(X)\u00b2"
+  },
+  "vector-components": {
+   "checked": "2026-10-17T06:40:42",
+   "failures": [],
+   "shows": "Set the length and the angle, or drag the tip: the vector splits into an x part r cos \u03b8 and a y part r sin \u03b8, with signs set by the quadrant",
+   "status": "pass",
+   "subject": "physics",
+   "title": "Resolving a vector into components"
+  },
   "vector-dot-product": {
    "checked": "2026-10-17T03:31:27",
    "failures": [],
@@ -1045,6 +2645,14 @@
    "subject": "linear-algebra",
    "title": "Projecting one vector onto another"
   },
+  "velocity-as-slope-graph": {
+   "checked": "2026-10-17T07:04:04",
+   "failures": [],
+   "shows": "Drag the positions: each straight piece of the x-t graph has slope \u0394x/\u0394t, and that slope is the height of the matching step on the v-t graph",
+   "status": "pass",
+   "subject": "physics",
+   "title": "Velocity as the slope of a position graph"
+  },
   "wacc": {
    "checked": "2026-10-17T02:00:50",
    "failures": [],
@@ -1053,6 +2661,14 @@
    "subject": "finance",
    "title": "WACC: the blended cost of capital"
   },
+  "weight-force": {
+   "checked": "2026-10-17T07:16:36",
+   "failures": [],
+   "shows": "Change the mass and the gravitational field: weight is mass times g, so the same mass weighs less on the Moon and more on Jupiter while its mass stays put",
+   "status": "pass",
+   "subject": "physics",
+   "title": "Weight is mass times gravity"
+  },
   "western-blot": {
    "checked": "2026-10-17T02:43:14",
    "failures": [],
@@ -1060,6 +2676,30 @@
    "status": "pass",
    "subject": "biology",
    "title": "Western blot"
+  },
+  "wilcoxon-rank-sum": {
+   "checked": "2026-10-17T07:16:36",
+   "failures": [],
+   "shows": "Pool both groups, rank everything, and add up A's ranks: a sum far from what chance gives (the 924 possible splits) means the groups differ",
+   "status": "pass",
+   "subject": "stats",
+   "title": "Wilcoxon rank-sum test"
+  },
+  "work-done-by-force": {
+   "checked": "2026-10-17T07:16:36",
+   "failures": [],
+   "shows": "Tilt the force, change its size and the distance: only the part of F along the motion does work, so W = F d cos \u03b8 shrinks to 0 at 90\u00b0 and turns negative past it",
+   "status": "pass",
+   "subject": "physics",
+   "title": "Work done by a force at an angle"
+  },
+  "z-score-p-value": {
+   "checked": "2026-10-17T07:04:04",
+   "failures": [],
+   "shows": "Drag z: the red tail area under the normal curve beyond z is the p-value, doubled for a two-sided test, and compared with \u03b1 = 0.05",
+   "status": "pass",
+   "subject": "stats",
+   "title": "From a z score to a p-value"
   }
  }
 }

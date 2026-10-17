@@ -54,10 +54,10 @@
       var gap = Math.min(16, (x1 - x0) / k.n);
       for (var i = 0; i < k.n; i++) {
         var cx = x0 + gap * (i + 0.5);
-        if (i < k.k) api.circle([cx, 22], Math.min(5, gap * 0.38), {fill: c.c1});
-        else api.circle([cx, 22], Math.min(5, gap * 0.38) - 0.6, {stroke: c.muted, width: 1.2});
+        if (i < k.k) api.circle([cx, 16], Math.min(5, gap * 0.38), {fill: c.c1});
+        else api.circle([cx, 16], Math.min(5, gap * 0.38) - 0.6, {stroke: c.muted, width: 1.2});
       }
-      api.label([x0, 44], k.k + " success" + (k.k === 1 ? "" : "es") + " (filled) in " + k.n + " trials", {color: c.c1, size: 12, weight: 600});
+      api.label([x0, 37], k.k + " success" + (k.k === 1 ? "" : "es") + " (filled) in " + k.n + " trials", {color: c.c1, size: 12, weight: 600});
       // axes
       [0, 0.5, 1].forEach(function (r) {
         api.line([x0, Y(r)], [x1, Y(r)], {color: r ? c.grid : c.axis, width: r ? 1 : 1.3});
@@ -68,25 +68,41 @@
         if (t % 2 === 0) api.label([X(t / 10), yB + 15], String(t / 10), {color: c.muted, size: 12, anchor: "middle"});
       }
       api.label([x1, yB + 29], "p", {color: c.muted, size: 12.5, anchor: "end", italic: true});
-      api.label([x0 - 4, yT - 16], "L(p) / L(p̂)", {color: c.muted, size: 12});
+      api.label([x0 - 4, yT - 26], "L(p) / L(p̂)", {color: c.muted, size: 12});
       // the ≈95% likelihood interval
       api.rect(X(k.lo), yT, Math.max(1.5, X(k.hi) - X(k.lo)), yB - yT, {fill: c.c2, fillOpacity: 0.08, rx: 0});
       api.line([X(k.lo), Y(CUT)], [X(k.hi), Y(CUT)], {color: c.c2, width: 1.5, dash: "4 3"});
-      api.label([x1, yT - 16], "shaded ≈95% interval: " + f(k.lo, 2) + " to " + f(k.hi, 2), {color: c.c2, size: 12, weight: 600, anchor: "end"});
+      // its caption gets its own row, under the p axis
+      api.label([x0, yB + 29], "shaded ≈95% interval: " + f(k.lo, 2) + " to " + f(k.hi, 2), {color: c.c2, size: 12, weight: 600});
       // the curve
       var pts = [];
       for (var j = 0; j <= 400; j++) { var p = j / 400; pts.push([X(p), Y(k.rel(p))]); }
       api.polygon([[X(0), yB]].concat(pts, [[X(1), yB]]), {fill: c.c2, fillOpacity: 0.12});
       api.polyline(pts, {stroke: c.c2, width: 2.5});
-      // the peak
-      api.line([X(k.ph), yT - 4], [X(k.ph), yB], {color: c.c3, width: 1.6, dash: "5 4"});
-      var right = k.ph < 0.72;
-      api.label([X(k.ph) + (right ? 8 : -8), yT + 2], "p̂ = " + f(k.ph), {color: c.c3, size: 12.5, weight: 650, anchor: right ? "start" : "end"});
-      // the candidate p
+      // the peak: its label is a callout above the plot, on top of the dashed line (one combined label when p is there too)
+      var Xh = X(k.ph), near = Math.abs(v.p - k.ph) < 0.02, ha = k.ph < 0.1 ? "start" : k.ph > 0.9 ? "end" : "middle";
+      api.line([Xh, yT], [Xh, yB], {color: c.c3, width: 1.6, dash: "5 4"});
+      var hl = near ? (Math.abs(v.p - k.ph) < 0.005 ? "p = p̂ = " + f(k.ph) + ": ratio 1" : "p = " + f(v.p, 2) + " ≈ p̂ = " + f(k.ph) + ": ratio " + sig(k.r)) : "p̂ = " + f(k.ph);
+      api.label([Xh + (ha === "start" ? 4 : ha === "end" ? -4 : 0), yT - 11], hl, {color: near ? c.c1 : c.c3, size: 12.5, weight: 650, anchor: ha});
+      // the candidate p: its label goes on the side away from p̂, where the curve falls away beneath it
       var P = [X(v.p), Y(k.r)];
       api.line([P[0], P[1]], [P[0], yB], {color: c.c1, width: 1.2, dash: "3 3"});
-      var pr = v.p < 0.5, py = Math.min(Math.max(P[1] - 14, yT + 22), yB - 14);
-      api.label([P[0] + (pr ? 10 : -10), py], "p = " + f(v.p, 2) + ": " + sig(k.r), {color: c.c1, size: 12.5, weight: 650, anchor: pr ? "start" : "end"});
+      var pl = "p = " + f(v.p, 2) + ": " + sig(k.r), pw = pl.length * 12.5 * 0.56, sq = false;   // the framework's width estimate, so it never shifts the label
+      if (!near) {
+        var pr = v.p > k.ph ? P[0] + 10 + pw < 397 : P[0] - 10 - pw < x0 + 2, xs = pr ? [P[0] + 10, P[0] + 10 + pw] : [P[0] - 10 - pw, P[0] - 10];
+        var py = Math.min(Math.max(P[1] - 14, yT + 6), yB - 14);
+        if (pr !== v.p > k.ph) {   // squeezed onto the peak's side by the edge: lift it clear of the curve under it
+          for (var q = xs[0]; q <= xs[1]; q += 4) py = Math.min(py, Y(k.rel(Math.max(0, Math.min(1, (q - x0) / (x1 - x0))))) - 9);
+          sq = py < yT + 6 && xs[0] < Xh + 4 && Xh - 4 < xs[1];   // it would sit across the peak: the formula carries the ratio instead
+          py = Math.max(py, yT + 6);
+        }
+        // off the dashed interval line where they would meet
+        if (Math.abs(py - Y(CUT)) < 10 && xs[0] < X(k.hi) && X(k.lo) < xs[1]) py = Y(CUT) - 11 >= yT + 6 ? Y(CUT) - 11 : Y(CUT) + 11;
+      }
+      if (!near && !sq) {
+        var t = api.label([pr ? xs[0] : xs[1], py], pl, {color: c.c1, size: 12.5, weight: 650, anchor: pr ? "start" : "end"});
+        ["stroke", c.card, "stroke-width", 3, "stroke-linejoin", "round", "paint-order", "stroke"].forEach(function (a, i, l) { if (i % 2 === 0) t.setAttribute(a, l[i + 1]); });
+      }
       api.handle(P, {color: c.c1, r: 6, onDrag: function (q) {
         api.set({p: Math.max(0, Math.min(1, Math.round((q[0] - x0) / (x1 - x0) * 100) / 100))});
       }});

@@ -62,11 +62,17 @@
       api.polyline(zz, {stroke: c.c3, width: 1 + ks / 40});
       api.rect(sx - bs / 2, top, bs, bs, {fill: c.c2, fillOpacity: 0.85, stroke: c.c2, rx: 4});
       if (Math.abs(k.vel) > 0.05) {
-        var al = Math.max(8, 8 * Math.abs(k.vel)) * (k.vel > 0 ? -1 : 1), ax = sx + bs / 2 + 12;
+        // the velocity arrow: 25 px per m/s (capped at 60 px), named at its tip; its value is in the readout line on top
+        // (shortened only where it would run into the ceiling or the bottom edge)
+        var dn = k.vel < 0, al = Math.max(16, Math.min(60, 25 * Math.abs(k.vel), dn ? 284 - by : by - 26)) * (dn ? 1 : -1);
+        var ax = sx + bs / 2 + 12, vx = ax, vy = by + al + (dn ? 10 : -10), va = "middle";
         api.arrow([ax, by], [ax, by + al], {color: c.c1, width: 2.5, halo: false});
+        if (dn ? vy > 279 : vy < 28) { vx = ax + 7; vy = by + al + (dn ? -6 : 6); va = "start"; }   // no room past the tip: beside it
+        else if (Math.abs(vy - cy) < 8) vy = dn ? Math.max(vy, cy + 9) : Math.min(vy, cy - 9);   // off the equilibrium line
+        api.label([vx, vy], "v", {color: c.c1, size: 12.5, weight: 700, italic: true, anchor: va});
       }
-      api.label([12, 262], "m = " + f(m, 2) + " kg", {color: c.c2, size: 12.5, weight: 650});
-      api.label([12, 280], "k = " + f(ks, 0) + " N/m", {color: c.c3, size: 12.5, weight: 650});
+      api.label([12, 267.5], "m = " + f(m, 2) + " kg", {color: c.c2, size: 12.5, weight: 650});   // clear of the block at its lowest
+      api.label([12, 281], "k = " + f(ks, 0) + " N/m", {color: c.c3, size: 12.5, weight: 650});
       // x(t) over five seconds, on the same vertical scale
       api.line([gx0, Y(0.5) - 6], [gx0, Y(-0.5) + 6], {color: c.axis, width: 1});
       for (var t = 0; t <= TW; t++) {
@@ -87,9 +93,9 @@
       // now: the block's height carried to the curve
       var P = [Tx(v.time), by];
       api.line([sx + bs / 2 + 2, by], P, {color: c.faint, width: 1.2, dash: "4 4"});
-      api.line([P[0], Y(0.5) - 6], [P[0], Y(-0.5) + 6], {color: c.c1, width: 1, opacity: 0.45});
-      var lr = P[0] < 300;
-      api.label([P[0] + (lr ? 10 : -10), by + (k.vel > 0 ? 14 : -14)], "x = " + f(k.x, 2) + " m", {color: c.c1, size: 12, weight: 650, anchor: lr ? "start" : "end"});
+      api.line([P[0], yb + 7], [P[0], Y(-0.5) + 6], {color: c.c1, width: 1, opacity: 0.45});   // starts under the T bracket and its label
+      // the reading at t on its own line above the graph, where nothing sits behind it (the T bracket stays below y = 36)
+      api.label([gx1, 14], "t = " + f(v.time, 2) + " s:  x = " + f(k.x, 3) + " m,  v = " + f(k.vel, 2) + " m/s", {color: c.c1, size: 12.5, weight: 650, anchor: "end"});
       api.handle(P, {color: c.c1, r: 6, onDrag: function (q) {
         api.set({time: Math.round(Math.max(0, Math.min(TW, (q[0] - gx0) / (gx1 - gx0) * TW)) * 100) / 100});
       }});

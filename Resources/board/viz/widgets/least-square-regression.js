@@ -45,32 +45,51 @@
     size: [400, 290],
     draw: function (api, v) {
       var c = api.color, b0 = v.intercept, b1 = v.slope, yh = function (x) { return b0 + b1 * x; };
-      var pl = api.plane({x: [-0.5, 9.5], y: [-0.5, 9.5], box: [6, 6, 270, 278], tickEvery: 2, step: 1});
-      var X0 = pl.xr[0], X1 = pl.xr[1], Y0 = pl.yr[0], Y1 = pl.yr[1];
-      // residual squares, clipped to the plane (they are axis-aligned, so clipping is a rectangle intersection)
-      for (var i = 0; i < XS.length; i++) {
-        var r = YS[i] - yh(XS[i]), a = Math.abs(r);
-        var lo = Math.max(Y0, Math.min(YS[i], yh(XS[i]))), hi = Math.min(Y1, Math.max(YS[i], yh(XS[i]))), xr = Math.min(X1, XS[i] + a);
-        if (a > 1e-9 && hi > lo && xr > XS[i]) {
-          var p0 = pl.px([XS[i], hi]), p1 = pl.px([xr, lo]);
-          api.rect(p0[0], p0[1], p1[0] - p0[0], p1[1] - p0[1], {fill: c.c3, fillOpacity: 0.16, stroke: c.c3, width: 1, rx: 0});
-        }
-        var top = Math.max(Y0, Math.min(Y1, yh(XS[i])));
-        api.line(pl.px([XS[i], YS[i]]), pl.px([XS[i], top]), {color: c.c3, width: 1.6});
-      }
+      var pl = api.plane({x: [-0.5, 9.5], y: [-0.5, 9.5], box: [6, 6, 270, 278], step: 1, ticks: false, labels: false});
+      var halo = function (t) { ["stroke", c.card, "stroke-width", 3, "stroke-linejoin", "round", "paint-order", "stroke"].forEach(function (x, k, l) { if (k % 2 === 0) t.setAttribute(x, l[k + 1]); }); return t; };
+      var Y0 = pl.yr[0], X1 = pl.xr[1], Y1 = pl.yr[1];
+      // residual squares: biggest first, each goes to the side (inward first) that overlaps the squares already placed
+      // least and keeps it whole inside the first quadrant (x, y >= 0 stays clear for the tick labels), then is clipped to it
+      var ov = function (p, q) { return Math.max(0, Math.min(p[2], q[2]) - Math.max(p[0], q[0])) * Math.max(0, Math.min(p[3], q[3]) - Math.max(p[1], q[1])); };
+      var win = [0, 0, X1, Y1], sqs = [], i;
+      XS.map(function (x, k) { return k; }).sort(function (k, j) { return Math.abs(YS[j] - yh(XS[j])) - Math.abs(YS[k] - yh(XS[k])); }).forEach(function (k) {
+        var a = Math.abs(YS[k] - yh(XS[k])), lo = Math.min(YS[k], yh(XS[k])), d0 = XS[k] > 4.5 ? -1 : 1, best = null;
+        if (a < 1e-9) return;
+        [d0, -d0].forEach(function (d, n) {
+          var q = [d > 0 ? XS[k] : XS[k] - a, lo, d > 0 ? XS[k] + a : XS[k], lo + a];
+          var cost = 3 * (a * a - ov(q, win)) + sqs.reduce(function (t, o) { return t + ov(o, q); }, 0) + n * 1e-6;
+          if (!best || cost < best.cost) best = {q: q, cost: cost};
+        });
+        sqs.push(best.q);
+      });
+      sqs.forEach(function (q) {
+        var b = [Math.max(q[0], 0), Math.max(q[1], 0), Math.min(q[2], X1), Math.min(q[3], Y1)];
+        if (b[2] <= b[0] || b[3] <= b[1]) return;
+        var p0 = pl.px([b[0], b[3]]), p1 = pl.px([b[2], b[1]]);
+        api.rect(p0[0], p0[1], p1[0] - p0[0], p1[1] - p0[1], {fill: c.c3, fillOpacity: 0.16, stroke: c.c3, width: 1, rx: 0});
+      });
+      for (i = 0; i < XS.length; i++) api.line(pl.px([XS[i], YS[i]]), pl.px([XS[i], Math.max(Y0, Math.min(Y1, yh(XS[i])))]), {color: c.c3, width: 1.6});
+      // tick labels, skipping an x label whose residual runs down through it
+      [2, 4, 6, 8].forEach(function (t) {
+        if (yh(t) > -0.05) api.label([pl.x(t), pl.y(0) + 14], String(t), {color: c.muted, size: 12, anchor: "middle"});
+        api.label([pl.x(0) - 6, pl.y(t)], String(t), {color: c.muted, size: 12, anchor: "end"});
+      });
       if (v.showFit) {
         pl.lineThrough([0, fit.b0], [1, fit.b1], {color: c.c1, width: 2.2, dash: "7 5"});
-        // below the line's lower-left end, where no data sit
-        api.label([pl.x(0.15), pl.y(fit.b0 + fit.b1 * 0.15) + 20], "least squares", {color: c.c1, size: 12, weight: 650});
       }
       pl.lineThrough([0, b0], [1, b1], {color: c.c3, width: 2.6});
+      // below the best line's lower-left end, where no data sit; haloed over the trial line and squares
+      if (v.showFit) halo(api.label([pl.x(0.15), pl.y(fit.b0 + fit.b1 * 0.15) + 20], "least squares", {color: c.c1, size: 12, weight: 650}));
+      // axis names drawn over the squares, which can fill the plane at extreme settings
+      halo(api.label([pl.x(X1) - 2, pl.y(0) - 11], "x", {color: c.muted, size: 12.5, anchor: "end"}));
+      halo(api.label([pl.x(0) + 9, pl.y(Y1) + 6], "y", {color: c.muted, size: 12.5}));
       for (var j = 0; j < XS.length; j++) api.circle(pl.px([XS[j], YS[j]]), 4.2, {fill: c.ink});
       // handles at the two ends of the data: drag one end, the other stays put
       function setEnds(yl, yr) {
         var s1 = Math.max(-1, Math.min(2, Math.round((yr - yl) / 7 * 20) / 20));
         api.set({slope: s1, intercept: Math.max(-2, Math.min(6, Math.round((yl - s1) * 20) / 20))});
       }
-      var cl = function (y) { return Math.max(Y0 + 0.2, Math.min(Y1 - 0.2, y)); };
+      var cl = function (y) { return Math.max(Y0 + 0.6, Math.min(Y1 - 0.2, y)); };   // clamped clear of the x tick labels
       api.handle(pl.px([1, cl(yh(1))]), {color: c.c3, r: 6, onDrag: function (q) { setEnds(pl.invert(q)[1], yh(8)); }});
       api.handle(pl.px([8, cl(yh(8))]), {color: c.c3, r: 6, onDrag: function (q) { setEnds(yh(1), pl.invert(q)[1]); }});
       // the two totals side by side, on one scale
@@ -80,7 +99,7 @@
       var hs = hpx * s / mx, hf = hpx * fit.sse / mx;
       api.rect(bx[0] - 18, base - hs, 36, hs, {fill: c.c3, fillOpacity: 0.75, rx: 3});
       api.rect(bx[1] - 18, base - hf, 36, hf, {fill: c.c1, fillOpacity: v.showFit ? 0.75 : 0.3, rx: 3});
-      api.label([bx[0], base - hs - 11], f(s, s >= 100 ? 0 : 2), {color: c.c3, size: 12.5, weight: 650, anchor: "middle"});
+      api.label([bx[0], base - hs - 11], f(s), {color: c.c3, size: 12.5, weight: 650, anchor: "middle"});
       api.label([bx[1], base - hf - 11], f(fit.sse), {color: c.c1, size: 12.5, weight: 650, anchor: "middle"});
       api.label([bx[0], base + 14], "yours", {color: c.c3, size: 12, anchor: "middle"});
       api.label([bx[1], base + 14], "best", {color: c.c1, size: 12, anchor: "middle"});

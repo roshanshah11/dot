@@ -72,42 +72,59 @@
         api.circle([X(-vel), Y(E)], 5, {stroke: c.c3, width: 1.8});
         api.line([P[0], Y(E)], [P[0], yB], {color: c.c1, width: 1.2, dash: "4 4"});
       }
-      // the point's label goes toward v = 0 (inside the U, above the arc), lifted until the curve under it clears
-      var pl = "KE = " + f(E) + " J", pw = pl.length * 13 * 0.52, pr = vel <= 0, pxs = pr ? [P[0] + 10, P[0] + 10 + pw] : [P[0] - 10 - pw, P[0] - 10];
-      var um = Math.min(10, Math.max.apply(null, pxs.map(function (x) { return Math.abs((x - X(0)) / (x1 - x0) * 20); })));
-      var py = Math.min(P[1] - (vel === 0 ? 26 : 14), Y(ke(m, um)) - 10), pbox = [pxs[0], py - 7, pxs[1], py + 7];
+      // the point's label sits above it, lifted until the curve under it clears: toward v = 0 (inside the U) unless that
+      // crosses the v = 0 line and the outward side needs only a small lift
+      var pl = "KE = " + f(E) + " J", pw = pl.length * 13 * 0.5;
+      var place = function (r) {
+        var xs = r ? [P[0] + 10, P[0] + 10 + pw] : [P[0] - 10 - pw, P[0] - 10];
+        var um = Math.min(10, Math.max.apply(null, xs.map(function (x) { return Math.abs((x - X(0)) / (x1 - x0) * 20); })));
+        var y = Math.min(P[1] - (vel === 0 ? 26 : 14), Y(ke(m, um)) - 10);
+        var fe = pl.length * 13 * 0.56;   // the framework shifts a label whose estimated width leaves the viewBox
+        return {r: r, y: y, b: [xs[0], y - 7, xs[1], y + 7], k: (xs[0] < x0 - 4 || (r ? P[0] + 10 + fe > 397 : P[0] - 10 - fe < 3) ? 50 : 0) + (xs[0] < X(0) && X(0) < xs[1] ? 3 : 0) + (P[1] - 14 - y) * 0.1};
+      };
+      var pin = place(vel <= 0), pout = place(vel > 0), pq = vel !== 0 && pout.k < pin.k ? pout : pin;
+      var pr = pq.r, py = pq.y, pbox = pq.b;
       if (half) {
         // half the speed, a quarter of the energy: score a few spots for its label and take the clearest
         api.circle(H, 4, {fill: c.muted});
-        var hl = "v/2: " + f(E / 4) + " J", hw = hl.length * 12 * 0.52, tri = [];
+        var hl = "v/2: " + f(E / 4) + " J", hw = hl.length * 12 * 0.47, tri = [];
         var hit = function (b, q, pad) { return q[0] > b[0] - pad && q[0] < b[2] + pad && q[1] > b[1] - pad && q[1] < b[3] + pad; };
+        var cross = function (b, x, ya, yb) { return b[0] < x && x < b[2] && b[1] < Math.max(ya, yb) && Math.min(ya, yb) < b[3]; };
         var cost = function (b) {
-          var k = 0, t;
-          if (b[0] < x0 + 2 || b[2] > 397 || b[3] > yB + 1 || b[1] < yT - 4) k += 50;
-          pts.forEach(function (q) { if (hit(b, q, 2)) k += 10; });
+          var k = 0, ml = [Math.min(X(-vel), P[0]), Math.max(X(-vel), P[0])];
+          if (b[0] < x0 - 4 || b[2] > 397 || b[3] > yB + 1 || b[1] < yT - 4) k += 50;
+          pts.forEach(function (q) { if (hit(b, q, 1.5)) k += 10; });
           if (b[0] < pbox[2] + 4 && pbox[0] < b[2] + 4 && b[1] < pbox[3] + 2 && pbox[1] < b[3] + 2) k += 40;
           [P, H, [X(-vel), P[1]]].forEach(function (q) { if (hit(b, q, 5)) k += 30; });
-          for (t = 0; t <= 1; t += 0.05) {   // thin lines: the v = 0 axis, the dashed v line and the mirror line (haloed text can cross them)
-            if (hit(b, [X(0), yT + t * PH], 0)) k += 0.3;
-            if (hit(b, [P[0], P[1] + t * (yB - P[1])], 0)) k += 0.3;
-            if (hit(b, [X(-vel) + t * (P[0] - X(-vel)), P[1]], 0)) k += 0.3;
-          }
+          // thin lines (haloed text can cross them, at a price): the v = 0 axis, the dashed v line, the mirror line
+          if (cross(b, X(0), yT, yB)) k += 3;
+          if (cross(b, P[0], P[1], yB)) k += 3;
+          if (b[1] - 3 < P[1] && P[1] < b[3] + 3 && b[0] < ml[1] && ml[0] < b[2]) k += 7;
           return k;
         };
-        var add = function (x, y, anc, lead) { tri.push({x: x, y: y, anc: anc, lead: lead, b: anc === "end" ? [x - hw, y - 6, x, y + 6] : anc === "middle" ? [x - hw / 2, y - 6, x + hw / 2, y + 6] : [x, y - 6, x + hw, y + 6]}); };
+        var fe = hl.length * 12 * 0.56, shifted = function (x, anc) { return anc === "end" ? x - fe < 3 : anc === "start" ? x + fe > 397 : x - fe / 2 < 3 || x + fe / 2 > 397; };
+        var add = function (x, y, anc, lead) { tri.push({x: x, y: y, anc: anc, lead: lead, sh: shifted(x, anc), b: anc === "end" ? [x - hw, y - 5.5, x, y + 5.5] : anc === "middle" ? [x - hw / 2, y - 5.5, x + hw / 2, y + 5.5] : [x, y - 5.5, x + hw, y + 5.5]}); };
         var inA = s > 0 ? "end" : "start", outA = s > 0 ? "start" : "end";
         add(H[0] - 6 * s, H[1] - 12, inA);                        // above the arc, toward v = 0
         add(H[0] + 7 * s, H[1] + 13, outA);                       // under the arc, outward
-        add(H[0] - 8 * s, (yB + P[1]) / 2, inA);                  // beside it, between the axis and the mirror line
-        add(P[0] + 6 * s, H[1], outA, true);                      // past the dashed v line, with a leader
-        add(H[0], P[1] - 13, "middle", true);                     // above the mirror line, with a leader
-        tri.forEach(function (q) { q.k = cost(q.b) + (q.lead ? 1.5 : 0); });
+        add(H[0] - 10 * s, (yB + P[1]) / 2 - 1, inA);                 // beside it, between the axis and the mirror line
+        add(P[0] + 6 * s, H[1], outA, "h");                       // past the dashed v line, with a level leader
+        // in the point label's row, beyond it, straight above the marker (a vertical leader)
+        var gx = s > 0 ? Math.min(H[0], pbox[0] - 12 - hw / 2) : Math.max(H[0], pbox[2] + 12 + hw / 2);
+        if (Math.abs(gx - H[0]) <= hw / 2 - 3) add(gx, py, "middle", "v");
+        add(H[0], py - 16, "middle", "v2");                        // or one row above it
+        tri.forEach(function (q) {   // a vertical leader may not run through the point's label
+          q.k = cost(q.b) + (q.sh ? 50 : 0) + (q.lead ? 1.5 : 0) + (q.lead === "v2" ? 1 : 0) + (q.lead && q.lead !== "h" && H[0] > pbox[0] - 3 && H[0] < pbox[2] + 3 && q.y < pbox[3] ? 40 : 0);
+        });
         var best = tri.reduce(function (a, b) { return b.k < a.k ? b : a; });
-        if (best.lead) api.line(best.y === H[1] ? [H[0] + 5 * s, H[1]] : [H[0], H[1] - 5], best.y === H[1] ? [P[0] + 3 * s, H[1]] : [H[0], best.y + 7], {color: c.muted, width: 1, dash: "2 3"});
-        halo(api.label([best.x, best.y], hl, {color: c.muted, size: 12, anchor: best.anc}));
+        // no clean spot (only when the U is narrow and the energy tiny): the marker stays, and the status names it
+        if (best.k >= 10) best = null;
+        else if (best.lead === "h") api.line([H[0] + 5 * s, H[1]], [P[0] + 3 * s, H[1]], {color: c.muted, width: 1, dash: "2 3"});
+        else if (best.lead) api.line([H[0], H[1] - 5], [H[0], best.y + 7], {color: c.muted, width: 1, dash: "2 3"});
+        if (best) halo(api.label([best.x, best.y], hl, {color: c.muted, size: 12, anchor: best.anc}));
       }
       api.point(P, {color: c.c3, r: 6});
-      api.label([pr ? pbox[0] : pbox[2], py], pl, {color: c.c3, size: 13, weight: 700, anchor: pr ? "start" : "end"});
+      halo(api.label([pr ? pbox[0] : pbox[2], py], pl, {color: c.c3, size: 13, weight: 700, anchor: pr ? "start" : "end"}));
       api.handle(P, {color: c.c3, r: 6, onDrag: function (q) {
         api.set({velocity: Math.max(-10, Math.min(10, Math.round(((q[0] - x0) / (x1 - x0) * 20 - 10) * 2) / 2))});
       }});
