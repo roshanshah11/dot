@@ -635,13 +635,23 @@ struct NotchHUDView: View {
 
     // MARK: The idle tab
 
-    /// Dot's idle presence: a black tab hugging the notch, after HeyClicky's resting notch.
-    /// Hover for the day in one line and the agents' latest files; click to type.
+    /// Nothing to show and not hovered: Dot is the notch itself.
+    private var resting: Bool {
+        !model.hovering && model.foldedTasks.isEmpty && (model.recordingLine ?? model.listeningLine ?? model.meetingLine) == nil
+    }
+
+    /// Dot's idle presence, after HeyClicky's resting notch (measured 2026-10-17): at rest exactly the notch,
+    /// nothing beside it and nothing below it, so the status items either side stay uncovered. Anything it
+    /// shows (a task, a meeting line, the hover peek) hangs below the menu bar from a notch-wide stem
+    /// (`NotchSilhouette`). Hover the notch for the day in one line and the agents' latest files; click to type.
     private var idleStrip: some View {
-        VStack(spacing: 0) {
+        let shape = NotchSilhouetteShape(stem: geometry.hasNotch ? geometry.notchWidth : 0, band: geometry.notchHeight)
+        return VStack(spacing: 0) {
             VStack(spacing: 4) {
-                Color.clear.frame(height: max(geometry.notchHeight - 4, 0))
-                if model.hovering {
+                Color.clear.frame(height: resting ? geometry.compactSize.height : geometry.notchHeight + 2)
+                if resting {
+                    EmptyView()
+                } else if model.hovering {
                     hoverPeek
                 } else if !model.foldedTasks.isEmpty {
                     HStack(spacing: 8) {
@@ -662,18 +672,13 @@ struct NotchHUDView: View {
                             .monospacedDigit()
                     }
                     .padding(.horizontal, 12).padding(.bottom, 5)
-                } else {
-                    HStack(spacing: 5) {
-                        Circle().fill(model.accent).frame(width: 5, height: 5).shadow(color: model.accent.opacity(0.8), radius: 3)
-                    }
-                    .frame(height: 8)
-                    .padding(.bottom, 2)
                 }
             }
             .frame(width: idleWidth, alignment: .center)
-            .background(ground, in: UnevenRoundedRectangle(cornerRadii: .init(topLeading: 0, bottomLeading: 14, bottomTrailing: 14, topTrailing: 0)))
-            .overlay(cornerGlow(radius: 14))
-            .contentShape(Rectangle())
+            .background(ground, in: shape)
+            .overlay(shape.stroke(model.accent.opacity(model.glow ? 0.95 : 0), lineWidth: 2).blur(radius: 3)
+                .animation(.easeOut(duration: model.glow ? 0.2 : 0.9), value: model.glow).allowsHitTesting(false))
+            .contentShape(shape)
             .onHover { inside in withAnimation(.easeOut(duration: 0.15)) { model.hovering = inside } }
             .onTapGesture {
                 if !model.foldedTasks.isEmpty { model.collapsed = false } else { NotificationCenter.default.post(name: .dotShowInput, object: nil) }
@@ -684,7 +689,7 @@ struct NotchHUDView: View {
     private var idleWidth: CGFloat {
         if model.hovering { return min(geometry.notchWidth + (model.peekFiles.isEmpty ? 220 : 300), 500) }
         if !model.foldedTasks.isEmpty { return min(geometry.notchWidth + 80 + CGFloat(min(model.foldedTasks.count, 3)) * 150, 560) }
-        return (model.recordingLine ?? model.listeningLine ?? model.meetingLine) == nil ? geometry.notchWidth + 36 : geometry.notchWidth + 120
+        return (model.recordingLine ?? model.listeningLine ?? model.meetingLine) == nil ? geometry.compactSize.width : geometry.notchWidth + 120
     }
 
     /// The hover peek: the day in a line, the ways in, and the agents' latest files as tiles he can drag out.
@@ -789,6 +794,13 @@ struct NotchHUDView: View {
                 .stroke(Color.white.opacity(0.08), lineWidth: 1))
             .overlay(cornerGlow(radius: 22))
         }
+    }
+
+    /// The idle tab's outline: the notch-wide stem through the menu bar, the rest below it.
+    struct NotchSilhouetteShape: Shape {
+        let stem: CGFloat
+        let band: CGFloat
+        func path(in rect: CGRect) -> Path { Path(NotchSilhouette.path(in: rect, stemWidth: stem > 0 ? stem : rect.width, bandHeight: band)) }
     }
 
     /// The accent runs along the bottom edge for a moment when something lands.

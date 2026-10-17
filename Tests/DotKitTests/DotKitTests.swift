@@ -191,7 +191,7 @@ final class CoordinatesTests: XCTestCase {
     func testNotchWindowFitsItsDrawing() {
         let geometry = NotchGeometry.measure(frame: CGRect(x: 0, y: 0, width: 1512, height: 982), safeAreaTop: 32,
                                              auxLeft: CGRect(x: 0, y: 950, width: 656, height: 32), auxRight: CGRect(x: 856, y: 950, width: 656, height: 32))
-        // Resting: the notch plus a margin, hanging from the top edge, centred on the notch.
+        // Resting: exactly the notch (HeyClicky's resting notch), hanging from the top edge, centred on it.
         let compact = geometry.frame(fitting: .zero)
         XCTAssertEqual(compact.size, geometry.compactSize)
         XCTAssertEqual(compact.maxY, 982)
@@ -203,8 +203,30 @@ final class CoordinatesTests: XCTestCase {
         XCTAssertEqual(card.maxY, 982)
         XCTAssertEqual(card.midX, 756, accuracy: 0.5)
         XCTAssertLessThan(card.height, NotchGeometry.panelHeight)
-        // Never narrower than the tab, so the hover target around the notch stays.
-        XCTAssertEqual(geometry.frame(fitting: CGSize(width: 40, height: 4)).width, geometry.notchWidth + 36)
+        // Never narrower than the notch, so hovering the notch still finds Dot.
+        XCTAssertEqual(geometry.frame(fitting: CGSize(width: 40, height: 4)).width, geometry.notchWidth)
+        XCTAssertEqual(geometry.compactSize, CGSize(width: geometry.notchWidth, height: 32))
+        // No notch: a thin sliver, not a block over the middle of the menu bar.
+        let flat = NotchGeometry.measure(frame: CGRect(x: 0, y: 0, width: 1920, height: 1080), safeAreaTop: 0, auxLeft: nil, auxRight: nil)
+        XCTAssertEqual(flat.compactSize.height, 4)
+    }
+
+    func testNotchSilhouetteKeepsTheMenuBarClearBesideTheNotch() {
+        // A folded-task tab 415 wide under a 185 pt notch with a 32 pt menu bar band.
+        let rect = CGRect(x: 0, y: 0, width: 415, height: 57)
+        let path = NotchSilhouette.path(in: rect, stemWidth: 185, bandHeight: 32)
+        let stemLeft = rect.midX - 92.5, stemRight = rect.midX + 92.5
+        for y in stride(from: CGFloat(8), through: 31, by: 1) {
+            XCTAssertFalse(path.contains(CGPoint(x: stemLeft - 2, y: y)), "menu bar left of the notch is clear at y \(y)")
+            XCTAssertFalse(path.contains(CGPoint(x: stemRight + 2, y: y)), "menu bar right of the notch is clear at y \(y)")
+            XCTAssertTrue(path.contains(CGPoint(x: rect.midX, y: y)))
+        }
+        XCTAssertFalse(path.contains(CGPoint(x: 10, y: 16)), "far left of the band is clear")
+        XCTAssertTrue(path.contains(CGPoint(x: 20, y: 50)), "the wide body is below the menu bar")
+        // Resting: just the notch.
+        let rest = NotchSilhouette.path(in: CGRect(x: 0, y: 0, width: 185, height: 32), stemWidth: 185, bandHeight: 32)
+        XCTAssertTrue(rest.contains(CGPoint(x: 92, y: 16)))
+        XCTAssertLessThanOrEqual(rest.boundingBox.maxY, 32.01)
     }
 
     func testNotchGeometry() {
@@ -270,17 +292,17 @@ final class AlwaysAskTests: XCTestCase {
 final class HoverLineTests: XCTestCase {
     func testNextEventAndHoverLine() throws {
         var brief = TodayBrief.parse(Data("""
-        {"built_at":"2026-10-15T01:00","weekday":"Thursday","date":"2026-10-15","deadlines":[],"today":["Thu 10-15 08:30–09:30 Intern Weekly Meeting","Thu 10-15 10:00–10:15 Call: Radha Gupta (MTS) (at Phone (her cell))","Thu 10-15 10:15–10:50 MATH 20250: terminology"],"tomorrow":[],"commitments":[],"todo":[],"waiting":[],"unanswered":[],"unanswered_count":3,"preferences":[],"priorities":[],"block":""}
+        {"built_at":"2026-10-15T01:00","weekday":"Thursday","date":"2026-10-15","deadlines":[],"today":["Thu 10-15 08:30–09:30 Intern Weekly Meeting","Thu 10-15 10:00–10:15 Call: Sam Rivera (MTS) (at Phone (her cell))","Thu 10-15 10:15–10:50 MATH 20250: terminology"],"tomorrow":[],"commitments":[],"todo":[],"waiting":[],"unanswered":[],"unanswered_count":3,"preferences":[],"priorities":[],"block":""}
         """.utf8))
         let unwrapped = try XCTUnwrap(brief)
         brief = unwrapped
         var components = DateComponents(); components.year = 2026; components.month = 10; components.day = 15; components.hour = 9; components.minute = 40
         let at940 = Calendar.current.date(from: components)!
         let next = try XCTUnwrap(unwrapped.nextEvent(from: at940))
-        XCTAssertEqual(next.title, "Call: Radha Gupta (MTS)")
+        XCTAssertEqual(next.title, "Call: Sam Rivera (MTS)")
         XCTAssertEqual(next.startsIn, 20)
         XCTAssertEqual(next.endsIn, 35)
-        XCTAssertEqual(unwrapped.hoverLine(from: at940), "next: call: radha gupta (mts) in 20 min · 3 on the calendar today · 3 mail waiting")
+        XCTAssertEqual(unwrapped.hoverLine(from: at940), "next: call: sam rivera (mts) in 20 min · 3 on the calendar today · 3 mail waiting")
         components.hour = 9; components.minute = 0
         let during = unwrapped.nextEvent(from: Calendar.current.date(from: components)!)
         XCTAssertEqual(during?.title, "Intern Weekly Meeting")
@@ -600,13 +622,13 @@ final class MorningPlannerTests: XCTestCase {
 
     func testBuildsFromTheDay() {
         let items = MorningPlanner.suggestions(
-            deadlines: ["2026-10-16 Raymond James Sophomore Showcase application due 11:59 PM ET: short essays", "2026-10-25 Something far off"],
+            deadlines: ["2026-10-16 Northwind Bank Sophomore Showcase application due 11:59 PM ET: short essays", "2026-10-25 Something far off"],
             today: ["Fri 10-16 12:30–12:45 Call: Alex Morgan (BlackRock) (at Call (555) 010-0199)", "Fri 10-16 09:30–10:20 Mechanics: Lecture (at Kersten)"],
             unanswered: ["prof@example.com: Re: Seminar Schedule (Tue 10-13 17)"],
             commitments: ["Roshan Shah → Emily Parker: Reply to Emily Parker (LMR Partners office manager) with availability (she asked)"],
             date: day)
         XCTAssertEqual(items.count, 4)
-        XCTAssertTrue(items[0].text.hasPrefix("prep raymond james sophomore showcase application due 11"))
+        XCTAssertTrue(items[0].text.hasPrefix("prep northwind bank sophomore showcase application due 11"))
         XCTAssertTrue(items[0].text.hasSuffix("due today"))
         XCTAssertTrue(items[0].brief.contains("nothing gets submitted"))
         XCTAssertEqual(items[1].text, "a one-page brief on alex morgan (blackrock) before 12:30")
