@@ -782,6 +782,17 @@ final class Talk {
                                    actionTitle: "turn sound on", action: { _ = AudioDevices.restoreOutput() }, seconds: 12))
             Log.info("output is muted; answer goes to the notch")
         }
+        // In a lecture or on a call the answer is text in the notch, not a voice (VI-03); the mode's
+        // "speak" in his token file decides, so he can turn the voice back on for either.
+        if !typed {
+            let place = ContextMode.decide(onCall: CallPresence.isOnCall(), lectureListening: lecture.isListening, bundleID: context.bundleIdentifier,
+                                           windowTitle: context.windowTitle, url: context.url, boardLesson: lessonCard != nil, override: modeOverride)
+            if !StyleTokens.load().mode(place.rawValue).speak {
+                textSurface = true
+                quietTurn = true
+                Log.info("\(place.rawValue) mode: the answer goes to the notch as text")
+            }
+        }
         Log.info("context: app \(context.appName ?? "?") window \(Log.short(context.windowTitle ?? "", 60)) url \(context.url != nil) selected \(context.selectedText?.count ?? 0) elements \(context.elements.count) shots \(shots.count)\(region != nil ? " box" : "")")
 
         // Held shift but said "stop the email agent" or "is inbox keeper done": that is for Dot, not a
