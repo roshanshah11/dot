@@ -585,6 +585,7 @@ final class AgentManager {
         let key = input.toolUseId
         if let key { gateWaiting[key] = gateWaiting[key] ?? [] }
         permission(input.permissionRequest, run: run) { [weak self] allow, message in
+            Log.info("gate[\(run.agent.slug)] \(input.toolName) \(allow ? "allowed" : "denied")")
             reply(allow ? .allow(nil) : .deny(message ?? "Dot said no."))
             guard let self, let key else { return }
             let joined = self.gateWaiting.removeValue(forKey: key) ?? []
