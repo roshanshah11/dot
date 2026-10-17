@@ -555,7 +555,6 @@ public final class OrbAnimator {
         case .sleepy: upper = 0.55
         case .neutral: break
         }
-        if input.phase == .listening { upper = max(upper, 0.1) }
         switch tier {
         case .drowsy: upper = max(upper, 0.45)
         case .pet: if beat?.kind == .groom { upper = max(upper, 0.5) }

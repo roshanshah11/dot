@@ -53,7 +53,7 @@ final class OverlayWindow: NSPanel {
 enum CompanionPhase: Equatable { case idle, listening, thinking, speaking }
 /// The face: what Dot feels about the moment, on top of the phase.
 enum CompanionMood: Equatable { case neutral, happy, puzzled, focused, sleepy }
-enum CompanionMotion: Equatable { case following, flying, parked }
+enum CompanionMotion: Equatable { case following, flying, parked, perched }
 
 struct Ring: Equatable {
     var center: CGPoint
@@ -89,12 +89,14 @@ final class CompanionModel: ObservableObject {
     @Published var mood: CompanionMood = .neutral
     @Published var motion: CompanionMotion = .following
     @Published var level: Float = 0
-    @Published var heading: CGFloat = 0
-    @Published var lean: CGFloat = 0
-    @Published var look = CGPoint.zero
-    @Published var blink = false
-    @Published var breath: CGFloat = 1
-    @Published var scale: CGFloat = 1
+    /// Where Dot looks while parked beside a mark (-1...1 per axis); the animator reads it.
+    var look = CGPoint.zero
+    /// Everything the face and body do this frame (DotKit's OrbAnimator, docs/alive.md).
+    @Published var pose = OrbPose.rest
+    /// The orb's diameter in points (`orbSize`, default 24).
+    @Published var orbSize: CGFloat = 24
+    /// The gap between the eyes, as a fraction of the orb (0.20; the previews compare 0.16 and 0.24).
+    var eyeGap: CGFloat = 0.20
     @Published var bubbleText = ""
     @Published var bubbleLabel: String?
     @Published var bubbleVisible = false
@@ -441,66 +443,138 @@ private struct ArrowHead: Shape {
     }
 }
 
-/// Dot itself: a small ember orb with two eyes. It breathes, blinks, leans into its motion,
-/// squints while listening, glances up while thinking, and glows with its voice. While an agent
-/// works a small glyph for what it is doing circles it, and while one waits on him it pulses.
+/// Dot itself: a small ember orb with big, low-set eyes (docs/alive.md). Everything the face and body do
+/// comes from `model.pose`, which DotKit's OrbAnimator computes each frame: blinks, eye jumps, eyelid
+/// moods, squash and stretch, hops, the tilt, the blush and the speaking mouth. The view only draws it.
+/// While an agent works a small glyph for what it is doing circles the orb, and while one waits on him
+/// it pulses; those, the thinking arc and the listening bars keep their own clock.
 struct OrbView: View {
     @ObservedObject var model: CompanionModel
 
-    private let size: CGFloat = 20
+    private let ink = Color(red: 0.12, green: 0.06, blue: 0.03)
 
     var body: some View {
-        // The agent glyph circles and the pulse breathes only with motion allowed; with Reduce
-        // Motion they hold still and need no clock. Covered, nothing needs one.
+        // Only the decorations need a clock; the pose arrives from OverlayManager's tick. With Reduce
+        // Motion or nothing to decorate, the timeline rests.
         let agentMotion = !model.reduceMotion && (model.agentActivity != nil || model.agentsWaiting > 0)
-        let paused = model.occluded || (model.phase == .idle && model.motion != .flying && model.mood == .neutral && !agentMotion)
-        TimelineView(.animation(minimumInterval: 1 / 30, paused: paused)) { context in
-            let t = context.date.timeIntervalSinceReferenceDate
-            // The mouth opens with the voice: two overlapping sines read as speech, not a metronome.
-            let slow: Double = (sin(t * 9.0) + 1.0) / 2.0
-            let fast: Double = (sin(t * 23.0) + 1.0) / 2.0
-            let voice: Double = slow * 0.6 + fast * 0.4
-            let talking: CGFloat = model.phase == .speaking ? CGFloat(voice * 0.35) : 0
-            let listening = model.phase == .listening ? CGFloat(model.level) : 0
-            let glow = 0.35 + talking * 0.5 + listening * 0.6
-            // Reduce Motion: no breathing swell and no lean; the orb holds its shape.
-            let still = model.reduceMotion
-            let body = size * (still ? 1 : model.breath) * model.scale * (1 + listening * 0.35)
-            let lean = still ? 0 : model.lean
+        let decorating = agentMotion || model.phase == .thinking || model.phase == .listening
+        TimelineView(.animation(minimumInterval: 1 / 30, paused: model.occluded || !decorating)) { context in
+            orb(t: context.date.timeIntervalSinceReferenceDate)
+        }
+    }
+
+    private func orb(t: Double) -> some View {
+        let pose = model.pose
+        let size = model.orbSize
+        let listening = model.phase == .listening ? CGFloat(model.level) : 0
+        let talking = model.phase == .speaking ? CGFloat(pose.mouthOpen) : 0
+        let body = size * CGFloat(pose.breath) * (1 + listening * 0.35)
+        let glow = min((0.35 + talking * 0.4 + listening * 0.6) * CGFloat(pose.glow), 1)
+        return ZStack {
+            Circle()
+                .fill(model.color.opacity(glow))
+                .frame(width: body * 2.6, height: body * 2.6)
+                .blur(radius: 7 * size / 20)
+            if model.agentsWaiting > 0 {
+                waitingPulse(body: body, t: t)
+            }
+            // The orb and its face squash, stretch and turn together; the area never changes.
             ZStack {
-                Circle()
-                    .fill(model.color.opacity(glow))
-                    .frame(width: body * 2.6, height: body * 2.6)
-                    .blur(radius: 7)
-                if model.agentsWaiting > 0 {
-                    waitingPulse(body: body, t: t)
-                }
                 Circle()
                     .fill(RadialGradient(colors: [Color(red: 1.0, green: 0.78, blue: 0.5), model.color, Color(red: 0.72, green: 0.22, blue: 0.05)],
                                          center: UnitPoint(x: 0.38, y: 0.32), startRadius: 0, endRadius: body * 0.62))
                     .frame(width: body, height: body)
-                    .shadow(color: model.color.opacity(0.9), radius: 5)
-                    .scaleEffect(x: 1 + lean * 0.28, y: 1 - lean * 0.14)
-                    .rotationEffect(.radians(Double(model.heading)))
-                eyes(body: body)
-                face(body: body, talking: talking, t: t)
-                if model.phase == .thinking {
-                    Circle()
-                        .trim(from: 0, to: 0.33)
-                        .stroke(Color.white.opacity(0.9), style: StrokeStyle(lineWidth: 2, lineCap: .round))
-                        .frame(width: body + 12, height: body + 12)
-                        .rotationEffect(.degrees(still ? -90 : t.truncatingRemainder(dividingBy: 1.0) * 360))
+                    .shadow(color: model.color.opacity(0.9), radius: 5 * size / 20)
+                if pose.blush > 0 {
+                    cheeks(body: body, amount: pose.blush)
                 }
-                if model.phase == .listening {
-                    waveform(level: CGFloat(model.level), t: t)
-                        .offset(x: body / 2 + 14)
-                }
-                // While he talks the waveform has that side; the agent glyph steps away until he is done.
-                if let activity = model.agentActivity, model.phase != .listening {
-                    orbiting(activity, body: body, t: t)
+                eyes(body: body, pose: pose)
+                if pose.mouthVisible {
+                    mouth(body: body, pose: pose)
+                        .offset(y: body * 0.31)
                 }
             }
-            .animation(.easeOut(duration: 0.25), value: model.agentActivity)
+            .rotationEffect(.radians(-pose.stretchAngle))
+            .scaleEffect(x: CGFloat(pose.squash.along), y: CGFloat(pose.squash.across))
+            .rotationEffect(.radians(pose.stretchAngle + pose.rotation))
+            if let glyph = pose.glyph {
+                glyphView(glyph, progress: pose.glyphProgress, body: body)
+            }
+            if model.phase == .thinking {
+                Circle()
+                    .trim(from: 0, to: 0.33)
+                    .stroke(Color.white.opacity(0.9), style: StrokeStyle(lineWidth: 2, lineCap: .round))
+                    .frame(width: body + 12, height: body + 12)
+                    .rotationEffect(.degrees(model.reduceMotion ? -90 : t.truncatingRemainder(dividingBy: 1.0) * 360))
+            }
+            if model.phase == .listening {
+                waveform(level: CGFloat(model.level), t: t)
+                    .offset(x: body / 2 + 14)
+            }
+            // While he talks the waveform has that side; the agent glyph steps away until he is done.
+            if let activity = model.agentActivity, model.phase != .listening {
+                orbiting(activity, body: body, t: t)
+            }
+        }
+        .offset(x: pose.offset.x * size, y: pose.offset.y * size)
+        .animation(.easeOut(duration: 0.25), value: model.agentActivity)
+    }
+
+    /// Two eyes, each 0.20 x 0.40 of the orb, centered a little below its middle (baby schema: big,
+    /// low-set eyes, cute-C31, C32, C52), with a white highlight upper left in both (cute-C9, C10).
+    private func eyes(body: CGFloat, pose: OrbPose) -> some View {
+        HStack(spacing: body * model.eyeGap) {
+            EyeView(eye: pose.left, width: body * 0.20, height: body * 0.40, body: body, ink: ink)
+            EyeView(eye: pose.right, width: body * 0.20, height: body * 0.40, body: body, ink: ink)
+        }
+        .offset(x: pose.gaze.x * body, y: body * 0.05 + pose.gaze.y * body)
+    }
+
+    /// A tiny mouth, never wider than a fifth of the orb (cute-C32): a small round "o" that opens with
+    /// the voice while speaking, a little smile when happy.
+    @ViewBuilder
+    private func mouth(body: CGFloat, pose: OrbPose) -> some View {
+        let open = CGFloat(pose.mouthOpen)
+        if open > 0.02 {
+            Ellipse()
+                .fill(ink)
+                .frame(width: body * (0.09 + 0.07 * open), height: body * (0.035 + 0.12 * open))
+        } else {
+            MouthShape(curve: CGFloat(pose.mouthCurve), open: 0)
+                .stroke(ink, style: StrokeStyle(lineWidth: max(body * 0.06, 1.1), lineCap: .round))
+                .frame(width: body * 0.15, height: body * 0.08)
+        }
+    }
+
+    /// Soft rose cheeks below and outside the eyes, for petting and praise.
+    private func cheeks(body: CGFloat, amount: Double) -> some View {
+        HStack(spacing: body * 0.42) {
+            Ellipse().frame(width: body * 0.18, height: body * 0.10)
+            Ellipse().frame(width: body * 0.18, height: body * 0.10)
+        }
+        .foregroundStyle(Color(red: 1.0, green: 0.52, blue: 0.62).opacity(0.55 * amount))
+        .blur(radius: body * 0.02)
+        .offset(y: body * 0.26)
+    }
+
+    /// The sleeping "z" floating up and away, or the "!" of waking.
+    @ViewBuilder
+    private func glyphView(_ glyph: OrbGlyph, progress: Double, body: CGFloat) -> some View {
+        switch glyph {
+        case .sleeping:
+            Text("z")
+                .font(.system(size: max(body * 0.5, 9), weight: .heavy, design: .rounded))
+                .foregroundStyle(Color(red: 0.72, green: 0.22, blue: 0.05))
+                .shadow(color: .white.opacity(0.9), radius: 1)
+                .offset(x: body * (0.55 + 0.15 * progress), y: -body * (0.5 + 0.5 * progress))
+                .opacity(progress < 0.15 ? progress / 0.15 : 1 - (progress - 0.15) / 0.85)
+        case .alert:
+            Text("!")
+                .font(.system(size: max(body * 0.6, 10), weight: .black, design: .rounded))
+                .foregroundStyle(Color(red: 0.72, green: 0.22, blue: 0.05))
+                .shadow(color: .white.opacity(0.9), radius: 1)
+                .scaleEffect(progress < 0.2 ? 0.6 + progress * 2.5 : 1.1 - min(progress, 1) * 0.1)
+                .offset(y: -body * 0.95)
         }
     }
 
@@ -553,70 +627,6 @@ struct OrbView: View {
         }
     }
 
-    private func eyes(body: CGFloat) -> some View {
-        let eyeW = body * 0.17, eyeH = body * 0.34
-        let squint: CGFloat = model.phase == .listening ? 0.55 : 1
-        let blinkScale: CGFloat = model.blink ? 0.1 : 1
-        let look = model.phase == .thinking ? CGPoint(x: 0.6, y: -0.7) : model.look
-        return HStack(spacing: body * 0.2) {
-            eye(width: eyeW, height: eyeH)
-            eye(width: eyeW, height: eyeH)
-        }
-        .offset(x: look.x * body * 0.12, y: -body * 0.02 + look.y * body * 0.1)
-        .scaleEffect(y: squint * blinkScale)
-        .animation(.easeInOut(duration: 0.08), value: model.blink)
-        .animation(.easeInOut(duration: 0.25), value: model.phase)
-    }
-
-    private func eye(width: CGFloat, height: CGFloat) -> some View {
-        Capsule().fill(Color(red: 0.12, green: 0.06, blue: 0.03)).frame(width: width, height: height)
-    }
-
-    /// Mouth and brows. Tiny, so every stroke is a single curve: the mouth bends up when
-    /// happy, down and small when puzzled, opens with the voice; the brows tilt in when
-    /// focused or thinking and one lifts when puzzled.
-    private func face(body: CGFloat, talking: CGFloat, t: Double) -> some View {
-        let ink = Color(red: 0.12, green: 0.06, blue: 0.03)
-        let mouthW = body * 0.36
-        let curve: CGFloat = {
-            switch model.mood {
-            case .happy: return 0.5
-            case .puzzled: return -0.3
-            case .sleepy: return 0.05
-            case .focused: return 0.05
-            case .neutral: return model.phase == .speaking ? 0.2 : 0.14
-            }
-        }()
-        let open = talking * body * 0.16 + (model.mood == .puzzled ? body * 0.03 : 0)
-        // Brows only lift (puzzled, happy); nothing tilts them inward, which read as anger
-        // (his screenshot 2026-10-15, "this doesn't look good"). Focus shows in the eyes.
-        let browTilt: CGFloat = {
-            switch model.mood {
-            case .puzzled: return -0.25
-            case .happy: return -0.12
-            default: return 0
-            }
-        }()
-        return ZStack {
-            MouthShape(curve: curve, open: open)
-                .stroke(ink, style: StrokeStyle(lineWidth: max(body * 0.07, 1.1), lineCap: .round))
-                .frame(width: mouthW, height: max(body * 0.18, open + 2))
-                .offset(y: body * 0.27)
-            if browTilt != 0 {
-                HStack(spacing: body * 0.22) {
-                    BrowShape().stroke(ink, style: StrokeStyle(lineWidth: max(body * 0.06, 1), lineCap: .round))
-                        .frame(width: body * 0.2, height: body * 0.08).rotationEffect(.radians(Double(browTilt)))
-                    BrowShape().stroke(ink, style: StrokeStyle(lineWidth: max(body * 0.06, 1), lineCap: .round))
-                        .frame(width: body * 0.2, height: body * 0.08)
-                        .rotationEffect(.radians(Double(model.mood == .puzzled ? browTilt * 0.2 : -browTilt)))
-                        .offset(y: model.mood == .puzzled ? -body * 0.05 : 0)
-                }
-                .offset(y: -body * 0.3)
-            }
-        }
-        .animation(.easeInOut(duration: 0.25), value: model.mood)
-    }
-
     private func waveform(level: CGFloat, t: Double) -> some View {
         let profile: [CGFloat] = [0.4, 0.7, 1.0, 0.7, 0.4]
         return HStack(spacing: 2) {
@@ -628,6 +638,113 @@ struct OrbView: View {
             }
         }
         .shadow(color: model.color.opacity(0.6), radius: 5)
+    }
+}
+
+/// One eye: a dark capsule that the blink flattens (and widens, craft-A2-12), the upper lid lowers and
+/// the lower lid lifts into a happy arch (Cozmo's slits, craft-A2-18), with its highlight; shut, it is a
+/// small curved line.
+struct EyeView: View {
+    let eye: OrbEyePose
+    let width: CGFloat
+    let height: CGFloat
+    /// The orb's diameter, for line widths and the highlight.
+    let orb: CGFloat
+    let ink: Color
+
+    init(eye: OrbEyePose, width: CGFloat, height: CGFloat, body: CGFloat, ink: Color) {
+        self.eye = eye
+        self.width = width
+        self.height = height
+        self.orb = body
+        self.ink = ink
+    }
+
+    var body: some View {
+        let w = width * CGFloat(eye.widen * eye.scale)
+        let h = height * CGFloat(eye.scale)
+        let open = CGFloat(eye.openness)
+        let shut = open < 0.12 || eye.upperLid > 0.97
+        // Happy: the lower lid's rise hands over to a stroked arch, the classic happy eye.
+        let arch = min(max((CGFloat(eye.lowerLid) - 0.25) / 0.25, 0), 1)
+        return ZStack {
+            if shut {
+                ClosedEye()
+                    .stroke(ink, style: StrokeStyle(lineWidth: max(orb * 0.07, 1.1), lineCap: .round))
+                    .frame(width: w * 1.15, height: max(h * 0.16, 2))
+                    .offset(y: h * 0.12)
+            } else {
+                if arch < 1 {
+                    Capsule()
+                        .fill(ink)
+                        .frame(width: w, height: h)
+                        .mask(LidMask(upper: CGFloat(eye.upperLid), lower: CGFloat(eye.lowerLid)).fill(style: FillStyle(eoFill: true)))
+                        .overlay(alignment: .topLeading) {
+                            if eye.upperLid < 0.35, eye.lowerLid < 0.3 {
+                                Circle()
+                                    .fill(Color.white.opacity(0.95))
+                                    .frame(width: max(orb * 0.07, 1.6), height: max(orb * 0.07, 1.6))
+                                    .offset(x: w * 0.2, y: h * 0.16)
+                            }
+                        }
+                        .scaleEffect(y: max(open, 0.05), anchor: UnitPoint(x: 0.5, y: 0.6))
+                        .opacity(Double(1 - arch))
+                }
+                if arch > 0 {
+                    HappyEye()
+                        .stroke(ink, style: StrokeStyle(lineWidth: max(orb * 0.08, 1.3), lineCap: .round))
+                        .frame(width: w * 1.2, height: h * 0.36)
+                        .offset(y: -h * 0.06)
+                        .opacity(Double(arch))
+                }
+            }
+        }
+        .frame(width: w, height: h)
+        .rotationEffect(.radians(eye.tilt))
+    }
+}
+
+/// A happy eye: an upward arch, like a smile turned over.
+struct HappyEye: Shape {
+    func path(in rect: CGRect) -> Path {
+        var path = Path()
+        path.move(to: CGPoint(x: rect.minX, y: rect.maxY))
+        path.addQuadCurve(to: CGPoint(x: rect.maxX, y: rect.maxY), control: CGPoint(x: rect.midX, y: rect.minY - rect.height * 0.9))
+        return path
+    }
+}
+
+/// What the lids leave of the eye: everything below the upper lid's edge, minus an ellipse rising from
+/// below for the lower lid, so a happy eye becomes an arch.
+struct LidMask: Shape {
+    var upper: CGFloat
+    var lower: CGFloat
+    func path(in rect: CGRect) -> Path {
+        var path = Path()
+        let lid = min(max(upper, 0), 1)
+        path.addRect(CGRect(x: rect.minX - 1, y: rect.minY - 1, width: rect.width + 2, height: rect.height + 2))
+        if lid > 0.01 {
+            // The upper lid's edge bows down a little in the middle, so a drowsy eye reads sleepy, not bored.
+            let rx = rect.width * 1.1, ry = rect.height * 0.8
+            let edge = rect.minY + rect.height * lid
+            path.addEllipse(in: CGRect(x: rect.midX - rx, y: edge - ry * 2, width: rx * 2, height: ry * 2))
+        }
+        if lower > 0.01 {
+            let rx = rect.width * 0.62, ry = rect.height * 0.55
+            let crest = rect.maxY - rect.height * min(lower, 1)
+            path.addEllipse(in: CGRect(x: rect.midX - rx, y: crest, width: rx * 2, height: ry * 2))
+        }
+        return path
+    }
+}
+
+/// A shut eye: a soft downward curve, like a contented cat's.
+struct ClosedEye: Shape {
+    func path(in rect: CGRect) -> Path {
+        var path = Path()
+        path.move(to: CGPoint(x: rect.minX, y: rect.minY))
+        path.addQuadCurve(to: CGPoint(x: rect.maxX, y: rect.minY), control: CGPoint(x: rect.midX, y: rect.maxY * 1.6))
+        return path
     }
 }
 
@@ -652,15 +769,6 @@ struct MouthShape: Shape {
     }
 }
 
-struct BrowShape: Shape {
-    func path(in rect: CGRect) -> Path {
-        var path = Path()
-        path.move(to: CGPoint(x: rect.minX, y: rect.maxY))
-        path.addQuadCurve(to: CGPoint(x: rect.maxX, y: rect.maxY), control: CGPoint(x: rect.midX, y: rect.minY))
-        return path
-    }
-}
-
 // MARK: - Manager
 
 /// One overlay per display and Dot's motion: it lives beside the cursor, flies along a bezier
@@ -673,7 +781,6 @@ final class OverlayManager {
     private var flightTimer: Timer?
     private var bubbleHide: DispatchWorkItem?
     private var returnWork: DispatchWorkItem?
-    private var blinkWork: DispatchWorkItem?
     private var presence: Bool
     private var ringDoneWork: DispatchWorkItem?
     private var transientVisible = false
@@ -681,7 +788,44 @@ final class OverlayManager {
     private var parkedScreen: Int?
     private var mouseAtPark = CGPoint.zero
     private var lastMouse = CGPoint.zero
-    private var breathPhase: Double = 0
+    /// The face and body of each screen's orb (DotKit's OrbAnimator, docs/alive.md), the spring it
+    /// follows the cursor on, and what it reads to be a pet: an approaching cursor, a rub, a fling.
+    private var animators: [OrbAnimator] = []
+    private var followers: [Spring2D] = []
+    private var lazyZones: [LazyZone] = []
+    private var rubs: [RubDetector] = []
+    private var leads: [CGVector] = []
+    private var speeds: [Double] = []
+    private var rubbing: [Bool] = []
+    private var fling = FlingDetector()
+    private var chasing = false
+    private var chaseSettlesAt: Double = 0
+    private var pounceCheckAt: Double?
+    private var flingStoppedAt: Double = 0
+    /// The pet routine: Dot walked off his text to a window edge and is grooming, drowsing or asleep.
+    private var perched = false
+    private var mouseAtPerch = CGPoint.zero
+    private var perchStartedAt: Double = 0
+    private var idleAtPerch: Double = 0
+    private var wakeReturnAt: Double?
+    private var lastTickTime: Double?
+    private var lastMouseMoveAt: Double = 0
+    /// Seconds since any mouse, key or scroll input, since a key, and since a click, read at 4 Hz.
+    private var sinceInput: Double = 0
+    private var sinceKey: Double = .infinity
+    private var sinceClick: Double = .infinity
+    private var inputReadAt: Double = 0
+    private var quiet = false
+    private var quietCheckedAt: Double = -10
+    private var speechLevel: Double = 0
+    private var speechMetered = true
+    private(set) var orbSize: CGFloat
+    /// Whether he wants quiet now (on a call with "quiet on calls" set); AppDelegate supplies it.
+    var isQuiet: (() -> Bool)?
+    /// Dot woke from its pet routine after `idle` seconds without input: the quip hook.
+    var onWake: ((TimeInterval) -> Void)?
+    /// He started rubbing Dot.
+    var onPetted: (() -> Void)?
     private(set) var color: Color
     /// Keeps marks on the content while he scrolls (round eight).
     private let tracker = MarkTracker()
@@ -701,9 +845,10 @@ final class OverlayManager {
     /// Dot stays beside the cursor all the time. Off: it appears for each exchange only.
     var isPresent: Bool { presence }
 
-    init(colorHex: String, presence: Bool) {
+    init(colorHex: String, presence: Bool, orbSize: CGFloat = 24) {
         color = Color(hex: colorHex) ?? Color(red: 1.0, green: 0.42, blue: 0.17)
         self.presence = presence
+        self.orbSize = min(max(orbSize, 16), 36)
         rebuild()
         NotificationCenter.default.addObserver(forName: NSApplication.didChangeScreenParametersNotification, object: nil, queue: .main) { [weak self] _ in
             Task { @MainActor in self?.rebuild() }
@@ -718,7 +863,6 @@ final class OverlayManager {
             }
         }
         startTicking()
-        scheduleBlink()
         if presence { bringUp() }
         tracker.onUpdate = { [weak self] kind, rect, visible, edge in self?.trackerMoved(kind, to: rect, visible: visible, edge: edge) }
     }
@@ -727,14 +871,31 @@ final class OverlayManager {
         for window in windows { window.orderOut(nil) }
         windows = []
         models = []
+        animators = []
+        followers = []
+        lazyZones = []
+        rubs = []
+        leads = []
+        speeds = []
+        rubbing = []
         for screen in NSScreen.screens {
             let model = CompanionModel(screenSize: screen.frame.size)
             model.color = color
+            model.orbSize = orbSize
             let window = OverlayWindow(screen: screen)
             window.contentView = NSHostingView(rootView: CompanionView(model: model))
             windows.append(window)
             models.append(model)
+            animators.append(OrbAnimator(seed: UInt64.random(in: 1...UInt64.max)))
+            followers.append(Spring2D(position: model.position))
+            lazyZones.append(LazyZone())
+            rubs.append(RubDetector())
+            leads.append(.zero)
+            speeds.append(0)
+            rubbing.append(false)
         }
+        perched = false
+        wakeReturnAt = nil
         if presence || transientVisible { bringUp() }
     }
 
@@ -823,6 +984,48 @@ final class OverlayManager {
 
     func setLevel(_ level: Float) {
         for model in models { model.level = level }
+    }
+
+    // MARK: Alive (docs/alive.md)
+
+    /// The orb's diameter (`orbSize`), 16-36 points.
+    func setOrbSize(_ size: CGFloat) {
+        orbSize = min(max(size, 16), 36)
+        for model in models { model.orbSize = orbSize }
+    }
+
+    private var clock: Double { ProcessInfo.processInfo.systemUptime }
+
+    /// A one-shot move on every visible orb: a hop when an agent finishes, a droop when one fails.
+    func react(_ reaction: OrbReaction) {
+        let now = clock
+        for (index, model) in models.enumerated() where model.visible { animators[index].react(reaction, at: now) }
+    }
+
+    /// He switched apps: a glance toward the new window (AppKit screen point) and a blink.
+    func appSwitched(toward screenPoint: CGPoint?) {
+        let now = clock
+        for (index, model) in models.enumerated() where model.visible {
+            var dx = 1.0
+            if let screenPoint {
+                let local = Coordinates.overlayPoint(fromScreen: screenPoint, screenFrame: windows[index].screenFrame)
+                dx = local.x >= model.position.x ? 1 : -1
+            }
+            animators[index].react(.appSwitch(dx: dx), at: now)
+        }
+    }
+
+    /// A spoken sentence began: blinks land at sentence starts, and the eyes come back to him before
+    /// the last one ends.
+    func sentenceStarted(duration: TimeInterval?, isLast: Bool) {
+        let now = clock
+        for animator in animators { animator.sentenceStarted(at: now, duration: duration, isLast: isLast) }
+    }
+
+    /// The voice's level for the mouth; `metered` is false for Apple's voice, which has no level to read.
+    func setSpeechLevel(_ level: Double, metered: Bool) {
+        speechLevel = level
+        speechMetered = metered
     }
 
     /// Streamed answer text beside Dot, with an optional one-line label (what it is pointing at).
@@ -1133,11 +1336,13 @@ final class OverlayManager {
             model.stroke = []
             model.strokes = []
             model.shapes = []
-            model.scale = 1
             model.bubbleFlip = nil
             model.motion = .following
         }
         parkedScreen = nil
+        perched = false
+        wakeReturnAt = nil
+        for (index, model) in models.enumerated() { followers[index].snap(to: model.position) }
     }
 
     /// Older marks go when a new beat lands somewhere else, so a tour does not pile up boxes.
@@ -1151,6 +1356,9 @@ final class OverlayManager {
     }
 
     private func park(on index: Int) {
+        // Pointing at something wins over the pet routine.
+        perched = false
+        wakeReturnAt = nil
         parkedScreen = index
         mouseAtPark = NSEvent.mouseLocation
         for (i, model) in models.enumerated() where i != index { model.visible = false; model.chip = nil; model.tailTo = nil }
@@ -1161,6 +1369,8 @@ final class OverlayManager {
         guard let index = parkedScreen else { return }
         let model = models[index]
         let mouse = NSEvent.mouseLocation
+        perched = false
+        wakeReturnAt = nil
         guard let mouseIndex = screenIndex(containing: mouse) else { return }
         if mouseIndex != index {
             // The cursor is on another screen: just appear there.
@@ -1190,9 +1400,12 @@ final class OverlayManager {
         }
     }
 
+    /// Below and to the right of the pointer, a little farther for a bigger orb.
+    private var followOffset: CGVector { CGVector(dx: 24 * orbSize / 20, dy: 26 * orbSize / 20) }
+
     private func followTarget(mouse: CGPoint, screenFrame: CGRect) -> CGPoint {
         let local = Coordinates.overlayPoint(fromScreen: mouse, screenFrame: screenFrame)
-        return CGPoint(x: local.x + 24, y: local.y + 26)
+        return CGPoint(x: local.x + followOffset.dx, y: local.y + followOffset.dy)
     }
 
     private var tickCount = 0
@@ -1200,114 +1413,248 @@ final class OverlayManager {
     private func tick(jump: Bool) {
         guard presence || transientVisible else { return }
         tickCount += 1
-        breathPhase += 1.0 / 60.0
-        let breath = 1 + CGFloat(sin(breathPhase * 2.4)) * 0.035
-        let breatheNow = tickCount % 5 == 0   // 12 Hz is enough for a slow swell and keeps idle CPU low
+        let now = clock
+        let dt = min(max(now - (lastTickTime ?? now - 1.0 / 60.0), 1.0 / 240.0), 0.1)
+        lastTickTime = now
         let mouse = NSEvent.mouseLocation
         let moved = hypot(mouse.x - lastMouse.x, mouse.y - lastMouse.y)
+        let velocity = CGVector(dx: (mouse.x - lastMouse.x) / dt, dy: -(mouse.y - lastMouse.y) / dt)   // overlay y runs down
         lastMouse = mouse
+        if moved > 0.5 { lastMouseMoveAt = now }
+        if jump || tickCount % 15 == 0 { readInput(now) }
+        if let event = fling.add(CGPoint(x: mouse.x, y: -mouse.y), at: now) { flung(event, now: now) }
+        if let check = pounceCheckAt, now >= check {
+            pounceCheckAt = nil
+            // A fling that ended in a click was pointing, not play.
+            if sinceClick > now - flingStoppedAt, sinceKey > 2, parkedScreen == nil { react(.pounce) }
+        }
 
-        // A parked Dot waits; if the cursor goes far while it is flying back, it snaps to following.
         if let parked = parkedScreen {
             let model = models[parked]
-            if breatheNow { model.breath = breath }
-            if model.motion == .flying, hypot(mouse.x - mouseAtPark.x, mouse.y - mouseAtPark.y) > 100 {
+            if perched {
+                perchTick(index: parked, mouse: mouse, now: now)
+            } else if model.motion == .flying, hypot(mouse.x - mouseAtPark.x, mouse.y - mouseAtPark.y) > 100 {
+                // Flying back and the cursor went far: snap to following from where it is.
                 flightTimer?.invalidate()
                 flightTimer = nil
                 model.motion = .following
-                model.scale = 1
+                followers[parked].snap(to: model.position)
                 parkedScreen = nil
-            } else {
-                return
             }
         }
 
-        for (index, window) in windows.enumerated() {
-            let model = models[index]
-            guard window.screenFrame.contains(mouse) else {
-                if model.visible { model.visible = false }
-                continue
-            }
-            if !model.visible { model.visible = true }
-            if breatheNow { model.breath = breath }
-            let desired = followTarget(mouse: mouse, screenFrame: window.screenFrame)
-            if jump || model.motion != .following {
-                if jump { model.position = desired; model.lean = 0 }
-                continue
-            }
-            let dx = desired.x - model.position.x, dy = desired.y - model.position.y
-            let distance = hypot(dx, dy)
-            if distance < 0.4, moved < 0.5 {
-                if model.lean > 0.01 { model.lean = model.lean < 0.02 ? 0 : model.lean * 0.85 }
-                if abs(model.look.x) > 0.02 || abs(model.look.y) > 0.02 {
-                    model.look = CGPoint(x: model.look.x * 0.9, y: model.look.y * 0.9)
-                } else if model.look != .zero {
-                    model.look = .zero
+        if parkedScreen == nil {
+            for (index, window) in windows.enumerated() {
+                let model = models[index]
+                guard window.screenFrame.contains(mouse) else {
+                    if model.visible { model.visible = false }
+                    continue
                 }
-                continue
+                let desired = followTarget(mouse: mouse, screenFrame: window.screenFrame)
+                if !model.visible {
+                    model.visible = true
+                    animators[index].appeared(at: now)
+                    followers[index].snap(to: desired)
+                    model.position = desired
+                }
+                if jump {
+                    followers[index].snap(to: desired)
+                    model.position = desired
+                    leads[index] = .zero
+                    continue
+                }
+                guard model.motion == .following else { continue }
+                follow(index: index, desired: desired, mouse: mouse, velocity: velocity, now: now, dt: dt)
+                if animators[index].wantsPerch { startPerch(index: index, mouse: mouse, now: now) }
             }
-            let alpha: CGFloat = 0.28
-            model.position = CGPoint(x: model.position.x + dx * alpha, y: model.position.y + dy * alpha)
-            let speed = min(distance / 60, 1)
-            model.lean = model.lean + (speed * 0.9 - model.lean) * 0.3
-            if distance > 2 {
-                model.heading = atan2(dy, dx)
-                model.look = CGPoint(x: max(-1, min(1, dx / 40)), y: max(-1, min(1, dy / 40)))
-            }
+        }
+        animate(now: now)
+    }
+
+    /// One frame of following: the spring (looser while it chases a flung cursor), held still while
+    /// the cursor comes to pet it, and the rub read off the cursor's wiggle.
+    private func follow(index: Int, desired: CGPoint, mouse: CGPoint, velocity: CGVector, now: Double, dt: Double) {
+        let model = models[index]
+        let cursor = Coordinates.overlayPoint(fromScreen: mouse, screenFrame: windows[index].screenFrame)
+        let rubOn = rubs[index].add(cursor: cursor, at: now, orb: model.position, radius: orbSize / 2)
+        let approach = hypot(followOffset.dx, followOffset.dy) * 1.6
+        let hold = lazyZones[index].shouldHold(cursor: cursor, velocity: velocity, orb: model.position, approach: approach, now: now, rubbing: rubOn)
+        if rubOn != rubbing[index] {
+            rubbing[index] = rubOn
+            if rubOn { onPetted?() }
+        }
+        animators[index].setRubbing(rubOn, direction: Double(rubs[index].lastDirection), at: now)
+        var spring = followers[index]
+        if hold {
+            spring.position = model.position
+            spring.velocity = .zero
+        } else {
+            let loose = chasing || now < chaseSettlesAt
+            spring.duration = loose ? 0.5 : 0.25
+            spring.bounce = loose ? 0.3 : 0.12
+            spring.step(toward: desired, dt: dt)
+            if hypot(spring.position.x - model.position.x, spring.position.y - model.position.y) > 0.01 { model.position = spring.position }
+        }
+        followers[index] = spring
+        leads[index] = CGVector(dx: desired.x - model.position.x, dy: desired.y - model.position.y)
+        speeds[index] = spring.speed
+    }
+
+    /// Step every visible orb's animator and publish its pose: 60 Hz while something moves, 15 Hz for
+    /// the slow breath and glow, nothing while covered.
+    private func animate(now: Double) {
+        if now - quietCheckedAt > 2 {
+            quietCheckedAt = now
+            quiet = isQuiet?() ?? false
+        }
+        for (index, model) in models.enumerated() where model.visible {
+            var input = OrbInput()
+            input.phase = OrbPhase(model.phase)
+            input.mood = OrbMood(model.mood)
+            input.motion = OrbMotionState(model.motion)
+            input.lead = leads[index]
+            input.speed = speeds[index]
+            input.parkedLook = model.motion == .parked ? model.look : nil
+            input.cursorRest = now - lastMouseMoveAt
+            input.sinceInput = sinceInput + (now - inputReadAt)
+            input.micLevel = Double(model.level)
+            input.speechLevel = speechLevel
+            input.speechUnmetered = !speechMetered
+            input.onCall = quiet
+            input.agentWorking = model.agentActivity != nil || model.agentsWaiting > 0
+            input.reduceMotion = model.reduceMotion
+            input.diameter = Double(orbSize)
+            let animator = animators[index]
+            let pose = animator.step(at: now, input: input)
+            guard !model.occluded, animator.isBusy || tickCount % 4 == 0, pose != model.pose else { continue }
+            model.pose = pose
         }
     }
 
-    private func scheduleBlink() {
-        blinkWork?.cancel()
-        let work = DispatchWorkItem { [weak self] in
-            guard let self else { return }
-            for model in self.models where model.visible { model.blink = true }
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.11) {
-                for model in self.models { model.blink = false }
-            }
-            self.scheduleBlink()
-        }
-        blinkWork = work
-        DispatchQueue.main.asyncAfter(deadline: .now() + Double.random(in: 2.6...6.5), execute: work)
+    /// Seconds since his last input of any kind, and since a key and a click (Dot's own driven clicks
+    /// count too, which only keeps it awake).
+    private func readInput(_ now: Double) {
+        func since(_ type: CGEventType) -> Double { CGEventSource.secondsSinceLastEventType(.hidSystemState, eventType: type) }
+        sinceKey = since(.keyDown)
+        sinceClick = min(since(.leftMouseDown), since(.rightMouseDown))
+        sinceInput = min(since(.mouseMoved), sinceKey, sinceClick, since(.scrollWheel), since(.leftMouseDragged))
+        inputReadAt = now
     }
 
-    // MARK: Flight (Clicky's quadratic bezier with smoothstep easing)
+    private func flung(_ event: FlingDetector.Event, now: Double) {
+        switch event {
+        case .began:
+            guard parkedScreen == nil, sinceKey > 2, !quiet, animators.allSatisfy({ $0.guardsAllowAntics || !$0.isBusy }),
+                  models.contains(where: { $0.visible && !$0.reduceMotion && $0.phase == .idle }) else { return }
+            chasing = true
+        case .stopped:
+            guard chasing else { return }
+            chasing = false
+            chaseSettlesAt = now + 0.4         // the skid past the stop
+            flingStoppedAt = now
+            pounceCheckAt = now + 0.5
+        }
+    }
 
-    private func fly(model: CompanionModel, to destination: CGPoint, completion: @escaping () -> Void) {
+    // MARK: The pet routine (docs/alive.md 2.2-2.3)
+
+    /// Three minutes without input: walk off his text to the front window's top edge and settle there.
+    private func startPerch(index: Int, mouse: CGPoint, now: Double) {
+        let model = models[index]
+        let frame = windows[index].screenFrame
+        let cursor = Coordinates.overlayPoint(fromScreen: mouse, screenFrame: frame)
+        let perch = PerchPlanner.perch(window: frontWindow(on: frame), cursor: cursor,
+                                       screen: CGRect(origin: .zero, size: model.screenSize), radius: orbSize / 2)
+        park(on: index)
+        perched = true
+        mouseAtPerch = mouse
+        perchStartedAt = now
+        idleAtPerch = sinceInput + (now - inputReadAt)
+        model.chip = nil
+        model.tailTo = nil
+        fly(model: model, to: perch.point, style: .trot) { [weak self] in
+            guard let self, self.perched else { return }
+            model.motion = .perched
+            self.animators[index].perched(at: self.clock, edge: perch.edge)
+        }
+    }
+
+    private func perchTick(index: Int, mouse: CGPoint, now: Double) {
+        let model = models[index]
+        if let back = wakeReturnAt {
+            if now >= back { returnToCursor() }
+            return
+        }
+        let moved = hypot(mouse.x - mouseAtPerch.x, mouse.y - mouseAtPerch.y)
+        let woken = PetWake.shouldWake(moved: moved, keyPressed: sinceKey < now - perchStartedAt)
+        if model.motion == .flying {
+            // Still walking there: any real movement and it turns around.
+            if woken { flightTimer?.invalidate(); flightTimer = nil; returnToCursor() }
+            return
+        }
+        if woken {
+            animators[index].woke(at: now)
+            wakeReturnAt = now + (model.reduceMotion ? 0.1 : 0.75)
+            onWake?(idleAtPerch + (now - perchStartedAt))
+        } else if animators[index].wantsReturn {
+            returnToCursor()
+        }
+    }
+
+    /// The frontmost app's main window on this screen, in overlay coordinates.
+    private func frontWindow(on screenFrame: CGRect) -> CGRect? {
+        guard let pid = NSWorkspace.shared.frontmostApplication?.processIdentifier, pid != ProcessInfo.processInfo.processIdentifier,
+              let list = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]],
+              let mainHeight = NSScreen.screens.first?.frame.height else { return nil }
+        for info in list {
+            guard (info[kCGWindowOwnerPID as String] as? Int32) == pid, (info[kCGWindowLayer as String] as? Int) == 0,
+                  let bounds = info[kCGWindowBounds as String] as? NSDictionary,
+                  let rect = CGRect(dictionaryRepresentation: bounds), rect.width > 80, rect.height > 60 else { continue }
+            let appKit = CGRect(x: rect.minX, y: mainHeight - rect.maxY, width: rect.width, height: rect.height)
+            guard appKit.intersects(screenFrame) else { continue }
+            return Coordinates.overlayRect(fromScreen: appKit.intersection(screenFrame), screenFrame: screenFrame)
+        }
+        return nil
+    }
+
+    // MARK: Flight (Clicky's quadratic bezier with smoothstep easing, now with anticipation)
+
+    private func fly(model: CompanionModel, to destination: CGPoint, style: FlightPath.Style = .flight, completion: @escaping () -> Void) {
         flightTimer?.invalidate()
+        guard let index = models.firstIndex(where: { $0 === model }) else { return }
         let start = model.position
-        let distance = hypot(destination.x - start.x, destination.y - start.y)
-        if distance < 2 { model.position = destination; model.lean = 0; completion(); return }
+        if hypot(destination.x - start.x, destination.y - start.y) < 2 {
+            model.position = destination
+            followers[index].snap(to: destination)
+            completion()
+            return
+        }
         model.motion = .flying
-        let duration = min(max(Double(distance) / 900.0, 0.45), 1.2)
-        let frames = max(Int(duration * 60), 1)
-        var frame = 0
-        let mid = CGPoint(x: (start.x + destination.x) / 2, y: (start.y + destination.y) / 2)
-        let arc = min(distance * 0.2, 80)
-        let control = CGPoint(x: mid.x, y: mid.y - arc)
+        let path = FlightPath(from: start, to: destination, style: style, anticipation: model.reduceMotion ? 0 : 0.15)
+        let began = clock
+        animators[index].flightWillStart(toward: CGVector(dx: destination.x - start.x, dy: destination.y - start.y), at: began)
         flightTimer = Timer.scheduledTimer(withTimeInterval: 1.0 / 60.0, repeats: true) { [weak self] timer in
-            frame += 1
-            if frame > frames {
+            guard let self else { timer.invalidate(); return }
+            let now = ProcessInfo.processInfo.systemUptime
+            let sample = path.sample(at: now - began)
+            switch sample.stage {
+            case .anticipating:
+                self.leads[index] = .zero
+                self.speeds[index] = 0
+            case .moving:
+                model.position = sample.point
+                self.leads[index] = CGVector(dx: sample.tangent.dx * 40, dy: sample.tangent.dy * 40)
+                self.speeds[index] = sample.speed
+            case .done:
                 timer.invalidate()
-                self?.flightTimer = nil
+                self.flightTimer = nil
                 model.position = destination
-                model.scale = 1
-                model.lean = 0
+                self.followers[index].snap(to: destination)
+                self.leads[index] = .zero
+                self.speeds[index] = 0
+                self.animators[index].flightLanded(direction: sample.tangent, at: now)
                 completion()
-                return
             }
-            let linear = Double(frame) / Double(frames)
-            let t = linear * linear * (3 - 2 * linear)
-            let u = 1 - t
-            let x = u * u * start.x + 2 * u * t * control.x + t * t * destination.x
-            let y = u * u * start.y + 2 * u * t * control.y + t * t * destination.y
-            let tx = 2 * u * (control.x - start.x) + 2 * t * (destination.x - control.x)
-            let ty = 2 * u * (control.y - start.y) + 2 * t * (destination.y - control.y)
-            model.position = CGPoint(x: x, y: y)
-            model.heading = atan2(ty, tx)
-            model.lean = CGFloat(sin(linear * .pi)) * 0.9
-            model.scale = 1 + CGFloat(sin(linear * .pi)) * 0.3
-            model.look = CGPoint(x: max(-1, min(1, tx / 30)), y: max(-1, min(1, ty / 30)))
         }
     }
 }
@@ -1318,5 +1665,39 @@ extension Color {
         if text.hasPrefix("#") { text.removeFirst() }
         guard text.count == 6, let value = UInt32(text, radix: 16) else { return nil }
         self.init(red: Double((value >> 16) & 0xFF) / 255, green: Double((value >> 8) & 0xFF) / 255, blue: Double(value & 0xFF) / 255)
+    }
+}
+
+extension OrbPhase {
+    init(_ phase: CompanionPhase) {
+        switch phase {
+        case .idle: self = .idle
+        case .listening: self = .listening
+        case .thinking: self = .thinking
+        case .speaking: self = .speaking
+        }
+    }
+}
+
+extension OrbMood {
+    init(_ mood: CompanionMood) {
+        switch mood {
+        case .neutral: self = .neutral
+        case .happy: self = .happy
+        case .puzzled: self = .puzzled
+        case .focused: self = .focused
+        case .sleepy: self = .sleepy
+        }
+    }
+}
+
+extension OrbMotionState {
+    init(_ motion: CompanionMotion) {
+        switch motion {
+        case .following: self = .following
+        case .flying: self = .flying
+        case .parked: self = .parked
+        case .perched: self = .perched
+        }
     }
 }

@@ -29,6 +29,11 @@ enum Snapshots {
                 keep("notch-\(name)", render(NotchHUDView(model: model, geometry: geometry, onClose: {}), width: NotchGeometry.panelWidth, height: NotchHUD.tallPanelHeight))
             }
         }
+        if group == "alive" {
+            // The alive pass's previews (docs/alive.md, phase 0): stills at three sizes and the GIF reels.
+            alive(into: folder, accentHex: accent)
+            return
+        }
         if wanted("overlay") {
             for (name, model) in overlayStates(accentHex: accent) {
                 keep("overlay-\(name)", render(CompanionView(model: model), width: 640, height: 400, trim: false, ground: NSColor(calibratedWhite: 0.96, alpha: 1)))
@@ -92,7 +97,7 @@ enum Snapshots {
             ("notice-dictionary", make { m in m.notices = [NotchNotice(id: "dictionary", icon: "character.book.closed", title: "learned: jev", detail: "the recognizer writes it that way from now on", tone: .good, actionTitle: "undo", action: {}, seconds: 0)]; m.glow = true }),
             ("morning", make { m in m.morning = MorningCard(greeting: "morning. i can do 4 things for you today.", items: []) }),
             ("morning-open", make { m in m.morningExpanded = true; m.morning = MorningCard(greeting: "morning. i can do 4 things for you today.", items: [
-                MorningCard.Item(id: "a", text: "prep raymond james sophomore showcase application, due today", brief: ""),
+                MorningCard.Item(id: "a", text: "prep northwind bank sophomore showcase application, due today", brief: ""),
                 MorningCard.Item(id: "b", text: "a one-page brief on alex morgan (blackrock) before 12:30", brief: ""),
                 MorningCard.Item(id: "c", text: "draft a reply to prof: re: seminar schedule", brief: ""),
                 MorningCard.Item(id: "d", text: "do: reply to emily parker (lmr partners) with availability", brief: "")]) }),
@@ -128,6 +133,7 @@ enum Snapshots {
             m.visible = true
             m.position = CGPoint(x: 320, y: 200)
             build(m)
+            m.pose = settledPose(m)
             return m
         }
         return [
@@ -388,7 +394,7 @@ enum Snapshots {
     // MARK: Rendering
 
     /// A SwiftUI view to an image at 2x, trimmed to its content on a given ground.
-    private static func render<V: View>(_ view: V, width: CGFloat, height: CGFloat, trim: Bool = true, ground: NSColor = NSColor(calibratedWhite: 0.93, alpha: 1)) -> NSImage? {
+    static func render<V: View>(_ view: V, width: CGFloat, height: CGFloat, trim: Bool = true, ground: NSColor = NSColor(calibratedWhite: 0.93, alpha: 1)) -> NSImage? {
         let renderer = ImageRenderer(content: view.frame(width: width, height: height))
         renderer.scale = 2
         guard let rendered = renderer.nsImage else { return nil }
@@ -419,13 +425,13 @@ enum Snapshots {
         return CGRect(x: CGFloat(minX) * scale, y: image.size.height - CGFloat(maxY + 2) * scale, width: CGFloat(maxX - minX + 2) * scale, height: CGFloat(maxY - minY + 2) * scale)
     }
 
-    private static func png(_ image: NSImage) -> Data? {
+    static func png(_ image: NSImage) -> Data? {
         guard let tiff = image.tiffRepresentation, let rep = NSBitmapImageRep(data: tiff) else { return nil }
         return rep.representation(using: .png, properties: [:])
     }
 
     /// Every snapshot on one page, three to a row, each with its name.
-    private static func contactSheet(_ items: [(String, NSImage)]) -> NSImage? {
+    static func contactSheet(_ items: [(String, NSImage)]) -> NSImage? {
         guard !items.isEmpty else { return nil }
         let columns = 3
         let cell = CGSize(width: 480, height: 360)
