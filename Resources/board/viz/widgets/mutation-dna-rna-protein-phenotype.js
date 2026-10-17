@@ -53,29 +53,37 @@
     draw: function (api, v) {
       var c = api.color, r = model(v), X = function (i) { return 112 + i * 13 + Math.floor(i / 3) * 8; };
       var CX = function (k) { return X(3 * k + 1); };
-      [["DNA", 33], ["mRNA", 82], ["protein", 120], ["hemoglobin", 166], ["red cells", 224]].forEach(function (L) {
+      [["DNA", 39], ["mRNA", 82], ["protein", 120], ["hemoglobin", 166], ["red cells", 224]].forEach(function (L) {
         api.label([8, L[1]], L[0], {color: c.muted, size: 12, weight: 650});
       });
-      // DNA: coding strand over template strand
+      // DNA: coding strand over template strand; the mRNA under them (faded when nonsense-mediated decay destroys it)
+      var nmd = v.allele === "nonsense";
       for (var i = 0; i < 15; i++) {
         var hit = r.changed && i === r.at;
-        api.label([X(i), 24], r.s[i], {color: hit ? c.c6 : c.ink, size: 13, weight: hit ? 800 : 550, anchor: "middle"});
-        api.label([X(i), 42], COMP[r.s[i]], {color: hit ? c.c6 : c.muted, size: 13, weight: hit ? 800 : 500, anchor: "middle"});
-        api.label([X(i), 82], r.s[i].replace("T", "U"), {color: hit ? c.c6 : c.c1, size: 13, weight: hit ? 800 : 650, anchor: "middle"});
+        api.label([X(i), 30], r.s[i], {color: hit ? c.c6 : c.ink, size: 13, weight: hit ? 800 : 550, anchor: "middle"});
+        api.label([X(i), 48], COMP[r.s[i]], {color: hit ? c.c6 : c.muted, size: 13, weight: hit ? 800 : 500, anchor: "middle"});
+        api.label([X(i), 82], r.s[i].replace("T", "U"), {color: hit ? c.c6 : c.c1, size: 13, weight: hit ? 800 : 650, anchor: "middle", opacity: nmd ? 0.35 : 1});
       }
-      api.label([X(0) - 16, 24], "5′", {color: c.muted, size: 12, anchor: "middle"});
-      api.label([X(14) + 16, 24], "3′", {color: c.muted, size: 12, anchor: "middle"});
-      api.label([X(0) - 16, 42], "3′", {color: c.muted, size: 12, anchor: "middle"});
-      api.label([X(14) + 16, 42], "5′", {color: c.muted, size: 12, anchor: "middle"});
-      api.rect(X(6) - 8, 13, 42, 40, {stroke: c.c6, width: 1.5, rx: 6, dash: r.changed ? null : "3 3"});
-      api.label([X(14) + 30, 33], "codon 6", {color: c.c6, size: 12, weight: 650});
+      if (nmd) {
+        api.line([X(0) - 6, 82], [X(14) + 6, 82], {color: c.muted, width: 1.5, dash: "4 3", opacity: 0.8});
+        api.label([X(14) + 12, 82], "destroyed", {color: c.muted, size: 12, weight: 650});
+      }
+      api.label([X(0) - 16, 30], "5′", {color: c.muted, size: 12, anchor: "middle"});
+      api.label([X(14) + 16, 30], "3′", {color: c.muted, size: 12, anchor: "middle"});
+      api.label([X(0) - 16, 48], "3′", {color: c.muted, size: 12, anchor: "middle"});
+      api.label([X(14) + 16, 48], "5′", {color: c.muted, size: 12, anchor: "middle"});
+      // codon 6: the purple box and its label directly above it
+      api.rect(X(6) - 8, 19, 42, 40, {stroke: c.c6, width: 1.5, rx: 6, dash: r.changed ? null : "3 3"});
+      api.label([X(7), 10], "codon 6", {color: c.c6, size: 12, weight: 650, anchor: "middle"});
       var k;
-      // protein beads
+      // protein beads: residue 6 turns purple only when its amino acid actually differs from Glu
       for (k = 0; k < 5; k++) {
         var a = r.prot[k], gone = r.stop >= 0 && k > r.stop, y = 120;
         if (k && !gone && a !== "*") api.line([CX(k - 1) + 15, y], [CX(k) - 15, y], {color: c.muted, width: 2, opacity: 0.6});
         if (a === "*") { api.rect(CX(k) - 18, y - 11, 36, 22, {fill: c.c3, fillOpacity: 0.9, rx: 6}); api.label([CX(k), y], "Stop", {color: c.card, size: 12, weight: 700, anchor: "middle"}); continue; }
-        api.circle([CX(k), y], 15, {fill: k === 2 && r.changed ? c.c6 : c.c4, fillOpacity: gone ? 0.12 : 0.85});
+        var diff = k === 2 && a !== "E";
+        api.circle([CX(k), y], 15, {fill: diff ? c.c6 : c.c4, fillOpacity: gone ? 0.12 : 0.85});
+        if (k === 2 && r.changed && !diff) api.circle([CX(k), y], 18, {stroke: c.c6, width: 1.5});   // silent: same residue, position marked
         api.label([CX(k), y], NAME[a], {color: c.card, size: 12, weight: 700, anchor: "middle", opacity: gone ? 0.4 : 1});
       }
       // hemoglobin: two alpha (blue) + two beta (green, purple when changed)

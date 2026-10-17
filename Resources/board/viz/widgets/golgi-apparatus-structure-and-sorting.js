@@ -106,7 +106,7 @@
       });
       // COPI retrieval arc from cis back to the ER (solid for the KDEL cargo)
       api.path("M 96 86 Q 78 60 60 84", {stroke: res ? c.c1 : c.faint, width: res ? 2 : 1.3, dash: res ? null : "4 4", arrow: true});
-      L([78, 98], "COPI", res ? c.c1 : c.muted, {anchor: "middle", weight: 500});
+      L(res && s === 3 ? [70, 112] : [78, 98], "COPI", res ? c.c1 : c.muted, {anchor: "middle", weight: 500});   // clear of the step-3 vesicle
       // the cargo itself
       var cargoAt = function (p) {
         if (cg === "membrane") api.rect(p[0] - 8, p[1] - 3, 16, 6, {fill: c.c3, rx: 2});
@@ -125,7 +125,7 @@
       } else if (s === 1) { vesicle([80, MID], "COPII"); cargoAt([80, MID]); }
       else if (s <= 4) cargoAt([CX[s - 2] - 9, MID]);
       else if (cg === "lysosomal") { cargoAt([296, 62]); vesicle([256, 86]); }
-      else if (cg === "secreted") { api.path("M 351 131 A 10 10 0 1 0 351 149", {stroke: c.c1, width: 2}); cargoAt([376, 140]); L([376, 160], "outside", c.c3, {anchor: "middle"}); }
+      else if (cg === "secreted") { api.path("M 351 131 A 10 10 0 1 0 351 149", {stroke: c.c1, width: 2}); cargoAt([378, 140]); L([380, 160], "outside", c.c3, {anchor: "middle", weight: 500}); }
       else { api.rect(348, 179, 15, 6, {fill: c.c3, rx: 2}); api.path("M 351 172 A 10 10 0 1 0 351 192", {stroke: c.c1, width: 2}); L([344, 200], "in membrane", c.c3, {anchor: "end"}); }
       // the zoom strip: the cargo's sugar chain (or its KDEL tail) at this step
       api.rect(6, 228, 388, 68, {stroke: c.faint, width: 1, rx: 8});

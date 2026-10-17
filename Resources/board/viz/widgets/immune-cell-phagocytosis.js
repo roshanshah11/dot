@@ -27,7 +27,7 @@
       if (s <= 3) return TEX[s];
       if (s === 4) {
         if (!v.oxidase) return "\\text{no NADPH oxidase: no O}_2^{\\bullet-},\\ \\text{no H}_2\\text{O}_2\\newline\\text{only acid (pH}\\approx 5\\text{) and hydrolases}";
-        return "2\\text{O}_2+\\text{NADPH}\\to 2\\text{O}_2^{\\bullet-}+\\text{NADP}^{+}+\\text{H}^{+}\\newline" +
+        return "2\\text{O}_2+\\text{NADPH}\\newline\\to 2\\text{O}_2^{\\bullet-}+\\text{NADP}^{+}+\\text{H}^{+}\\newline" +
           (v.cell === "neutrophil" ? "\\text{H}_2\\text{O}_2+\\text{Cl}^{-}\\xrightarrow{\\text{MPO}}\\text{HOCl}+\\text{OH}^{-}" : "2\\text{O}_2^{\\bullet-}+2\\text{H}^{+}\\xrightarrow{\\text{SOD}}\\text{H}_2\\text{O}_2+\\text{O}_2");
       }
       if (!v.oxidase) return "\\text{catalase}^{+}\\ \\text{microbe survives}\\Rightarrow\\text{granuloma}";
@@ -65,41 +65,55 @@
       var lyso = function (q) { api.circle(q, 11, {fill: c.c6, fillOpacity: 0.35, stroke: c.c6, width: 1.4}); [[-4, -3], [3, 2], [-1, 5]].forEach(function (o) { api.circle([q[0] + o[0], q[1] + o[1]], 1.8, {fill: c.c6}); }); };
       if (s <= 3) { [[96, 180], [140, 214], [240, 236]].forEach(lyso); L([114, 196], "lysosomes", c.c6, {weight: 500}); }
       else if (s === 4) lyso([250, 238]);
-      // the bacterium with its opsonins (IgG blue, C3b amber dots)
-      var bug = function (p, dead, opso) {
-        api.rect(p[0] - 16, p[1] - 8, 32, 16, {fill: c.c5, fillOpacity: dead ? 0.25 : 0.9, stroke: c.c5, width: 1.4, rx: 8, dash: dead ? "3 3" : null});
-        if (opso) {
-          [[-10, 8], [8, 8]].forEach(function (o) { var x = p[0] + o[0], y = p[1] + o[1]; api.line([x, y], [x, y + 8], {color: c.c2, width: 1.6}); api.line([x, y + 8], [x - 4, y + 13], {color: c.c2, width: 1.6}); api.line([x, y + 8], [x + 4, y + 13], {color: c.c2, width: 1.6}); });
-          api.circle([p[0] - 1, p[1] + 11], 2.6, {fill: c.c3});
-        }
+      // the bacterium (64 x 32)
+      var bug = function (p, dead) {
+        api.rect(p[0] - 32, p[1] - 16, 64, 32, {fill: c.c5, fillOpacity: dead ? 0.25 : 0.9, stroke: c.c5, width: 1.6, rx: 16, dash: dead ? "4 3" : null});
       };
-      var top = 96;
+      // opsonins and the receptors that grip them: IgG (blue) binds the microbe with its two Fab arms and points its Fc stem
+      // down into an Fc-gamma receptor's cup; C3b (amber) on the surface sits in a complement receptor (CR)
+      var grip = function (B, labels) {
+        var low = B[1] + 16, mem = function (x) { return 196 - 100 * Math.sqrt(1 - Math.pow((x - 206) / 176, 2)); };
+        [B[0] - 22, B[0] - 6].forEach(function (x) {
+          api.line([x - 6, low], [x, low + 9], {color: c.c2, width: 2.2}); api.line([x + 6, low], [x, low + 9], {color: c.c2, width: 2.2});
+          api.line([x, low + 9], [x, low + 20], {color: c.c2, width: 2.6});
+          api.line([x, mem(x)], [x, low + 24], {color: c.c1, width: 2.4});
+          api.path("M " + (x - 5) + " " + (low + 19) + " L " + (x - 5) + " " + (low + 24) + " L " + (x + 5) + " " + (low + 24) + " L " + (x + 5) + " " + (low + 19), {stroke: c.c1, width: 2});
+        });
+        [B[0] + 10, B[0] + 24].forEach(function (x) {
+          api.circle([x, low + 5], 4.5, {fill: c.c3});
+          api.line([x, mem(x)], [x, low + 13], {color: c.c1, width: 2.4});
+          api.path("M " + (x - 6) + " " + (low + 6) + " Q " + x + " " + (low + 17) + " " + (x + 6) + " " + (low + 6), {stroke: c.c1, width: 2});
+        });
+        if (!labels) return;
+        L([B[0] - 36, low + 6], "IgG", c.c2, {anchor: "end"});
+        L([B[0] - 36, low + 24], "FcγR", c.c1, {anchor: "end"});
+        L([B[0] + 38, low + 4], "C3b", c.c3);
+        L([B[0] + 38, low + 22], "CR", c.c1);
+      };
       if (s === 1) {
-        bug([206, 52], false, true);
-        [192, 210, 222].forEach(function (x) { api.line([x, top], [x, top - 8], {color: c.c1, width: 2}); });
-        L([234, 46], "IgG + C3b on a bacterium", c.c5);
-        L([234, 76], "receptors grip", c.c1, {weight: 500});
+        bug([206, 46], false); grip([206, 46], true);
+        L([246, 30], "opsonized bacterium", c.c5);
       } else if (s === 2) {
-        api.path("M 150 " + top + " q -6 -50 30 -66 q 10 -4 12 4 q -16 16 -12 58", {fill: c.c1, fillOpacity: 0.18, stroke: c.c1, width: 2});
-        api.path("M 262 " + top + " q 6 -50 -30 -66 q -10 -4 -12 4 q 16 16 12 58", {fill: c.c1, fillOpacity: 0.18, stroke: c.c1, width: 2});
-        bug([206, 58], false, true);
-        L([272, 44], "pseudopods (actin)", c.c1);
+        api.path("M 132 106 q -10 -64 44 -88 q 11 -3 10 7 q -36 16 -30 79", {fill: c.c1, fillOpacity: 0.18, stroke: c.c1, width: 2});
+        api.path("M 280 106 q 10 -64 -44 -88 q -11 -3 -10 7 q 36 16 30 79", {fill: c.c1, fillOpacity: 0.18, stroke: c.c1, width: 2});
+        bug([206, 46], false); grip([206, 46], false);
+        L([288, 38], "pseudopods (actin)", c.c1);
       } else {
-        var P = s === 3 ? [206, 136] : [196, 160], R = s === 3 ? 26 : 34;
+        var P = s === 3 ? [204, 156] : [196, 164], R = 40;
         api.circle(P, R, {fill: s >= 4 ? c.c6 : c.c1, fillOpacity: s >= 4 ? 0.18 : 0.1, stroke: s >= 4 ? c.c6 : c.c1, width: 1.8});
-        if (ox) [[-1, -1], [1, -1], [1, 1], [-1, 1]].forEach(function (d) { api.rect(P[0] + d[0] * R * 0.7 - 3, P[1] + d[1] * R * 0.7 - 3, 6, 6, {fill: c.c3, rx: 1}); });
+        if (ox) [[-1, -1], [1, -1], [1, 1], [-1, 1]].forEach(function (d) { api.rect(P[0] + d[0] * R * 0.7 - 3.5, P[1] + d[1] * R * 0.7 - 3.5, 7, 7, {fill: c.c3, rx: 1}); });
         var dead = s >= 4 && ox;
-        if (s === 5 && !ox) [[-12, -10], [10, 2], [-6, 14]].forEach(function (o) { api.rect(P[0] + o[0] - 10, P[1] + o[1] - 5, 20, 10, {fill: c.c5, fillOpacity: 0.9, rx: 5}); });
-        else if (s === 5 && mac) [[-8, -6], [6, 4], [-2, 12], [10, -10]].forEach(function (o) { api.circle([P[0] + o[0], P[1] + o[1]], 3, {fill: c.c5, fillOpacity: 0.7}); });
-        else bug(P, dead, false);
-        L([P[0] + R + 8, P[1] - R + 4], s === 3 ? "phagosome" : "phagolysosome", s >= 4 ? c.c6 : c.c1);
+        if (s === 5 && !ox) [[-14, -14], [12, 0], [-8, 16]].forEach(function (o) { api.rect(P[0] + o[0] - 14, P[1] + o[1] - 7, 28, 14, {fill: c.c5, fillOpacity: 0.9, rx: 7}); });
+        else if (s === 5 && mac) [[-10, -8], [8, 6], [-3, 16], [14, -14], [-16, 8]].forEach(function (o) { api.circle([P[0] + o[0], P[1] + o[1]], 3.5, {fill: c.c5, fillOpacity: 0.7}); });
+        else bug(P, dead);
+        L([P[0] + R + 8, P[1] - R + 10], s === 3 ? "phagosome" : "phagolysosome", s >= 4 ? c.c6 : c.c1);
         if (s >= 4) {
-          L([P[0] + R + 8, P[1] - R + 20], "pH ≈ 5", c.c6, {weight: 500});
-          if (s === 4) [[P[0] - 44, P[1] - 22], [P[0] - 40, P[1] + 26]].forEach(lyso);
-          if (s === 4) L([108, 214], "lysosomes fuse", c.c6, {weight: 500, anchor: "middle"});
+          L([P[0] + R + 8, P[1] - R + 26], "pH ≈ 5", c.c6, {weight: 500});
+          if (s === 4) [[P[0] - R - 10, P[1] - 22], [P[0] - R - 8, P[1] + 24]].forEach(lyso);
+          if (s === 4) L([P[0] - R - 24, P[1] + 1], "lysosomes fuse", c.c6, {weight: 500, anchor: "end"});   // beside the two fusing lysosomes
         }
         if (s === 4 && ox) {
-          [[-18, -14], [16, -16], [20, 12], [-20, 14], [0, -24], [4, 22]].forEach(function (o) { L([P[0] + o[0], P[1] + o[1]], "✶", c.c3, {anchor: "middle", size: 12}); });
+          [[-14, -27], [0, -31], [14, -27], [-14, 27], [0, 31], [14, 27]].forEach(function (o) { L([P[0] + o[0], P[1] + o[1]], "✶", c.c3, {anchor: "middle", size: 12}); });
           L([P[0] + R + 8, P[1] + 4], mac ? "O₂•⁻ → H₂O₂" : "O₂•⁻ → H₂O₂ → HOCl", c.c3);
           L([P[0] + R + 8, P[1] + 20], "bacterium dies", c.c5, {weight: 500});
         }

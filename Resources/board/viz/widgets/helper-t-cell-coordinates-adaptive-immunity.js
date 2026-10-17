@@ -9,13 +9,13 @@
 (function () {
   var TARGETS = [["B cell", 36], ["CD8 T cell", 82], ["macrophage", 128], ["neutrophil", 174], ["eosinophil", 220], ["epithelium", 266]];
   var SUB = {
-    Th1: {in: "IL-12", tex: "\\text{IL-12}", out: {0: ["IFN-γ", "IgG"], 1: ["IL-2", "multiply"], 2: ["IFN-γ", "kills more"]}, cyt: "\\text{IFN-}\\gamma,\\ \\text{IL-2}",
+    Th1: {in: "IL-12", tex: "\\text{IL-12}", out: {0: ["IFN-γ", "IgG", "IgG switching"], 1: ["IL-2", "multiply", "CD8 T-cell expansion"], 2: ["IFN-γ", "kills more", "macrophage killing"]}, cyt: "\\text{IFN-}\\gamma,\\ \\text{IL-2}",
       say: "make IFN-γ and IL-2, so macrophages kill what they have eaten, CD8 T cells multiply and B cells switch to IgG against microbes that live inside cells"},
-    Th2: {in: "IL-4", tex: "\\text{IL-4}", out: {0: ["IL-4", "IgE"], 2: ["IL-13", "repair mode"], 4: ["IL-5", "activated"]}, cyt: "\\text{IL-4, IL-5, IL-13}",
+    Th2: {in: "IL-4", tex: "\\text{IL-4}", out: {0: ["IL-4", "IgE", "IgE switching"], 2: ["IL-13", "repair mode", "repair macrophages"], 4: ["IL-5", "activated", "eosinophil activation"]}, cyt: "\\text{IL-4, IL-5, IL-13}",
       say: "make IL-4, IL-5 and IL-13, so B cells switch to IgE, eosinophils activate and macrophages turn to repair against parasitic worms (and in allergy)"},
-    Th17: {in: "TGF-β + IL-6", tex: "\\text{TGF-}\\beta+\\text{IL-6}", out: {3: ["IL-17", "recruited"], 5: ["IL-22", "barrier up"]}, cyt: "\\text{IL-17, IL-22}",
+    Th17: {in: "TGF-β + IL-6", tex: "\\text{TGF-}\\beta+\\text{IL-6}", out: {3: ["IL-17", "recruited", "neutrophil recruitment"], 5: ["IL-22", "barrier up", "barrier repair"]}, cyt: "\\text{IL-17, IL-22}",
       say: "make IL-17 and IL-22, so tissue cells call in neutrophils and epithelia shore up the barrier against extracellular bacteria and fungi"},
-    Tfh: {in: "IL-6 + IL-21", tex: "\\text{IL-6}+\\text{IL-21}", out: {0: ["CD40L + IL-21", "Ab + memory"]}, cyt: "\\text{CD40L, IL-21}",
+    Tfh: {in: "IL-6 + IL-21", tex: "\\text{IL-6}+\\text{IL-21}", out: {0: ["CD40L + IL-21", "Ab + memory", "class-switched antibody and memory B cells"]}, cyt: "\\text{CD40L, IL-21}",
       say: "give B cells CD40L and IL-21 in germinal centres, so they switch class, sharpen their affinity and become plasma and memory cells"}
   };
   var band = function (n) { return n >= 500 ? 2 : n >= 200 ? 1 : 0; };
@@ -34,7 +34,12 @@
     },
     status: function (v) {
       var q = SUB[v.subset], b = band(v.cd4);
-      if (b === 0) return (v.cd4 ? "Only <b>" + v.cd4 + " CD4 cells/µL</b>" : "<b>No CD4 cells</b>") + ": below 200 an HIV infection is classed as <b>AIDS</b>, and with too few helpers B cells, CD8 T cells and macrophages all lose their help, so opportunistic infections take hold.";
+      if (b === 0) {                          // name only the help this subset gives (its arrows in the figure)
+        var lost = Object.keys(q.out).map(function (k) { return q.out[k][2]; });
+        var list = lost.length > 1 ? lost.slice(0, -1).join(", ") + " and " + lost[lost.length - 1] : lost[0];
+        return (v.cd4 ? "Only <b>" + v.cd4 + " CD4 cells/µL</b>" : "<b>No CD4 cells</b>") + ": below 200 an HIV infection is classed as <b>AIDS</b>, and with " +
+          (v.cd4 ? "too few" : "no") + " <b>" + v.subset + "</b> cells " + list + " fade, so opportunistic infections take hold.";
+      }
       return "<b>" + v.subset + "</b> cells " + q.say + (b === 2 ? "; <b>" + v.cd4 + "/µL</b> is a normal count." : "; at <b>" + v.cd4 + "/µL</b> that help is thinning (normal is about 500–1500).");
     },
     examples: [
@@ -72,16 +77,20 @@
       api.circle(T, R, {fill: c.c1, fillOpacity: 0.12 + 0.2 * dim, stroke: c.c1, width: 2, opacity: Math.max(0.5, dim)});
       L([T[0], T[1] - 4], v.subset, c.c1, {anchor: "middle", size: 15, weight: 700});
       L([T[0], T[1] + 13], "CD4", c.c1, {anchor: "middle", weight: 500});
-      // CD4 count as a dot field: one dot per 100 cells/uL
-      var nd = Math.round(v.cd4 / 100);
+      // CD4 count as a dot field: one dot per 100 cells/uL and a half dot for 50, rounded down so the dots never
+      // claim more cells than the count (150 shows 1.5 dots, not 2, and stays inside the < 200 band)
+      var halves = Math.floor(v.cd4 / 50 + 1e-9), nd = Math.floor(halves / 2), half = halves % 2;
       for (var d = 0; d < 15; d++) {
         var p = [T[0] - 40 + (d % 5) * 20, 206 + Math.floor(d / 5) * 15];
         if (d < nd) api.circle(p, 5, {fill: c.c1, fillOpacity: 0.75});
-        else api.circle(p, 5, {stroke: c.faint, width: 1});
+        else if (d === nd && half) {
+          api.circle(p, 5, {stroke: c.c1, width: 1});
+          api.path("M " + p[0] + " " + (p[1] - 5) + " A 5 5 0 0 0 " + p[0] + " " + (p[1] + 5) + " Z", {fill: c.c1, fillOpacity: 0.75});
+        } else api.circle(p, 5, {stroke: c.faint, width: 1});
       }
       L([T[0], 260], v.cd4 + " CD4 cells/µL", c.c1, {anchor: "middle"});
       L([T[0], 276], ["AIDS range (< 200)", "low (200–500)", "normal (500–1500)"][b], b === 0 ? c.c5 : c.muted, {anchor: "middle", weight: b === 0 ? 700 : 500});
-      L([T[0], 292], "one dot = 100 cells/µL", c.muted, {anchor: "middle", weight: 500});
+      L([T[0], 292], half ? "one dot = 100 cells/µL, half = 50" : "one dot = 100 cells/µL", c.muted, {anchor: "middle", weight: 500});
       // the cells it helps
       TARGETS.forEach(function (t, i) {
         var y = t[1], X = 300, on = q.out[i], col = on ? c.ink : c.faint;

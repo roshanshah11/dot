@@ -20,7 +20,7 @@
      s0: "DNA fully copied and intact: <b>Cdc25</b> strips the inhibitory phosphate from <b>cyclin B–CDK1</b>, which switches on and takes the cell into mitosis."},
     {chain: [["free kinetochore", "makes the signal"], ["Mad2 + BubR1", "wait-anaphase signal"], ["Cdc20 trapped", "in the checkpoint complex"]], target: "APC/C",
      qs: [["kinetochores attached?", false], ["pulled from both poles?", true]], go: "→ anaphase", stop: "waits in metaphase",
-     f1: "\\text{unattached kinetochore}\\to\\text{Mad2}\\dashv\\text{Cdc20}\\newline\\Rightarrow\\text{APC/C off: securin stays}", f0: "\\text{APC/C–Cdc20}\\to\\text{securin destroyed}\\newline\\to\\text{separase cuts cohesin}",
+     f1: "\\text{unattached kinetochore}\\to\\text{Mad2}\\newline\\dashv\\text{Cdc20}\\Rightarrow\\text{APC/C off}", f0: "\\text{APC/C–Cdc20}\\to\\text{securin destroyed}\\newline\\to\\text{separase cuts cohesin}",
      s1: "One kinetochore is unattached: it keeps making the <b>Mad2</b> signal that traps Cdc20, so <b>APC/C</b> stays off, securin protects cohesin and anaphase waits.",
      s0: "Every kinetochore is attached from both poles: the Mad2 signal stops, <b>APC/C–Cdc20</b> destroys securin, separase cuts cohesin and the sisters separate."}
   ];
@@ -59,6 +59,7 @@
       api.circle([tok, 27], 6, {fill: c.c1, stroke: c.card, width: 2});
       // ---- what this checkpoint looks at ----
       var cx = 92, cy = 118, n0 = api.root.childNodes.length;
+      var pill = function (at, t) { api.rect(at[0] - 18, at[1] - 9, 36, 18, {fill: c.c5, fillOpacity: 0.25, stroke: c.c5, width: 1.5, rx: 9}); L(at, t, c.c5, {anchor: "middle", weight: 700}); };   // sized to the 3-letter sensor name
       L([cx, 70], "what it checks", c.muted, {anchor: "middle", weight: 500});
       if (s === 0) {
         var pts = function (ph, x0, x1) { var a = []; for (var x = x0; x <= x1; x += 3) a.push([x, cy + 12 * Math.sin((x - 20) / 9 + ph)]); return a; };
@@ -67,7 +68,7 @@
           if (gap) { api.polyline(pts(ph, 24, gap[0]), {stroke: k ? c.c6 : c.c2, width: 2.4}); api.polyline(pts(ph, gap[1], 160), {stroke: k ? c.c6 : c.c2, width: 2.4}); }
           else api.polyline(pts(ph, 24, 160), {stroke: k ? c.c6 : c.c2, width: 2.4});
         });
-        if (bad) { api.circle([cx, cy - 26], 9, {fill: c.c5, fillOpacity: 0.25, stroke: c.c5, width: 1.5}); L([cx, cy - 26], "ATM", c.c5, {anchor: "middle", size: 12, weight: 700}); L([cx, cy + 30], "double-strand break", c.c5, {anchor: "middle"}); }
+        if (bad) { pill([cx, cy - 26], "ATM"); L([cx, cy + 30], "double-strand break", c.c5, {anchor: "middle"}); }
         else L([cx, cy + 30], "intact DNA", c.c4, {anchor: "middle"});
       } else if (s === 1) {
         var y1 = cy - 12, y2 = cy + 12, fork = bad ? 112 : 166;
@@ -79,10 +80,10 @@
         if (bad) {
           api.line([fork, y1], [fork + 10, cy - 3], {color: c.c2, width: 3}); api.line([fork, y2], [fork + 10, cy + 3], {color: c.c6, width: 3});
           api.line([fork + 10, cy - 3], [164, cy - 3], {color: c.c2, width: 3}); api.line([fork + 10, cy + 3], [164, cy + 3], {color: c.c6, width: 3});
-          api.circle([fork + 4, cy - 26], 9, {fill: c.c5, fillOpacity: 0.25, stroke: c.c5, width: 1.5}); L([fork + 4, cy - 26], "ATR", c.c5, {anchor: "middle", weight: 700});
+          pill([fork + 4, cy - 26], "ATR");
           L([cx, cy + 32], "fork still open: uncopied", c.c5, {anchor: "middle"});
         } else L([cx, cy + 32], "every stretch copied", c.c4, {anchor: "middle"});
-        L([28, cy + 18], "old", c.muted, {weight: 500}); L([96, cy + 2], "new", c.c4, {anchor: "middle", weight: 500});
+        L([28, cy + 18], "old", c.muted, {weight: 500}); L([60, cy - 22], "new", c.c4, {anchor: "middle", weight: 500});   // above the strands, clear of both new lines
       } else {
         var P1 = [cx - 62, cy], P2 = [cx + 62, cy];
         [P1, P2].forEach(function (p) { api.circle(p, 4.5, {fill: c.c4}); });
@@ -91,9 +92,9 @@
           api.line(P1, [cx - 5 + xo, y], {color: c.c4, width: 1.2, opacity: 0.75});
           if (!loose) api.line(P2, [cx + 5, y], {color: c.c4, width: 1.2, opacity: 0.75});
           api.rect(cx - 6 + xo, y - 4, 5, 8, {fill: i % 2 ? c.c6 : c.c2, rx: 2}); api.rect(cx + 1 + xo, y - 4, 5, 8, {fill: i % 2 ? c.c6 : c.c2, rx: 2});
-          if (loose) { api.circle([cx + 9 + xo, y], 6, {stroke: c.c5, width: 1.6}); L([cx + 30 + xo, y + 2], "Mad2", c.c5, {weight: 700}); }
+          if (loose) { api.circle([cx + 9 + xo, y], 6, {stroke: c.c5, width: 1.6}); L([cx + 9 + xo, y + 14], "Mad2", c.c5, {anchor: "middle", weight: 700}); }   // under the loose kinetochore
         });
-        L([cx, cy + 50], bad ? "one kinetochore unattached" : "all attached to both poles", bad ? c.c5 : c.c4, {anchor: "middle"});
+        L([cx, cy + 62], bad ? "one kinetochore unattached" : "all attached to both poles", bad ? c.c5 : c.c4, {anchor: "middle"});
       }
       // enlarge the picture (drawn at 1x around cx, cy) into the space it has
       var grp = api.group({transform: "translate(" + cx + " " + (cy + 14) + ") scale(1.18) translate(" + (-cx) + " " + (-cy) + ")"}), kids = Array.prototype.slice.call(api.root.childNodes, n0);

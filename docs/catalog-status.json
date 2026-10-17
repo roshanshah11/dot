@@ -1,8 +1,8 @@
 {
  "counts": {
   "fail": 0,
-  "pass": 337,
-  "total": 337
+  "pass": 364,
+  "total": 364
  },
  "widgets": {
   "absorption-variable-costing-inventory-profit": {
@@ -422,7 +422,7 @@
    "title": "cAMP: a second messenger in balance"
   },
   "cancer-cell-cycle-failure": {
-   "checked": "2026-10-17T07:57:37",
+   "checked": "2026-10-17T08:47:14",
    "failures": [],
    "shows": "Pick the problem a dividing cell meets and compare a normal cell, whose checkpoint stops it, with a cancer cell, whose broken checkpoint lets it divide into daughters with a mutation, a broken chromosome or the wrong number",
    "status": "pass",
@@ -438,7 +438,7 @@
    "title": "How cells signal: by distance"
   },
   "cell-cycle": {
-   "checked": "2026-10-17T07:57:37",
+   "checked": "2026-10-17T08:47:14",
    "failures": [],
    "shows": "Slide the clock through G1, S, G2 and mitosis: the DNA per cell climbs from 2C to 4C during S and halves at division, and changing G1 changes how fast the cells multiply",
    "status": "pass",
@@ -446,7 +446,7 @@
    "title": "The cell cycle in hours"
   },
   "cell-cycle-and-regulation": {
-   "checked": "2026-10-17T07:57:37",
+   "checked": "2026-10-17T08:47:14",
    "failures": [],
    "shows": "Slide through the cycle: CDK levels stay flat while cyclins D, E, A and B rise and fall in turn, each switching on the next step; remove growth factors or block APC/C to see where the cycle stops",
    "status": "pass",
@@ -462,7 +462,7 @@
    "title": "Cell cycle checkpoints: go or stop"
   },
   "cell-cycle-checkpoints": {
-   "checked": "2026-10-17T07:57:37",
+   "checked": "2026-10-17T08:47:14",
    "failures": [],
    "shows": "Step through the G1/S, G2/M and spindle checkpoints: each senses one problem and brakes one switch (cyclin E\u2013CDK2, cyclin B\u2013CDK1, APC/C); turn the problem off and the switch flips and the cell moves on",
    "status": "pass",
@@ -550,7 +550,7 @@
    "title": "Cell-type-specific transcription factors"
   },
   "cellular-compartmentalization": {
-   "checked": "2026-10-17T07:57:37",
+   "checked": "2026-10-17T08:47:14",
    "failures": [],
    "shows": "Shut the same molecules into a smaller compartment: their concentration rises by one over the volume fraction, so partners kept together meet far more often than they would loose in the whole cell",
    "status": "pass",
@@ -558,7 +558,7 @@
    "title": "Compartments concentrate molecules"
   },
   "cellular-structure-and-functions": {
-   "checked": "2026-10-17T07:57:37",
+   "checked": "2026-10-17T08:47:14",
    "failures": [],
    "shows": "Pick a job (store DNA, make proteins, make ATP, hold the shape...) and see which structure does it in a bacterium, an animal cell and a plant cell; switch on true scale to see how much bigger eukaryotic cells are",
    "status": "pass",
@@ -950,7 +950,7 @@
    "title": "Dendritic cell activates a helper T cell"
   },
   "density-dependent-contact-inhibition": {
-   "checked": "2026-10-17T07:49:46",
+   "checked": "2026-10-17T08:33:02",
    "failures": [],
    "shows": "Run the days forward: normal cells fill the dish in one layer and stop dividing; cancer cells ignore the crowding and pile up",
    "status": "pass",
@@ -982,7 +982,7 @@
    "title": "Difference-in-differences"
   },
   "direct-contact-cell-signaling": {
-   "checked": "2026-10-17T07:49:46",
+   "checked": "2026-10-17T08:33:02",
    "failures": [],
    "shows": "Put the cells together or apart: a membrane-bound signal (Delta to Notch) or a gap junction only works while the cells touch",
    "status": "pass",
@@ -1006,7 +1006,7 @@
    "title": "DNA and RNA structure"
   },
   "dna-damage-repair-versus-apoptosis": {
-   "checked": "2026-10-17T07:49:46",
+   "checked": "2026-10-17T08:33:02",
    "failures": [],
    "shows": "Step from damage to decision: sensors raise p53, a little p53 pauses the cycle for repair, a lot triggers apoptosis, and mutant p53 does neither",
    "status": "pass",
@@ -1142,7 +1142,7 @@
    "title": "Replication vs transcription: what each one makes"
   },
   "dna-rna-nucleotide-comparison": {
-   "checked": "2026-10-17T07:49:46",
+   "checked": "2026-10-17T08:33:02",
    "failures": [],
    "shows": "Switch DNA and RNA and pick a base: the sugar differs by one oxygen on the 2\u2032 carbon, and thymine is uracil with a methyl group",
    "status": "pass",
@@ -1229,6 +1229,54 @@
    "subject": "stats",
    "title": "The empirical rule (68-95-99.7)"
   },
+  "endocrine-long-distance-signaling": {
+   "checked": "2026-10-17T08:34:55",
+   "failures": [],
+   "shows": "Step a hormone from its gland into the blood and out to distant cells: only cells with its receptor respond, and the half-life sets how long the signal lasts",
+   "status": "pass",
+   "subject": "biology",
+   "title": "Endocrine signaling over distance"
+  },
+  "endocytosis-and-exocytosis": {
+   "checked": "2026-10-17T08:34:55",
+   "failures": [],
+   "shows": "Set how many vesicles fuse and how many bud off each second: exocytosis adds its vesicle membrane to the surface, endocytosis takes membrane back, and the difference decides whether the cell surface grows or shrinks",
+   "status": "pass",
+   "subject": "biology",
+   "title": "Exocytosis and endocytosis"
+  },
+  "endocytosis-vesicle-uptake": {
+   "checked": "2026-10-17T09:09:25",
+   "failures": [],
+   "shows": "Pick receptor-mediated endocytosis, pinocytosis or phagocytosis and step through it: the membrane wraps the cargo, pinches off a vesicle, and delivers it to an endosome or lysosome",
+   "status": "pass",
+   "subject": "biology",
+   "title": "Endocytosis: taking material in"
+  },
+  "endomembrane-pathway": {
+   "checked": "2026-10-17T09:09:25",
+   "failures": [],
+   "shows": "Pick where a new protein is headed and step it through the cell: made on the rough ER, folded, carried to the Golgi in a COPII vesicle, edited and sorted, then secreted, put in the plasma membrane or sent to the lysosome",
+   "status": "pass",
+   "subject": "biology",
+   "title": "The endomembrane pathway"
+  },
+  "endomembrane-trafficking": {
+   "checked": "2026-10-17T09:09:25",
+   "failures": [],
+   "shows": "Pick a route between compartments and step a vesicle through it: a GTPase recruits the coat that gathers cargo and bends the membrane, the bud pinches off and sheds its coat, and matching v- and t-SNAREs zip it onto the right target",
+   "status": "pass",
+   "subject": "biology",
+   "title": "Vesicle traffic: coat, bud, dock, fuse"
+  },
+  "epigenetics": {
+   "checked": "2026-10-17T08:34:55",
+   "failures": [],
+   "shows": "Divide the cell and set how faithfully DNMT1 copies methyl marks onto each new strand: good copying keeps a gene silenced for generations with the DNA sequence unchanged, poor copying dilutes the marks by half each division",
+   "status": "pass",
+   "subject": "biology",
+   "title": "Epigenetics: methylation memory"
+  },
   "eukaryotic-enhancer-promoter-looping": {
    "checked": "2026-10-17T04:19:30",
    "failures": [],
@@ -1236,6 +1284,14 @@
    "status": "pass",
    "subject": "biology",
    "title": "Enhancers: DNA looping brings activators to the promoter"
+  },
+  "eukaryotic-flagellum-propulsion": {
+   "checked": "2026-10-17T08:34:55",
+   "failures": [],
+   "shows": "Set the beat frequency, wavelength and amplitude of a sperm tail and step through a beat: bends run from base to tip, push water back, and the cell swims head-first at a speed set by how steep the wave is",
+   "status": "pass",
+   "subject": "biology",
+   "title": "Eukaryotic flagellum propulsion"
   },
   "eukaryotic-gene-regulation": {
    "checked": "2026-10-17T04:44:19",
@@ -1252,6 +1308,14 @@
    "status": "pass",
    "subject": "finance",
    "title": "Equity value to enterprise value"
+  },
+  "exocytosis-vesicle-secretion": {
+   "checked": "2026-10-17T08:34:55",
+   "failures": [],
+   "shows": "Step a synaptic vesicle from docking to fusion and slide the local calcium level: SNAREs zip the vesicle to the membrane, calcium binding synaptotagmin opens the fusion pore, and release climbs with the fourth power of calcium",
+   "status": "pass",
+   "subject": "biology",
+   "title": "Exocytosis: Ca\u00b2\u207a-triggered secretion"
   },
   "expected-value-weighted-average": {
    "checked": "2026-10-17T05:09:29",
@@ -1406,7 +1470,7 @@
    "title": "Geometric distribution: waiting for the first success"
   },
   "golgi-apparatus-structure-and-sorting": {
-   "checked": "2026-10-17T08:18:04",
+   "checked": "2026-10-17T08:58:57",
    "failures": [],
    "shows": "Pick a cargo and step it through: COPII vesicles bring it from the ER to the cis face, each cisterna edits its sugar chain, and the trans-Golgi network sends it out of the cell, into the membrane or to the lysosome, while ER proteins with KDEL are sent back",
    "status": "pass",
@@ -1422,7 +1486,7 @@
    "title": "GPCR signaling: Gs, Gi and Gq"
   },
   "helper-t-cell-coordinates-adaptive-immunity": {
-   "checked": "2026-10-17T08:18:04",
+   "checked": "2026-10-17T08:58:57",
    "failures": [],
    "shows": "Pick the helper subset and the CD4 count: a dendritic cell activates the CD4 T cell with three signals, the cytokines it then makes decide which cells it helps, and losing CD4 cells (as in HIV) takes that help away from all of them",
    "status": "pass",
@@ -1446,7 +1510,7 @@
    "title": "Histogram: the shape of a distribution"
   },
   "histone-acetylation-chromatin-opening": {
-   "checked": "2026-10-17T08:18:04",
+   "checked": "2026-10-17T08:58:57",
    "failures": [],
    "shows": "Step through it: positive lysines on the histone tails hold DNA tight, acetyl groups from a HAT cancel those charges so the chromatin opens and the gene is read, and HDACs remove them again unless an HDAC inhibitor blocks them",
    "status": "pass",
@@ -1462,7 +1526,7 @@
    "title": "Hooke's law: the spring pulls back"
   },
   "humoral-versus-cell-mediated-immunity": {
-   "checked": "2026-10-17T08:18:04",
+   "checked": "2026-10-17T08:58:57",
    "failures": [],
    "shows": "Pick a threat: antibodies from B cells (humoral) work in blood and lymph on toxins, bacteria and free virus, while T cells (cell-mediated) kill infected cells or arm macrophages against microbes hiding inside cells",
    "status": "pass",
@@ -1478,7 +1542,7 @@
    "title": "Hypergeometric distribution: drawing without replacement"
   },
   "immune-acute-inflammation-neutrophil-recruitment": {
-   "checked": "2026-10-17T08:18:04",
+   "checked": "2026-10-17T08:58:57",
    "failures": [],
    "shows": "Step a neutrophil out of an inflamed venule: selectins capture it, it rolls, a chemokine switches its integrins on, it stops on ICAM-1 and squeezes through to the bacteria; switch on LAD I or LAD II to see which step fails",
    "status": "pass",
@@ -1486,7 +1550,7 @@
    "title": "Neutrophil recruitment: the adhesion cascade"
   },
   "immune-cell-phagocytosis": {
-   "checked": "2026-10-17T08:18:04",
+   "checked": "2026-10-17T08:58:57",
    "failures": [],
    "shows": "Step a phagocyte through eating a bacterium: receptors grip it, pseudopods wrap it into a phagosome, lysosomes and the oxidative burst kill it, and a macrophage shows its pieces to T cells; switch off NADPH oxidase to see chronic granulomatous disease",
    "status": "pass",
@@ -1494,7 +1558,7 @@
    "title": "Phagocytosis: engulf, fuse, kill"
   },
   "immune-memory-secondary-response": {
-   "checked": "2026-10-17T08:18:04",
+   "checked": "2026-10-17T08:58:57",
    "failures": [],
    "shows": "Set the size of the memory pool, how fast memory cells get going and how fast cells divide: the second response clears the detection line sooner because it skips the slow start and needs fewer doublings",
    "status": "pass",
@@ -1574,7 +1638,7 @@
    "title": "Speed squared over a distance"
   },
   "kinesin-dynein-vesicle-transport": {
-   "checked": "2026-10-17T08:19:09",
+   "checked": "2026-10-17T08:52:00",
    "failures": [],
    "shows": "Switch the motor and spend ATP: kinesin walks to the microtubule's plus end, out to the axon tip; dynein walks to the minus end, back to the cell body; about 8 nm per ATP",
    "status": "pass",
@@ -1670,7 +1734,7 @@
    "title": "Logistic regression curve"
   },
   "lymphocyte-development-recirculation": {
-   "checked": "2026-10-17T08:19:09",
+   "checked": "2026-10-17T08:52:00",
    "failures": [],
    "shows": "Pick T or B cells and step through a life: born in the bone marrow, tested in the thymus or marrow, then blood, lymph node, lymph and back to blood until they meet their antigen",
    "status": "pass",
@@ -1766,17 +1830,17 @@
    "title": "Bilayer polarity: polar faces, nonpolar core"
   },
   "membrane-channel-carrier-specificity": {
-   "checked": "2026-10-17T08:19:09",
+   "checked": "2026-10-17T08:52:00",
    "failures": [],
-   "shows": "Pick a protein, a solute and a concentration: a K\u207a channel sorts by size and charge in its filter and runs at millions per second; a glucose carrier sorts by shape, flips for every molecule and tops out near 10\u00b3",
+   "shows": "Pick a protein, a solute and a concentration: a K\u207a channel sorts by size and charge in its filter and lets K\u207a out of the cell at tens of millions per second; a glucose carrier sorts by shape, flips for every molecule and tops out near 10\u00b3",
    "status": "pass",
    "subject": "biology",
    "title": "Channels vs carriers: how each picks its solute"
   },
   "membrane-selective-permeability": {
-   "checked": "2026-10-17T08:19:09",
+   "checked": "2026-10-17T08:52:00",
    "failures": [],
-   "shows": "Pick a molecule and a cell size: gases cross bare lipid in microseconds, water and urea in seconds to minutes, glucose in weeks and ions in years, which is why cells need transport proteins",
+   "shows": "Pick a molecule and a cell size: for a 10 \u00b5m cell, gases cross bare lipid in microseconds, water in milliseconds, urea in about a minute, glucose in weeks and ions in years, which is why cells need transport proteins",
    "status": "pass",
    "subject": "biology",
    "title": "Selective permeability of the lipid bilayer"
@@ -1798,7 +1862,7 @@
    "title": "Forest plot: how weights pool studies"
   },
   "mhc-i-vs-mhc-ii-presentation": {
-   "checked": "2026-10-17T08:19:09",
+   "checked": "2026-10-17T08:52:00",
    "failures": [],
    "shows": "Step both routes side by side: inside proteins go proteasome, TAP, ER and MHC I to CD8 T cells; engulfed proteins go endosome, CLIP swap and MHC II to CD4 T cells",
    "status": "pass",
@@ -1806,7 +1870,7 @@
    "title": "MHC I vs MHC II: two routes to the surface"
   },
   "microrna-mrna-translational-silencing": {
-   "checked": "2026-10-17T08:19:09",
+   "checked": "2026-10-17T08:52:00",
    "failures": [],
    "shows": "Step from Dicer to silencing and change the sites in the 3\u2032 UTR: seed-paired miRNAs trim the tail and block translation, a little more per site; a full match lets Argonaute slice the mRNA",
    "status": "pass",
@@ -1814,9 +1878,9 @@
    "title": "MicroRNA silencing of an mRNA"
   },
   "microtubule-polarity-and-growth": {
-   "checked": "2026-10-17T08:09:23",
+   "checked": "2026-10-17T08:35:41",
    "failures": [],
-   "shows": "Slide the free tubulin and switch each end between growth and catastrophe: the beta-exposed plus end grows about twice as fast as the minus end while its GTP cap lasts, and either end shrinks over ten times faster than it grows once the cap is lost",
+   "shows": "Slide the free tubulin and switch each end between growth and catastrophe: the beta-exposed plus end grows about twice as fast as the minus end while its GTP cap lasts, and either end shrinks 5 to over 1,000 times faster than it grows once the cap is lost",
    "status": "pass",
    "subject": "biology",
    "title": "Microtubule polarity and dynamic instability"
@@ -1830,7 +1894,7 @@
    "title": "Mitochondrion: structure and ATP production"
   },
   "mitosis": {
-   "checked": "2026-10-17T08:09:23",
+   "checked": "2026-10-17T08:35:41",
    "failures": [],
    "shows": "Step a cell with 2n chromosomes through prophase, prometaphase, metaphase, anaphase and telophase: duplicated chromosomes line up, sister chromatids split to opposite poles, and each daughter ends with the same 2n chromosomes as the mother",
    "status": "pass",
@@ -1846,7 +1910,7 @@
    "title": "Chromosome segregation and the spindle checkpoint"
   },
   "mitosis-phase-sequence-overview": {
-   "checked": "2026-10-17T08:09:23",
+   "checked": "2026-10-17T08:35:41",
    "failures": [],
    "shows": "Step through prophase, prometaphase, metaphase, anaphase, telophase and cytokinesis: what the envelope, the chromosomes and the spindle do in each, and how M phase is only about an hour of a 24-hour cycle",
    "status": "pass",
@@ -1902,7 +1966,7 @@
    "title": "Base substitution: silent, missense or nonsense"
   },
   "mutation-codon-reading-frame": {
-   "checked": "2026-10-17T08:30:29",
+   "checked": "2026-10-17T08:47:17",
    "failures": [],
    "shows": "Move the start base: the ribosome cuts the same mRNA into triplets from there, so starts 1, 4, 7 share one frame and starts 2 or 3 read different codons and a different chain",
    "status": "pass",
@@ -1918,7 +1982,7 @@
    "title": "Deletion frameshift"
   },
   "mutation-dna-rna-protein-phenotype": {
-   "checked": "2026-10-17T08:30:29",
+   "checked": "2026-10-17T08:47:17",
    "failures": [],
    "shows": "Change codon 6 of beta-globin and follow it down: DNA, mRNA, protein, hemoglobin and red cells; GAG to GTG makes HbS, which sickles cells when oxygen is low",
    "status": "pass",
@@ -1965,6 +2029,30 @@
    "subject": "biology",
    "title": "Nonsense mutation: a premature stop"
   },
+  "mutation-silent-substitution": {
+   "checked": "2026-10-17T09:12:11",
+   "failures": [],
+   "shows": "Change one base of a codon: when the new codon names the same amino acid the change is silent, which happens mostly at the third base because the genetic code has several codons for most amino acids",
+   "status": "pass",
+   "subject": "biology",
+   "title": "Silent substitution"
+  },
+  "mutation-substitution-outcomes": {
+   "checked": "2026-10-17T09:12:11",
+   "failures": [],
+   "shows": "Pick a codon and change one base: the result is silent, missense or nonsense, and the grids of all nine possible changes per codon show that most substitutions are missense while silent ones cluster at the third base",
+   "status": "pass",
+   "subject": "biology",
+   "title": "Substitution outcomes: silent, missense, nonsense"
+  },
+  "mutation-types": {
+   "checked": "2026-10-17T09:12:11",
+   "failures": [],
+   "shows": "Pick a mutation type and watch the same gene change: a substitution alters one codon (silent, missense or nonsense), while inserting or deleting one base shifts the reading frame and garbles everything after it",
+   "status": "pass",
+   "subject": "biology",
+   "title": "Types of gene mutation"
+  },
   "mutations": {
    "checked": "2026-10-17T08:09:23",
    "failures": [],
@@ -1972,6 +2060,22 @@
    "status": "pass",
    "subject": "biology",
    "title": "Mutations: substitutions and frameshifts"
+  },
+  "natural-killer-cell-missing-self-recognition": {
+   "checked": "2026-10-17T09:12:11",
+   "failures": [],
+   "shows": "Lower a target cell's MHC class I or raise its stress ligands: the NK cell weighs inhibitory against activating signals and kills when MHC I goes missing or stress ligands win",
+   "status": "pass",
+   "subject": "biology",
+   "title": "NK cells: missing-self recognition"
+  },
+  "neuron-versus-muscle-gene-expression": {
+   "checked": "2026-10-17T09:12:11",
+   "failures": [],
+   "shows": "Step from DNA to protein in a neuron and a muscle cell side by side: both carry the same genes, but REST silences neuronal genes in muscle and MyoD switches on muscle genes, so each cell makes its own proteins",
+   "status": "pass",
+   "subject": "biology",
+   "title": "Neuron versus muscle: same genes, different expression"
   },
   "newton-first-law": {
    "checked": "2026-10-17T06:21:25",
@@ -2004,6 +2108,30 @@
    "status": "pass",
    "subject": "stats",
    "title": "Normal approximation to the binomial"
+  },
+  "nucleic-acid-polymerization": {
+   "checked": "2026-10-17T09:12:11",
+   "failures": [],
+   "shows": "Add nucleotides to a growing DNA or RNA chain: each one joins the 3\u2032 end by a phosphodiester bond and releases pyrophosphate, DNA needs a primer while RNA starts from scratch, and n bases can spell 4^n sequences",
+   "status": "pass",
+   "subject": "biology",
+   "title": "Nucleic acid polymerization"
+  },
+  "nucleic-acids": {
+   "checked": "2026-10-17T09:12:11",
+   "failures": [],
+   "shows": "Switch between DNA, mRNA, tRNA and rRNA: all are chains of nucleotides, but DNA is a double-stranded deoxyribose store of genes while the single-stranded ribose RNAs carry the message, bring the amino acids and build the ribosome",
+   "status": "pass",
+   "subject": "biology",
+   "title": "Nucleic acids: DNA and the three RNAs"
+  },
+  "nucleotides-dna-and-rna": {
+   "checked": "2026-10-17T09:12:11",
+   "failures": [],
+   "shows": "Assemble a nucleotide step by step: the base joins the sugar's 1\u2032 carbon to make a nucleoside, then a phosphate joins the 5\u2032 carbon; switch DNA and RNA to swap deoxyribose for ribose and thymine for uracil",
+   "status": "pass",
+   "subject": "biology",
+   "title": "Nucleotides of DNA and RNA"
   },
   "null-space": {
    "checked": "2026-10-17T03:35:57",
@@ -2045,6 +2173,14 @@
    "subject": "stats",
    "title": "Paired t test"
   },
+  "pathway-specific-cell-responses": {
+   "checked": "2026-10-17T08:49:10",
+   "failures": [],
+   "shows": "Pick a cell and a blocker: epinephrine reaches all four, but each answers with its own receptor and relay proteins, so the liver releases glucose, the heart speeds up, one vessel narrows and another widens",
+   "status": "pass",
+   "subject": "biology",
+   "title": "One signal, different cell responses"
+  },
   "pcr-cycle": {
    "checked": "2026-10-17T01:50:55",
    "failures": [],
@@ -2077,6 +2213,14 @@
    "subject": "biology",
    "title": "PCR: the temperature program"
   },
+  "peptide-bond-formation": {
+   "checked": "2026-10-17T09:11:14",
+   "failures": [],
+   "shows": "Add residues to a real peptide: every new amino acid joins the C-terminus by a condensation that releases one water, so n residues hold n \u2212 1 peptide bonds and weigh 18.015 \u00d7 (n \u2212 1) less than their free amino acids",
+   "status": "pass",
+   "subject": "biology",
+   "title": "Peptide bonds, one at a time"
+  },
   "period-frequency-relation": {
    "checked": "2026-10-17T06:43:07",
    "failures": [],
@@ -2100,6 +2244,54 @@
    "status": "pass",
    "subject": "stats",
    "title": "Permutations vs combinations"
+  },
+  "peroxisome-detoxification": {
+   "checked": "2026-10-17T09:11:14",
+   "failures": [],
+   "shows": "Step through a peroxisome: oxidases strip hydrogen from toxic substrates onto O\u2082 and make H\u2082O\u2082, then catalase spends that H\u2082O\u2082 oxidizing ethanol and splits the rest into water and oxygen before it can harm the cell",
+   "status": "pass",
+   "subject": "biology",
+   "title": "Peroxisome detoxification"
+  },
+  "phospholipid-bilayer-self-assembly": {
+   "checked": "2026-10-17T09:11:14",
+   "failures": [],
+   "shows": "Change the number of tails and the head size: the molecule's shape (packing parameter P = v / a0 lc) decides whether it hides its tails from water in micelles, a bilayer that closes into a vesicle, or inverted micelles",
+   "status": "pass",
+   "subject": "biology",
+   "title": "Why lipids self-assemble into bilayers"
+  },
+  "phosphorylation-cascade-activation": {
+   "checked": "2026-10-17T08:49:10",
+   "failures": [],
+   "shows": "Scrub through time: a signal turns on Raf, then MEK, then ERK, each tier lagging the one above, and once the signal stops phosphatases strip the phosphates so the cascade resets, slowly if phosphatases are slow",
+   "status": "pass",
+   "subject": "biology",
+   "title": "A kinase cascade switching on and off"
+  },
+  "phosphorylation-cascade-architecture": {
+   "checked": "2026-10-17T08:49:10",
+   "failures": [],
+   "shows": "Change the signal, the gain per tier and whether MEK and ERK need one phosphate or two: stacking two-phosphate tiers makes the response steeper at every tier, so ERK flips from off to on over a much narrower range of signal",
+   "status": "pass",
+   "subject": "biology",
+   "title": "Kinase cascade architecture"
+  },
+  "plasma-membrane-cell-boundary": {
+   "checked": "2026-10-17T09:11:14",
+   "failures": [],
+   "shows": "Grow the cell or change its shape: everything it uses crosses the plasma membrane, but membrane area per volume falls as 3/R for a sphere, so big cells run short of boundary unless they flatten or stretch",
+   "status": "pass",
+   "subject": "biology",
+   "title": "The membrane as the cell's boundary"
+  },
+  "plasma-membrane-fluid-mosaic-architecture": {
+   "checked": "2026-10-17T09:11:14",
+   "failures": [],
+   "shows": "Pick a part of the plasma membrane and set how much of it is protein: integral and peripheral proteins, outward-facing sugars, cholesterol and the cytoskeleton, with the mosaic of proteins among about 50 lipids each in a typical membrane",
+   "status": "pass",
+   "subject": "biology",
+   "title": "Fluid mosaic: the parts of a membrane"
   },
   "plasmid-sticky-end-ligation": {
    "checked": "2026-10-17T03:49:27",
@@ -2485,6 +2677,14 @@
    "subject": "finance",
    "title": "One transaction through the three statements"
   },
+  "tight-junction-barrier": {
+   "checked": "2026-10-17T09:43:10",
+   "failures": [],
+   "shows": "Pick a junction and a molecule: sealing claudins stop almost everything between cells, claudin-2 pores let small cations and water through, and removing Ca\u00b2\u207a opens the seal and lets membrane proteins mix",
+   "status": "pass",
+   "subject": "biology",
+   "title": "Tight junctions: the seal between cells"
+  },
   "torque": {
    "checked": "2026-10-17T06:33:27",
    "failures": [],
@@ -2613,6 +2813,14 @@
    "subject": "stats",
    "title": "P(A or B): inclusion-exclusion"
   },
+  "vaccine-induced-immune-memory": {
+   "checked": "2026-10-17T09:43:10",
+   "failures": [],
+   "shows": "Set the doses, the gap between them and how long until the real pathogen arrives: antibody wanes, but the memory cells each dose leaves behind bring it back within days instead of the two to three weeks a first response takes",
+   "status": "pass",
+   "subject": "biology",
+   "title": "Vaccine-induced immune memory"
+  },
   "variance": {
    "checked": "2026-10-17T06:40:42",
    "failures": [],
@@ -2652,6 +2860,14 @@
    "status": "pass",
    "subject": "physics",
    "title": "Velocity as the slope of a position graph"
+  },
+  "viral-mutation-and-antigenic-recognition": {
+   "checked": "2026-10-17T09:43:10",
+   "failures": [],
+   "shows": "Add mutations to a viral spike: each change inside an epitope knocks off the antibodies that fit it, a broad (polyclonal) response loses ground slowly, and a single monoclonal antibody can be escaped by one change",
+   "status": "pass",
+   "subject": "biology",
+   "title": "Viral mutation and antibody recognition"
   },
   "wacc": {
    "checked": "2026-10-17T02:00:50",

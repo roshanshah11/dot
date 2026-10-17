@@ -34,8 +34,8 @@
           "<b>APC/C–Cdc20</b> marks securin and cyclin B for destruction: sisters separate, CDK1 activity collapses and the cell leaves mitosis."],
     nogf: ["no cyclin D", "Rb keeps E2F locked: stops before R", "\\text{no growth factor}\\Rightarrow\\text{no cyclin D}\\newline\\Rightarrow\\text{Rb holds E2F}",
            "With no growth factors there is no <b>cyclin D</b>, so Rb keeps E2F locked up: the cell never passes the restriction point and rests in <b>G₀</b>."],
-    noapc: ["APC/C blocked", "cyclin B stays: stuck in metaphase", "\\text{APC/C blocked}\\Rightarrow\\text{cyclin B stays}\\newline\\Rightarrow\\text{no anaphase}",
-            "With <b>APC/C blocked</b>, securin and cyclin B are never destroyed, so the cell sits in <b>metaphase</b> with CDK1 still on."]
+    noapc: ["APC/C blocked", "cyclins A and B stay: stuck in metaphase", "\\text{APC/C blocked}\\Rightarrow\\text{cyclins A and B stay}\\newline\\Rightarrow\\text{no anaphase}",
+            "With <b>APC/C blocked</b>, securin and <b>cyclins A and B</b> are never destroyed, so the cell sits in <b>metaphase</b> with CDK1 still on."]
   };
   Viz.register("cell-cycle-and-regulation", {
     title: "Cyclins and CDKs drive the cycle",
@@ -79,17 +79,21 @@
       api.line([x0, gy0], [x1, gy0], {color: c.axis, width: 1.2});
       api.line([x0, 68], [x1, 68], {color: c.muted, width: 1.4, dash: "5 4"});
       L([x0 + 2, 58], "CDK level: constant", c.muted, {weight: 500});
-      var CY = [["D", c.c4, 3.2, 0.7, "middle"], ["E", c.c3, 9.6, 0.95, "end"], ["A", c.c2, 15.8, 0.85, "middle"], ["B", c.c5, 21.6, 0.93, "middle"]];
+      var CY = [["D", c.c4, 3.2, 0.7, "middle"], ["E", c.c3, 9.6, 0.95, "end"], ["A", c.c2, 15.8, 0.85, "middle"], ["B", c.c5, 18.8, 0.5, "end"]];
       var curve = function (key, gf, apc) { var pts = []; for (var t = 0; t <= 24.0001; t += (t < 23 ? 0.1 : 0.02)) pts.push([X(t), Y(levels(t, gf, apc)[key])]); return pts; };
       CY.forEach(function (cy) {
         if (!v.gf || !v.apc) api.polyline(curve(cy[0], true, true), {stroke: cy[1], width: 1.4, dash: "3 4", opacity: 0.45});
         api.polyline(curve(cy[0], v.gf, v.apc), {stroke: cy[1], width: 2.4});
-        L([X(cy[2]) - (cy[4] === "end" ? 4 : 0), Y(cy[3]) - (cy[4] === "end" ? 0 : 10)], "cyclin " + cy[0], cy[1], {anchor: cy[4], weight: 650});
       });
       // where the cell is now
       api.line([X(w.t), 46], [X(w.t), gy0], {color: c.accent, width: 1.4, dash: "3 3"});
       var now = levels(w.t, v.gf, v.apc);
       CY.forEach(function (cy) { if (now[cy[0]] > 0.02) api.circle([X(w.t), Y(now[cy[0]])], 3.6, {fill: cy[1]}); });
+      // curve labels last, on a card-colored halo, so the "now" line passes behind them instead of through them
+      CY.forEach(function (cy) {
+        var t = L([X(cy[2]) - (cy[4] === "end" ? 4 : 0), Y(cy[3]) - (cy[4] === "end" ? 0 : 10)], "cyclin " + cy[0], cy[1], {anchor: cy[4], weight: 650});
+        t.setAttribute("stroke", c.card); t.setAttribute("stroke-width", 5); t.setAttribute("stroke-linejoin", "round"); t.setAttribute("paint-order", "stroke");
+      });
       api.circle([X(w.t), 46], 4.5, {fill: c.accent, stroke: c.card, width: 1.5});
       [0, 6, 12, 18, 23, 24].forEach(function (h) { L([X(h), gy0 + 13], String(h), c.muted, {anchor: "middle", weight: 500}); });
       L([x1, gy0 + 27], "hours (M drawn 3× wider)", c.muted, {anchor: "end", weight: 500});

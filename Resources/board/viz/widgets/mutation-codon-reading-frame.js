@@ -32,14 +32,14 @@
     formula: function (v) {
       var f = frameOf(v.s), r = read(v.s);
       return "\\begin{array}{l}\\text{frame}=((s-1)\\bmod 3)+1\\\\ \\quad=(" + (v.s - 1) + "\\bmod 3)+1=" + f +
-        "\\ \\Rightarrow\\ " + r.n + "\\text{ aa}" + (r.stop >= 0 ? ",\\ \\texttt{" + r.cods[r.stop].c + "}" : "") + "\\end{array}";
+        "\\\\ \\quad\\Rightarrow\\ " + r.n + "\\text{ aa}" + (r.stop >= 0 ? ",\\ \\texttt{" + r.cods[r.stop].c + "}" : "") + "\\end{array}";
     },
     status: function (v) {
       var f = frameOf(v.s), r = read(v.s), p = chain(r), stop = r.stop >= 0 ? r.cods[r.stop].c : null;
       var n = "<b>" + r.n + " amino acid" + (r.n === 1 ? "" : "s") + "</b>";
       if (v.s === 1) return "From the AUG at base 1 the codons are AUG GUC UAC …: " + n + " (" + p[0] + "-" + p[1] + "-…-" + p[p.length - 1] + "), then the stop " + stop + ".";
       if (f === 1) return "Base " + v.s + " is frame 1 again (" + v.s + " − 1 = " + (v.s - 1) + " is a multiple of 3): the same codons as from base 1 minus the first " +
-        ((v.s - 1) / 3) + ", so " + n + " and the same stop " + stop + ".";
+        ((v.s - 1) / 3) + " codon" + (v.s === 4 ? "" : "s") + ", so " + n + " and the same stop " + stop + ".";
       return "Starting at base " + v.s + " cuts the letters in frame " + f + ": they now read " + (p.length ? p.join("-") : "nothing") +
         (stop ? " and then " + stop + ", a stop, so only " + n + " of a different chain." : " with no stop in view.");
     },
@@ -62,6 +62,7 @@
         api.label([X(i), yB], MRNA[i], {color: read_ ? c.ink : c.muted, size: 13, weight: read_ ? 650 : 500, anchor: "middle"});
       }
       api.label([X(0) - 13, yB], "5′", {color: c.muted, size: 12, anchor: "middle"});
+      api.label([X(N - 1) + 6, yB], "3′", {color: c.muted, size: 12, clamp: false});
       // the start marker under base s
       var sx = X(v.s - 1);
       api.polygon([[sx, yB + 9], [sx - 5, yB + 17], [sx + 5, yB + 17]], {fill: c.c1, fillOpacity: 1});
@@ -74,26 +75,29 @@
         for (var k = fr - 1; k + 3 <= N; k += 3) {
           var a = aa(MRNA.substr(k, 3)), isStop = a === "*";
           var used = on && k >= v.s - 1 && k <= stopAt, before = on && k < v.s - 1;
-          var x0 = X(k) - 4.4, w = 2 * 9.2 + 8.8;
+          // boxes 25 wide on a 27.6 pitch, so each triplet stands apart from its neighbours
+          var w = 25, x0 = X(k + 1) - w / 2;
           if (used) api.rect(x0, y - 11, w, 22, {fill: isStop ? c.c3 : c.c1, fillOpacity: isStop ? 0.85 : 0.22, rx: 5});
           else api.rect(x0, y - 11, w, 22, {stroke: isStop ? c.c3 : c.muted, width: 1, dash: before ? "3 3" : null, rx: 5, opacity: on ? 0.8 : 0.45});
-          api.label([X(k + 1), y], NAME[a], {color: used ? (isStop ? c.card : c.ink) : isStop ? c.c3 : c.muted, size: 12, weight: used ? 650 : 500,
+          var tl = api.label([X(k + 1), y], NAME[a], {color: used ? (isStop ? c.card : c.ink) : isStop ? c.c3 : c.muted, size: 12, weight: used ? 650 : 500,
             anchor: "middle", opacity: used ? 1 : on ? 0.75 : 0.6});
+          if (isStop) { tl.setAttribute("textLength", 23); tl.setAttribute("lengthAdjust", "spacingAndGlyphs"); }   // "Stop" is the one 4-letter name
         }
       });
       // the chain made from this start
-      var p = chain(r), yC = 222, step = Math.min(31, 300 / Math.max(1, p.length + 1));
+      // beads r = 14 on a step that uses the real width: 10 residues + the stop box end at x = 392
+      var p = chain(r), yC = 222, R = 14, step = Math.min(35, 352 / Math.max(1, p.length));
       api.label([8, yC - 26], "chain read from base " + v.s, {color: c.c1, size: 12, weight: 650});
       for (var b = 0; b < p.length; b++) {
-        var bx = 22 + b * step;
-        if (b) api.line([bx - step + 13, yC], [bx - 13, yC], {color: c.c1, width: 2, opacity: 0.7});
-        api.circle([bx, yC], 13, {fill: c.c1, fillOpacity: 0.85});
+        var bx = 8 + R + b * step;
+        if (b) api.line([bx - step + R, yC], [bx - R, yC], {color: c.c1, width: 2.5, opacity: 0.8});
+        api.circle([bx, yC], R, {fill: c.c1, fillOpacity: 0.85});
         api.label([bx, yC], p[b], {color: c.card, size: 12, weight: 700, anchor: "middle"});
       }
-      var ex = 22 + p.length * step;
+      var ex = 8 + R + p.length * step;
       if (r.stop >= 0) {
-        api.rect(ex - 15, yC - 11, 34, 22, {fill: c.c3, fillOpacity: 0.85, rx: 6});
-        api.label([ex + 2, yC], "stop", {color: c.card, size: 12, weight: 700, anchor: "middle"});
+        api.rect(ex - R, yC - 11, 34, 22, {fill: c.c3, fillOpacity: 0.85, rx: 6});
+        api.label([ex - R + 17, yC], "stop", {color: c.card, size: 12, weight: 700, anchor: "middle"});
       }
       api.label([8, 254], r.n + " amino acid" + (r.n === 1 ? "" : "s") + (f === 1 ? ", the gene's own frame" : ", a different frame: a different chain"), {color: c.ink, size: 12.5, weight: 600});
       // viz.css paints svg text with the ink color; restate each label's own color inline

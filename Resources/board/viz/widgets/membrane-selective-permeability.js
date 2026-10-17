@@ -28,7 +28,7 @@
   Viz.register("membrane-selective-permeability", {
     title: "Selective permeability of the lipid bilayer",
     subject: "biology",
-    shows: "Pick a molecule and a cell size: gases cross bare lipid in microseconds, water and urea in seconds to minutes, glucose in weeks and ions in years, which is why cells need transport proteins",
+    shows: "Pick a molecule and a cell size: for a 10 µm cell, gases cross bare lipid in microseconds, water in milliseconds, urea in about a minute, glucose in weeks and ions in years, which is why cells need transport proteins",
     params: {
       mol: {kind: "enum", values: ORDER, names: {O2: "O₂", CO2: "CO₂", water: "H₂O", urea: "urea", glucose: "glucose", Na: "Na⁺"}, default: "water", label: "\\text{molecule}"},
       r: {kind: "number", default: 10, min: 1, max: 50, step: 1, label: "r\\ (\\mu\\text{m})"}
@@ -68,6 +68,7 @@
       api.circle(C, R, {fill: c.ink, fillOpacity: 0.04, stroke: c.c3, width: 3});
       api.circle(C, Math.max(1, R - 4), {stroke: c.c3, width: 1, opacity: 0.6});
       api.line(C, [C[0] + R * 0.707, C[1] + R * 0.707], {color: c.muted, width: 1.2, dash: "2 3"});
+      api.label([C[0] + (R + 10) * 0.707, C[1] + (R + 10) * 0.707], "r", {color: c.muted, size: 13, italic: true, anchor: "middle"});   // the r in the formula, past the rim between two solute dots
       for (var i = 0; i < 8; i++) {
         var a = i * Math.PI / 4 + 0.39, d = R + 22;
         api.circle([C[0] + d * Math.cos(a), C[1] + d * Math.sin(a)], 4, {fill: sc});

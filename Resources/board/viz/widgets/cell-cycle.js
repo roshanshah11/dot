@@ -68,24 +68,25 @@
       L([cx, cy - 8], Viz.fmt(q.tau, 1) + " h", c.ink, {anchor: "middle", size: 13, weight: 650});
       L([cx, cy + 9], "of " + Viz.fmt(T, 1) + " h", c.muted, {anchor: "middle", weight: 500});
       // ---- the cell at this moment ----
-      var X = 292, Y = 92, CH = [[26, c.c2, -24], [26, c.c6, -8], [16, c.c2, 8], [16, c.c6, 24]];   // length, parent, position
+      var X = 292, Y = 92, CH = [[26, c.c2, -27], [26, c.c6, -9], [16, c.c2, 9], [16, c.c6, 27]];   // length, parent, position
       var rod = function (x, y, h, col, w) { api.rect(x - (w || 6) / 2, y - h / 2, w || 6, h, {fill: col, rx: 3}); };
       var thread = function (x, y, len, col, dx) {   // a decondensed chromosome: a loose wavy strand
-        var pts = []; for (var i = 0; i <= 12; i++) pts.push([x + dx + 1.2 * Math.sin(i * 1.3 + x), y - len / 2 + len * i / 12]);
+        var pts = []; for (var i = 0; i <= 16; i++) pts.push([x + dx + 1.1 * Math.sin(i * 0.8 + x), y - len / 2 + len * i / 16]);
         api.polyline(pts, {stroke: col, width: 1.8});
       };
       var title = q.p === "M" ? q.sub : q.p === "S" ? "S: DNA synthesis" : q.p === "G1" ? "G₁: growth" : "G₂: ready to divide";
       L([X, 18], title, c.ink, {anchor: "middle", size: 12.5});
       if (q.p !== "M" || q.sub === "prophase" || q.sub === "metaphase") api.circle([X, Y], 50, {stroke: c.muted, width: 1.8});
       if (q.p === "G1" || q.p === "S" || q.p === "G2") {
-        api.circle([X, Y], 34, {stroke: c.faint, width: 1.4, fill: c.ink, fillOpacity: 0.03});
-        CH.forEach(function (ch) {   // the copy runs 7 px beside its original, from the top down, as far as S has got
-          var copied = q.p === "G1" ? 0 : q.p === "S" ? q.f : 1;
-          thread(X + ch[2] - (copied > 0 || q.p === "S" ? 3.5 : 0), Y, ch[0], ch[1], 0);
-          if (copied > 0) { var lc = ch[0] * copied; thread(X + ch[2] + 3.5, Y - ch[0] / 2 + lc / 2, lc, ch[1], 0); }
+        api.circle([X, Y], 40, {stroke: c.faint, width: 1.4, fill: c.ink, fillOpacity: 0.03});
+        CH.forEach(function (ch) {   // the copy runs 7 px beside its original, from the top down, as far as S has got;
+          var len = ch[0] * 1.4, copied = q.p === "G1" ? 0 : q.p === "S" ? q.f : 1, x0 = X + ch[2] - (q.p === "G1" ? 0 : 3.5), x1 = x0 + 7, top = Y - len / 2;
+          thread(x0, Y, len, ch[1], 0);   // in S the stretch still to copy is a faint dotted track, so the fraction reads at a glance
+          if (q.p === "S" && copied < 1) api.line([x1, top + len * copied], [x1, top + len], {color: ch[1], width: 1.4, dash: "1.5 3", opacity: 0.55});
+          if (copied > 0) { var lc = len * copied; thread(x1, top + lc / 2, lc, ch[1], 0); }
         });
         var nC = q.p === "G1" ? 1 : 2;
-        for (var k = 0; k < nC; k++) api.circle([X + 38 - k * 8, Y - 30 + k * 4], 3, {fill: c.c4});
+        for (var k = 0; k < nC; k++) { var ca = (-50 + k * 12) * Math.PI / 180; api.circle([X + 45 * Math.cos(ca), Y + 45 * Math.sin(ca)], 3, {fill: c.c4}); }   // centrosome(s), between nucleus and membrane
       } else if (q.sub === "prophase") {
         api.circle([X, Y], 30, {stroke: c.faint, width: 1.4, dash: "3 4"});
         CH.forEach(function (ch, i) { var x = X - 16 + i * 11, y = Y + (i % 2 ? 6 : -6); rod(x - 3, y, ch[0] * 0.7, ch[1], 5); rod(x + 3, y, ch[0] * 0.7, ch[1], 5); });

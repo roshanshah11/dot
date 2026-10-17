@@ -8,7 +8,7 @@
 // (no capture at all). Both leave neutrophils stuck in the blood (neutrophilia) and infections without pus.
 // Speeds are typical orders of magnitude, drawn on a log scale.
 (function () {
-  var SPEED = {normal: [1000, 30, 8, 0, 0.2], lad1: [1000, 30, 30, 30, 1000], lad2: [1000, 1000, 1000, 1000, 1000]};
+  var SPEED = {normal: [1000, 30, 8, 0, 0.17], lad1: [1000, 30, 30, 30, 1000], lad2: [1000, 1000, 1000, 1000, 1000]};   // um/s; 0.17 um/s = 10 um/min
   var TEX = [
     "\\text{P/E-selectin}\\leftrightarrow\\text{sialyl-Lewis}^{X}\\ (\\text{PSGL-1})",
     "\\text{selectin bonds form and break}:\\ v\\approx 30\\ \\mu\\text{m/s}",
@@ -59,13 +59,16 @@
     draw: function (api, v) {
       var c = api.color, s = v.step || 1, lad = v.lad;
       var L = function (at, t, col, o) { return api.label(at, t, Object.assign({color: col, size: 12, weight: 600, raw: true}, o || {})); };
-      // speed on a log scale, 0.1 to 1000 um/s
-      var sp = SPEED[lad][s - 1], X0 = 176, X1 = 384, sx = function (u) { return X0 + (Math.log10(u) + 1) / 4 * (X1 - X0); };
+      // speed on a log scale, 0.1 to 1000 um/s, captioned with its unit; a stopped cell (0) sits off the scale, tagged
+      var sp = SPEED[lad][s - 1], X0 = 196, X1 = 316, sx = function (u) { return X0 + (Math.log10(u) + 1) / 4 * (X1 - X0); };
       api.line([X0, 16], [X1, 16], {color: c.faint, width: 1.5});
       [0.1, 1, 10, 100, 1000].forEach(function (u) { api.line([sx(u), 12], [sx(u), 20], {color: c.faint, width: 1.2}); L([sx(u), 30], String(u), c.muted, {anchor: "middle", weight: 500}); });
-      var mx = sp > 0 ? sx(sp) : X0 - 12;
+      L([394, 16], "µm/s", c.muted, {anchor: "end", weight: 500}); L([394, 30], "log scale", c.muted, {anchor: "end", weight: 500});
+      var mx = sp > 0 ? sx(sp) : X0 - 16;
       api.circle([mx, 16], 5.5, {fill: c.c1});
-      L([8, 16], "speed " + (sp === 0 ? "0" : sp >= 1000 ? "≈ 1 mm/s" : sp < 1 ? "≈ 10 µm/min" : "≈ " + sp + " µm/s"), c.c1);
+      if (sp === 0) L([mx - 10, 16], "stopped", c.c1, {anchor: "end", weight: 500});
+      L([8, 16], "speed " + (sp === 0 ? "0" : "≈ " + sp + " µm/s"), c.c1);
+      if (sp >= 1000 || (sp > 0 && sp < 1)) L([8, 30], sp >= 1000 ? "(≈ " + sp / 1000 + " mm/s)" : "(≈ " + Math.round(sp * 60) + " µm/min)", c.c1, {weight: 500});
       // lumen, endothelium, tissue
       api.rect(0, 40, 400, 112, {fill: c.c5, fillOpacity: 0.06, rx: 0});
       api.arrow([8, 52], [70, 52], {color: c.muted, width: 1.5, halo: false, head: 7});
@@ -87,6 +90,7 @@
       var rnd = function (q) { var t = Math.sin(q * 12.9898) * 43758.5453; return t - Math.floor(t); };
       for (var g = 0; g < 90; g++) { var gx = 120 + rnd(g + 1) * 200, gy = 192 + rnd(g + 200) * 80; if (rnd(g + 400) < (gx - 120) / 220) api.circle([gx, gy], 1.8, {fill: c.c4, opacity: 0.8}); }
       L([8, 204], "tissue", c.muted, {weight: 500});
+      L([124, 262], "CXCL8 gradient →", c.c4, {weight: 500});
       // the neutrophil
       var neut = function (p, rx, ry) {
         api.path("M " + (p[0] - rx) + " " + p[1] + " a " + rx + " " + ry + " 0 1 0 " + 2 * rx + " 0 a " + rx + " " + ry + " 0 1 0 " + -2 * rx + " 0", {fill: c.c1, fillOpacity: 0.28, stroke: c.c1, width: 1.8});

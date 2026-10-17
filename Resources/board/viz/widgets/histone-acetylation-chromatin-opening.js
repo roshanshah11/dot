@@ -22,7 +22,8 @@
     params: {
       hdaci: {kind: "boolean", default: false, label: "\\text{HDACi}", on: "HDAC inhibitor", off: "none"}
     },
-    steps: ["closed chromatin", "activator brings a HAT", "lysines acetylated", "chromatin opens, gene on", "HDAC erases the marks"],
+    // short labels (one line in the bar); step 5 is named so it stays true with the inhibitor on
+    steps: ["closed chromatin", "HAT recruited", "tail acetylated", "chromatin opens", "HDAC step"],
     stepMs: 1900,
     formula: function (v) {
       var s = v.step || 1;
@@ -85,7 +86,10 @@
       api.circle(hd, 12, {fill: c.c1, fillOpacity: 0.35, stroke: c.c1, width: 1.6});
       L(hd, "HD", c.c1, {anchor: "middle", weight: 700, size: 12});
       L([hd[0] + 17, hd[1]], v.hdaci ? "HDAC + inhibitor" : s === 5 ? "HDAC at work" : "HDAC", c.c1, {weight: 500});
-      if (v.hdaci) api.rect(hd[0] - 16, hd[1] + 6, 14, 8, {fill: c.c5, rx: 4});
+      if (v.hdaci) {                          // the inhibitor: a red ring and bar across the HDAC badge
+        api.circle(hd, 15, {stroke: c.c5, width: 2.2});
+        api.line([hd[0] - 10.6, hd[1] + 10.6], [hd[0] + 10.6, hd[1] - 10.6], {color: c.c5, width: 2.6});
+      }
       // ---- one H4 tail on DNA
       api.line([0, 146], [400, 146], {color: c.faint, width: 1, dash: "2 4"});
       L([8, 162], "one H4 tail, residues 1–16", c.muted, {weight: 500});
@@ -118,7 +122,12 @@
       if (s === 3) L([392, 250], "CoA-SH leaves", c.c4, {anchor: "end", weight: 500});
       if (s === 4) L([392, 250], "a bromodomain reads the Ac marks", c.muted, {anchor: "end", weight: 500});
       if (s === 5 && !v.hdaci) { api.circle([300, 204], 13, {fill: c.c1, fillOpacity: 0.35, stroke: c.c1, width: 1.6}); L([300, 204], "HD", c.c1, {anchor: "middle", weight: 700}); L([318, 204], "→ acetate", c.c1, {weight: 500}); }
-      if (s === 5 && v.hdaci) L([392, 250], "HDAC blocked: marks stay", c.c5, {anchor: "end", weight: 600});
+      if (s === 5 && v.hdaci) {               // the HDAC reaches for the tail and is stopped: a red inhibition bar
+        api.circle([178, 252], 12, {fill: c.c1, fillOpacity: 0.35, stroke: c.c1, width: 1.6}); L([178, 252], "HD", c.c1, {anchor: "middle", weight: 700});
+        api.line([178, 239], [178, 229], {color: c.c5, width: 2.6});
+        api.line([166, 229], [190, 229], {color: c.c5, width: 3.2});
+        L([198, 252], "HDAC blocked: marks stay", c.c5, {weight: 600});
+      }
       api.root.querySelectorAll("text").forEach(function (t) { if (t.getAttribute("fill")) t.style.fill = t.getAttribute("fill"); });
     }
   });

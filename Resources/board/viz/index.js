@@ -919,10 +919,52 @@ window.VIZ_INDEX = [
 "shows": "Set the mean and SD: about 68% of a normal distribution lies within one SD of the mean, 95% within two and 99.7% within three"
 },
 {
+"id": "endocrine-long-distance-signaling",
+"title": "Endocrine signaling over distance",
+"subject": "biology",
+"shows": "Step a hormone from its gland into the blood and out to distant cells: only cells with its receptor respond, and the half-life sets how long the signal lasts"
+},
+{
+"id": "endocytosis-and-exocytosis",
+"title": "Exocytosis and endocytosis",
+"subject": "biology",
+"shows": "Set how many vesicles fuse and how many bud off each second: exocytosis adds its vesicle membrane to the surface, endocytosis takes membrane back, and the difference decides whether the cell surface grows or shrinks"
+},
+{
+"id": "endocytosis-vesicle-uptake",
+"title": "Endocytosis: taking material in",
+"subject": "biology",
+"shows": "Pick receptor-mediated endocytosis, pinocytosis or phagocytosis and step through it: the membrane wraps the cargo, pinches off a vesicle, and delivers it to an endosome or lysosome"
+},
+{
+"id": "endomembrane-pathway",
+"title": "The endomembrane pathway",
+"subject": "biology",
+"shows": "Pick where a new protein is headed and step it through the cell: made on the rough ER, folded, carried to the Golgi in a COPII vesicle, edited and sorted, then secreted, put in the plasma membrane or sent to the lysosome"
+},
+{
+"id": "endomembrane-trafficking",
+"title": "Vesicle traffic: coat, bud, dock, fuse",
+"subject": "biology",
+"shows": "Pick a route between compartments and step a vesicle through it: a GTPase recruits the coat that gathers cargo and bends the membrane, the bud pinches off and sheds its coat, and matching v- and t-SNAREs zip it onto the right target"
+},
+{
+"id": "epigenetics",
+"title": "Epigenetics: methylation memory",
+"subject": "biology",
+"shows": "Divide the cell and set how faithfully DNMT1 copies methyl marks onto each new strand: good copying keeps a gene silenced for generations with the DNA sequence unchanged, poor copying dilutes the marks by half each division"
+},
+{
 "id": "eukaryotic-enhancer-promoter-looping",
 "title": "Enhancers: DNA looping brings activators to the promoter",
 "subject": "biology",
 "shows": "Move the enhancer near or far, upstream or downstream, and switch the activators or an insulator: the DNA loops so the enhancer touches the promoter through Mediator, unless nothing is bound or an insulator walls it off"
+},
+{
+"id": "eukaryotic-flagellum-propulsion",
+"title": "Eukaryotic flagellum propulsion",
+"subject": "biology",
+"shows": "Set the beat frequency, wavelength and amplitude of a sperm tail and step through a beat: bends run from base to tip, push water back, and the cell swims head-first at a speed set by how steep the wave is"
 },
 {
 "id": "eukaryotic-gene-regulation",
@@ -935,6 +977,12 @@ window.VIZ_INDEX = [
 "title": "Equity value to enterprise value",
 "subject": "finance",
 "shows": "Equity value plus debt, preferred and minority interest, minus cash, equals enterprise value; the balance-sheet view shows why cash comes off"
+},
+{
+"id": "exocytosis-vesicle-secretion",
+"title": "Exocytosis: Ca²⁺-triggered secretion",
+"subject": "biology",
+"shows": "Step a synaptic vesicle from docking to fusion and slide the local calcium level: SNAREs zip the vesicle to the membrane, calcium binding synaptotagmin opens the fusion pore, and release climbs with the fourth power of calcium"
 },
 {
 "id": "expected-value-weighted-average",
@@ -1324,13 +1372,13 @@ window.VIZ_INDEX = [
 "id": "membrane-channel-carrier-specificity",
 "title": "Channels vs carriers: how each picks its solute",
 "subject": "biology",
-"shows": "Pick a protein, a solute and a concentration: a K⁺ channel sorts by size and charge in its filter and runs at millions per second; a glucose carrier sorts by shape, flips for every molecule and tops out near 10³"
+"shows": "Pick a protein, a solute and a concentration: a K⁺ channel sorts by size and charge in its filter and lets K⁺ out of the cell at tens of millions per second; a glucose carrier sorts by shape, flips for every molecule and tops out near 10³"
 },
 {
 "id": "membrane-selective-permeability",
 "title": "Selective permeability of the lipid bilayer",
 "subject": "biology",
-"shows": "Pick a molecule and a cell size: gases cross bare lipid in microseconds, water and urea in seconds to minutes, glucose in weeks and ions in years, which is why cells need transport proteins"
+"shows": "Pick a molecule and a cell size: for a 10 µm cell, gases cross bare lipid in microseconds, water in milliseconds, urea in about a minute, glucose in weeks and ions in years, which is why cells need transport proteins"
 },
 {
 "id": "meta-analysis-forest-weights",
@@ -1471,10 +1519,40 @@ window.VIZ_INDEX = [
 "shows": "Slide a premature stop codon along the beta-globin gene: the chain is cut short at that codon, and a stop well before the last exon junction gets the mRNA destroyed by nonsense-mediated decay"
 },
 {
+"id": "mutation-silent-substitution",
+"title": "Silent substitution",
+"subject": "biology",
+"shows": "Change one base of a codon: when the new codon names the same amino acid the change is silent, which happens mostly at the third base because the genetic code has several codons for most amino acids"
+},
+{
+"id": "mutation-substitution-outcomes",
+"title": "Substitution outcomes: silent, missense, nonsense",
+"subject": "biology",
+"shows": "Pick a codon and change one base: the result is silent, missense or nonsense, and the grids of all nine possible changes per codon show that most substitutions are missense while silent ones cluster at the third base"
+},
+{
+"id": "mutation-types",
+"title": "Types of gene mutation",
+"subject": "biology",
+"shows": "Pick a mutation type and watch the same gene change: a substitution alters one codon (silent, missense or nonsense), while inserting or deleting one base shifts the reading frame and garbles everything after it"
+},
+{
 "id": "mutations",
 "title": "Mutations: substitutions and frameshifts",
 "subject": "biology",
 "shows": "Substitute, insert or delete bases anywhere in a short gene: one changed codon is silent, missense or nonsense, while inserting or deleting anything but a multiple of 3 bases shifts the reading frame and garbles everything downstream until a stop"
+},
+{
+"id": "natural-killer-cell-missing-self-recognition",
+"title": "NK cells: missing-self recognition",
+"subject": "biology",
+"shows": "Lower a target cell's MHC class I or raise its stress ligands: the NK cell weighs inhibitory against activating signals and kills when MHC I goes missing or stress ligands win"
+},
+{
+"id": "neuron-versus-muscle-gene-expression",
+"title": "Neuron versus muscle: same genes, different expression",
+"subject": "biology",
+"shows": "Step from DNA to protein in a neuron and a muscle cell side by side: both carry the same genes, but REST silences neuronal genes in muscle and MyoD switches on muscle genes, so each cell makes its own proteins"
 },
 {
 "id": "newton-first-law",
@@ -1499,6 +1577,24 @@ window.VIZ_INDEX = [
 "title": "Normal approximation to the binomial",
 "subject": "stats",
 "shows": "Set n, p and an event: the bell curve with the same mean and SD stands in for the binomial bars, with k ± 0.5 as the continuity correction"
+},
+{
+"id": "nucleic-acid-polymerization",
+"title": "Nucleic acid polymerization",
+"subject": "biology",
+"shows": "Add nucleotides to a growing DNA or RNA chain: each one joins the 3′ end by a phosphodiester bond and releases pyrophosphate, DNA needs a primer while RNA starts from scratch, and n bases can spell 4^n sequences"
+},
+{
+"id": "nucleic-acids",
+"title": "Nucleic acids: DNA and the three RNAs",
+"subject": "biology",
+"shows": "Switch between DNA, mRNA, tRNA and rRNA: all are chains of nucleotides, but DNA is a double-stranded deoxyribose store of genes while the single-stranded ribose RNAs carry the message, bring the amino acids and build the ribosome"
+},
+{
+"id": "nucleotides-dna-and-rna",
+"title": "Nucleotides of DNA and RNA",
+"subject": "biology",
+"shows": "Assemble a nucleotide step by step: the base joins the sugar's 1′ carbon to make a nucleoside, then a phosphate joins the 5′ carbon; switch DNA and RNA to swap deoxyribose for ribose and thymine for uracil"
 },
 {
 "id": "null-space",
@@ -1531,6 +1627,12 @@ window.VIZ_INDEX = [
 "shows": "Each student is measured twice: the test runs on the differences, so t is the mean change over its standard error"
 },
 {
+"id": "pathway-specific-cell-responses",
+"title": "One signal, different cell responses",
+"subject": "biology",
+"shows": "Pick a cell and a blocker: epinephrine reaches all four, but each answers with its own receptor and relay proteins, so the liver releases glucose, the heart speeds up, one vessel narrows and another widens"
+},
+{
 "id": "pcr-cycle",
 "title": "PCR: one cycle, then doubling",
 "subject": "biology",
@@ -1555,6 +1657,12 @@ window.VIZ_INDEX = [
 "shows": "Step through a full PCR run on the thermocycler; slide the annealing temperature against the primers' Tm, the product length (which sets the extension time) and the cycles"
 },
 {
+"id": "peptide-bond-formation",
+"title": "Peptide bonds, one at a time",
+"subject": "biology",
+"shows": "Add residues to a real peptide: every new amino acid joins the C-terminus by a condensation that releases one water, so n residues hold n − 1 peptide bonds and weigh 18.015 × (n − 1) less than their free amino acids"
+},
+{
 "id": "period-frequency-relation",
 "title": "Period and frequency",
 "subject": "physics",
@@ -1571,6 +1679,42 @@ window.VIZ_INDEX = [
 "title": "Permutations vs combinations",
 "subject": "stats",
 "shows": "Toggle whether order matters: each column is one group of r, and its r! orders are the cells under it, so permutations = combinations × r!"
+},
+{
+"id": "peroxisome-detoxification",
+"title": "Peroxisome detoxification",
+"subject": "biology",
+"shows": "Step through a peroxisome: oxidases strip hydrogen from toxic substrates onto O₂ and make H₂O₂, then catalase spends that H₂O₂ oxidizing ethanol and splits the rest into water and oxygen before it can harm the cell"
+},
+{
+"id": "phospholipid-bilayer-self-assembly",
+"title": "Why lipids self-assemble into bilayers",
+"subject": "biology",
+"shows": "Change the number of tails and the head size: the molecule's shape (packing parameter P = v / a0 lc) decides whether it hides its tails from water in micelles, a bilayer that closes into a vesicle, or inverted micelles"
+},
+{
+"id": "phosphorylation-cascade-activation",
+"title": "A kinase cascade switching on and off",
+"subject": "biology",
+"shows": "Scrub through time: a signal turns on Raf, then MEK, then ERK, each tier lagging the one above, and once the signal stops phosphatases strip the phosphates so the cascade resets, slowly if phosphatases are slow"
+},
+{
+"id": "phosphorylation-cascade-architecture",
+"title": "Kinase cascade architecture",
+"subject": "biology",
+"shows": "Change the signal, the gain per tier and whether MEK and ERK need one phosphate or two: stacking two-phosphate tiers makes the response steeper at every tier, so ERK flips from off to on over a much narrower range of signal"
+},
+{
+"id": "plasma-membrane-cell-boundary",
+"title": "The membrane as the cell's boundary",
+"subject": "biology",
+"shows": "Grow the cell or change its shape: everything it uses crosses the plasma membrane, but membrane area per volume falls as 3/R for a sphere, so big cells run short of boundary unless they flatten or stretch"
+},
+{
+"id": "plasma-membrane-fluid-mosaic-architecture",
+"title": "Fluid mosaic: the parts of a membrane",
+"subject": "biology",
+"shows": "Pick a part of the plasma membrane and set how much of it is protein: integral and peripheral proteins, outward-facing sugars, cholesterol and the cytoskeleton, with the mosaic of proteins among about 50 lipids each in a typical membrane"
 },
 {
 "id": "plasmid-sticky-end-ligation",
@@ -1861,6 +2005,12 @@ window.VIZ_INDEX = [
 "shows": "Pick a transaction (depreciation, capex, a debt raise, interest, a dividend) and step it through the income statement, the cash flow statement and the balance sheet"
 },
 {
+"id": "tight-junction-barrier",
+"title": "Tight junctions: the seal between cells",
+"subject": "biology",
+"shows": "Pick a junction and a molecule: sealing claudins stop almost everything between cells, claudin-2 pores let small cations and water through, and removing Ca²⁺ opens the seal and lets membrane proteins mix"
+},
+{
 "id": "torque",
 "title": "Torque on a wrench",
 "subject": "physics",
@@ -1957,6 +2107,12 @@ window.VIZ_INDEX = [
 "shows": "Set P(A), P(B) and their overlap: adding P(A) and P(B) counts the overlap twice, so P(A ∪ B) subtracts it once"
 },
 {
+"id": "vaccine-induced-immune-memory",
+"title": "Vaccine-induced immune memory",
+"subject": "biology",
+"shows": "Set the doses, the gap between them and how long until the real pathogen arrives: antibody wanes, but the memory cells each dose leaves behind bring it back within days instead of the two to three weeks a first response takes"
+},
+{
 "id": "variance",
 "title": "Variance: E(X²) minus E(X)²",
 "subject": "stats",
@@ -1985,6 +2141,12 @@ window.VIZ_INDEX = [
 "title": "Velocity as the slope of a position graph",
 "subject": "physics",
 "shows": "Drag the positions: each straight piece of the x-t graph has slope Δx/Δt, and that slope is the height of the matching step on the v-t graph"
+},
+{
+"id": "viral-mutation-and-antigenic-recognition",
+"title": "Viral mutation and antibody recognition",
+"subject": "biology",
+"shows": "Add mutations to a viral spike: each change inside an epitope knocks off the antibodies that fit it, a broad (polyclonal) response loses ground slowly, and a single monoclonal antibody can be escaped by one change"
 },
 {
 "id": "wacc",

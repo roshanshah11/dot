@@ -47,7 +47,7 @@
     draw: function (api, v) {
       var c = api.color, m = model(v);
       var L = function (at, t, col, o) { return api.label(at, t, Object.assign({color: col, size: 12, weight: 600}, o || {})); };
-      var X0 = 46, X1 = 390, Y0 = 176, Y1 = 18, TMAX = 15, LMIN = 1, LMAX = 6;
+      var X0 = 52, X1 = 390, Y0 = 176, Y1 = 18, TMAX = 15, LMIN = 1, LMAX = 6;
       var px = function (t) { return X0 + t / TMAX * (X1 - X0); }, py = function (lg) { return Y0 - (lg - LMIN) / (LMAX - LMIN) * (Y0 - Y1); };
       // axes and grid
       for (var lg = LMIN; lg <= LMAX; lg++) {
@@ -57,7 +57,8 @@
       for (var t = 0; t <= TMAX; t += 3) L([px(t), Y0 + 13], t === TMAX ? t + " days" : String(t), c.muted, {anchor: t === TMAX ? "end" : "middle", weight: 500});
       api.line([X0, Y0], [X1, Y0], {color: c.axis, width: 1.2});
       api.line([X0, Y0], [X0, Y1], {color: c.axis, width: 1.2});
-      L([X0 + 4, Y1 - 6], "antigen-specific cells", c.muted, {weight: 500});
+      var yt = L([10, (Y0 + Y1) / 2], "antigen-specific cells", c.muted, {anchor: "middle", weight: 500, clamp: false});   // along the y axis, out of the plot
+      yt.setAttribute("transform", "rotate(-90 10 " + (Y0 + Y1) / 2 + ")");
       // the detection line
       api.line([X0, py(5)], [X1, py(5)], {color: c.c5, width: 1.5, dash: "6 4"});
       // the two clones: flat while being primed, then doubling every t_d
@@ -71,18 +72,48 @@
         api.polyline(pts, {stroke: col, width: 3});
         return pts;
       };
-      curve(N0, TNAIVE, c.c2);
-      curve(N0 * m.f, v.act, c.c1);
-      L([px(0) + 4, py(2) + 11], "naive 10²", c.c2, {weight: 650});
-      var lmS = Math.log10(N0 * m.f);
-      if (m.f > 1) L([px(0) + 4, py(lmS) + 11], "memory " + (m.f === 1000 ? "10⁵" : m.f === 100 ? "10⁴" : "10³"), c.c1, {weight: 650});
-      else L([px(0) + 74, py(2) + 11], "= memory", c.c1, {weight: 650});
+      var pts = curve(N0, TNAIVE, c.c2).concat(curve(N0 * m.f, v.act, c.c1));
       // lag markers
+      var marks = [px(m.ln), px(m.lm)];
       [[m.ln, c.c2], [m.lm, c.c1]].forEach(function (q) {
         api.line([px(q[0]), py(5)], [px(q[0]), Y0], {color: q[1], width: 1.2, dash: "3 3"});
         api.circle([px(q[0]), py(5)], 4.5, {fill: q[1]});
       });
-      var det = L([X1, py(5) - 9], "detectable response", c.c5, {anchor: "end", weight: 500});
+      // labels go where nothing else is: not on a curve, a lag marker or its dot, the detection line or another label.
+      // A start label tries the left end of its curve and the spots on either side of the memory marker, one row below and one above
+      // its flat segment, first with its count ("memory 10⁴") and then without; failing that it slides along the rows.
+      var boxes = [], mm = px(m.lm);
+      var clear = function (r) {
+        if (boxes.some(function (b) { return r[0] < b[2] && b[0] < r[2] && r[1] < b[3] && b[1] < r[3]; })) return false;
+        if (pts.some(function (q) { return q[0] > r[0] - 3 && q[0] < r[2] + 3 && q[1] > r[1] - 3 && q[1] < r[3] + 3; })) return false;
+        if (marks.some(function (x) { return x > r[0] - 6 && x < r[2] + 6 && r[3] > py(5) - 6; })) return false;
+        return !(r[1] < py(5) + 1 && r[3] > py(5) - 1);
+      };
+      var place = function (texts, col, xs, rows, o, scanEach) {
+        var t = L([0, 0], texts[0], col, Object.assign({}, o, {anchor: "start", clamp: false})), pick = null, w = 0;   // measured, then moved
+        var tryText = function (txt, scan) {
+          t.textContent = txt;
+          w = (t.getComputedTextLength && t.getComputedTextLength()) || txt.length * 7;
+          var cands = [];
+          xs(w).forEach(function (x) { rows.forEach(function (y) { cands.push([x, y]); }); });
+          if (scan) rows.forEach(function (y) { for (var k = 0; k < 90; k++) cands.push([o.anchor === "end" ? X1 - w - k * 4 : X0 + 4 + k * 4, y]); });
+          return cands.filter(function (q) { return q[0] >= X0 + 2 && q[0] + w <= X1; })
+            .find(function (q) { return clear([q[0], q[1] - 7, q[0] + w, q[1] + 7]); }) || null;
+        };
+        for (var i = 0; i < texts.length && !pick; i++) pick = tryText(texts[i], !!scanEach);
+        if (!pick) pick = tryText(texts[0], true) || [o.anchor === "end" ? X1 - w : X0 + 4, rows[0]];
+        boxes.push([pick[0], pick[1] - 7, pick[0] + w, pick[1] + 7]);
+        t.setAttribute("x", pick[0]); t.setAttribute("y", pick[1]);
+        return t;
+      };
+      var near = function (w) { return [X0 + 4, mm - 7 - w, mm + 7].sort(function (p, q) { return p - q; }); };   // both flat segments start at t = 0; the memory marker is the one that can cross them
+      var lmS = Math.log10(N0 * m.f), bold = {weight: 650};
+      place(["naive 10²", "naive"], c.c2, near, [py(2) + 11, py(2) - 11], bold);
+      var nb = boxes[0];
+      if (m.f > 1) place(["memory " + (m.f === 1000 ? "10⁵" : m.f === 100 ? "10⁴" : "10³"), "memory"], c.c1, near,
+        lmS >= 5 ? [py(5) - 11] : [py(lmS) + 11, py(lmS) - 11], bold);   // a pool already at N* is labelled above the line
+      else place(["= memory"], c.c1, function (w) { return [nb[2] + 6].concat(near(w)); }, [nb[1] + 7, py(2) - 11, py(2) + 11], bold);
+      var det = place(["detectable response", "detection line"], c.c5, function (w) { return [X1 - w]; }, [py(5) - 9, py(5) + 9], {anchor: "end", weight: 500}, true);
       det.style.stroke = c.card; det.style.strokeWidth = "4px"; det.style.paintOrder = "stroke"; det.style.strokeLinejoin = "round";
       // where the time goes: priming wait, then doublings
       var bar = function (y, wait, dbl, col, name, n) {

@@ -8,11 +8,11 @@
   var T = {
     toxin: {hum: true, cell: false, tex: "\\text{toxin in body fluids}\\Rightarrow\\text{humoral: antibodies neutralize it}",
       say: "Tetanus toxin floats in body fluids, so <b>humoral</b> immunity handles it: antibodies bind the toxin and <b>neutralize</b> it, while T cells find no infected cell to attack."},
-    bacteria: {hum: true, cell: false, tex: "\\text{bacteria in blood}\\Rightarrow\\text{humoral: IgG coats them,}\\newline\\text{phagocytes and complement finish them}",
+    bacteria: {hum: true, cell: false, tex: "\\text{bacteria in blood}\\Rightarrow\\text{humoral:}\\newline\\text{IgG opsonizes for phagocytes}\\newline\\text{and activates complement}",
       say: "Bacteria multiplying in blood are outside cells, so the <b>humoral</b> arm does the work: antibodies <b>coat</b> them for phagocytes and set off complement."},
     virus: {hum: true, cell: true, tex: "\\text{virus}\\Rightarrow\\text{antibodies (free virus)}\\newline+\\ \\text{CD8 killer T cells (infected cells)}",
       say: "A virus calls for <b>both</b> arms: antibodies neutralize free virus before it enters cells, and CD8 killer T cells destroy cells that already show viral peptide on <b>MHC I</b>."},
-    TB: {hum: false, cell: true, tex: "\\textit{M. tuberculosis}\\text{ inside macrophages}\\newline\\Rightarrow\\text{Th1: IFN-}\\gamma\\text{ activates the macrophage}",
+    TB: {hum: false, cell: true, tex: "\\textit{M. tuberculosis}\\text{ in macrophages}\\newline\\Rightarrow\\text{Th1 IFN-}\\gamma\\text{ arms the macrophage}",
       say: "Tuberculosis bacteria hide <b>inside macrophages</b> where antibodies cannot reach, so <b>cell-mediated</b> immunity takes over: IFN-γ from Th1 cells lets the macrophage kill them."}
   };
 
@@ -61,33 +61,33 @@
       api.line([48, 102], [72, 102], {color: hc, width: 1.6, arrow: true});
       api.circle([94, 102], 17, {fill: hc, fillOpacity: 0.25, stroke: hc, width: 1.6});
       [-6, 0, 6].forEach(function (d) { api.path("M " + (86) + " " + (102 + d) + " q 8 -3 16 0", {stroke: hc, width: 1.2}); });
-      api.line([114, 102], [134, 102], {color: hc, width: 1.6, arrow: true});
-      [[150, 94], [166, 108], [178, 92]].forEach(function (p, k) { ab(p, -Math.PI / 2 + k * 0.5 - 0.5, hc); });
-      L([34, 128], "B cell", hc, {anchor: "middle", weight: 500});
-      L([94, 132], "plasma cell", hc, {anchor: "middle", weight: 500});
-      L([158, 128], "antibodies", hc, {anchor: "middle", weight: 500});
+      api.line([114, 102], [142, 102], {color: hc, width: 1.6, arrow: true});
+      [[160, 94], [176, 108], [188, 92]].forEach(function (p, k) { ab(p, -Math.PI / 2 + k * 0.5 - 0.5, hc); });
+      L([34, 130], "B cell", hc, {anchor: "middle", weight: 500});
+      L([94, 130], "plasma cell", hc, {anchor: "middle", weight: 500});
+      L([166, 130], "antibodies", hc, {anchor: "middle", weight: 500});
       // cell-mediated chain: CD8 -> killer T cell, or Th1 -> IFN-gamma for a microbe inside a macrophage
-      api.circle([230, 102], 12, {fill: cc, fillOpacity: 0.25, stroke: cc, width: 1.6});
-      api.line([244, 102], [290, 102], {color: cc, width: 1.6, arrow: true});
-      L([230, 128], tb ? "Th1 (CD4)" : "CD8 T cell", cc, {anchor: "middle", weight: 500});
-      if (tb) { L([298, 102], "IFN-γ", cc, {weight: 700}); L([330, 128], "arms macrophages", cc, {anchor: "middle", weight: 500}); }
+      api.circle([236, 102], 12, {fill: cc, fillOpacity: 0.25, stroke: cc, width: 1.6});
+      api.line([250, 102], [290, 102], {color: cc, width: 1.6, arrow: true});
+      L([236, 130], tb ? "Th1 (CD4)" : "CD8 T cell", cc, {anchor: "middle", weight: 500});
+      if (tb) { L([298, 102], "IFN-γ", cc, {weight: 700}); L([330, 130], "arms macrophages", cc, {anchor: "middle", weight: 500}); }
       else {
         api.circle([310, 102], 16, {fill: cc, fillOpacity: 0.25, stroke: cc, width: 1.6});
         [[-6, -4], [4, -6], [6, 5], [-4, 6]].forEach(function (o) { api.circle([310 + o[0], 102 + o[1]], 2.2, {fill: cc}); });
-        L([320, 132], "killer T cell", cc, {anchor: "middle", weight: 500});
+        L([320, 130], "killer T cell", cc, {anchor: "middle", weight: 500});
       }
       // where the threat is: body fluid on the left, inside cells on the right
       api.rect(8, 148, 184, 116, {fill: c.c2, fillOpacity: 0.05, rx: 10});
       L([16, 160], "blood and lymph", c.muted, {weight: 500});
       L([384, 160], "inside cells", c.muted, {anchor: "end", weight: 500});
-      var free = th === "toxin" ? [[50, 200], [96, 226], [140, 192], [70, 244]] : th === "bacteria" ? [[56, 198], [128, 236], [90, 222]] : th === "virus" ? [[48, 204], [110, 190], [150, 236]] : [];
+      var free = th === "toxin" ? [[50, 200], [96, 226], [140, 192], [70, 244]] : th === "bacteria" ? [[56, 198], [118, 232], [84, 222]] : th === "virus" ? [[48, 204], [110, 190], [150, 236]] : [];
       free.forEach(function (p, k) {
         bug(p, th);
         if (q.hum) [0, 1, 2].forEach(function (j) { var a = j * 2.1 + k; ab([p[0] + 14 * Math.cos(a), p[1] + 14 * Math.sin(a)], a + Math.PI, c.c2); });
       });
       if (th === "bacteria") {
         api.path("M 150 200 q 22 -16 34 4 q 6 22 -16 30 q -24 4 -28 -14 q -2 -12 10 -20 Z", {stroke: c.muted, width: 1.6});
-        bug([164, 214]); L([166, 252], "phagocyte", c.muted, {anchor: "middle", weight: 500});
+        bug([164, 214]); L([168, 256], "phagocyte", c.muted, {anchor: "middle", weight: 500});
       }
       if (tb) [[40, 196], [150, 230]].forEach(function (p, k) { ab(p, k ? 2.4 : -0.6, c.faint); });
       // inside cells: an infected cell, a macrophage with TB, or healthy cells
