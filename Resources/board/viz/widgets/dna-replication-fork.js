@@ -4,11 +4,18 @@
 // fibre assays give 15-50 nt/s). Okazaki fragments: 1,000-2,000 nt in bacteria (drawn 1,500), 100-200 nt in eukaryotes
 // (drawn 150). Model for the lagging strand: primase lays a primer every l nt of exposed template, and each fragment is
 // extended back toward the previous one at fork speed, so about l nt of lagging template is single-stranded at any time.
+// Primers laid so far: k = floor(d/l); the newest has grown s = d - kl nt. A fragment counts once it has DNA in it, so
+// N = ceil(d/l) - 1 (a primer laid this instant is not yet a fragment). The newest piece is drawn ending 12 px behind the
+// helicase (its length kept) so it does not hide under the helicase box; everything else is to scale.
 (function () {
   var CELL = {"E. coli": {v: 1000, frag: 1500, unit: 1000, uname: "kb"}, "human": {v: 50, frag: 150, unit: 1, uname: "nt"}};
   var TMAX = 20;
   function texInt(x) { return Math.round(x).toLocaleString("en-US").replace(/,/g, "{,}"); }
   function txtInt(x) { return Math.round(x).toLocaleString("en-US"); }
+  function lag(v) {
+    var o = CELL[v.cell], d = o.v * v.t, k = Math.floor(d / o.frag);
+    return {o: o, d: d, k: k, s: d - k * o.frag, n: Math.max(0, Math.ceil(d / o.frag) - 1)};
+  }
 
   Viz.register("dna-replication-fork", {
     title: "The replication fork",
@@ -19,15 +26,17 @@
       cell: {kind: "enum", values: ["E. coli", "human"], default: "E. coli", label: "\\text{cell}"}
     },
     formula: function (v) {
-      var o = CELL[v.cell], d = o.v * v.t;
-      return "\\begin{array}{l}d=v\\,t=" + texInt(o.v) + "\\times" + v.t + "=" + texInt(d) + "\\ \\text{bp}\\\\ N_{\\text{Okazaki}}=\\lfloor d/\\ell\\rfloor=\\lfloor " +
-        texInt(d) + "/" + texInt(o.frag) + "\\rfloor=" + Math.floor(d / o.frag) + "\\end{array}";
+      var r = lag(v);
+      return "\\begin{array}{l}d=v\\,t=" + texInt(r.o.v) + "\\times" + v.t + "=" + texInt(r.d) + "\\ \\text{bp}\\\\ N_{\\text{frag}}=" +
+        (r.d ? "\\left\\lceil\\tfrac{d}{\\ell}\\right\\rceil-1=\\left\\lceil\\tfrac{" + texInt(r.d) + "}{" + texInt(r.o.frag) + "}\\right\\rceil-1=" + r.n : "0\\quad(d=0)") + "\\end{array}";
     },
     status: function (v) {
-      var o = CELL[v.cell], d = o.v * v.t, k = Math.floor(d / o.frag);
+      var r = lag(v), who = v.t + " s " + (v.cell === "human" ? "a human" : "an E. coli") + " fork unwinds <b>" + txtInt(r.d) + " bp</b>";
       if (!v.t) return "At t = 0 the fork is still at the origin: nothing has been copied yet.";
-      return "In " + v.t + " s " + (v.cell === "human" ? "a human" : "an E. coli") + " fork copies <b>" + txtInt(d) + " bp</b>; each copy pairs one old strand with one new one, and the lagging copy " +
-        (k ? "is in <b>" + k + "</b> Okazaki fragment" + (k > 1 ? "s" : "") + "." : "has not been primed yet.");
+      if (!r.n) return "In " + who + ": the leading copy is already growing, but the lagging copy " +
+        (r.k ? "has only a primer just laid, no Okazaki fragment yet." : "has not been primed yet.");
+      return "In " + who + "; each copy pairs one old strand with one new one, and the lagging copy is in <b>" + r.n + "</b> Okazaki fragment" +
+        (r.n > 1 ? "s" : "") + (r.s ? "" : " plus a primer just laid") + ".";
     },
     examples: [
       {name: "at the origin", values: {t: 0}},
@@ -35,9 +44,9 @@
       {name: "human, 3 s", values: {t: 3, cell: "human"}},
       {name: "human, 20 s", values: {t: 20, cell: "human"}}
     ],
-    size: [400, 300],
+    size: [400, 320],
     draw: function (api, v) {
-      var c = api.color, o = CELL[v.cell], d = o.v * v.t, dmax = o.v * TMAX;
+      var c = api.color, r = lag(v), o = r.o, d = r.d, dmax = o.v * TMAX;
       var xo = 30, xR = 318, X = function (nt) { return xo + (xR - xo) * nt / dmax; }, xf = X(d), xy = xf - 26, xe = 382;
       var yOT = 70, yLd = 90, yLg = 202, yOB = 222, yP = 136, yQ = 156;
       // y of a strand at x: flat behind the fork, then a straight arm into the fork
@@ -67,13 +76,12 @@
         seg(xo, lEnd, fLd, c.c3, 4, 1);
         seg(xo, Math.min(lEnd, xo + 3), fLd, c.c5, 5, 0);
       }
-      // lagging strand: fragment j covers [(j-1)l, jl]; the newest has grown s = d - kl nt back from its primer at kl
-      var k = Math.floor(d / o.frag), sNew = d - k * o.frag;
-      for (var j = 1; j <= k; j++) {
-        var hi = j * o.frag, lo = j < k ? (j - 1) * o.frag : hi - sNew;
-        var b = Math.min(X(hi) - 0.8, xf - 6), a = Math.min(X(lo) + 0.8, b - 3);
+      // lagging strand: fragment j covers [(j-1)l, jl]; the newest (j = k) has grown s nt back from its primer at kl
+      var xNew = Math.min(X(r.k * o.frag), xf - 12), sPx = X(r.s) - xo;
+      for (var j = 1; j <= r.k; j++) {
+        var b = j < r.k ? X(j * o.frag) - 0.8 : xNew - 0.8, a = Math.min(j < r.k ? X((j - 1) * o.frag) + 0.8 : b - sPx, b - 3);
         for (x = a + 3; x < Math.min(b, xy) - 2; x += 8) api.line([x, yLg + 3], [x, yOB - 3], {color: c.faint, width: 1});
-        seg(a, b, fLg, c.c3, 4, j < k || sNew > 0 ? -1 : 0);
+        if (j < r.k || r.s > 0) seg(a, b, fLg, c.c3, 4, -1);   // a primer laid this instant has no DNA yet
         seg(b - 3, b, fLg, c.c5, 5, 0);
       }
       // the helicase at the fork, and the fork's direction
@@ -89,15 +97,19 @@
       if (xf - xo > 40) {
         api.label([16, yOT], "3′", {color: c.c2, size: 12, anchor: "middle"});
         api.label([16, yLd], "5′", {color: c.c3, size: 12, anchor: "middle"});
-        if (k >= 2) api.label([16, yLg], "3′", {color: c.c3, size: 12, anchor: "middle"});   // the first fragment reaches the origin
+        if (r.k >= 2) api.label([16, yLg], "3′", {color: c.c3, size: 12, anchor: "middle"});   // the first fragment reaches the origin
         api.label([16, yOB], "5′", {color: c.c2, size: 12, anchor: "middle"});
       }
-      if (xf - xo > 150) {
-        api.label([xo, yOT - 16], "copy 1: old + new, leading (one piece)", {color: c.c3, size: 12});
-        api.label([xo, yOB + 16], "copy 2: old + new, lagging (fragments)", {color: c.c3, size: 12});
-      } else if (xf - xo > 40) {
-        api.label([xo, yOT - 16], "copy 1: old + new", {color: c.c3, size: 12});
-        api.label([xo, yOB + 16], "copy 2: old + new", {color: c.c3, size: 12});
+      // name the new strands: beside the fork where they end while there is room, else inside the copy labels
+      var lagTag = r.n ? "lagging (fragments)" : r.k ? "lagging: primer only" : "lagging: no primer yet";
+      var side = xe - (xf + 12) >= 130, copy2 = r.n ? "copy 2: old + new" : "copy 2: old, not yet copied";
+      if (d > 0 && side) {
+        api.label([xf + 12, yLd], "leading (one piece)", {color: c.c3, size: 12, weight: 650});
+        api.label([xf + 12, yLg], lagTag, {color: c.c3, size: 12, weight: 650});
+      }
+      if (xf - xo > 40) {
+        api.label([xo, yOT - 16], "copy 1: old + new" + (side ? "" : ", leading (one piece)"), {color: c.c3, size: 12});
+        api.label([xo, yOB + 16], copy2 + (side ? "" : ", " + lagTag), {color: c.c3, size: 12});
       }
       // distance axis, to scale
       var yA = 262;
@@ -108,6 +120,14 @@
         api.label([tx, yA + 14], api.fmt(nt / o.unit), {color: c.muted, size: 12, anchor: "middle"});
       }
       api.label([(xo + xR) / 2, yA + 30], "distance from the origin (" + o.uname + ")", {color: c.muted, size: 12, anchor: "middle"});
+      // key: the two small marks
+      var yK = 310, kx = 74;
+      api.polyline([[kx, yK], [kx + 26, yK]], {stroke: c.c3, width: 4});
+      api.polygon([[kx - 3, yK], [kx + 5, yK - 4], [kx + 5, yK + 4]], {fill: c.c3, fillOpacity: 1});
+      api.polyline([[kx + 23, yK], [kx + 26, yK]], {stroke: c.c5, width: 5});
+      api.label([kx + 33, yK], "Okazaki fragment", {color: c.c3, size: 12});
+      api.polyline([[kx + 160, yK], [kx + 165, yK]], {stroke: c.c5, width: 5});
+      api.label([kx + 172, yK], "RNA primer", {color: c.c5, size: 12});
       api.root.querySelectorAll("text").forEach(function (t) { var col = t.getAttribute("fill"); if (col) t.style.fill = col; });   // viz.css paints text ink
     }
   });

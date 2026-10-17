@@ -63,7 +63,7 @@
       // the three stages, read off the same picture
       tag([xs + 4, 52], "initiation", c.c6, {anchor: "start", weight: 650});
       api.line([xs + 8, 60], [xs + 8, yM - 18], {color: c.c6, width: 1, dash: "3 3", opacity: 0.6});
-      tag([(xs + xe) / 2, 34], "elongation: chains grow 5′ → 3′", c.c4, {weight: 650});
+      tag([(xs + xe) / 2, 34], "elongation: ribosomes move 5′ → 3′, chains grow N → C", c.c4, {weight: 650});   // the mRNA is read 5′→3′; the chain grows from its N end
       tag([xe, 52], "termination", c.c5, {anchor: "end", weight: 650});
       // a finished protein leaving at the stop codon
       var fp = []; for (var t = 0; t <= 56; t += 2) fp.push([xe + 4 + t * 0.5, 70 + 8 * Math.sin(t / 4) + t * 0.2]);

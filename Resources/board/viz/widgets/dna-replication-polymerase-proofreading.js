@@ -71,7 +71,7 @@
       var exo = [px + 26, py + 28], ec = proof ? c.c1 : c.muted;
       api.circle(exo, 15, {fill: ec, fillOpacity: proof && (s === 2 || s === 3) ? 0.35 : 0.12, stroke: ec, width: 1.4, dash: proof ? null : "3 3"});
       api.line([px - 3, exo[1]], [exo[0] - 16, exo[1]], {color: ec, width: 1.2});
-      api.label([px - 6, exo[1]], proof ? "exo site" : "exo dead", {color: ec, size: 12, weight: 650, anchor: "end"});
+      api.label([px - 6, exo[1]], proof ? "exo site" : "exo dead", {color: ec, size: 12, weight: 650, anchor: "end", clamp: false});   // real width fits (px >= 54); the estimate would push it onto the body
       api.rect(tip - 14, yN - 13, 28, yT - yN + 26, {rx: 8, stroke: c.c6, width: 1.2, dash: "3 3"});
       api.label([tip, py + 20], "pol site", {color: c.c6, size: 12, anchor: "middle"});
       // template strand, read 3' -> 5' left to right

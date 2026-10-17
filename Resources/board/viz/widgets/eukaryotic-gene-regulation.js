@@ -39,7 +39,8 @@
     },
     status: function (v) {
       var m = model(v);
-      var why = !m.open ? "Condensed chromatin hides the gene, so even " + (v.act ? "a bound activator" : "basal machinery") + " manages only 0.05 mRNA an hour"
+      var why = !m.open ? (v.act ? "The activator can't reach its site in condensed chromatin, so the gene makes only 0.05 mRNA an hour"
+                              : "Condensed chromatin hides the gene, so even basal machinery manages only 0.05 mRNA an hour")
         : v.act ? "Open chromatin with the activator bound makes 10 mRNAs an hour" : "Open chromatin without its activator makes a basal 0.5 mRNA an hour";
       return why + ", which with a " + m.tm + " h mRNA and a " + m.tp + " h protein half-life settles at about <b>" + sig(m.m) + "</b> mRNA" + (m.m === 1 ? "" : "s") + " and <b>" + sig(m.p) + "</b> proteins per cell.";
     },
@@ -68,7 +69,7 @@
       } else {
         for (var x = 24; x <= 166; x += 23.6) api.circle([x, yD], 11, {fill: c.muted, fillOpacity: 0.4, stroke: c.muted, width: 1.2});
         [24, 71, 118, 166].forEach(function (x) { api.label([x, yD - 20], "Me", {color: c.muted, size: 12, weight: 650, anchor: "middle"}); });
-        if (v.act) { api.rect(126, 86, 24, 16, {rx: 8, fill: c.c3, fillOpacity: 0.25, stroke: c.c3, width: 1.3, dash: "3 3"}); api.label([118, 94], "activator can't bind", {color: c.c3, size: 12, anchor: "end"}); }
+        if (v.act) { api.rect(130, 86, 24, 16, {rx: 8, fill: c.c3, fillOpacity: 0.25, stroke: c.c3, width: 1.3, dash: "3 3"}); api.label([120, 94], "activator can't bind", {color: c.c3, size: 12, anchor: "end", clamp: false}); }   // fits from x 18: skip the width-estimate clamp
       }
       api.label([96, 182], "k_m = " + api.fmt(m.km, 2) + " mRNA/h", {color: c.c5, size: 12, weight: 700, anchor: "middle"});
       api.arrow([178, 104], [204, 78], {color: c.c5, width: 2, halo: false, head: 7});
@@ -79,18 +80,18 @@
       api.line([x0, yM], [x1, yM], {color: c.c5, width: 3});
       api.line([x1 + 2, yM], [384, yM], {color: c.c5, width: 3, dash: "2 3"});
       api.label([368, yM - 13], "AAA", {color: c.c5, size: 12, weight: 650, anchor: "middle"});
-      api.label([x0 - 4, 42], "mRNA, t½ = " + m.tm + " h", {color: c.c5, size: 12, weight: 650});
+      api.label([x0 - 4, 38], "mRNA, t½ = " + m.tm + " h", {color: c.c5, size: 12, weight: 650});
       if (v.mirna) {
         api.line([316, yM + 6], [346, yM + 6], {color: c.c6, width: 3});
         api.rect(312, yM + 9, 38, 15, {rx: 7, fill: c.c6, fillOpacity: 0.3, stroke: c.c6, width: 1.2});
-        api.label([392, yM + 40], "miRNA: faster decay", {color: c.c6, size: 12, weight: 650, anchor: "end"});
+        api.label([392, yM + 34], "miRNA: faster decay", {color: c.c6, size: 12, weight: 650, anchor: "end"});
       }
       var rx = 244;
       api.circle([rx, yM - 3], 12, {fill: c.c1, fillOpacity: 0.3, stroke: c.c1, width: 1.4});
       api.circle([rx, yM + 12], 9, {fill: c.c1, fillOpacity: 0.3, stroke: c.c1, width: 1.4});
-      api.label([rx + 18, yM + 18], "ribosome", {color: c.c1, size: 12});
+      api.label([rx + 16, yM - 15], "ribosome", {color: c.c1, size: 12});   // above the mRNA, clear of the miRNA on the 3' UTR
       api.path("M " + rx + " " + (yM + 21) + " q 8 10 0 18 q -8 9 0 18 q 8 9 0 16", {stroke: c.c4, width: 2.5});
-      var py = 152;
+      var py = 156;
       api.circle([rx, py], 11, {fill: c.c4, fillOpacity: 0.45, stroke: c.c4, width: 1.4});
       api.label([rx, py + 22], "protein", {color: c.c4, size: 12, weight: 650, anchor: "middle"});
       api.label([rx, py + 38], "t½ = " + m.tp + " h", {color: c.c4, size: 12, weight: 650, anchor: "middle"});

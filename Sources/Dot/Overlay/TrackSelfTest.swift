@@ -41,8 +41,9 @@ enum TrackSelfTest {
         MarkTracker.dumpFolder = folder
         defer { MarkTracker.dumpFolder = nil }
         var results: [Scenario] = []
-        results.append(await safari(overlay: overlay))
+        // Preview first: quitting a test app activates another one, and an app switch rightly clears marks
         results.append(await preview(overlay: overlay))
+        results.append(await safari(overlay: overlay))
         overlay.clearMarks()
         // put the pointer back where it was
         if let primary = NSScreen.screens.first?.frame.height { CGWarpMouseCursorPosition(CGPoint(x: pointer.x, y: primary - pointer.y)) }
@@ -126,11 +127,14 @@ enum TrackSelfTest {
             if let ocrTarget { return await ocr(window: window.id, find: ocrTarget) }
             return truth()
         }
+        // let the test app's activation land before marking (an app switch after the mark would clear it)
+        try? await Task.sleep(nanoseconds: 1_500_000_000)
         overlay.highlight(appKit(mark.insetBy(dx: -6, dy: -4)), label: "selftest")
         let ringCenter = CGPoint(x: mark.midX, y: mark.midY + mark.height * 2.5)
         overlay.target(at: CGPoint(x: ringCenter.x, y: primary - ringCenter.y), radius: 14, label: "selftest ring")
         try? await Task.sleep(nanoseconds: 1_200_000_000)
         s.anchor = overlay.trackingSnapshot.anchor
+        if s.anchor == nil { s.note = "the mark was cleared before the test began (an app switch?)" }
         let point = CGPoint(x: window.frame.midX, y: window.frame.midY)
         CGWarpMouseCursorPosition(point)
         try? await Task.sleep(nanoseconds: 300_000_000)

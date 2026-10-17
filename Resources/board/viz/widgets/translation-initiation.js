@@ -21,7 +21,7 @@
       cell: {kind: "enum", values: ["bacterium", "eukaryote"], default: "bacterium", label: "\\text{cell}"},
       signal: {kind: "enum", values: ["strong", "weak"], default: "strong", label: "\\text{signal}"}
     },
-    steps: ["small subunit binds", "initiator tRNA meets AUG", "large subunit joins", "ready to elongate"],
+    steps: ["small subunit binds", "initiator tRNA at AUG", "large subunit joins", "ready to elongate"],   // each fits the step bar on one line
     stepMs: 1700,
     formula: function (v) {
       var q = SEQ[v.cell][v.signal];
@@ -57,14 +57,15 @@
     size: [400, 258],
     draw: function (api, v) {
       var c = api.color, s = v.step || 1, bac = v.cell === "bacterium", weak = v.signal === "weak", q = SEQ[v.cell][v.signal];
-      var sp = bac ? 12.5 : 10.8, x0 = bac ? 70 : 96, yM = 176;
+      var sp = bac ? 12.5 : 10, x0 = bac ? 70 : 84, yM = 176, LT = yM - 140;                   // LT: top of the large subunit
       var x = function (i) { return x0 + i * sp; }, a = startAt(v), cx = x(a + 1);                // cx: centre of the AUG used
       var tag = function (at, t, col, o) { api.label(at, t, Object.assign({color: col, size: 12, anchor: "middle"}, o || {})); };
+      var side = function (w) { return cx + 72 + w <= 396 ? [cx + 72, "start"] : [cx - 72, "end"]; };   // a label beside the large subunit
       // the mRNA, with its start signal coloured (red when weak) and the AUG used in white
       api.line([16, yM + 9], [392, yM + 9], {color: c.c3, width: 2.5, opacity: 0.7});
       if (bac) { tag([14, yM - 4], "5′", c.c3, {anchor: "start", weight: 600}); tag([44, yM - 4], "···", c.c3); tag([x(q.length) + 12, yM - 4], "···", c.c3); }
       else { api.circle([20, yM + 9], 5, {fill: c.c3}); tag([12, yM - 6], "m⁷G cap", c.c3, {anchor: "start", weight: 650, raw: true}); }
-      tag([392, yM - 4], bac ? "3′" : "AAA 3′", c.c3, {anchor: "end", weight: 600});
+      tag([392, yM - 4], bac ? "3′" : "(A)ₙ 3′", c.c3, {anchor: "end", weight: 600, raw: true});
       for (var i = 0; i < q.length; i++) {
         var sig = i < 6 || (!bac && i === 9), used = i >= a && i < a + 3;
         tag([x(i), yM], q[i], sig ? (weak ? c.c5 : c.c6) : used ? c.ink : c.c3, {weight: used ? 800 : 600});
@@ -83,41 +84,60 @@
           if (up && PAIR[up] === anti[k] && placed) api.line([x(k - 2), yM + 7], [x(k - 2), sy + 8], {color: c.c2, width: 1.2});
         }
         tag([x(-2) - 8, sy + 16], "3′", c.c2, {anchor: "end"});
-        if (!placed) tag([120, yM - 44], "no SD pairing: the 30S rarely binds", c.c5, {weight: 650});
+        if (!placed) tag([120, yM + 22], "no SD pairing: the 30S rarely binds", c.c5, {weight: 650});
         if (weak && s > 1) tag([200, 14], "rare on this mRNA: weak Shine-Dalgarno", c.c5, {weight: 650});
+        if (s <= 2) {   // what comes next, faded: the 50S over this AUG, and (step 1) fMet-tRNA with IF2 on its way
+          var gh = api.group({opacity: 0.55});
+          api.rect(cx - 64, LT, 128, 122, {rx: 30, stroke: c.c6, width: 1.3, dash: "5 4", parent: gh});
+          api.label([cx + 72, LT + 12], "50S", {color: c.c6, size: 12, weight: 650, anchor: "start", parent: gh});
+          api.label([cx, LT + 14], "joins at step 3", {color: c.c6, size: 12, weight: 650, anchor: "middle", parent: gh});
+        }
       } else {
         if (s === 1) { api.rect(8, yM - 52, 52, 22, {rx: 11, fill: c.c4, fillOpacity: 0.25, stroke: c.c4, width: 1.3}); tag([34, yM - 41], "eIF4F", c.c4, {weight: 650}); }
         if (s === 2) {
           api.arrow([60, yM - 52], [cx - 44, yM - 52], {color: c.c2, width: 2, halo: false});
-          tag([(60 + cx - 44) / 2, yM - 66], "scanning 5′→3′ (ATP)", c.c2);
+          tag([(60 + cx - 44) / 2, yM - 66], "scanning 5′→3′", c.c2);
         }
         if (weak && s >= 2) { api.arrow([x(7), yM + 40], [x(7), yM + 26], {color: c.c5, width: 1.5, halo: false}); tag([x(7), yM + 52], "AUG1 skipped", c.c5, {weight: 650}); }
       }
-      // the large subunit (50S or 60S)
+      // the large subunit (50S or 60S), its sites labelled along the top, clear of the tRNA
       if (s >= 3) {
-        api.rect(cx - 64, yM - 124, 128, 106, {rx: 30, fill: c.c6, fillOpacity: 0.1, stroke: c.c6, width: 1.4});
-        tag([cx + 72, yM - 112], bac ? "50S" : "60S", c.c6, {anchor: "start", weight: 650});
-        ["E", "P", "A"].forEach(function (t, j) { tag([cx + (j - 1) * 3 * sp, yM - 110], t, c.c6, {weight: 700}); });
+        api.rect(cx - 64, LT, 128, 122, {rx: 30, fill: c.c6, fillOpacity: 0.1, stroke: c.c6, width: 1.4});
+        tag([cx + 72, LT + 12], bac ? "50S" : "60S", c.c6, {anchor: "start", weight: 650});
+        ["E", "P", "A"].forEach(function (t, j) { tag([cx + (j - 1) * 3 * sp, LT + 14], t, c.c6, {weight: 700}); });
       }
-      if (s === 4) { api.rect(cx + 3 * sp - 18, yM - 12, 36, 24, {rx: 5, stroke: c.ink, width: 1.3, dash: "4 3"}); tag([cx + 3 * sp + 4, yM - 34], "empty", c.ink); }
-      // the initiator tRNA: in bacteria it arrives at step 2; in eukaryotes it rides in on the 40S
-      if (s >= 2 || !bac) {
-        var tx = scan ? 94 : cx, ty = scan ? yM - 98 : yM - 82;
-        api.circle([tx, ty - 14], 15, {fill: c.c4, fillOpacity: 0.3, stroke: c.c4, width: 1.5});
-        tag([tx, ty - 14], bac ? "fMet" : "Met", c.ink, {weight: 650});
-        api.rect(tx - 4, ty + 1, 8, 16, {rx: 3, fill: c.c1, fillOpacity: 0.8});
-        api.rect(tx - 18, ty + 16, 36, 40, {rx: 9, fill: c.c1, fillOpacity: 0.2, stroke: c.c1, width: 1.5});
+      if (s === 4) {   // the empty A site, labelled outside the large subunit with a leader
+        var ax = cx + 3 * sp;
+        api.rect(ax - 18, yM - 12, 36, 24, {rx: 5, stroke: c.ink, width: 1.3, dash: "4 3"});
+        api.line([cx + 70, yM - 40], [ax + 12, yM - 14], {color: c.ink, width: 1, opacity: 0.7});
+        tag([cx + 73, yM - 40], "empty", c.ink, {anchor: "start"});
+      }
+      // the initiator tRNA: in bacteria it arrives at step 2 (faded and on its way at step 1); in eukaryotes it rides in on the 40S
+      function initiator(tx, ty, low, factor, o) {   // low: anticodon under the body (not yet on the mRNA)
+        var g = api.group({opacity: o.fade ? 0.45 : 1});
+        api.circle([tx, ty - 14], 15, {fill: c.c4, fillOpacity: 0.3, stroke: c.c4, width: 1.5, parent: g});
+        api.label([tx, ty - 14], bac ? "fMet" : "Met", {color: c.ink, size: 12, weight: 650, anchor: "middle", parent: g});
+        api.rect(tx - 4, ty + 1, 8, 16, {rx: 3, fill: c.c1, fillOpacity: 0.8, parent: g});
+        api.rect(tx - 18, ty + 16, 36, 40, {rx: 9, fill: c.c1, fillOpacity: 0.2, stroke: c.c1, width: 1.5, parent: g});
         "UAC".split("").forEach(function (b, j) {   // anticodon 3'-UAC-5', antiparallel to 5'-AUG-3'
           var bx = tx + (j - 1) * sp;
-          tag([bx, scan ? ty + 64 : yM - 19], b, c.c1, {weight: 700});
-          if (!scan) api.line([bx, yM - 12], [bx, yM - 8], {color: c.ink, width: 1.2, opacity: 0.7});
+          api.label([bx, low ? ty + 64 : yM - 19], b, {color: c.c1, size: 12, weight: 700, anchor: "middle", parent: g});
+          if (!low) api.line([bx, yM - 12], [bx, yM - 8], {color: c.ink, width: 1.2, opacity: 0.7, parent: g});
         });
-        if (s <= 2) {   // IF2 or eIF2, still holding GTP
-          api.rect(tx + 22, ty - 4, 46, 30, {rx: 10, fill: c.c4, fillOpacity: 0.22, stroke: c.c4, width: 1.2});
-          tag([tx + 45, ty + 4], bac ? "IF2" : "eIF2", c.c4, {weight: 650}); tag([tx + 45, ty + 18], "GTP", c.c4);
+        if (factor) {   // IF2 or eIF2, still holding GTP: beside the tRNA (left of it when arriving)
+          var fx = o.left ? tx - 62 : tx + 21;
+          api.rect(fx, ty - 4, 41, 30, {rx: 10, fill: c.c4, fillOpacity: 0.22, stroke: c.c4, width: 1.2, parent: g});
+          api.label([fx + 20.5, ty + 4], bac ? "IF2" : "eIF2", {color: c.c4, size: 12, weight: 650, anchor: "middle", parent: g});
+          api.label([fx + 20.5, ty + 18], "GTP", {color: c.c4, size: 12, anchor: "middle", parent: g});
         }
-        if (s === 3) tag([cx + 72, yM - 74], bac ? "IF2·GDP leaves" : "eIF2·GDP leaves", c.c4, {anchor: "start"});
       }
+      if (bac && s === 1) {
+        initiator(122, yM - 108, true, true, {fade: true, left: true});
+        tag([108, LT - 8], "fMet-tRNA·IF2 arriving", c.c4, {weight: 600});
+        api.line([144, yM - 84], [cx - 72, yM - 84], {color: c.c4, width: 1.5, dash: "4 3", arrow: true, opacity: 0.7});
+      }
+      if (s >= 2 || !bac) initiator(scan ? 94 : cx, scan ? yM - 98 : yM - 82, scan, s <= 2, {});
+      if (s === 3) { var ls = side(bac ? 86 : 96); tag([ls[0], yM - 74], bac ? "IF2·GDP leaves" : "eIF2·GDP leaves", c.c4, {anchor: ls[1]}); }
       api.root.querySelectorAll("text").forEach(function (t) { var f = t.getAttribute("fill"); if (f) t.style.fill = f; });   // viz.css paints text ink
     }
   });

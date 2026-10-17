@@ -403,6 +403,10 @@ final class MarkTracker {
         guard let pid, pid != ownPid else { return }
         // he switched to another app: marks on the old app's content go
         let foreign = marks.filter { $0.value.pid != nil && $0.value.pid != pid }.map { $0.key }
+        if !foreign.isEmpty {
+            let name = NSRunningApplication(processIdentifier: pid)?.localizedName ?? "pid \(pid)"
+            Log.info("track: switched to \(name); cleared \(foreign.map { "\($0)" }.joined(separator: ", "))")
+        }
         for kind in foreign {
             if let m = marks[kind] { onUpdate?(kind, Self.appKitRect(fromCG: m.rect), false, nil) }
             marks[kind] = nil

@@ -3,7 +3,8 @@
 // E. coli: pol I binds the 3'-OH, its 5'->3' exonuclease removes the ribonucleotides one by one while its polymerase
 // fills in DNA behind (nick translation); DNA ligase then seals the nick using NAD+ (-> AMP + NMN). Human: pol delta
 // keeps synthesizing and peels the RNA off as a 5' flap, FEN1 cuts the flap (RNase H2 and Dna2 help), and DNA ligase I
-// seals the nick using ATP (-> AMP + PPi). Primers are about 10-12 nt; drawn 4 nt so the bases stay legible.
+// seals the nick using ATP (-> AMP + PPi). Primers are about 10-12 nt; drawn 4 nt so the bases stay legible, and the
+// human step shows the whole primer displaced as one flap, so the strand under it is already all DNA when FEN1 cuts.
 (function () {
   var TPL = "TACGGTCAAGTACATG", PAIR = {A: "T", T: "A", G: "C", C: "G"}, NB = 7, RNA = [7, 10];
   var CELL = {
@@ -48,8 +49,9 @@
       var c = api.color, s = v.step || 1, o = CELL[v.cell], e = v.cell === "E. coli";
       var yN = 128, yT = 164, yB = yN - 15;
       // how far DNA has replaced the primer at this step, and the flap (human, step 2)
-      var filled = s === 1 ? NB - 1 : s === 2 ? (e ? 8 : 9) : 10;
+      var filled = s === 1 ? NB - 1 : s === 2 && e ? 8 : 10;   // human step 2: pol δ has filled all four, the RNA hangs off as a flap
       var flap = !e && s === 2;
+      var FR = [X(11) - 9, yB], FU = [-0.643, -0.766], FP = [9.2, -7.7];   // flap root, its direction (up-left, 50°), letters 12 px to its upper right
       // template
       api.line([X(0) - 12, yT + 14], [X(15) + 12, yT + 14], {color: c.c2, width: 3});
       for (var i = 0; i < 16; i++) api.label([X(i), yT], TPL.charAt(i), {color: c.c2, size: 13, weight: 650, anchor: "middle"});
@@ -63,13 +65,13 @@
         else col = c.c3;
         api.line([x, yN + 8], [x, yT - 8], {color: c.faint, width: 1.2});
         api.label([x, y], txt, {color: col, size: 13, weight: 700, anchor: "middle"});
-        if (flap && inRna && i < 10) api.label([X(10) - (10 - i) * 15 - 4, yN - 18 - (10 - i) * 16], b.replace("T", "U"), {color: c.c5, size: 13, weight: 700, anchor: "middle"});
+        if (flap && inRna) { var fs = 15 + 16 * (10 - i); api.label([FR[0] + FU[0] * fs + FP[0], FR[1] + FU[1] * fs + FP[1]], b.replace("T", "U"), {color: c.c5, size: 13, weight: 700, anchor: "middle"}); }
       }
       // backbones, broken at the nick until ligase seals it
       var nick = s === 4 ? null : s === 1 ? 6 : s === 2 ? filled : 10;
       var run = function (a, z, col) { api.line([X(a) - 9, yB], [X(z) + 9, yB], {color: col, width: 2.5}); };
       if (nick === null) run(0, 15, c.c3);
-      else { run(0, nick, c.c3); if (!flap) run(nick + 1, 15, c.c3); else { run(10, 15, c.c3); api.line([X(10) - 9, yB], [X(10) - 64, yB - 50], {color: c.c5, width: 2, opacity: 0.7}); } }
+      else { run(0, nick, c.c3); if (!flap) run(nick + 1, 15, c.c3); else { run(11, 15, c.c3); api.line(FR, [FR[0] + FU[0] * 68, FR[1] + FU[1] * 68], {color: c.c5, width: 2, opacity: 0.7}); } }
       if (nick !== null && !flap) {
         api.line([X(nick) + 11, yB - 9], [X(nick) + 11, yB + 9], {color: c.c1, width: 2});
         if (s !== 2) api.label([X(nick) + 11, yB - 18], "nick", {color: c.c1, size: 12, weight: 650, anchor: "middle"});
@@ -80,8 +82,8 @@
       api.label([X(3), 30], "newer fragment", {color: c.c3, size: 12, weight: 650, anchor: "middle"});
       api.label([X(12), 30], "older fragment", {color: c.c3, size: 12, weight: 650, anchor: "middle"});
       api.line([X(6) + 11, 22], [X(6) + 11, 40], {color: c.faint, width: 1});
-      if (s < 3) api.label([X(8.5), 50], "RNA primer", {color: c.c5, size: 12, weight: 650, anchor: "middle"});
-      if (s >= 2) api.label([X(3), 214], "green: DNA that replaced the RNA", {color: c.c4, size: 12, anchor: "middle"});
+      if (s < 3) api.label(flap ? [X(10) + 30, 50] : [X(8.5), 50], "RNA primer", {color: c.c5, size: 12, weight: 650, anchor: "middle"});
+      api.label([X(3), 214], s === 1 ? "red: RNA, to be replaced by DNA" : "green: DNA that replaced the RNA", {color: s === 1 ? c.c5 : c.c4, size: 12, anchor: "middle"});
       api.arrow([92, 238], [36, 238], {color: c.muted, width: 2, halo: false});
       api.label([98, 238], "fork is this way", {color: c.muted, size: 12});
       // the enzyme at work
@@ -99,10 +101,10 @@
         [[0, 7], [1, 8]].forEach(function (q) { api.label([X(9) + 34 + q[0] * 20, 64 - q[0] * 6], PAIR[TPL.charAt(q[1])].replace("T", "U"), {color: c.c5, size: 13, weight: 700, anchor: "middle", opacity: 0.75}); });
         api.label([X(11) + 30, 76], "ribonucleotides out", {color: c.c5, size: 12, anchor: "start"});
       } else if (s === 2) {
-        blob(X(8), 50, "");
-        api.label([X(8) - 32, yN - 30], "pol δ", {color: c.c6, size: 12, weight: 700, anchor: "end"});
-        api.circle([X(10) - 12, yB - 14], 9, {fill: c.c6, fillOpacity: 0.35, stroke: c.c6, width: 1.6});
-        api.label([X(10) + 4, yB - 26], "FEN1 cuts the flap", {color: c.c6, size: 12, weight: 700});
+        blob(X(8.5), 50, "");
+        api.label([X(8.5) - 31, yN - 30], "pol δ", {color: c.c6, size: 12, weight: 700, anchor: "end"});
+        api.circle([X(10) + 11, yB], 7, {fill: c.c6, fillOpacity: 0.35, stroke: c.c6, width: 1.6});   // FEN1 at the base of the flap, the cut site
+        api.label([X(10) + 25, yB - 14], "FEN1 cuts here", {color: c.c6, size: 12, weight: 700});
       } else if (s === 3) {
         api.label([X(10), yB - 34], "3′-OH", {color: c.c1, size: 12, weight: 650, anchor: "end"});
         api.label([X(11), yB - 34], "5′-P", {color: c.c1, size: 12, weight: 650, anchor: "start"});

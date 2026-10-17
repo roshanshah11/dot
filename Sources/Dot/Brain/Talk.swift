@@ -1651,7 +1651,7 @@ final class Talk {
     }
 
     /// `Dot --panel file.ui`: show a UI-language file in the panel (tests, and reopening by hand).
-    func showPanelFile(_ path: String) { panels.showFile(path) }
+    func showPanelFile(_ path: String) { if path == "close" { panels.close() } else { panels.showFile(path) } }
 
     /// Talk may make and move his own events, but one with guests goes through an agent and a card.
     static let guestTools: Set<String> = ["mcp__atlas__calendar_create", "mcp__atlas__calendar_update"]

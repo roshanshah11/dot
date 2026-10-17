@@ -302,7 +302,7 @@
    "title": "Why a DNA strand grows 5\u2032 to 3\u2032"
   },
   "dna-replication-fork": {
-   "checked": "2026-10-17T04:25:08",
+   "checked": "2026-10-17T05:02:01",
    "failures": [],
    "shows": "Slide time: the fork unzips the parent duplex and leaves two daughter duplexes behind it, each one old strand plus one new, the leading copy in one piece and the lagging copy in Okazaki fragments",
    "status": "pass",
@@ -326,7 +326,7 @@
    "title": "Okazaki fragments on the lagging strand"
   },
   "dna-replication-leading-lagging-strand-comparison": {
-   "checked": "2026-10-17T04:25:08",
+   "checked": "2026-10-17T05:02:01",
    "failures": [],
    "shows": "Slide time at one fork: the leading strand grows in one piece right behind the helicase, while the lagging strand starts later, trails by one Okazaki fragment and stays in pieces",
    "status": "pass",
@@ -342,7 +342,7 @@
    "title": "Leading strand: one primer, one continuous run"
   },
   "dna-replication-okazaki-fragment-joining": {
-   "checked": "2026-10-17T04:25:08",
+   "checked": "2026-10-17T05:02:01",
    "failures": [],
    "shows": "Step through how two Okazaki fragments become one strand: the RNA primer between them is removed and replaced with DNA, leaving a nick that DNA ligase seals; switch between E. coli and human enzymes",
    "status": "pass",
@@ -358,7 +358,7 @@
    "title": "One origin, two forks"
   },
   "dna-replication-polymerase-proofreading": {
-   "checked": "2026-10-17T04:19:30",
+   "checked": "2026-10-17T04:44:19",
    "failures": [],
    "shows": "Step through a wrong base going in and the 3\u2032\u21925\u2032 exonuclease clipping it off; switch proofreading and mismatch repair off to see errors per genome copy jump",
    "status": "pass",
@@ -398,7 +398,7 @@
    "title": "Template DNA and RNA: complementary base pairing"
   },
   "dna-transcription": {
-   "checked": "2026-10-17T04:19:30",
+   "checked": "2026-10-17T04:44:19",
    "failures": [],
    "shows": "Step through one gene being transcribed in a bacterium or a eukaryote: polymerase finds the promoter, opens the DNA, builds RNA 5\u2032\u21923\u2032 off the template, and lets go at the end",
    "status": "pass",
@@ -454,7 +454,7 @@
    "title": "Enhancers: DNA looping brings activators to the promoter"
   },
   "eukaryotic-gene-regulation": {
-   "checked": "2026-10-17T04:19:30",
+   "checked": "2026-10-17T04:44:19",
    "failures": [],
    "shows": "Open or close the chromatin, bind an activator, add a microRNA or a degradation tag: each control point multiplies into how much mRNA and protein the cell ends up with",
    "status": "pass",
@@ -974,7 +974,7 @@
    "title": "Combinatorial control by transcription factors"
   },
   "transcription-termination-rna-release": {
-   "checked": "2026-10-17T04:21:02",
+   "checked": "2026-10-17T04:59:40",
    "failures": [],
    "shows": "Pick the mechanism and step through: a hairpin plus a U-tract, the Rho helicase, or poly(A) cleavage plus the Xrn2 torpedo frees the RNA; mutate the signal to see read-through",
    "status": "pass",
@@ -982,7 +982,7 @@
    "title": "Transcription termination: releasing the RNA"
   },
   "transcription-unit-promoter-terminator": {
-   "checked": "2026-10-17T04:21:02",
+   "checked": "2026-10-17T04:59:40",
    "failures": [],
    "shows": "Flip the gene's direction, change the spacer between the -35 and -10 boxes, and the RNA length: the promoter sets where and which way transcription runs, and which strand is the template",
    "status": "pass",
@@ -990,7 +990,7 @@
    "title": "A transcription unit: promoter to terminator"
   },
   "translation": {
-   "checked": "2026-10-17T04:21:02",
+   "checked": "2026-10-17T04:59:40",
    "failures": [],
    "shows": "Set the protein length, the ribosome speed and how often a ribosome starts: chains grow as ribosomes move 5\u2032 to 3\u2032, and the start rate sets how many ride the mRNA and how much protein it makes",
    "status": "pass",
@@ -998,7 +998,7 @@
    "title": "Translation along an mRNA: the polysome"
   },
   "translation-elongation": {
-   "checked": "2026-10-17T04:21:02",
+   "checked": "2026-10-17T04:59:40",
    "failures": [],
    "shows": "Step through one elongation cycle: EF-Tu brings a tRNA, a correct match triggers GTP hydrolysis, the chain moves onto the new amino acid and EF-G shifts the ribosome one codon; try a near-cognate tRNA to see it rejected",
    "status": "pass",
@@ -1006,7 +1006,7 @@
    "title": "Translation elongation: one codon per cycle"
   },
   "translation-initiation": {
-   "checked": "2026-10-17T04:21:02",
+   "checked": "2026-10-17T04:59:40",
    "failures": [],
    "shows": "Step through initiation in a bacterium (Shine-Dalgarno pairing) or a eukaryote (cap binding and scanning); weaken the start signal to see rare binding or leaky scanning",
    "status": "pass",

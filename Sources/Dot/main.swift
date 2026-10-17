@@ -39,7 +39,7 @@ case "--help", "-h":
       Dot --listen [title]     start the lecture ear       Dot --stop-listening  stop it and save the transcript
       Dot --dictionary "heard => correct"   add a term the recognizer should write your way
       Dot --snapshot [folder]  render every notch state, mark and card to PNG (no screen turn)
-      Dot --panel file.ui      show a UI-language explanation in the explainer panel
+      Dot --panel file.ui      show a UI-language explanation in the explainer panel (Dot --panel close hides it)
       Dot --prompt talk|think  print a session's system prompt
       Dot --track-selftest     the running Dot checks that marks stay on scrolled content (posts real scrolls; run while away)
       Dot --selftest           check the notch's permission-card queue (no agents, no model)

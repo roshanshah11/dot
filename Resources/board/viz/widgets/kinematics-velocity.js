@@ -50,11 +50,13 @@
       var R = range(Math.min(0, k.vi, k.vf), Math.max(0, k.vi, k.vf));
       var X = function (t) { return x0 + (x1 - x0) * t / 10; };
       var Y = function (u) { return (yB - 30) - (yB - 30 - (yT + 10)) * (u - R.lo) / (R.hi - R.lo); };
+      // headroom: when the highest point lands on the top gridline, add one more step so its label has room
+      if (Y(Math.max(k.vi, k.vf)) - yT < 24) R.hi += R.step;
       for (var u = R.lo; u <= R.hi + 1e-9; u += R.step) {
         api.line([x0, Y(u)], [x1, Y(u)], {color: Math.abs(u) < 1e-9 ? c.axis : c.grid, width: Math.abs(u) < 1e-9 ? 1.4 : 1});
         api.label([x0 - 7, Y(u)], api.fmt(u), {color: c.muted, size: 12, anchor: "end"});
       }
-      api.label([x0 + 6, yT - 6], "v (m/s)", {color: c.muted, size: 12});
+      api.label([x0 - 6, yT - 6], "v (m/s)", {color: c.muted, size: 12, anchor: "end"});
       api.line([x0, yB], [x1, yB], {color: c.axis, width: 1.2});
       api.line([x0, yT], [x0, yB], {color: c.axis, width: 1.2});
       for (var s = 0; s <= 10; s++) {
@@ -63,7 +65,13 @@
       }
       // where t sits on the time axis
       var E = [X(k.t), Y(k.vf)], S = [x0, Y(k.vi)];
-      api.line([E[0], yB], [E[0], E[1]], {color: c.faint, width: 1, dash: "2 4"});
+      // the faint t marker breaks around the v_i label when it would run through it (rising lines only)
+      var viY = S[1] + (k.a > 0 ? 14 : -13), Y0 = Y(0), viW = ("v_i = " + api.fmt(k.vi) + " m/s").length * 12.5 * 0.56;
+      if (Math.abs(viY - Y0) < 9) viY = Y0 + (k.a > 0 ? 10 : -10);   // off the v = 0 line
+      if (k.a > 0 && E[0] > x0 + 4 && E[0] < x0 + 12 + viW && viY > E[1]) {
+        api.line([E[0], yB], [E[0], Math.min(yB, viY + 9)], {color: c.faint, width: 1, dash: "2 4"});
+        if (viY - 9 > E[1]) api.line([E[0], viY - 9], [E[0], E[1]], {color: c.faint, width: 1, dash: "2 4"});
+      } else api.line([E[0], yB], [E[0], E[1]], {color: c.faint, width: 1, dash: "2 4"});
       api.label([E[0], yB + 15], "t = " + api.fmt(k.t) + " s", {color: c.c1, size: 12.5, weight: 650, anchor: "middle"});
       // run (dashed at v_i) and rise (a t)
       api.line(S, [E[0], S[1]], {color: c.muted, width: 1.5, dash: "5 4"});
@@ -73,26 +81,39 @@
         if (rise > 26) {
           var lab = "a·t = " + api.fmt(k.dv, 3) + " m/s", est = lab.length * 12.5 * 0.56, right = E[0] + 9 + est < 396;
           atRight = right; atY = (S[1] + E[1]) / 2;
-          api.label([E[0] + (right ? 9 : -9), (S[1] + E[1]) / 2], lab, {color: c.c3, size: 12.5, weight: 650, anchor: right ? "start" : "end"});
+          if (Math.abs(atY - Y0) < 9) atY = Y0 + (atY >= Y0 ? 10 : -10);   // off the v = 0 line
+          api.label([E[0] + (right ? 9 : -9), atY], lab, {color: c.c3, size: 12.5, weight: 650, anchor: right ? "start" : "end"});
         }
       }
       // the velocity line itself
       api.line(S, E, {color: c.c1, width: 3});
+      var stopRight = false;
       if (k.stop != null) {
         // the label goes where the line leaves room: left of the crossing, else between line and arrow, else past the arrow
         var Z = [X(k.stop), Y(0)], zl = "stops at " + api.fmt(k.stop, 2) + " s", w = zl.length * 12 * 0.56, side = k.a > 0 ? -12 : 13;
         api.point(Z, {color: c.c5, r: 5});
-        var at = Z[0] - 8 - w > x0 + 4 ? [Z[0] - 8, Z[1] + side, "end"] : Z[0] + 8 + w < E[0] - 6 ? [Z[0] + 8, Z[1] - side, "start"] :
+        // between the crossing and the arrow it sits between v = 0 and the dashed run line, or past the run line if they are close
+        var sg = k.a > 0 ? 1 : -1, zb = Math.abs(Z[1] - side - S[1]) >= 10 ? Z[1] - side : x0 + 12 + viW > Z[0] + 8 ? viY + 16 * sg : S[1] + 11 * sg;
+        var at = Z[0] - 8 - w > x0 + 4 ? [Z[0] - 8, Z[1] + side, "end"] : Z[0] + 8 + w < E[0] - 6 ? [Z[0] + 8, zb, "start"] :
           [E[0] + 10, [-12, 13, -26, 27].map(function (d) { return Z[1] + d; }).filter(function (y) { return !atRight || Math.abs(y - atY) >= 19; })[0], "start"];
+        stopRight = at[0] === E[0] + 10 ? at[1] : false;
         api.label([at[0], at[1]], zl, {color: c.c5, size: 12, weight: 600, anchor: at[2]});
       }
-      var below = k.a > 0;
-      api.label([x0 + 8, S[1] + (below ? 14 : -13)], "v_i = " + api.fmt(k.vi) + " m/s", {color: c.c1, size: 12.5, weight: 650});
-      var vfl = "final v = " + api.fmt(k.vf, 3) + " m/s";
+      api.label([x0 + 8, viY], "v_i = " + api.fmt(k.vi) + " m/s", {color: c.c1, size: 12.5, weight: 650});
+      var vfl = "final v = " + api.fmt(k.vf, 3) + " m/s", vw = vfl.length * 12.5 * 0.56;
       if (k.a === 0) api.label([E[0] + (E[0] > 300 ? -12 : 12), E[1] + 14], vfl, {color: c.c1, size: 12.5, weight: 650, anchor: E[0] > 300 ? "end" : "start"});
-      else {
-        var lft = k.t >= 4;
-        api.label([E[0] + (lft ? -10 : 10), E[1] + (k.a > 0 ? -12 : 13)], vfl, {color: c.c1, size: 12.5, weight: 650, anchor: lft ? "end" : "start"});
+      else if (E[0] + 10 + vw < 396) {
+        // right of the end point; stepped away from the line until it clears the a·t and stop labels on that side
+        var out = k.a > 0 ? -1 : 1, fy = E[1] + 3 * out, rows = [];
+        if (atRight) rows.push(atY);
+        if (stopRight !== false) rows.push(stopRight);
+        for (var tr = 0; tr < 6 && (Math.abs(fy - Y0) < 9 || rows.some(function (r) { return Math.abs(fy - r) < 17; })); tr++) fy += 9 * out;
+        api.label([E[0] + 10, fy], vfl, {color: c.c1, size: 12.5, weight: 650});
+      } else {
+        // no room on the right: on the left, on the side away from the line (above it when rising, below when falling)
+        var ly = E[1] + (k.a > 0 ? -12 : 13);
+        if (Math.abs(ly - Y0) < 9) ly = Y0 + (k.a > 0 ? -10 : 10);
+        api.label([E[0] - 10, ly], vfl, {color: c.c1, size: 12.5, weight: 650, anchor: "end"});
       }
       // drag the start up and down (v_i) and the end along time (t)
       api.handle(S, {color: c.c1, r: 6, onDrag: function (q) {
