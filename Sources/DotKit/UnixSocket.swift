@@ -38,8 +38,9 @@ public final class UnixSocketServer {
     private var listenFD: Int32 = -1
     private var listener: DispatchSourceRead?
     private var connections: [Int32: Connection] = [:]
-    /// A line longer than this ends the connection (nothing Dot sends comes close).
-    static let maxLine = 4 << 20
+    /// A line longer than this ends the connection. A brief to a hosted agent carries its images as
+    /// base64 and a gate call carries the tool's whole input, so the cap sits well above both.
+    static let maxLine = 64 << 20
 
     private final class Connection {
         let fd: Int32
