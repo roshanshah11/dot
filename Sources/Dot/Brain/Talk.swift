@@ -1369,7 +1369,7 @@ final class Talk {
     // MARK: Suggestions in context (from the noticer: "want the gist of this? say yes.")
     private var pendingSuggestion: (Noticer.Suggestion, Date)?
     func offerSuggestion(_ suggestion: Noticer.Suggestion) {
-        pendingSuggestion = (suggestion, Date().addingTimeInterval(45))
+        pendingSuggestion = (suggestion, Date().addingTimeInterval(BackOff.replyWindow))
     }
 
     private static let backWords = try! NSRegularExpression(pattern: #"^(go )?(back|previous|one back|back one|back up)\W*$"#, options: .caseInsensitive)

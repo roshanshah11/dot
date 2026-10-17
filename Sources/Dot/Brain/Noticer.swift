@@ -12,7 +12,8 @@ final class Noticer {
     private let overlay: OverlayManager
     private let jev: Jev?
     private var lastNoticeAt = Date.distantPast
-    private var noticed: [String: Date] = [:]
+    /// Each item noticed, with the due date and app it was noticed under (BackOff.mayNotice).
+    private var noticed: [String: BackOff.Seen] = [:]
     private var debounce: DispatchWorkItem?
     private var lastKey = ""
 
@@ -20,6 +21,8 @@ final class Noticer {
     private var chat: Chattiness { Chattiness(config.chattiness) }
     private var notices: Bool { config.proactiveNotices && chat.notices }
     private var offers: Bool { config.suggestions && chat.offers }
+    /// AppDelegate's word that Dot is free to put up an unprompted bubble: Talk idle, nothing recording.
+    var canSpeakUp: (() -> Bool)?
 
     init(config: DotConfig, atlas: AtlasBridge, overlay: OverlayManager, jev: Jev?) {
         self.config = config
@@ -65,7 +68,8 @@ final class Noticer {
         let items = Array((brief.deadlines(withinDays: 2) + brief.commitments.prefix(4)).prefix(8))
         guard !items.isEmpty else { return }
         let title = context.windowTitle ?? ""
-        let key = "\(app.bundleIdentifier ?? app.localizedName ?? "?")|\(title.prefix(60))"
+        let appID = app.bundleIdentifier ?? app.localizedName ?? "?"
+        let key = "\(appID)|\(title.prefix(60))"
         guard key != lastKey else { return }
         lastKey = key
         var criteria: [String: String] = ["none": "nothing on screen relates to these items"]
@@ -81,9 +85,11 @@ final class Noticer {
                   choice.probability >= 0.7, choice.confidence >= 0.55,
                   let index = Int(choice.choice.dropFirst()), items.indices.contains(index - 1) else { return }
             let item = items[index - 1]
-            let itemKey = String(item.prefix(60))
-            if let last = self.noticed[itemKey], Date().timeIntervalSince(last) < 4 * 3600 { return }
-            self.noticed[itemKey] = Date()
+            // Not again until its due date or the app in front changes (persona-C7), and never within four hours.
+            let (id, due) = BackOff.item(item)
+            let here = BackOff.Context(due: due, app: appID)
+            guard BackOff.mayNotice(id, in: here, now: Date(), seen: self.noticed) else { return }
+            self.noticed[id] = BackOff.Seen(context: here, at: Date())
             self.lastNoticeAt = Date()
             let line = Self.line(for: item)
             Log.info("notice: \(app.localizedName ?? "?") -> \(Log.short(item, 80))")
@@ -156,6 +162,7 @@ final class Noticer {
             Log.info("suggest: \(kind) for \(Log.short(title, 60)) (\(String(format: "%.2f", choice.probability)))")
             self.overlay.greet(line, for: 12)
             self.onSuggest?(Suggestion(kind: kind, line: line, ask: ask))
+            self.awaitReply(kind, bubble: 12)
         }
     }
 
@@ -183,21 +190,56 @@ final class Noticer {
         Log.info("suggest: \(offer.kind) (\(offer.skill)) for \(Log.short(context.windowTitle ?? "", 60))")
         overlay.greet(line, for: 12)
         onSuggest?(Suggestion(kind: offer.kind, line: line, ask: offer.ask))
+        awaitReply(offer.kind, bubble: 12)
         return true
+    }
+
+    // MARK: Backing off (persona-C6, C7, C15)
+    // An offer he lets time out ends on "ok, later." and counts as a soft decline; two of those are
+    // one no, and three no's with no yes retire the kind (BackOff, tested in DotKit).
+
+    /// The offer on show until he answers it or the reply window closes.
+    private static var pending: BackOff.Pending?
+
+    /// After an offer goes up: if he hasn't answered when its bubble fades, the bubble ends on
+    /// "ok, later."; if the reply window (Talk's 45 s) closes with no yes or no, a soft decline.
+    private func awaitReply(_ kind: String, bubble seconds: TimeInterval) {
+        let offer = BackOff.Pending(kind: kind, at: Date())
+        Self.pending = offer
+        DispatchQueue.main.asyncAfter(deadline: .now() + seconds) { [weak self] in
+            guard let self, Self.pending == offer, self.canSpeakUp?() ?? true,
+                  CGEventSource.secondsSinceLastEventType(.hidSystemState, eventType: .keyDown) >= 2 else { return }
+            self.overlay.greet("ok, later.", for: 2)
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + BackOff.replyWindow + 1) {
+            guard Self.pending == offer, offer.expired(at: Date()) else { return }
+            Self.pending = nil
+            Self.recordTimeout(kind: kind)
+        }
     }
 
     /// Yes/no history per kind; three declines with no acceptance retire a kind.
     static func record(kind: String, accepted: Bool) {
+        if pending?.kind == kind { pending = nil }
         let key = "dot.suggest.\(kind).\(accepted ? "yes" : "no")"
         UserDefaults.standard.set(UserDefaults.standard.integer(forKey: key) + 1, forKey: key)
         Log.info("suggest: \(kind) \(accepted ? "accepted" : "declined")")
     }
 
-    static func allowed(_ kind: String) -> Bool {
-        let yes = UserDefaults.standard.integer(forKey: "dot.suggest.\(kind).yes")
-        let no = UserDefaults.standard.integer(forKey: "dot.suggest.\(kind).no")
-        return yes > 0 || no < 3
+    /// An offer that got no reply: half a decline.
+    static func recordTimeout(kind: String) {
+        let key = "dot.suggest.\(kind).soft"
+        UserDefaults.standard.set(UserDefaults.standard.integer(forKey: key) + 1, forKey: key)
+        Log.info("suggest: \(kind) timed out with no reply")
     }
+
+    static func tally(_ kind: String) -> BackOff.Tally {
+        let defaults = UserDefaults.standard
+        return BackOff.Tally(yes: defaults.integer(forKey: "dot.suggest.\(kind).yes"), no: defaults.integer(forKey: "dot.suggest.\(kind).no"),
+                             soft: defaults.integer(forKey: "dot.suggest.\(kind).soft"))
+    }
+
+    static func allowed(_ kind: String) -> Bool { !tally(kind).retired }
 
     /// "heads up: centerview coffee chats, due 2026-10-15." from a deadline line that starts with its date.
     static func line(for item: String) -> String {

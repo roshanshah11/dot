@@ -229,7 +229,7 @@ struct SkillsPage: View {
 struct SuggestionsPage: View {
     @ObservedObject var model: HomeModel
     @State private var history: [SuggestionDecision] = []
-    @State private var counts: [String: [Int]] = [:]
+    @State private var counts: [String: BackOff.Tally] = [:]
     @State private var confirmingHistory = false
     @State private var confirmingCounts = false
 
@@ -257,20 +257,20 @@ struct SuggestionsPage: View {
             }
             HomeSection("Offers so far") {
                 ForEach(Self.kinds) { kind in
-                    let yes = counts[kind.name]?[0] ?? 0, no = counts[kind.name]?[1] ?? 0
+                    let tally = counts[kind.name] ?? BackOff.Tally()
                     HStack(spacing: 10) {
                         VStack(alignment: .leading, spacing: 1) {
                             Text(kind.name).font(.system(size: 13, weight: .medium))
                             Text(kind.about).font(.caption).foregroundStyle(.secondary)
                         }
                         Spacer()
-                        // Noticer.allowed: three no's with no yes retire a kind.
-                        if yes == 0 && no >= 3 { HomeBadge(text: "retired", color: .orange) }
-                        Text("yes \(yes) · no \(no)").font(.system(size: 12, design: .monospaced)).foregroundStyle(.secondary)
+                        // Noticer.allowed: three no's (two ignored offers count as one) with no yes retire a kind.
+                        if tally.retired { HomeBadge(text: "retired", color: .orange) }
+                        Text("yes \(tally.yes) · no \(tally.no) · ignored \(tally.soft)").font(.system(size: 12, design: .monospaced)).foregroundStyle(.secondary)
                     }
                 }
                 HStack {
-                    Text("Three no's and no yes retire a kind until the counts are reset.").font(.caption).foregroundStyle(.secondary)
+                    Text("Three no's and no yes retire a kind until the counts are reset; two ignored offers count as one no.").font(.caption).foregroundStyle(.secondary)
                     Spacer()
                     Button("Reset counts…") { confirmingCounts = true }.controlSize(.small)
                         .confirmationDialog("Reset the offer counts?", isPresented: $confirmingCounts) {
@@ -335,10 +335,7 @@ struct SuggestionsPage: View {
 
     private func reload() {
         history = SuggestionDecision.load(file)
-        let defaults = UserDefaults.standard
-        counts = Dictionary(uniqueKeysWithValues: Self.kinds.map { kind in
-            (kind.name, [defaults.integer(forKey: "dot.suggest.\(kind.name).yes"), defaults.integer(forKey: "dot.suggest.\(kind.name).no")])
-        })
+        counts = Dictionary(uniqueKeysWithValues: Self.kinds.map { kind in (kind.name, Noticer.tally(kind.name)) })
     }
 
     private func resetHistory() {
@@ -350,6 +347,7 @@ struct SuggestionsPage: View {
         for kind in Self.kinds {
             UserDefaults.standard.removeObject(forKey: "dot.suggest.\(kind.name).yes")
             UserDefaults.standard.removeObject(forKey: "dot.suggest.\(kind.name).no")
+            UserDefaults.standard.removeObject(forKey: "dot.suggest.\(kind.name).soft")
         }
         reload()
     }
