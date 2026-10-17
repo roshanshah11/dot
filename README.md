@@ -268,6 +268,43 @@ every talk turn and dictation is saved under `~/Dot/transcripts/`; agents run wi
 chat prompt, the vault's rules and all of its tools; a BIOS 11140 course map joined the math one
 in `~/Dot/talk/context/`.
 
+## Round eight: the box stays on the content, and explanations on a panel (2026-10-17)
+
+His asks: Dot was "awful at keeping the box on the content as i scroll" and at visualizations, "especially when i
+want rendered JS to just walk me through and explain things"; bring ChatGPT's way of answering (a written answer
+with live figures, a check question and follow-ups) to Dot. What changed:
+
+- **Marks follow what they mark.** A HIGHLIGHT, TARGET, POINT or SHAPE gets an anchor when it lands
+  (`Overlay/MarkTracker.swift`, pure parts in `DotKit/MarkAnchor.swift`): an accessibility element that is roughly
+  the marked thing (its frame is re-read while he scrolls), else the window's pixels (a listen-only scroll tap moves
+  the mark at once; window captures registered with Vision correct it; after the scroll settles the mark's own patch
+  is found again, `DotKit/PatchFinder.swift`, so repetitive text cannot leave it a line off). A mark that scrolls out
+  of the window hides, a ring leaves a chevron at the edge, and both come back on the content. Switching apps clears
+  them. Nothing runs while there are no marks. `Dot --track-selftest` checks it on the real screen inside Dot.app
+  (Safari with an element anchor, Preview with a PDF and a pixel anchor; Vision text recognition is the independent
+  truth): on 10/17 the pixel mark came back within 4 pt after a 1,800 pt scroll away and back, and the element mark
+  followed with 0 pt drift.
+- **The explainer panel.** Explanations go on a docked, resizable column on the screen he is on
+  (`Panel/ExplainerPanel.swift`), written by Opus in Dot's UI language (`docs/ui-language.md`): text and math,
+  steps lit while the voice says them (`[STEP:id:n]`), figures in a house style (`<vec>`, `<dot>`, palette tokens,
+  arrowheads), plots, charts, tables, quizzes with feedback and a retry, follow-up chips, interactive explainers from
+  the catalog (`<viz id>` or `<viz topic>`), and a small reactive layer (state, sliders, buttons, show/hide, each,
+  `{expressions}`) that never runs model-written script. It streams as the model writes (`DotKit/PanelStream.swift`),
+  docks away from the content Dot is marking, is saved to `~/Dot/talk/panels` (filed by course, with a "last time"
+  recap when he comes back to a course on another day), and reopens by voice ("show the kernel one again").
+  A quiz answer comes back as a turn the quick model grades in one line; a chip is a new question; selected panel
+  text is what "this" means next. The quick talk model hands panel work to Opus with `[THINK]`.
+- **The explainer catalog.** `Resources/board/viz/framework.js` (one register call per widget, sliders and steps
+  built from its params, a test hook) and a build queue of interactive explainers for his subjects (linear algebra,
+  finance and IB technicals, biology and biotech, statistics); `scripts/viz-check.py` is the gate (no errors, every
+  control changes the picture, labels legible, nothing outside the frame, narrow layout), `scripts/viz-find.py`
+  searches it, `scripts/viz-index.py` writes the index the panel and the prompt read. The `dot-viz` skill holds the
+  build rules.
+- **Tests and tools:** `scripts/panel-check.py` (every fixture in WebKit: no errors, streamed equals one-shot, quiz
+  and chips post, steppers and sliders change state), `Dot --snapshot <folder> panel` (the app's own WKWebView),
+  `Dot --panel file.ui`, `Dot --prompt talk|think`, `scripts/panel-dry.py` (past questions through the real think
+  prompt, panels rendered on one sheet with latency and cost; `DOT_BOARD_DIR` points a dev build at a worktree).
+
 ## Round six: the notch out of the way, and agents he can control (2026-10-16)
 
 His asks: the bar at the top "is too big and covers a lot of stuff"; replicate HeyClicky's features; "how do i

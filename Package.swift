@@ -32,6 +32,14 @@ let package = Package(
             path: "Sources/Dot",
             swiftSettings: [.swiftLanguageMode(.v5)]
         ),
+        // A probe for mark tracking on a real window: scrolls a page of text and measures how far the box
+        // drifts from the line it marked (round eight). Shares MarkTracker.swift with Dot through a symlink.
+        .executableTarget(
+            name: "DotTrackProbe",
+            dependencies: ["DotKit"],
+            path: "Sources/DotTrackProbe",
+            swiftSettings: [.swiftLanguageMode(.v5)]
+        ),
         .testTarget(
             name: "DotKitTests",
             dependencies: ["DotKit"],

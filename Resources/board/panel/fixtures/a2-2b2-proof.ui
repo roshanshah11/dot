@@ -1,0 +1,8 @@
+<!-- expect: .step:4 -->
+<lead>Claim: if $a,b\in\mathbb{Q}$ are not both zero, then $a^2-2b^2\neq0$.</lead>
+<steps>
+<step n="1" title="Set up the contradiction"><text>Suppose $a^2-2b^2=0$, so $a^2=2b^2$.</text></step>
+<step n="2" title="Case b = 0"><text>Then $a^2=0$, so $a=0$. But $a$ and $b$ are not both zero: contradiction.</text></step>
+<step n="3" title="Case b ≠ 0"><text>Divide by $b^2$:</text><math>\left(\frac{a}{b}\right)^2=2</math><text>so $\sqrt2=\pm\frac{a}{b}$ would be rational, which it is not.</text></step>
+<step n="4" title="Conclusion"><text>Either way we reach a contradiction, so $a^2-2b^2\neq0$ and $\frac{1}{a+b\sqrt2}$ lies in $\mathbb{Q}(\sqrt2)$. $\blacksquare$</text></step>
+</steps>

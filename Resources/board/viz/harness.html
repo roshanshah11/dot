@@ -1,0 +1,29 @@
+<!doctype html>
+<html><head><meta charset="utf-8">
+<title>viz harness</title>
+<link rel="stylesheet" href="../katex/katex.min.css">
+<link rel="stylesheet" href="viz.css">
+<script src="../katex/katex.min.js"></script>
+<script src="../vendor/d3.min.js"></script>
+<script src="framework.js"></script>
+<style>
+  html, body { margin: 0; background: var(--viz-ground, #0d0c0b); }
+  body { padding: 16px; }
+  #host { max-width: var(--w, 720px); }
+</style>
+</head><body>
+<div id="host"></div>
+<script>
+// harness.html?id=<widget id>&values=<json>&w=<px>: mounts one widget for viz-check.py and for building.
+(function () {
+  var q = new URLSearchParams(location.search), id = q.get("id"), values = {};
+  try { values = JSON.parse(q.get("values") || "{}"); } catch (e) { console.error("values not JSON"); }
+  if (q.get("w")) document.documentElement.style.setProperty("--w", q.get("w") + "px");
+  var s = document.createElement("script");
+  s.src = "widgets/" + id + ".js";
+  s.onload = function () { window.__vizInstance = Viz.mount(document.getElementById("host"), id, values); window.__vizReady = true; };
+  s.onerror = function () { console.error("no widget file widgets/" + id + ".js"); window.__vizReady = true; };
+  document.head.appendChild(s);
+})();
+</script>
+</body></html>

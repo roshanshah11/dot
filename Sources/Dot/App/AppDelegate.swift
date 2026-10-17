@@ -285,6 +285,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             guard let path = note.userInfo?["text"] as? String else { return }
             Task { @MainActor in self?.talk.showCardFile(path) }
         }
+        // `Dot --track-selftest`: marks stay on scrolled content, checked on the real screen (round eight).
+        center.addObserver(forName: DotIPC.trackSelftest, object: nil, queue: .main) { [weak self] _ in
+            Task { @MainActor in
+                guard let self else { return }
+                await TrackSelfTest.run(overlay: self.overlay)
+            }
+        }
+        // `Dot --panel file.ui`: a UI-language explanation in the explainer panel (round eight).
+        center.addObserver(forName: DotIPC.panel, object: nil, queue: .main) { [weak self] note in
+            guard let path = note.userInfo?["text"] as? String else { return }
+            Task { @MainActor in self?.talk.showPanelFile(path) }
+        }
         // `Dot --find "phrase"`: search the app in front and highlight the match (the FIND tag's path).
         center.addObserver(forName: DotIPC.find, object: nil, queue: .main) { [weak self] note in
             guard let text = note.userInfo?["text"] as? String else { return }
@@ -451,6 +463,8 @@ enum Version {
 
 enum DotIPC {
     static let ask = Notification.Name("com.roshan.dot.ask")
+    static let panel = Notification.Name("com.roshan.dot.panel")
+    static let trackSelftest = Notification.Name("com.roshan.dot.track-selftest")
     static let agent = Notification.Name("com.roshan.dot.agent")
     static let home = Notification.Name("com.roshan.dot.home")
     static let stop = Notification.Name("com.roshan.dot.stop")

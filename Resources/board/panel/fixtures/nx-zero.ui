@@ -1,0 +1,14 @@
+<!-- expect: .table-wrap:2 .step:3 -->
+<lead>When is $n\cdot x=0$ in a field? Exactly when $n_F=0$ or $x=0$.</lead>
+<math>n x = n_F\cdot x,\qquad\text{so}\qquad nx=0 \iff n_F=0\ \text{or}\ x=0</math>
+<steps>
+<step n="1" title="Characteristic 0 (like ℝ)"><text>$n_F\neq0$ for every $n\ge1$, so $5x=0$ forces $x=0$. Try it: $5\cdot0.3=1.5\neq0$.</text></step>
+<step n="2" title="Characteristic p, p does not divide n (𝔽₅, n = 3)">
+<table><tr><th>x</th><th num>1</th><th num>2</th><th num>3</th><th num>4</th></tr><tr><td>3x mod 5</td><td num>3</td><td num>1</td><td num>4</td><td num>2</td></tr></table>
+<text>Never zero unless $x$ is zero.</text>
+</step>
+<step n="3" title="p divides n (𝔽₅, n = 5)">
+<table><tr><th>x</th><th num>1</th><th num>2</th><th num>3</th><th num>4</th></tr><tr class="hl"><td>5x mod 5</td><td num>0</td><td num>0</td><td num>0</td><td num>0</td></tr></table>
+<text>Zero for every $x$: that is part three of the proposition.</text>
+</step>
+</steps>

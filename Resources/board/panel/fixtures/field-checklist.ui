@@ -1,0 +1,15 @@
+<!-- expect: .grid .table-wrap .box -->
+<lead>A field is a set where you can add, subtract, multiply and divide (except by zero) and the usual rules hold.</lead>
+<grid cols="3" gap="2">
+  <box tone="card"><text weight="bold" color="c2">addition</text><list><item>commutative, associative</item><item>a zero: $0+x=x$</item><item>every $x$ has $-x$</item></list></box>
+  <box tone="card"><text weight="bold" color="c3">multiplication</text><list><item>commutative, associative</item><item>a one: $1\cdot x=x$</item><item>$x\neq0$ has $x^{-1}$</item></list></box>
+  <box tone="card"><text weight="bold" color="c4">glue</text><list><item>$x(y+z)=xy+xz$</item><item>$0\neq1$</item></list></box>
+</grid>
+<table>
+<tr><th>set</th><th>field?</th><th>why</th></tr>
+<tr><td>$\mathbb{Q}$, $\mathbb{R}$, $\mathbb{C}$</td><td><badge tone="good">yes</badge></td><td>every rule holds</td></tr>
+<tr><td>$\mathbb{Z}/5$</td><td><badge tone="good">yes</badge></td><td>5 is prime, so inverses exist</td></tr>
+<tr class="hl"><td>$\mathbb{Z}/6$</td><td><badge tone="danger">no</badge></td><td>$2\cdot3=0$: 2 has no inverse</td></tr>
+<tr><td>$\mathbb{Z}$</td><td><badge tone="danger">no</badge></td><td>2 has no inverse $\tfrac12$</td></tr>
+</table>
+<cite label="Wu, Notes on linear algebra, Def. 1.1.1"></cite>

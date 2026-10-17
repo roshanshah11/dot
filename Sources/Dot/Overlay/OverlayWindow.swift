@@ -74,6 +74,13 @@ struct ShapeMark: Identifiable, Equatable {
     var progress: CGFloat = 0
 }
 
+/// Where a mark went when it scrolled out of the window: a chevron on that edge, in overlay coordinates.
+struct EdgeHint: Equatable {
+    var point: CGPoint
+    var edge: MarkEdge
+    var label: String
+}
+
 /// Everything one screen's view draws. Positions are overlay coordinates (top-left origin).
 final class CompanionModel: ObservableObject {
     @Published var position = CGPoint(x: 200, y: 200)
@@ -108,6 +115,9 @@ final class CompanionModel: ObservableObject {
     /// Strokes already finished while the key stays held (he can mark two things).
     @Published var strokes: [[CGPoint]] = []
     @Published var color = Color(red: 1.0, green: 0.42, blue: 0.17)
+    /// A walkthrough ring scrolled out of view: a chevron at the window edge points to it (round eight).
+    @Published var edgeHint: EdgeHint?
+
     /// What an agent is doing now (nil while none works): a small glyph circles the orb (VI-04).
     @Published var agentActivity: AgentActivity?
     /// Agents waiting on his yes: the orb pulses while any do.
@@ -194,6 +204,11 @@ struct CompanionView: View {
                     chip(ring.label).offset(x: ring.center.x + ring.radius + 8, y: ring.center.y - 12)
                         .transition(.opacity)
                 }
+            }
+            if let hint = model.edgeHint {
+                EdgeChevron(hint: hint, color: model.color)
+                    .position(hint.point)
+                    .transition(.opacity)
             }
             if let tail = model.tailTo, model.visible {
                 Path { path in
@@ -285,6 +300,31 @@ struct CompanionView: View {
             .background(model.color, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
             .shadow(color: .black.opacity(0.25), radius: 4, x: 0, y: 2)
             .fixedSize()
+    }
+}
+
+/// A ring that scrolled out of view: a chevron pointing toward it with "scroll up/down" under it.
+private struct EdgeChevron: View {
+    let hint: EdgeHint
+    let color: Color
+    var body: some View {
+        let angle: Double = { switch hint.edge { case .top: return 0; case .right: return 90; case .bottom: return 180; case .left: return 270 } }()
+        let word: String = { switch hint.edge { case .top: return "scroll up"; case .bottom: return "scroll down"; case .left: return "scroll left"; case .right: return "scroll right" } }()
+        VStack(spacing: 3) {
+            Image(systemName: "chevron.up")
+                .font(.system(size: 15, weight: .bold))
+                .foregroundStyle(.white)
+                .rotationEffect(.degrees(angle))
+                .frame(width: 30, height: 30)
+                .background(color, in: Circle())
+                .shadow(color: color.opacity(0.6), radius: 6)
+            Text(hint.label.isEmpty ? word : "\(word): \(hint.label)")
+                .font(.system(size: 11.5, weight: .semibold))
+                .foregroundStyle(.white)
+                .padding(.horizontal, 7).padding(.vertical, 3)
+                .background(Color.black.opacity(0.55), in: Capsule())
+                .fixedSize()
+        }
     }
 }
 
@@ -643,6 +683,13 @@ final class OverlayManager {
     private var lastMouse = CGPoint.zero
     private var breathPhase: Double = 0
     private(set) var color: Color
+    /// Keeps marks on the content while he scrolls (round eight).
+    private let tracker = MarkTracker()
+    /// The last placed geometry of each tracked mark (AppKit), to turn a tracker move into a delta.
+    private var trackedRects: [MarkTracker.Kind: CGRect] = [:]
+    /// Marks hidden because their content scrolled out of view, restored when it comes back.
+    private var hiddenRing: (Ring, Int)?
+    private var hiddenHighlight: (CGRect, Int)?
 
     /// A new accent from Settings, applied to every screen's marks and the orb.
     func setColor(hex: String) {
@@ -673,6 +720,7 @@ final class OverlayManager {
         startTicking()
         scheduleBlink()
         if presence { bringUp() }
+        tracker.onUpdate = { [weak self] kind, rect, visible, edge in self?.trackerMoved(kind, to: rect, visible: visible, edge: edge) }
     }
 
     func rebuild() {
@@ -840,6 +888,7 @@ final class OverlayManager {
             model.tailTo = target
             model.look = CGPoint(x: -0.6, y: -0.6)
         }
+        startTracking(.point, CGRect(x: screenPoint.x - 12, y: screenPoint.y - 12, width: 24, height: 24))
     }
 
     /// Ring the control to click (or hover) next and perch beside it.
@@ -862,6 +911,7 @@ final class OverlayManager {
             model.motion = .parked
             model.look = CGPoint(x: -0.7, y: -0.5)
         }
+        startTracking(.ring, CGRect(x: screenPoint.x - radius, y: screenPoint.y - radius, width: radius * 2, height: radius * 2))
     }
 
     func highlight(_ rect: CGRect, label: String) {
@@ -875,6 +925,7 @@ final class OverlayManager {
         model.highlight = Coordinates.overlayRect(fromScreen: rect, screenFrame: windows[index].screenFrame)
         model.highlightLabel = label
         withAnimation(.easeOut(duration: 0.45)) { model.highlightProgress = 1 }
+        startTracking(.highlight, rect)
         if model.motion != .parked {
             park(on: index)
             let corner = Coordinates.overlayPoint(fromScreen: CGPoint(x: rect.maxX, y: rect.minY), screenFrame: windows[index].screenFrame)
@@ -913,6 +964,85 @@ final class OverlayManager {
             model.motion = .parked
             model.look = CGPoint(x: -0.6, y: -0.6)
         }
+        let xs = screenPoints.map(\.x), ys = screenPoints.map(\.y)
+        if let minX = xs.min(), let maxX = xs.max(), let minY = ys.min(), let maxY = ys.max() {
+            startTracking(.shape, CGRect(x: minX, y: minY, width: max(maxX - minX, 8), height: max(maxY - minY, 8)))
+        }
+    }
+
+    // MARK: Tracking (round eight)
+
+    /// Where the tracked marks are and what is on screen, for `Dot --track-selftest`.
+    struct TrackingSnapshot { var highlight: CGRect?; var highlightShown: Bool; var ring: CGRect?; var ringShown: Bool; var chevron: Bool; var anchor: String? }
+    var trackingSnapshot: TrackingSnapshot {
+        TrackingSnapshot(highlight: trackedRects[.highlight], highlightShown: models.contains { $0.highlight != nil },
+                         ring: trackedRects[.ring], ringShown: models.contains { $0.ring != nil },
+                         chevron: models.contains { $0.edgeHint != nil }, anchor: tracker.anchorName(.highlight))
+    }
+
+    /// The content Dot is marking now (AppKit screen rect), so the explainer panel docks away from it.
+    var markedRect: CGRect? { trackedRects[.highlight] ?? trackedRects[.ring] ?? trackedRects[.shape] ?? trackedRects[.point] }
+
+    private func startTracking(_ kind: MarkTracker.Kind, _ rect: CGRect) {
+        trackedRects[kind] = rect
+        if kind == .ring { hiddenRing = nil; for m in models { m.edgeHint = nil } }
+        if kind == .highlight { hiddenHighlight = nil }
+        tracker.track(kind, appKitRect: rect)
+    }
+
+    private func stopTracking(_ kind: MarkTracker.Kind? = nil) {
+        tracker.clear(kind)
+        if let kind {
+            trackedRects[kind] = nil
+            if kind == .ring { hiddenRing = nil; for m in models { m.edgeHint = nil } }
+            if kind == .highlight { hiddenHighlight = nil }
+        } else {
+            trackedRects.removeAll(); hiddenRing = nil; hiddenHighlight = nil
+            for m in models { m.edgeHint = nil }
+        }
+    }
+
+    /// The tracker moved a mark (scroll, window move) or it left or re-entered the window.
+    private func trackerMoved(_ kind: MarkTracker.Kind, to rect: CGRect, visible: Bool, edge: MarkEdge?) {
+        guard let old = trackedRects[kind], let index = screenIndex(containing: CGPoint(x: rect.midX, y: rect.midY)) ?? screenIndex(containing: CGPoint(x: old.midX, y: old.midY)) else { return }
+        let model = models[index], frame = windows[index].screenFrame
+        let delta = CGVector(dx: rect.midX - old.midX, dy: -(rect.midY - old.midY))   // overlay y runs down
+        trackedRects[kind] = rect
+        switch kind {
+        case .highlight:
+            if visible {
+                model.highlight = Coordinates.overlayRect(fromScreen: rect, screenFrame: frame)
+                hiddenHighlight = nil
+            } else if model.highlight != nil {
+                hiddenHighlight = (rect, index)
+                model.highlight = nil
+            }
+        case .ring:
+            if visible {
+                if model.ring == nil, let (ring, _) = hiddenRing { model.ring = ring }
+                model.ring?.center = Coordinates.overlayPoint(fromScreen: CGPoint(x: rect.midX, y: rect.midY), screenFrame: frame)
+                hiddenRing = nil
+                model.edgeHint = nil
+            } else {
+                if let ring = model.ring { hiddenRing = (ring, index) }
+                model.ring = nil
+                if let (p, e) = tracker.chevronPoint(for: .ring) {
+                    model.edgeHint = EdgeHint(point: Coordinates.overlayPoint(fromScreen: p, screenFrame: frame), edge: e, label: hiddenRing?.0.label ?? "")
+                }
+            }
+        case .point:
+            if let tail = model.tailTo { model.tailTo = visible ? CGPoint(x: tail.x + delta.dx, y: tail.y + delta.dy) : nil }
+        case .shape:
+            if visible {
+                for i in model.shapes.indices { model.shapes[i].points = model.shapes[i].points.map { CGPoint(x: $0.x + delta.dx, y: $0.y + delta.dy) } }
+            } else {
+                model.shapes = []
+            }
+        }
+        // Dot perched beside the mark rides along with it
+        if visible, model.motion == .parked, parkedScreen == index {
+            model.position = clampToScreen(CGPoint(x: model.position.x + delta.dx, y: model.position.y + delta.dy), model: model)
+        }
     }
 
     /// The box the user is drawing while holding the key, in screen coordinates; nil clears it.
@@ -949,6 +1079,7 @@ final class OverlayManager {
     }
 
     func clearRing() {
+        stopTracking(.ring)
         ringDoneWork?.cancel()
         for model in models { withAnimation(.easeOut(duration: 0.2)) { model.ring = nil; model.ringDone = false } }
     }
@@ -967,6 +1098,7 @@ final class OverlayManager {
         returnWork?.cancel()
         let work = DispatchWorkItem { [weak self] in
             guard let self else { return }
+            self.stopTracking()
             for model in self.models {
                 model.ring = nil
                 model.highlight = nil
@@ -988,6 +1120,7 @@ final class OverlayManager {
     /// Clear everything now (interrupt, new question). A walkthrough's ring can stay.
     func clearMarks(keepRing: Bool = false) {
         returnWork?.cancel()
+        if keepRing { stopTracking(.highlight); stopTracking(.point); stopTracking(.shape) } else { stopTracking() }
         flightTimer?.invalidate()
         flightTimer = nil
         for model in models {
@@ -1009,6 +1142,7 @@ final class OverlayManager {
 
     /// Older marks go when a new beat lands somewhere else, so a tour does not pile up boxes.
     func fadeOldMarks() {
+        stopTracking(.highlight)
         for model in models {
             model.highlight = nil
             model.highlightLabel = nil

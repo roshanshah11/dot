@@ -1,0 +1,16 @@
+<!-- expect: .step:3 .callout -->
+<lead>$\mathbb{Q}(\sqrt2)$ is closed: sums, products and inverses of $a+b\sqrt2$ stay in that form.</lead>
+<steps>
+<step n="1" title="The set"><math>\mathbb{Q}(\sqrt2)=\{a+b\sqrt2 : a,b\in\mathbb{Q}\}</math><text>Every element is a rational plus a rational multiple of $\sqrt2$.</text></step>
+<step n="2" title="Sums and products">
+<math>(a+b\sqrt2)+(c+d\sqrt2)=(a+c)+(b+d)\sqrt2</math>
+<math>(a+b\sqrt2)(c+d\sqrt2)=(ac+2bd)+(ad+bc)\sqrt2</math>
+<text>The product keeps the form because $\sqrt2\cdot\sqrt2=2$ is rational.</text>
+</step>
+<step n="3" title="Inverses: multiply by the conjugate">
+<math>\frac{1}{a+b\sqrt2}=\frac{a-b\sqrt2}{a^2-2b^2}=\frac{a}{a^2-2b^2}-\frac{b}{a^2-2b^2}\sqrt2</math>
+<text>Both coefficients are rational, as long as $a^2-2b^2\neq0$.</text>
+</step>
+</steps>
+<callout tone="warn">The one thing left to prove: $a^2-2b^2\neq0$ whenever $a,b$ are not both zero. That is where $\sqrt2$ being irrational comes in.</callout>
+<followups><chip ask="prove that a squared minus 2 b squared is never zero">prove $a^2-2b^2\neq0$</chip></followups>

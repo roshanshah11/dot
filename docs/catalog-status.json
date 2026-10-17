@@ -1,0 +1,681 @@
+{
+ "counts": {
+  "fail": 0,
+  "pass": 84,
+  "total": 84
+ },
+ "widgets": {
+  "absorption-variable-costing-inventory-profit": {
+   "checked": "2026-10-17T02:33:22",
+   "failures": [],
+   "shows": "Make more than you sell and absorption costing parks fixed overhead in inventory with every unsold unit, so it reports more profit than variable costing",
+   "status": "pass",
+   "subject": "finance",
+   "title": "Absorption vs variable costing: profit and inventory"
+  },
+  "accretion-dilution": {
+   "checked": "2026-10-17T02:33:22",
+   "failures": [],
+   "shows": "Acquirer EPS before and after a deal as the stock/cash mix, the price paid and synergies change",
+   "status": "pass",
+   "subject": "finance",
+   "title": "Accretion / dilution: acquirer EPS after a deal"
+  },
+  "accrual-vs-cash-accounting": {
+   "checked": "2026-10-17T02:49:39",
+   "failures": [],
+   "shows": "Move the month the work is done and how long the customer takes to pay: cash basis follows the money, accrual follows the work, and the gap is a receivable, deferred revenue or a prepaid expense",
+   "status": "pass",
+   "subject": "finance",
+   "title": "Accrual vs cash accounting"
+  },
+  "accuracy-vs-precision-targets": {
+   "checked": "2026-10-17T04:09:03",
+   "failures": [],
+   "shows": "Move the mean and widen the spread: accuracy is how far the average lands from the bullseye, precision is how tightly the shots group",
+   "status": "pass",
+   "subject": "stats",
+   "title": "Accuracy vs precision"
+  },
+  "angular-frequency-relation": {
+   "checked": "2026-10-17T04:09:03",
+   "failures": [],
+   "shows": "Slide f and t: a point turning f times a second sweeps 2\u03c0 rad per turn, so \u03c9 = 2\u03c0f rad/s, and one turn takes T = 1/f",
+   "status": "pass",
+   "subject": "physics",
+   "title": "Angular frequency and period"
+  },
+  "anova-decomposition": {
+   "checked": "2026-10-17T04:09:03",
+   "failures": [],
+   "shows": "Drag any point: each value's gap from the grand mean splits into a between-group part and a within-group part, and F weighs one against the other",
+   "status": "pass",
+   "subject": "stats",
+   "title": "ANOVA: between vs within"
+  },
+  "anova-interaction-plot": {
+   "checked": "2026-10-17T04:09:03",
+   "failures": [],
+   "shows": "Pick a pattern: parallel lines mean no interaction, spreading lines a non-crossover one, crossing lines a crossover one; the interaction is the difference between the two simple effects",
+   "status": "pass",
+   "subject": "stats",
+   "title": "Two-way ANOVA interaction plot"
+  },
+  "antibody-heavy-light-chain-fab-fc-structure": {
+   "checked": "2026-10-17T02:43:14",
+   "failures": [],
+   "shows": "Color the IgG by chain, by variable and constant domain, or by Fab and Fc, then digest it with papain or pepsin to see which pieces come apart",
+   "status": "pass",
+   "subject": "biology",
+   "title": "Antibody chains, Fab and Fc"
+  },
+  "antibody-specificity-and-antigen-neutralization": {
+   "checked": "2026-10-17T03:28:11",
+   "failures": [],
+   "shows": "Pick an antibody and add more of it: only one whose binding site fits the spike's epitope binds, and a virus is neutralized only when every one of its spikes is covered",
+   "status": "pass",
+   "subject": "biology",
+   "title": "Antibody specificity and neutralization"
+  },
+  "antibody-structure": {
+   "checked": "2026-10-17T03:28:11",
+   "failures": [],
+   "shows": "Switch the class: every antibody is built from Y units of two heavy and two light chains, and the classes differ in how many units, which heavy chain, and the hinge",
+   "status": "pass",
+   "subject": "biology",
+   "title": "Antibody structure and classes"
+  },
+  "arithmetic-mean": {
+   "checked": "2026-10-17T04:09:03",
+   "failures": [],
+   "shows": "Change the three values: the mean is the equal share of their total, and the balance point where the deviations cancel",
+   "status": "pass",
+   "subject": "stats",
+   "title": "The arithmetic mean"
+  },
+  "autocorrelation": {
+   "checked": "2026-10-17T04:09:03",
+   "failures": [],
+   "shows": "Pick a pattern and a lag: r_k correlates the series with itself k steps later, and the correlogram shows it for every lag",
+   "status": "pass",
+   "subject": "stats",
+   "title": "Autocorrelation and the correlogram"
+  },
+  "average-speed-distance-time": {
+   "checked": "2026-10-17T04:09:03",
+   "failures": [],
+   "shows": "Set two legs of a trip: the average speed is the slope of the start-to-finish chord, total distance over total time, not the mean of the two speeds",
+   "status": "pass",
+   "subject": "physics",
+   "title": "Average speed: distance over time"
+  },
+  "b-cell-plasma-cell-antibody-secretion": {
+   "checked": "2026-10-17T03:19:41",
+   "failures": [],
+   "shows": "Step from antigen binding through T-cell help and clonal expansion to plasma cells; set divisions, plasma share and rate to see the antibody output",
+   "status": "pass",
+   "subject": "biology",
+   "title": "B cell to plasma cell: antibody secretion"
+  },
+  "bacterial-transformation-antibiotic-selection": {
+   "checked": "2026-10-17T02:43:14",
+   "failures": [],
+   "shows": "Step through ice, heat shock, recovery and plating; change the DNA, the efficiency or the plate to see which cells grow and how many colonies you get",
+   "status": "pass",
+   "subject": "biology",
+   "title": "Transformation and antibiotic selection"
+  },
+  "bacterial-transformation-free-dna-uptake": {
+   "checked": "2026-10-17T03:19:41",
+   "failures": [],
+   "shows": "Step a cell through taking up a free plasmid, then set the colonies, the DNA and the share plated to get the transformation efficiency",
+   "status": "pass",
+   "subject": "biology",
+   "title": "Bacterial transformation: taking up free DNA"
+  },
+  "biotechnology": {
+   "checked": "2026-10-17T02:39:51",
+   "failures": [],
+   "shows": "Pick the enzyme that cuts the plasmid and the one that cuts the gene, then step through pairing, ligation, transformation and expression",
+   "status": "pass",
+   "subject": "biology",
+   "title": "Recombinant DNA: putting a gene into a plasmid"
+  },
+  "blue-white-screening": {
+   "checked": "2026-10-17T03:19:41",
+   "failures": [],
+   "shows": "Set how many plasmids carry the insert and what is in the plate: white colonies have the insert, blue ones are empty vector",
+   "status": "pass",
+   "subject": "biology",
+   "title": "Blue-white screening"
+  },
+  "cell-type-specific-transcription-factors": {
+   "checked": "2026-10-17T03:19:41",
+   "failures": [],
+   "shows": "Switch the cell type or add one activator: a gene is transcribed only when the cell has an activator for every control element in its enhancer",
+   "status": "pass",
+   "subject": "biology",
+   "title": "Cell-type-specific transcription factors"
+  },
+  "change-of-basis": {
+   "checked": "2026-10-17T03:44:55",
+   "failures": [],
+   "shows": "The same vector in B-coordinates and in standard coordinates: P, whose columns are b1 and b2, turns one into the other",
+   "status": "pass",
+   "subject": "linear-algebra",
+   "title": "Change of basis"
+  },
+  "coding-strand-mrna-sequence-relationship": {
+   "checked": "2026-10-17T02:39:51",
+   "failures": [],
+   "shows": "Slide along the first codons of beta-globin: the mRNA matches the coding strand letter for letter, with U in place of T",
+   "status": "pass",
+   "subject": "biology",
+   "title": "Coding strand and mRNA: same sequence, U for T"
+  },
+  "coding-template-rna-strand-comparison": {
+   "checked": "2026-10-17T03:19:41",
+   "failures": [],
+   "shows": "Slide RNA polymerase along a short gene and compare any two strands: coding and RNA match (U for T), the template pairs with both",
+   "status": "pass",
+   "subject": "biology",
+   "title": "Coding, template and RNA strands compared"
+  },
+  "codon-anticodon-pairing": {
+   "checked": "2026-10-17T03:19:41",
+   "failures": [],
+   "shows": "Build a codon base by base: the tRNA's anticodon pairs with it antiparallel and brings the matching amino acid; turn on wobble to see one tRNA read several codons",
+   "status": "pass",
+   "subject": "biology",
+   "title": "Codon and anticodon pairing"
+  },
+  "codon-chart": {
+   "checked": "2026-10-17T02:43:46",
+   "failures": [],
+   "shows": "Pick the three bases of an mRNA codon: first base picks the row, second the column, third the line; the codon and every synonym for its amino acid light up",
+   "status": "pass",
+   "subject": "biology",
+   "title": "The genetic code: reading a codon"
+  },
+  "column-space": {
+   "checked": "2026-10-17T03:44:55",
+   "failures": [],
+   "shows": "Ax is a combination of the columns of A, so every output lands in Col A: a line, a plane or all of R3 depending on the rank",
+   "status": "pass",
+   "subject": "linear-algebra",
+   "title": "Column space"
+  },
+  "compound-interest": {
+   "checked": "2026-10-17T02:33:22",
+   "failures": [],
+   "shows": "Slide the rate and the number of periods: the balance grows by 1 + r each period, and the amber interest on interest is what makes the curve bend upward",
+   "status": "pass",
+   "subject": "finance",
+   "title": "Compound interest"
+  },
+  "coordinates-in-a-basis": {
+   "checked": "2026-10-17T02:45:03",
+   "failures": [],
+   "shows": "The same vector written in two bases; drag the basis and its coordinates change",
+   "status": "pass",
+   "subject": "linear-algebra",
+   "title": "Coordinates in a basis"
+  },
+  "crispr-cas9": {
+   "checked": "2026-10-17T03:36:38",
+   "failures": [],
+   "shows": "Step through guide loading, PAM search, the double-strand cut and the repair; switch the goal to see NHEJ knock a gene out or HDR copy in a precise edit",
+   "status": "pass",
+   "subject": "biology",
+   "title": "CRISPR-Cas9 gene editing"
+  },
+  "crispr-cas9-target-recognition": {
+   "checked": "2026-10-17T03:36:38",
+   "failures": [],
+   "shows": "Toggle the PAM and move a guide mismatch along the target: Cas9 needs NGG, pairs the seed next to it first, and only a full R-loop leads to a cut",
+   "status": "pass",
+   "subject": "biology",
+   "title": "How Cas9 recognizes its target"
+  },
+  "crispr-dna-repair-outcomes": {
+   "checked": "2026-10-17T03:36:38",
+   "failures": [],
+   "shows": "Choose the repair pathway and the NHEJ indel size: indels that aren't a multiple of 3 shift the reading frame into an early stop codon, while HDR writes in the donor's exact change",
+   "status": "pass",
+   "subject": "biology",
+   "title": "Repairing a Cas9 cut: NHEJ or HDR"
+  },
+  "crispr-guide-directed-dna-cleavage": {
+   "checked": "2026-10-17T02:43:46",
+   "failures": [],
+   "shows": "Slide the guide along the DNA: Cas9 cuts only where an NGG PAM follows the matched 20 bases, always 3 bp from the PAM, with RuvC and HNH each cutting one strand",
+   "status": "pass",
+   "subject": "biology",
+   "title": "Guide-directed cutting by Cas9"
+  },
+  "currency-appreciation": {
+   "checked": "2026-10-17T03:33:36",
+   "failures": [],
+   "shows": "Pick an event and its size: demand for dollars rises or supply falls, the market clears at more euros per dollar, and the dollar appreciates",
+   "status": "pass",
+   "subject": "finance",
+   "title": "Why a currency appreciates"
+  },
+  "dcf": {
+   "checked": "2026-10-17T02:49:39",
+   "failures": [],
+   "shows": "Free cash flows grow for five years, each is discounted back to today, and they add up with the discounted terminal value into enterprise value",
+   "status": "pass",
+   "subject": "finance",
+   "title": "DCF: from free cash flows to enterprise value"
+  },
+  "dna-gel-fragment-migration": {
+   "checked": "2026-10-17T03:36:38",
+   "failures": [],
+   "shows": "Slide the run time and the fragment size: DNA runs toward +, small fragments run farther, and distance is a straight line against log size (log base 10)",
+   "status": "pass",
+   "subject": "biology",
+   "title": "Gel electrophoresis: how far a fragment runs"
+  },
+  "dna-replication": {
+   "checked": "2026-10-17T03:36:38",
+   "failures": [],
+   "shows": "Step through a replication fork: helicase opens it, primase lays RNA primers, polymerase builds the leading strand continuously and the lagging strand in Okazaki fragments, then pol I and ligase finish the job",
+   "status": "pass",
+   "subject": "biology",
+   "title": "DNA replication at the fork"
+  },
+  "dna-replication-antiparallel-template-polarity": {
+   "checked": "2026-10-17T02:43:46",
+   "failures": [],
+   "shows": "Flip the template's orientation and add nucleotides: the new strand always grows 5\u2032\u21923\u2032 off a 3\u2032-OH, so it runs toward the fork on one template (leading) and away on the other (lagging)",
+   "status": "pass",
+   "subject": "biology",
+   "title": "Antiparallel strands: which way a new strand grows"
+  },
+  "dot-product-angle": {
+   "checked": "2026-10-17T02:32:52",
+   "failures": [],
+   "shows": "Drag u and v: u\u00b7v is |u| times the signed length of v's shadow on u, so it is positive for an acute angle, zero at 90\u00b0 and negative past it",
+   "status": "pass",
+   "subject": "linear-algebra",
+   "title": "Dot product and the angle between vectors"
+  },
+  "double-entry-transaction-effects": {
+   "checked": "2026-10-17T02:35:27",
+   "failures": [],
+   "shows": "Pick a transaction: one account is debited and one credited, and Assets = Liabilities + Equity stays balanced after every entry",
+   "status": "pass",
+   "subject": "finance",
+   "title": "Double entry: one transaction, two accounts"
+  },
+  "eigendirections": {
+   "checked": "2026-10-17T02:32:52",
+   "failures": [],
+   "shows": "Change A and drag the probe x around the circle: Ax swings off x's line except along an eigendirection, where A only stretches by \u03bb",
+   "status": "pass",
+   "subject": "linear-algebra",
+   "title": "Eigenvectors: the directions a matrix keeps"
+  },
+  "elementary-row-operations": {
+   "checked": "2026-10-17T02:32:52",
+   "failures": [],
+   "shows": "Step through swap, replace and scale: each row is a line, each operation moves a line, and the crossing point (the solution) never moves",
+   "status": "pass",
+   "subject": "linear-algebra",
+   "title": "Elementary row operations"
+  },
+  "elisa": {
+   "checked": "2026-10-17T03:28:11",
+   "failures": [],
+   "shows": "Step through the four layers of a sandwich ELISA; slide the antigen concentration: more antigen captured means more enzyme, more color, and a higher reading on the standard curve",
+   "status": "pass",
+   "subject": "biology",
+   "title": "Sandwich ELISA"
+  },
+  "ev-equity-bridge": {
+   "checked": "2026-10-17T02:33:22",
+   "failures": [],
+   "shows": "Equity value plus debt, preferred and minority interest, minus cash, equals enterprise value; the balance-sheet view shows why cash comes off",
+   "status": "pass",
+   "subject": "finance",
+   "title": "Equity value to enterprise value"
+  },
+  "fifo-lifo-cost-flow": {
+   "checked": "2026-10-17T03:33:36",
+   "failures": [],
+   "shows": "Slide units sold and flip the cost trend: FIFO expenses the oldest batches first and LIFO the newest, so when costs move the two report different COGS and inventory",
+   "status": "pass",
+   "subject": "finance",
+   "title": "FIFO vs LIFO cost flow"
+  },
+  "foreign-exchange-market": {
+   "checked": "2026-10-17T03:33:36",
+   "failures": [],
+   "shows": "Shift the demand for and supply of euros: the exchange rate settles where they cross, and the euro appreciates when demand rises or supply falls",
+   "status": "pass",
+   "subject": "finance",
+   "title": "The foreign exchange market"
+  },
+  "futures-hedge-locked-revenue": {
+   "checked": "2026-10-17T03:33:36",
+   "failures": [],
+   "shows": "Drag the harvest price: spot sales and the short futures move in opposite directions, so a full hedge always adds up to q times the futures price",
+   "status": "pass",
+   "subject": "finance",
+   "title": "Futures hedge: locking in revenue"
+  },
+  "kernel-image": {
+   "checked": "2026-10-17T01:48:09",
+   "failures": [],
+   "shows": "Drag x in the input plane: T(x) moves in the output plane; the kernel line is crushed to 0 and the image is the set T can reach",
+   "status": "pass",
+   "subject": "linear-algebra",
+   "title": "Kernel and image of a linear map"
+  },
+  "lbo-returns": {
+   "checked": "2026-10-17T02:33:22",
+   "failures": [],
+   "shows": "Entry multiple, leverage, EBITDA growth and exit multiple turn into the equity's MOIC and IRR, split into growth, multiple and debt paydown",
+   "status": "pass",
+   "subject": "finance",
+   "title": "LBO returns: IRR and MOIC"
+  },
+  "linear-combination": {
+   "checked": "2026-10-17T03:35:57",
+   "failures": [],
+   "shows": "Slide a and b, or drag w: w = a u + b v is a walk of a steps along u then b steps along v; negative coefficients walk backwards",
+   "status": "pass",
+   "subject": "linear-algebra",
+   "title": "Linear combination of two vectors"
+  },
+  "linear-independence-discriminant": {
+   "checked": "2026-10-17T01:48:09",
+   "failures": [],
+   "shows": "Drag u and v: the parallelogram they span has area |det(u, v)|; when it collapses to zero the two vectors are dependent and span only a line",
+   "status": "pass",
+   "subject": "linear-algebra",
+   "title": "Span and linear independence"
+  },
+  "matrix-inverse-2d": {
+   "checked": "2026-10-17T02:32:52",
+   "failures": [],
+   "shows": "Change A and x: A moves the grid and x into the output plane, and A\u207b\u00b9 = (1/det A)\u00b7[d \u2212b; \u2212c a] brings Ax back to x, unless det A = 0",
+   "status": "pass",
+   "subject": "linear-algebra",
+   "title": "The inverse of a 2\u00d72 matrix"
+  },
+  "matrix-multiplication-row-column-rule": {
+   "checked": "2026-10-17T02:32:52",
+   "failures": [],
+   "shows": "Step through AB: each entry c_ij is row i of A dotted with column j of B, so the inner sizes must match",
+   "status": "pass",
+   "subject": "linear-algebra",
+   "title": "Matrix multiplication: the row-column rule"
+  },
+  "matrix-of-a-map": {
+   "checked": "2026-10-17T02:45:03",
+   "failures": [],
+   "shows": "The columns of the matrix are the images of the basis vectors",
+   "status": "pass",
+   "subject": "linear-algebra",
+   "title": "The matrix of a linear map"
+  },
+  "matrix-transformation-2d": {
+   "checked": "2026-10-17T01:48:09",
+   "failures": [],
+   "shows": "Change the entries of A: the columns are where e1 and e2 land, the grid moves with them, and det A scales areas",
+   "status": "pass",
+   "subject": "linear-algebra",
+   "title": "A matrix as a map of the plane"
+  },
+  "mrna-translation": {
+   "checked": "2026-10-17T03:49:27",
+   "failures": [],
+   "shows": "Step the ribosome along the mRNA: tRNAs pair with each codon, the chain moves onto the newest amino acid, and a stop codon ends it; try a one-base mutation",
+   "status": "pass",
+   "subject": "biology",
+   "title": "Translation: mRNA to protein"
+  },
+  "null-space": {
+   "checked": "2026-10-17T03:35:57",
+   "failures": [],
+   "shows": "Change the rank of a 3\u00d73 matrix: the solutions of Ax = 0 shrink from a plane to a line to just 0 while the columns grow from a line to a plane to all of space",
+   "status": "pass",
+   "subject": "linear-algebra",
+   "title": "Null space and column space"
+  },
+  "pcr-cycle": {
+   "checked": "2026-10-17T01:50:55",
+   "failures": [],
+   "shows": "Step through denature, anneal and extend on one template; slide the cycle count to see the copies double every cycle",
+   "status": "pass",
+   "subject": "biology",
+   "title": "PCR: one cycle, then doubling"
+  },
+  "pcr-exponential-dna-amplification": {
+   "checked": "2026-10-17T03:49:27",
+   "failures": [],
+   "shows": "Slide the cycles, the efficiency and the starting copies: the copies grow as N0(1 + E)^n, a hockey stick on a linear axis and a straight line on a log axis",
+   "status": "pass",
+   "subject": "biology",
+   "title": "PCR: exponential amplification"
+  },
+  "pcr-primer-directed-extension": {
+   "checked": "2026-10-17T03:49:27",
+   "failures": [],
+   "shows": "Slide the extension: polymerase adds bases only to each primer's 3\u2032 end, pairing with the template; give the forward primer a 3\u2032 mismatch or a 5\u2032 tail to see why only the 3\u2032 end must pair",
+   "status": "pass",
+   "subject": "biology",
+   "title": "PCR: primers direct the extension"
+  },
+  "pcr-temperature-cycle-overview": {
+   "checked": "2026-10-17T03:49:27",
+   "failures": [],
+   "shows": "Step through a full PCR run on the thermocycler; slide the annealing temperature against the primers' Tm, the product length (which sets the extension time) and the cycles",
+   "status": "pass",
+   "subject": "biology",
+   "title": "PCR: the temperature program"
+  },
+  "plasmid-sticky-end-ligation": {
+   "checked": "2026-10-17T03:49:27",
+   "failures": [],
+   "shows": "Pick the enzyme that cut the insert and step through cutting, pairing and sealing: only complementary overhangs pair, and only ligase makes the join permanent",
+   "status": "pass",
+   "subject": "biology",
+   "title": "Sticky ends and ligation"
+  },
+  "power-iteration": {
+   "checked": "2026-10-17T03:35:57",
+   "failures": [],
+   "shows": "Step k up and drag the start x\u2080: multiplying by A and rescaling pulls x onto the dominant eigendirection, faster when |\u03bb\u2082/\u03bb\u2081| is small",
+   "status": "pass",
+   "subject": "linear-algebra",
+   "title": "Power iteration: finding the dominant eigenvector"
+  },
+  "present-value-discounting": {
+   "checked": "2026-10-17T01:48:09",
+   "failures": [],
+   "shows": "Slide the rate and the years: the future amount shrinks by 1 + r for every year it is pulled back to today",
+   "status": "pass",
+   "subject": "finance",
+   "title": "Present value: discounting a future cash flow"
+  },
+  "prokaryotic-operon-architecture": {
+   "checked": "2026-10-17T03:49:27",
+   "failures": [],
+   "shows": "Switch between the lac and trp operons and add or remove the small molecule: one promoter and operator switch several genes on together as one mRNA",
+   "status": "pass",
+   "subject": "biology",
+   "title": "Operon architecture: lac and trp"
+  },
+  "promoter-rna-polymerase-initiation": {
+   "checked": "2026-10-17T03:49:27",
+   "failures": [],
+   "shows": "Set how well the -35 and -10 boxes match consensus and the spacer between them, then step through binding, DNA opening, the first RNA and \u03c3 letting go",
+   "status": "pass",
+   "subject": "biology",
+   "title": "Promoter: how RNA polymerase starts"
+  },
+  "qpcr-fold-change": {
+   "checked": "2026-10-17T03:28:11",
+   "failures": [],
+   "shows": "Slide the four Ct values: normalize the target to the reference gene, compare treated with control, and every cycle of difference is a factor of two",
+   "status": "pass",
+   "subject": "biology",
+   "title": "qPCR: \u0394\u0394Ct to fold change"
+  },
+  "rank-nullity": {
+   "checked": "2026-10-17T02:45:03",
+   "failures": [],
+   "shows": "Rank plus nullity equals the number of columns, shown as dimensions that trade off",
+   "status": "pass",
+   "subject": "linear-algebra",
+   "title": "Rank plus nullity"
+  },
+  "rates-and-bonds": {
+   "checked": "2026-10-17T02:35:27",
+   "failures": [],
+   "shows": "Move the yield: every bond's price slides the other way along a curve, a long bond moves far more than a short one, and the curve bends above the duration line",
+   "status": "pass",
+   "subject": "finance",
+   "title": "Rates up, bond prices down"
+  },
+  "recombinant-dna-plasmid-workflow": {
+   "checked": "2026-10-17T03:49:27",
+   "failures": [],
+   "shows": "Step through digest, ligation, transformation, selection and screening; compare cutting with one enzyme against two",
+   "status": "pass",
+   "subject": "biology",
+   "title": "Cloning a gene into a plasmid"
+  },
+  "row-reduction-stepper": {
+   "checked": "2026-10-17T03:44:55",
+   "failures": [],
+   "shows": "Gaussian elimination one row operation at a time to reduced row echelon form",
+   "status": "pass",
+   "subject": "linear-algebra",
+   "title": "Row reduction, one step at a time"
+  },
+  "sanger-sequencing": {
+   "checked": "2026-10-17T02:43:14",
+   "failures": [],
+   "shows": "Step from one copy stopped by a ddNTP, to fragments ending at every base, to the capillary read; slide the ddNTP fraction to see how far the read reaches",
+   "status": "pass",
+   "subject": "biology",
+   "title": "Sanger sequencing"
+  },
+  "shifted-inverse-iteration": {
+   "checked": "2026-10-17T02:35:01",
+   "failures": [],
+   "shows": "Pick a mode and slide the shift \u03c3: each step multiplies x's part along eigenvector v\u1d62 by \u03bc\u1d62, so the eigenvector with the biggest |\u03bc\u1d62| takes over; (A \u2212 \u03c3I)\u207b\u00b9 picks the eigenvalue nearest \u03c3",
+   "status": "pass",
+   "subject": "linear-algebra",
+   "title": "Shifted and inverse iteration"
+  },
+  "singular-value-decomposition": {
+   "checked": "2026-10-17T02:35:01",
+   "failures": [],
+   "shows": "Slide the rank k: the SVD writes A as a sum of rank-one layers \u03c3\u1d62u\u1d62v\u1d62\u1d40, largest first, and keeping the first k gives the best rank-k copy of A",
+   "status": "pass",
+   "subject": "linear-algebra",
+   "title": "SVD: rebuilding a matrix from its biggest pieces"
+  },
+  "span-membership": {
+   "checked": "2026-10-17T03:44:55",
+   "failures": [],
+   "shows": "Is b in the span of v1, v2: solve for the weights or show the system has none",
+   "status": "pass",
+   "subject": "linear-algebra",
+   "title": "Is b in the span?"
+  },
+  "standard-error-vs-sd": {
+   "checked": "2026-10-17T04:09:03",
+   "failures": [],
+   "shows": "Slide n: single readings keep their spread (SD), but the mean of n readings tightens as SE = \u03c3/\u221an",
+   "status": "pass",
+   "subject": "stats",
+   "title": "Standard deviation vs standard error"
+  },
+  "straight-line-depreciation": {
+   "checked": "2026-10-17T03:33:36",
+   "failures": [],
+   "shows": "Slide cost, salvage, life and age: book value drops by the same (C \u2212 S)/L every year until it reaches salvage, and accumulated depreciation fills the gap",
+   "status": "pass",
+   "subject": "finance",
+   "title": "Straight-line depreciation"
+  },
+  "subspace-test": {
+   "checked": "2026-10-17T03:44:55",
+   "failures": [],
+   "shows": "Is a subset of R2 a subspace: check it holds the zero vector and is closed under addition and scalar multiplication",
+   "status": "pass",
+   "subject": "linear-algebra",
+   "title": "Subspace test"
+  },
+  "system-linear-equations-cases": {
+   "checked": "2026-10-17T02:35:01",
+   "failures": [],
+   "shows": "Change the two equations: crossing lines give one solution, parallel lines none, the same line infinitely many; det A and the ranks say which",
+   "status": "pass",
+   "subject": "linear-algebra",
+   "title": "Two equations: one, none or infinitely many solutions"
+  },
+  "system-of-equations": {
+   "checked": "2026-10-17T03:31:27",
+   "failures": [],
+   "shows": "Step through elimination: subtracting a multiple of one equation kills x, which turns one line horizontal through the crossing, then back-substitution finds x",
+   "status": "pass",
+   "subject": "linear-algebra",
+   "title": "Solving two equations by elimination"
+  },
+  "three-statement-flow": {
+   "checked": "2026-10-17T02:33:22",
+   "failures": [],
+   "shows": "Pick a transaction (depreciation, capex, a debt raise, interest, a dividend) and step it through the income statement, the cash flow statement and the balance sheet",
+   "status": "pass",
+   "subject": "finance",
+   "title": "One transaction through the three statements"
+  },
+  "trp-operon-corepressor-switch": {
+   "checked": "2026-10-17T03:52:51",
+   "failures": [],
+   "shows": "Raise the tryptophan: Trp loads the repressor, the loaded repressor sits on the operator and RNA polymerase is shut out; trpR\u207b and Oc mutants stay on",
+   "status": "pass",
+   "subject": "biology",
+   "title": "trp operon: tryptophan as corepressor"
+  },
+  "vector-dot-product": {
+   "checked": "2026-10-17T03:31:27",
+   "failures": [],
+   "shows": "Drag a and b: a\u00b7b is ax\u00b7bx + ay\u00b7by and also |a||b|cos \u03b8, so it is positive for an acute angle, zero at 90\u00b0 and negative past it",
+   "status": "pass",
+   "subject": "linear-algebra",
+   "title": "The dot product and the angle"
+  },
+  "vector-projection": {
+   "checked": "2026-10-17T02:35:01",
+   "failures": [],
+   "shows": "Drag a and b: the projection is the multiple of b closest to a, (a\u00b7b / |b|\u00b2) b, and the leftover a \u2212 proj meets b's line at a right angle",
+   "status": "pass",
+   "subject": "linear-algebra",
+   "title": "Projecting one vector onto another"
+  },
+  "wacc": {
+   "checked": "2026-10-17T02:00:50",
+   "failures": [],
+   "shows": "Slide the mix, beta and the debt terms: each source's cost is weighted by its share of capital, and WACC is the average height of the two blocks",
+   "status": "pass",
+   "subject": "finance",
+   "title": "WACC: the blended cost of capital"
+  },
+  "western-blot": {
+   "checked": "2026-10-17T02:43:14",
+   "failures": [],
+   "shows": "Step through gel, transfer, primary and secondary antibody; slide the target's size to move its band and the treated level to change its brightness",
+   "status": "pass",
+   "subject": "biology",
+   "title": "Western blot"
+  }
+ }
+}

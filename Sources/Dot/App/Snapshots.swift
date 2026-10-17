@@ -39,6 +39,13 @@ enum Snapshots {
                 keep("card-\(name)", renderCard(title: title, html: html, accentHex: accent))
             }
         }
+        if wanted("panel") || group?.hasPrefix("panel:") == true {
+            // The explainer panel (round eight): every UI-language fixture as the panel renders it ("panel:kernel" for one).
+            let only = group.flatMap { $0.hasPrefix("panel:") ? String($0.dropFirst(6)) : nil }
+            for (name, markup) in panelFixtures() where only == nil || name == only {
+                keep("panel-\(name)", renderPanel(title: name.replacingOccurrences(of: "-", with: " "), markup: markup, accentHex: accent))
+            }
+        }
         if let composite = contactSheet(sheet), let data = png(composite) {
             let url = folder.appendingPathComponent("sheet.png")
             try? data.write(to: url)
@@ -272,6 +279,91 @@ enum Snapshots {
             return true
         }
         return image
+    }
+
+    private static func boardResources() -> URL? {
+        // DOT_BOARD_DIR points a dev build at a worktree's Resources/board
+        let candidates = [ProcessInfo.processInfo.environment["DOT_BOARD_DIR"].map { URL(fileURLWithPath: DotConfig.expand($0)) },
+                          Bundle.main.resourceURL?.appendingPathComponent("board"), URL(fileURLWithPath: DotConfig.expand("~/Projects/dot/Resources/board"))].compactMap { $0 }
+        return candidates.first(where: { FileManager.default.fileExists(atPath: $0.appendingPathComponent("panel/panel.html").path) })
+    }
+
+    private static func panelFixtures() -> [(String, String)] {
+        guard let dir = boardResources()?.appendingPathComponent("panel/fixtures"),
+              let names = try? FileManager.default.contentsOfDirectory(atPath: dir.path) else { return [] }
+        return names.filter { $0.hasSuffix(".ui") }.sorted().compactMap { name in
+            (try? String(contentsOf: dir.appendingPathComponent(name), encoding: .utf8)).map { (String(name.dropLast(3)), $0) }
+        }
+    }
+
+    /// One explanation in the explainer panel's page at its default width, the whole column (not just what fits).
+    static func renderPanel(title: String, markup: String, accentHex: String, width: CGFloat = 440) -> NSImage? {
+        guard let resources = boardResources() else { return nil }
+        let configuration = WKWebViewConfiguration()
+        configuration.preferences.setValue(true, forKey: "allowFileAccessFromFileURLs")
+        let web = WKWebView(frame: CGRect(x: 0, y: 0, width: width, height: 600), configuration: configuration)
+        // the same invisible, unclickable, unrecorded window the cards use, so WebKit paints
+        let screen = NSScreen.main?.frame ?? CGRect(x: 0, y: 0, width: 1440, height: 900)
+        let window = NSWindow(contentRect: CGRect(x: screen.maxX - width - 20, y: screen.minY + 20, width: width, height: 600), styleMask: .borderless, backing: .buffered, defer: false)
+        window.isOpaque = false
+        window.backgroundColor = .clear
+        window.alphaValue = 0.02
+        window.level = .floating
+        window.ignoresMouseEvents = true
+        window.sharingType = .none
+        window.collectionBehavior = [.stationary, .ignoresCycle, .canJoinAllSpaces, .fullScreenAuxiliary]
+        window.contentView = web
+        window.orderFrontRegardless()
+        spin(0.3)
+        let delegate = LoadWatcher()
+        web.navigationDelegate = delegate
+        web.loadFileURL(resources.appendingPathComponent("panel/panel.html"), allowingReadAccessTo: resources)
+        let deadline = Date().addingTimeInterval(12)
+        while !delegate.done, Date() < deadline { spin(0.05) }
+        let load = "document.documentElement.style.setProperty('--accent', \(ExplainerPanel.js(accentHex))); panel.load(\(ExplainerPanel.js(markup)), {id: 'snapshot', title: \(ExplainerPanel.js(title))});"
+        var loaded = false
+        web.evaluateJavaScript(load) { _, error in if let error { print("snapshot: panel load failed: \(error.localizedDescription)") }; loaded = true }
+        let loadDeadline = Date().addingTimeInterval(4)
+        while !loaded, Date() < loadDeadline { spin(0.05) }
+        spin(2.0)   // math, widgets and charts settle
+        // let the column grow to its content so the picture holds all of it
+        var height: CGFloat = 600
+        var measured = false
+        let unscroll = "document.documentElement.style.height='auto'; document.body.style.height='auto'; var s=document.getElementById('scroller'); s.style.overflow='visible'; s.style.flex='none'; document.documentElement.scrollHeight"
+        web.evaluateJavaScript(unscroll) { value, _ in height = CGFloat((value as? Double) ?? 600); measured = true }
+        let measureDeadline = Date().addingTimeInterval(3)
+        while !measured, Date() < measureDeadline { spin(0.05) }
+        height = min(max(height, 200), 4000)
+        window.setContentSize(CGSize(width: width, height: height))
+        web.frame = CGRect(x: 0, y: 0, width: width, height: height)
+        spin(0.8)
+        var pdf: Data?
+        for attempt in 1...2 where pdf == nil {
+            var done = false
+            web.createPDF(configuration: WKPDFConfiguration()) { result in
+                switch result {
+                case .success(let data): pdf = data
+                case .failure(let error): print("snapshot: panel pdf attempt \(attempt) failed: \(error.localizedDescription)")
+                }
+                done = true
+            }
+            let pdfDeadline = Date().addingTimeInterval(10)
+            while !done, Date() < pdfDeadline { spin(0.05) }
+            if pdf == nil { spin(1) }
+        }
+        window.orderOut(nil)
+        guard let pdf, let document = PDFDocument(data: pdf), let page = document.page(at: 0) else { print("snapshot: no pdf for panel \(title)"); return nil }
+        let box = page.bounds(for: .mediaBox)
+        return NSImage(size: CGSize(width: width, height: height), flipped: false) { rect in
+            guard let context = NSGraphicsContext.current?.cgContext else { return false }
+            NSColor(calibratedRed: 0.063, green: 0.059, blue: 0.051, alpha: 1).setFill()
+            rect.fill()
+            context.saveGState()
+            context.scaleBy(x: rect.width / max(box.width, 1), y: rect.height / max(box.height, 1))
+            page.draw(with: .mediaBox, to: context)
+            context.restoreGState()
+            return true
+        }
     }
 
     /// Run the loop for a while, pumping AppKit's event queue as well: the window server's word that a

@@ -1,0 +1,8 @@
+<!-- expect: .step:4 .svg-figure -->
+<lead>Factor $x^2-5x+6$ by finding two numbers that multiply to 6 and add to $-5$.</lead>
+<steps>
+<step n="1" title="The pair"><text>$-2$ and $-3$: $(-2)(-3)=6$ and $-2+(-3)=-5$.</text></step>
+<step n="2" title="Factor"><math>x^2-5x+6=(x-2)(x-3)</math></step>
+<step n="3" title="Zero product"><text>A product is zero only when a factor is: $x=2$ or $x=3$.</text></step>
+<step n="4" title="Check on the graph"><plot fn="x^2 - 5*x + 6" x="-0.5,5.5" marks="2,3"></plot></step>
+</steps>

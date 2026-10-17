@@ -1,0 +1,31 @@
+<!-- expect: .btn .svg-figure .lead ; click: next ; vars: cycle -->
+<lead>PCR doubles the target every cycle: three temperatures, then again.</lead>
+<state name="phase" value="1"/>
+<state name="cycle" value="1"/>
+<svg viewBox="0 0 360 200">
+  <text x="14" y="22" fill="muted">cycle {cycle}, {phase == 1 ? 'denature at 95 °C' : phase == 2 ? 'anneal at 55 °C' : 'extend at 72 °C'}</text>
+  <show when="phase == 1">
+    <line x1="40" y1="70" x2="320" y2="70" stroke="c1" stroke-width="6"/>
+    <line x1="40" y1="120" x2="320" y2="120" stroke="c2" stroke-width="6"/>
+    <text x="180" y="99" fill="c5" text-anchor="middle">strands separate</text>
+  </show>
+  <show when="phase >= 2">
+    <line x1="40" y1="80" x2="320" y2="80" stroke="c1" stroke-width="6"/>
+    <line x1="40" y1="110" x2="320" y2="110" stroke="c2" stroke-width="6"/>
+    <line x1="270" y1="90" x2="320" y2="90" stroke="c4" stroke-width="6"/>
+    <line x1="40" y1="100" x2="90" y2="100" stroke="c4" stroke-width="6"/>
+  </show>
+  <show when="phase == 3">
+    <line x1="268" y1="90" x2="48" y2="90" stroke="c3" stroke-width="5" arrow="end"/>
+    <line x1="92" y1="100" x2="312" y2="100" stroke="c3" stroke-width="5" arrow="end"/>
+  </show>
+  <each in="range(0, min(cycle, 10))" as="k">
+    <rect x="{40 + k * 28}" y="{180 - 8 * pow(2, k) / pow(2, max(cycle - 1, 0)) * 4}" width="20" height="{8 * pow(2, k) / pow(2, max(cycle - 1, 0)) * 4}" fill="c3" rx="3"/>
+  </each>
+  <text x="340" y="196" fill="muted" text-anchor="end">copies: {pow(2, cycle)}</text>
+</svg>
+<row gap="2">
+  <button set="phase = phase > 1 ? phase - 1 : 1">back</button>
+  <button set="phase = phase < 3 ? phase + 1 : 1; cycle = phase == 1 ? cycle + 1 : cycle">next</button>
+</row>
+<text>After {cycle} cycle{cycle == 1 ? '' : 's'} you have <b>{pow(2, cycle)}</b> copies of the target.</text>

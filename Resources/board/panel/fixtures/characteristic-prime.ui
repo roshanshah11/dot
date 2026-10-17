@@ -1,0 +1,10 @@
+<!-- expect: .step:4 .callout .cite -->
+<lead>If a field has characteristic $p\neq0$, then $p$ is prime.</lead>
+<steps>
+<step n="1" title="Suppose not"><text>Say $p=rs$ with $2\le r,s\le p-1$ (possible because $p\ge2$, since $1_F\neq0_F$).</text></step>
+<step n="2" title="Multiply in the field"><math>0_F=p_F=(rs)_F=r_F\,s_F</math></step>
+<step n="3" title="No zero divisors"><text>In a field a product is zero only if a factor is, so $r_F=0$ or $s_F=0$.</text></step>
+<step n="4" title="Contradiction"><text>But $r,s&lt;p$ and $p$ is the <b>least</b> positive integer with $p_F=0$. So $p$ is prime. $\blacksquare$</text></step>
+</steps>
+<callout tone="accent">Example: in $\mathbb{F}_5$, $1+1+1+1+1=0$ and no shorter sum is.</callout>
+<cite label="Wu, Proposition 1.1.4"></cite>

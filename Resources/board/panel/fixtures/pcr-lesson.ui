@@ -1,0 +1,11 @@
+<!-- expect: .viz-host .followups .lead -->
+<lead>PCR copies one stretch of DNA by cycling three temperatures; every cycle doubles it.</lead>
+<text>Step through one cycle, then slide the cycle count: thirty cycles turn one template into about a billion copies.</text>
+<viz id="pcr-cycle" values='{"cycles":3,"step":1}'></viz>
+<table>
+<tr><th>step</th><th num>temperature</th><th>what happens</th></tr>
+<tr><td>denature</td><td num>95 °C</td><td>strands separate</td></tr>
+<tr><td>anneal</td><td num>55 °C</td><td>primers bind the 3′ ends</td></tr>
+<tr><td>extend</td><td num>72 °C</td><td>Taq builds new strands 5′ → 3′</td></tr>
+</table>
+<followups><chip ask="how does qPCR measure the starting amount?">qPCR</chip><chip ask="why does Taq polymerase survive 95 degrees?">why Taq?</chip></followups>

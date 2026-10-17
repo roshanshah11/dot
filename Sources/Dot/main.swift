@@ -39,6 +39,9 @@ case "--help", "-h":
       Dot --listen [title]     start the lecture ear       Dot --stop-listening  stop it and save the transcript
       Dot --dictionary "heard => correct"   add a term the recognizer should write your way
       Dot --snapshot [folder]  render every notch state, mark and card to PNG (no screen turn)
+      Dot --panel file.ui      show a UI-language explanation in the explainer panel
+      Dot --prompt talk|think  print a session's system prompt
+      Dot --track-selftest     the running Dot checks that marks stay on scrolled content (posts real scrolls; run while away)
       Dot --selftest           check the notch's permission-card queue (no agents, no model)
       Dot --gate               the agents' tool-call hook (Claude Code runs it; JSON on stdin)
       Dot --host [list]        the agent host that keeps agents running across a relaunch (launchd runs it)
@@ -94,8 +97,14 @@ case "--snapshot":
     let snapshotApp = NSApplication.shared
     snapshotApp.setActivationPolicy(.accessory)   // prohibited apps may not draw windows, and WebKit paints only into one
     snapshotApp.finishLaunching()                  // registers with the window server; without it no window ever appears
-    let group = arguments.dropFirst(2).first   // notch | overlay | cards
+    let group = arguments.dropFirst(2).first   // notch | overlay | cards | panel
     MainActor.assumeIsolated { Snapshots.run(into: folder, only: group) }
+    exit(0)
+case "--prompt":
+    // The talk or think system prompt exactly as a session gets it (round eight's panel dry runs read it).
+    let config = DotConfig.load()
+    let which = arguments.dropFirst().first ?? "think"
+    print((which == "talk" ? Prompts.talk : Prompts.think) + Prompts.contextFiles(in: config.talkRootURL))
     exit(0)
 case "--selftest":
     let selfTestApp = NSApplication.shared
@@ -125,10 +134,15 @@ case "--ask", "--agent":
     DistributedNotificationCenter.default().postNotificationName(name, object: nil, userInfo: ["text": text, "quiet": quiet, "drive": drive, "dry": dry], deliverImmediately: true)
     print("sent to Dot")
     exit(0)
-case "--type", "--stt", "--card", "--find", "--dictionary", "--listen":
+case "--track-selftest":
+    // Ask the running Dot to run the box-tracking check on the real screen (its grants, not the terminal's).
+    DistributedNotificationCenter.default().postNotificationName(DotIPC.trackSelftest, object: nil, userInfo: nil, deliverImmediately: true)
+    print("asked the running Dot to run the tracking selftest; results land in ~/Dot/selftests and dot.log")
+    exit(0)
+case "--type", "--stt", "--card", "--panel", "--find", "--dictionary", "--listen":
     let text = arguments.dropFirst().joined(separator: " ")
-    guard !text.isEmpty || arguments.first == "--listen" else { print("usage: Dot --type \"text\" | Dot --stt file.wav | Dot --card file.html | Dot --find \"phrase\" | Dot --dictionary \"heard => correct\""); exit(2) }
-    let names: [String: Notification.Name] = ["--type": DotIPC.type, "--stt": DotIPC.stt, "--card": DotIPC.card, "--find": DotIPC.find, "--dictionary": DotIPC.dictionary, "--listen": DotIPC.listen]
+    guard !text.isEmpty || arguments.first == "--listen" else { print("usage: Dot --type \"text\" | Dot --stt file.wav | Dot --card file.html | Dot --panel file.ui | Dot --find \"phrase\" | Dot --dictionary \"heard => correct\""); exit(2) }
+    let names: [String: Notification.Name] = ["--type": DotIPC.type, "--stt": DotIPC.stt, "--card": DotIPC.card, "--panel": DotIPC.panel, "--find": DotIPC.find, "--dictionary": DotIPC.dictionary, "--listen": DotIPC.listen]
     DistributedNotificationCenter.default().postNotificationName(names[arguments.first!]!, object: nil, userInfo: ["text": text], deliverImmediately: true)
     print("sent to Dot")
     exit(0)

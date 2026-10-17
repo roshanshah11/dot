@@ -23,6 +23,8 @@ final class Talk {
     private let jev: Jev?
     private let driver = Driver()
     let board: BoardManager
+    /// The explainer panel's talk side (round eight).
+    let panels: PanelCoach
 
     private let recorder = AudioRecorder()
     private var talkSession: ClaudeSession?
@@ -116,6 +118,7 @@ final class Talk {
         self.atlas = atlas
         self.jev = jev
         self.board = BoardManager(accentHex: config.pointerColorHex)
+        self.panels = PanelCoach(accentHex: config.pointerColorHex)
         self.lecture = LectureListener(transcriber: transcriber)
         recorder.preferredInputName = config.microphoneName
         (speaker as? CommandSpeaker)?.warm(Self.acks + Self.thinkAcks)
@@ -145,6 +148,19 @@ final class Talk {
                 if self.pendingRegionAgent { self.pendingRegionAgent = false; self.handRegionToAgent(text) } else { self.askTyped(text, fromField: true) }
             }
         }
+        panels.placement = { [weak self] in
+            // the screen he is on, docked away from whatever Dot is marking
+            let mouse = NSEvent.mouseLocation
+            let screen = NSScreen.screens.first { $0.frame.contains(mouse) } ?? NSScreen.main
+            return (screen, self?.overlay.markedRect ?? self?.context.windowFrame)
+        }
+        panels.onAsk = { [weak self] text in self?.askTyped(text) }
+        panels.courses = CourseTag.load(from: config.talkRootURL.appendingPathComponent("context"))
+        panels.courseContext = { [weak self] in
+            guard let self else { return "" }
+            return [self.context.windowTitle, self.context.url, self.lastAsked].compactMap { $0 }.joined(separator: " ")
+        }
+        panels.onQuiz = { [weak self] line in self?.panelEvent(line) }
         driver.onAbort = { [weak self] what in
             guard let self else { return }
             self.walkthrough?.driving = false
@@ -987,6 +1003,24 @@ final class Talk {
             region = nil
             scheduleIdleCheck()
             return
+        case .closePanel:
+            panels.close()
+            sayLocal("closed.")
+            return
+        case .reopenPanel:
+            if panels.reopen(text) { sayLocal("here it is again.") } else { sayLocal("i don't have a saved panel that matches that.") }
+            return
+        case .explain:
+            if let think = session(for: .think) {
+                // one line at once covers Opus's slower start; the panel fills as it writes
+                speaker.speak("putting it on the panel.")
+                overlay.setBubble("putting it on the panel.")
+                let (message, images) = buildMessage(text, kind: .think)
+                lastMessage = message
+                lastImages = images
+                sendTurn(message, images: images, to: think, kind: .think)
+                return
+            }
         case .think:
             if let think = session(for: .think) {
                 speaker.speak("let me think about that for a second.")
@@ -1250,7 +1284,7 @@ final class Talk {
     }
 
     private enum Route: CustomStringConvertible {
-        case answer, agent, think, followUp(String), continueWalkthrough, drive, closeBoard, lessonNext, lessonBack, lessonAgain, lecture, suggestion(String), dismiss, find(String), listen, stopListening, recapLecture, dictionary(heard: String?, correct: String), place(what: String, whereWord: String?), images(String)
+        case answer, agent, think, explain, reopenPanel, closePanel, followUp(String), continueWalkthrough, drive, closeBoard, lessonNext, lessonBack, lessonAgain, lecture, suggestion(String), dismiss, find(String), listen, stopListening, recapLecture, dictionary(heard: String?, correct: String), place(what: String, whereWord: String?), images(String)
         /// Round seven (G2): his spoken answer to the card on show; a named agent told, stopped or asked after.
         case consentAnswer(ConsentVoice.Answer), tellAgent(String), stopAgent(String), agentStatus(String?)
         /// Tonight's voice verbs (VO-01 to VO-13, MB-07).
@@ -1261,6 +1295,9 @@ final class Talk {
             case .answer: return "answer"
             case .agent: return "agent"
             case .think: return "think"
+            case .explain: return "explain"
+            case .reopenPanel: return "reopenPanel"
+            case .closePanel: return "closePanel"
             case .followUp(let slug): return "followUp(\(slug))"
             case .continueWalkthrough: return "continueWalkthrough"
             case .drive: return "drive"
@@ -1350,6 +1387,7 @@ final class Talk {
         speaker.speak(line)
     }
 
+    private static let closePanelWords = try! NSRegularExpression(pattern: #"^(close|clear|hide|dismiss)\b"#, options: .caseInsensitive)
     private static let closeWords = try! NSRegularExpression(pattern: #"^(close|clear|hide|dismiss) (it|that|this|them|the (board|cards?|card))\W*$"#, options: .caseInsensitive)
     static let boardWords = try! NSRegularExpression(pattern: #"(?i)\b(on the board|on my screen|put (it|this|that|them) up|pull up|draw (it|me|this|that|a|the)|open (the|a|that|this) (page|site|article|link|wikipedia)|show me (the|a|that|this)? ?(page|site|article|picture|photo|image|diagram|figure|structure|molecule))\b"#)
 
@@ -1428,7 +1466,13 @@ final class Talk {
         if AgentAddress.isProgressAsk(text), !agents.runningAgents().isEmpty || !hud.openConsents.isEmpty {
             return .agentStatus(nil)
         }
-        if !board.isEmpty, Self.closeWords.firstMatch(in: text, range: range) != nil { return .closeBoard }
+        // "close the panel" closes the panel; a bare "close it" closes the board, or the panel when it just opened
+        // (later, "close this" is likely about his own tab or window)
+        let saysClose = Self.closeWords.firstMatch(in: text, range: range) != nil
+        if panels.isOpen, PanelCoach.namesPanel(text), Self.closePanelWords.firstMatch(in: text, range: range) != nil { return .closePanel }
+        if saysClose, !board.isEmpty { return .closeBoard }
+        if saysClose, panels.isOpen, panels.openedRecently { return .closePanel }
+        if panels.available, PanelCoach.wantsReopen(text) { return .reopenPanel }
         if Self.listenWords.firstMatch(in: text, range: range) != nil { return .listen }
         // "desk mode", "study mode", "back to normal" (VI-03): his word beats the detector until he changes it.
         if let override = ContextMode.parseOverride(text) {
@@ -1577,9 +1621,24 @@ final class Talk {
             if let named = AgentAddress.mentioned(in: text, roster: addressBook) { return .tellAgent(named.slug) }
             return .agent
         }
-        if route.choice == "think", route.probability >= 0.75, route.confidence >= 0.6 { return .think }
+        if route.choice == "think", route.probability >= 0.75, route.confidence >= 0.6 { return panels.available && PanelCoach.wantsPanel(text) ? .explain : .think }
+        // Round eight: an explanation (explain, walk me through, visualize, why does...) is written on the panel by Opus.
+        if panels.available, PanelCoach.wantsPanel(text) { return .explain }
         return .answer
     }
+
+    /// A quiz answer on the panel: the quick model grades it in one spoken sentence with no routing and no screenshot
+    /// (the plan: Sonnet grades and moves on); when the next step needs a new panel it hands over with [THINK].
+    func panelEvent(_ line: String) {
+        guard let session = session(for: .talk) else { return }
+        lastAsked = line
+        lastAskWasTyped = false
+        let message = "[panel] \(line). grade it in one spoken sentence, saying why when it is wrong; then ask whether to go on, or if he was walking through steps, say one short line and append [THINK] so the next step goes on the panel.\n[context]\nnow: \(Self.nowLine())\n" + panels.contextLines().joined(separator: "\n") + "\n[/context]"
+        sendTurn(message, images: [], to: session, kind: .talk)
+    }
+
+    /// `Dot --panel file.ui`: show a UI-language file in the panel (tests, and reopening by hand).
+    func showPanelFile(_ path: String) { panels.showFile(path) }
 
     /// Talk may make and move his own events, but one with guests goes through an agent and a card.
     static let guestTools: Set<String> = ["mcp__atlas__calendar_create", "mcp__atlas__calendar_update"]
@@ -1593,6 +1652,7 @@ final class Talk {
         hud.hideInput()
         activeSession = session
         streamer = BeatStreamer(eagerFirst: config.eagerSpeech && !quietTurn)
+        panels.beginTurn()
         speechStarted = false
         bubbleGroup = ""
         bubbleLabel = nil
@@ -1687,6 +1747,7 @@ final class Talk {
         if !board.isEmpty {
             lines.append("board: " + board.stateLines().joined(separator: "; "))
         }
+        lines.append(contentsOf: panels.contextLines())
         // Who is working for him and what they just said, so "what did the agent find" has an answer.
         let recent = agents.recentRuns()
         if !recent.isEmpty {
@@ -1733,7 +1794,7 @@ final class Talk {
     private func handle(_ event: StreamEvent) {
         switch event {
         case .textDelta(let delta):
-            for beat in streamer.feed(delta) { enqueue(beat) }
+            for beat in streamer.feed(panels.filter(delta)) { enqueue(beat) }
             if textSurface {
                 // A typed question: the words appear in the notch as they are written.
                 let ahead = (streamer.spokenSoFar + " " + streamer.partial).trimmingCharacters(in: .whitespaces)
@@ -1742,7 +1803,7 @@ final class Talk {
                 hud.model.response = streamer.spokenSoFar
             }
         case .assistantText(let text):
-            if streamer.spokenSoFar.isEmpty, streamer.partial.isEmpty { for beat in streamer.feed(text) { enqueue(beat) } }
+            if streamer.spokenSoFar.isEmpty, streamer.partial.isEmpty, !panels.openedThisTurn { for beat in streamer.feed(panels.filter(text)) { enqueue(beat) } }
         case .toolUse(_, let name, let input):
             Log.info("talk: tool \(name) \(Log.short(input.map { "\($0.key)=\($0.value.json)" }.joined(separator: " "), 120))")
             hud.flash(status: "checking \(Self.friendlyTool(name))")
@@ -1882,7 +1943,8 @@ final class Talk {
         }
         let visuals = beat.tags.filter { $0.isVisual }
         Log.info("beat \(beatsFired)\(quietTurn ? " (quiet)" : ""): " + (visuals.isEmpty ? "" : visuals.map { "\($0)" }.joined(separator: " ") + " ") + Log.short(beat.text, 120))
-        if !visuals.isEmpty { overlay.fadeOldMarks() }
+        // a STEP only lights the panel: the box on his notes stays while he reads
+        if visuals.contains(where: { if case .step = $0 { return false }; return true }) { overlay.fadeOldMarks() }
         var label: String?
         for tag in visuals {
             switch tag {
@@ -1940,6 +2002,9 @@ final class Talk {
                     self.overlay.bringToFront()
                 }
                 label = label ?? "step \(step)"
+            case .step(_, let n):
+                panels.setStep(n)
+                label = label ?? "step \(n)"
             case .clearBoard:
                 clearBoard()
             case .find(let phrase):
@@ -2068,12 +2133,14 @@ final class Talk {
     }
 
     private func finishTurn(_ result: ResultInfo) {
+        for beat in streamer.feed(panels.endTurn()) { enqueue(beat) }
         for beat in streamer.flush() { enqueue(beat) }
         // A failed turn's result is the CLI's diagnostic ("[ede_diagnostic] ..." was spoken aloud on
         // 2026-10-15 13:22), never words for him.
-        if !result.isError, streamer.spokenSoFar.isEmpty, streamer.allTags.isEmpty, let text = result.resultText, !text.isEmpty,
+        if !result.isError, streamer.spokenSoFar.isEmpty, streamer.allTags.isEmpty, !panels.openedThisTurn, let text = result.resultText, !text.isEmpty,
            !text.hasPrefix("[ede_diagnostic]") {
-            for beat in streamer.feed(text) { enqueue(beat) }
+            panels.beginTurn()
+            for beat in streamer.feed(panels.filter(text) + panels.endTurn()) { enqueue(beat) }
             for beat in streamer.flush() { enqueue(beat) }
         }
         let tags = streamer.allTags
@@ -2162,7 +2229,7 @@ final class Talk {
                     escalated = true
                     let question = lastAsked.isEmpty ? hud.model.transcript : lastAsked
                     let said = spoken.trimmingCharacters(in: .whitespacesAndNewlines)
-                    let handed = "[escalated] he asked: \"\(question)\". the quick model already said \"\(Log.short(said, 240))\" and handed the rest to you: answer the question itself now, and if a card or figure was promised, build it in full."
+                    let handed = "[escalated] he asked: \"\(question)\". the quick model already said \"\(Log.short(said, 240))\" and handed the rest to you: answer the question itself now, and if a panel, card or figure was promised, build it in full; don't open by repeating what it already said."
                     let (message, images) = buildMessage(handed, kind: .think)
                     // Let the "let me think" sentence finish, then ask the stronger model.
                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { [weak self] in
@@ -2214,7 +2281,7 @@ final class Talk {
     /// Bubble fades, marks clear and Dot returns to the cursor, unless a walkthrough is waiting for a click.
     private func settle() {
         overlay.setPhase(.idle)
-        let teaching = walkthrough != nil || board.hasHiddenSteps
+        let teaching = walkthrough != nil || board.hasHiddenSteps || panels.isOpen
         overlay.hideBubble(after: teaching ? 14.0 : 4.0)
         if !teaching {
             overlay.release(after: 2.5)

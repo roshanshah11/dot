@@ -1,0 +1,27 @@
+<!-- expect: .svg-figure .btn ; click: next ; vars: stage -->
+<lead>DNA replication: unwind, copy 5′ → 3′, clean up. The lagging strand is built in pieces.</lead>
+<state name="stage" value="1"/>
+<svg viewBox="0 0 360 210">
+  <text x="14" y="20" fill="muted">{stage == 1 ? 'unwind: helicase opens the helix' : stage == 2 ? 'copy: primase primes, polymerase extends 5′→3′' : 'clean up: primers out, gaps filled, ligase seals'}</text>
+  <line x1="20" y1="105" x2="120" y2="100" stroke="c1" stroke-width="5"/>
+  <line x1="20" y1="115" x2="120" y2="120" stroke="c2" stroke-width="5"/>
+  <line x1="120" y1="100" x2="340" y2="50" stroke="c1" stroke-width="5"/>
+  <line x1="120" y1="120" x2="340" y2="170" stroke="c2" stroke-width="5"/>
+  <circle cx="122" cy="110" r="13" fill="c3" fill-opacity="0.85"/>
+  <text x="122" y="140" fill="c3" text-anchor="middle" font-size="12">helicase</text>
+  <show when="stage >= 2">
+    <line x1="330" y1="62" x2="160" y2="101" stroke="c4" stroke-width="4" arrow="end"/>
+    <text x="250" y="70" fill="c4" font-size="12">leading: continuous</text>
+    <line x1="160" y1="128" x2="210" y2="139" stroke="c5" stroke-width="4" arrow="end"/>
+    <line x1="225" y1="143" x2="275" y2="154" stroke="c5" stroke-width="4" arrow="end"/>
+    <line x1="290" y1="157" x2="335" y2="167" stroke="c5" stroke-width="4" arrow="end"/>
+    <text x="230" y="190" fill="c5" font-size="12" text-anchor="middle">lagging: Okazaki fragments</text>
+  </show>
+  <show when="stage >= 3">
+    <circle cx="217" cy="141" r="5" fill="c6"/>
+    <circle cx="283" cy="156" r="5" fill="c6"/>
+    <text x="300" y="138" fill="c6" font-size="12">ligase</text>
+  </show>
+</svg>
+<row gap="2"><button set="stage = stage > 1 ? stage - 1 : 1">back</button><button set="stage = stage < 3 ? stage + 1 : 1">next</button></row>
+<callout tone="info">Exam angle: PCR and Sanger sequencing both reuse this polymerase chemistry.</callout>

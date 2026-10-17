@@ -1,0 +1,10 @@
+<!-- expect: .chart .table-wrap .lead -->
+<lead>A DCF values a company as today's worth of the cash it will generate.</lead>
+<chart kind="bar" labels="2026,2027,2028,2029,2030" series='[{"name":"free cash flow","data":[120,132,145,158,170]},{"name":"present value at 9%","data":[110,111,112,112,110]}]' unit="$m"></chart>
+<table>
+<tr><th>piece</th><th num>value</th></tr>
+<tr><td>PV of five years of FCF</td><td num>$556m</td></tr>
+<tr><td>PV of terminal value (2.5% growth)</td><td num>$1,742m</td></tr>
+<tr class="hl"><td>enterprise value</td><td num>$2,298m</td></tr>
+</table>
+<caption>Illustrative numbers, not a real company.</caption>

@@ -12,6 +12,7 @@ import Foundation
 ///   [SHAPE:arrow:x1,y1;x2,y2:label] draw a line, arrow, circle (center;edge), curve or polygon through the points
 ///   [CARD:id:x,y,w,h:title] <<< html >>>  put a card on the board (x,y,w,h in screenshot pixels, or "auto")
 ///   [REVEAL:id:n]                  show step n of a card and point at it
+///   [STEP:id:n]                    light step n of the explainer panel while these words are said (round eight)
 ///   [CLEAR_BOARD]                  take every card down
 ///   [AGENT:brief]                  hand the task to a background agent
 ///   [NEW_AGENT:name:brief]         create a named agent for this kind of work, then hand off
@@ -35,6 +36,8 @@ public enum DotTag: Equatable {
     /// A live web page in a card on the board.
     case web(url: String, title: String)
     case reveal(id: String, step: Int)
+    /// The explainer panel's step n is the one being said (round eight).
+    case step(id: String, n: Int)
     case clearBoard
     case agent(brief: String)
     case newAgent(name: String, brief: String)
@@ -76,7 +79,7 @@ public extension DotTag {
     /// Tags that draw or move something on screen (as opposed to handing off or escalating).
     var isVisual: Bool {
         switch self {
-        case .point, .highlight, .target, .hover, .shape, .card, .reveal, .clearBoard, .type, .web, .find, .stock, .place, .images: return true
+        case .point, .highlight, .target, .hover, .shape, .card, .reveal, .step, .clearBoard, .type, .web, .find, .stock, .place, .images: return true
         case .pointNone, .agent, .newAgent, .tell, .stopAgent, .routine, .think: return false
         }
     }
@@ -111,11 +114,11 @@ public struct ParsedResponse: Equatable {
 }
 
 public enum TagParser {
-    static let tagNames = ["POINT", "HIGHLIGHT", "TARGET", "HOVER", "SHAPE", "CARD", "REVEAL", "CLEAR_BOARD", "TYPE", "WEB", "FIND", "STOCK", "PLACE", "IMAGES", "AGENT", "NEW_AGENT", "TELL", "STOP_AGENT", "ROUTINE", "THINK"]
+    static let tagNames = ["POINT", "HIGHLIGHT", "TARGET", "HOVER", "SHAPE", "CARD", "REVEAL", "STEP", "CLEAR_BOARD", "TYPE", "WEB", "FIND", "STOCK", "PLACE", "IMAGES", "AGENT", "NEW_AGENT", "TELL", "STOP_AGENT", "ROUTINE", "THINK"]
 
     // swiftlint:disable:next force_try
     static let pattern = try! NSRegularExpression(
-        pattern: #"\[(POINT|HIGHLIGHT|TARGET|HOVER|SHAPE|CARD|REVEAL|CLEAR_BOARD|TYPE|WEB|FIND|STOCK|PLACE|IMAGES|AGENT|NEW_AGENT|TELL|STOP_AGENT|ROUTINE|THINK)(?::([^\]]*))?\]"#,
+        pattern: #"\[(POINT|HIGHLIGHT|TARGET|HOVER|SHAPE|CARD|REVEAL|STEP|CLEAR_BOARD|TYPE|WEB|FIND|STOCK|PLACE|IMAGES|AGENT|NEW_AGENT|TELL|STOP_AGENT|ROUTINE|THINK)(?::([^\]]*))?\]"#,
         options: []
     )
 
@@ -188,6 +191,10 @@ public enum TagParser {
             guard parts.count >= 1, !parts[0].isEmpty else { return nil }
             let step = parts.count >= 2 ? Int(parts[1].filter { $0.isNumber }) ?? 1 : 1
             return .reveal(id: parts[0], step: max(step, 1))
+        case "STEP":
+            let parts = splitPayload(payload)
+            guard parts.count >= 2, !parts[0].isEmpty, let n = Int(parts[1].filter { $0.isNumber }), n >= 0 else { return nil }   // a panel may start at step 0
+            return .step(id: parts[0], n: n)
         case "CARD":
             // id : x,y,w,h | auto : title [: screenN]
             var parts = splitPayload(payload)

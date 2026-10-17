@@ -1,0 +1,11 @@
+<!-- expect: .list .box -->
+<lead>Checking that $\mathbb{Q}(\sqrt2)$ is a subfield of $\mathbb{R}$, one condition at a time.</lead>
+<box tone="card">
+<list marker="check">
+<item>contains zero and one: $0=0+0\sqrt2$, $1=1+0\sqrt2$</item>
+<item>closed under sums and negatives: $x+y=(a+c)+(b+d)\sqrt2$, $-x=(-a)+(-b)\sqrt2$</item>
+<item>closed under products: $xy=(ac+2bd)+(ad+bc)\sqrt2$</item>
+<item>nonzero elements have inverses: $x^{-1}=\frac{a}{a^2-2b^2}+\frac{-b}{a^2-2b^2}\sqrt2$, since $a^2-2b^2\neq0$</item>
+</list>
+</box>
+<caption>Four conditions, four lines: that is the whole subfield test.</caption>

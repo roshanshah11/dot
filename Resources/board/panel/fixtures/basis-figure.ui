@@ -1,0 +1,21 @@
+<!-- expect: .svg-figure .caption .quiz -->
+<lead>A basis reaches every vector, with nothing wasted.</lead>
+<svg viewBox="0 0 360 230">
+  <each in="range(-6, 7)" as="g">
+    <line x1="{180 + g * 26}" y1="12" x2="{180 + g * 26}" y2="218" stroke="grid"/>
+    <line x1="24" y1="{115 + g * 26}" x2="336" y2="{115 + g * 26}" stroke="grid"/>
+  </each>
+  <line x1="24" y1="115" x2="336" y2="115" stroke="axis" arrow="end"/>
+  <line x1="180" y1="218" x2="180" y2="12" stroke="axis" arrow="end"/>
+  <polygon points="180,115 258,89 232,37 154,63" fill="c2" fill-opacity="0.16" stroke="c2" stroke-dasharray="5 4"/>
+  <vec x1="180" y1="115" x2="258" y2="89" color="c1" label="v₁"/>
+  <vec x1="180" y1="115" x2="154" y2="63" color="c3" label="v₂"/>
+  <dot cx="232" cy="37" color="c2" label="w = v₁ + v₂"/>
+</svg>
+<caption>Two independent directions build every vector in the plane, w included, in exactly one way.</caption>
+<quiz id="b1" question="Which set is a basis for ℝ²?" correct="C">
+<option feedback="Both on one line: dependent.">{(1,0), (2,0)}</option>
+<option feedback="Independent, but it spans only a line.">{(0,1)}</option>
+<option feedback="Independent and spanning: a basis.">{(1,1), (1,−1)}</option>
+<option feedback="Spans, but (1,1) is redundant.">{(1,0), (0,1), (1,1)}</option>
+</quiz>

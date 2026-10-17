@@ -1,0 +1,17 @@
+<!-- expect: .step:4 .callout -->
+<lead>Asking whether $b$ is in a span is asking whether a system has a solution.</lead>
+<steps>
+<step n="1" title="Write b as a combination">
+<math>c_1(1,2,0)+c_2(0,1,1)=(2,5,1)</math>
+</step>
+<step n="2" title="Read off three equations">
+<math>c_1=2,\qquad 2c_1+c_2=5,\qquad c_2=1</math>
+</step>
+<step n="3" title="They agree">
+<text>$c_1=2$, $c_2=1$ satisfies all three, so $b=2v_1+v_2$ is in the span.</text>
+</step>
+<step n="4" title="A vector that is not">
+<text>Try $b'=(2,5,3)$: the third equation now says $c_2=3$, the second still says $c_2=1$. No solution, so $b'$ is outside the span.</text>
+</step>
+</steps>
+<callout tone="info">The span of two independent vectors in $\mathbb{R}^3$ is a plane; most vectors miss it.</callout>

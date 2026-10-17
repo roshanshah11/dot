@@ -1,0 +1,23 @@
+<!-- expect: .lead .step:3 .viz-host .quiz .followups -->
+<lead>The kernel of $T$ is everything $T$ crushes to zero: $\ker T=\{x\in V : T(x)=0\}$.</lead>
+<steps>
+<step n="1" title="What vanishes">
+<text>Feed $T$ a vector and look at the output. If the output is the zero vector, that input is in the kernel.</text>
+</step>
+<step n="2" title="Your example, with numbers">
+<text>Your notes use $T(x_1,x_2)=(x_1+x_2,\;2x_1+2x_2)$. Set both outputs to zero:</text>
+<math>x_1+x_2=0 \quad\Rightarrow\quad x_2=-x_1</math>
+<text>So $(1,-1)$, $(2,-2)$ and every $(a,-a)$ land on zero.</text>
+</step>
+<step n="3" title="It is a whole line">
+<text>All of those inputs form one line through the origin, a subspace of dimension 1. Drag $x$ onto the red line and watch $T(x)$ hit zero.</text>
+<viz id="kernel-image" values='{"a":1,"b":1,"c":2,"d":2,"x":1.5,"y":0.5}'></viz>
+</step>
+</steps>
+<callout tone="good"><b>Takeaway:</b> the kernel is what goes in and disappears; the image is what can come out.</callout>
+<quiz id="k1" question="Which vector is in ker T for T(x₁, x₂) = (x₁ + x₂, 2x₁ + 2x₂)?" correct="B" hint="Plug it in: both coordinates of T(x) must be 0.">
+<option value="A" feedback="T(1,1) = (2,4), not zero.">(1, 1)</option>
+<option value="B" feedback="Right: T(3,−3) = (0,0).">(3, −3)</option>
+<option value="C" feedback="T(2,0) = (2,4), not zero.">(2, 0)</option>
+</quiz>
+<followups><chip ask="why is the kernel always a subspace?">why a subspace?</chip><chip ask="how does the kernel tell me T is injective?">kernel and injective</chip></followups>

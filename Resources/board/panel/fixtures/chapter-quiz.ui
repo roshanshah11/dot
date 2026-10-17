@@ -1,0 +1,11 @@
+<!-- expect: .quiz:2 -->
+<lead>Two quick checks on chapter one.</lead>
+<quiz id="c1" question="Is ℤ/6 a field?" correct="B" hint="Look for a zero divisor.">
+<option feedback="2 · 3 = 0 in ℤ/6, so 2 has no inverse.">yes</option>
+<option feedback="Right: 2 · 3 = 0, so it has zero divisors.">no</option>
+</quiz>
+<quiz id="c2" question="Which are subspaces of ℝ²? (pick all)" type="multi" correct="A,C">
+<option value="A">the x-axis</option>
+<option value="B">the line y = x + 1</option>
+<option value="C">{(0, 0)}</option>
+</quiz>

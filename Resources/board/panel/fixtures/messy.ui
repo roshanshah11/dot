@@ -1,0 +1,15 @@
+<!-- expect: .lead h3.title .katex .callout .math ; tolerant -->
+<lead>Unknown tags and broken markup still render their words.</lead>
+<sparkle>this sits inside an unknown tag</sparkle>
+<text>An inequality without spaces: $x<y$ and $a>b$ stay math.</text>
+<text>A <b>bold word and an unclosed tag
+<viz id="no-such-widget"></viz>
+<svg viewBox="0 0 100 40"><script>alert(1)</script><text x="4" y="20" onclick="alert(2)">safe text</text><foreignObject><div>gone</div></foreignObject></svg>
+<image src="javascript:alert(3)" caption="no">
+<text>A failing expression stays as written: {nosuchvar + 1}; set notation stays too: {(1,0), (0,1)}.</text>
+<text>Money stays money: it costs $5 today and returns $7 next year, and $r = 8\%$ is math.</text>
+<title>A heading after an unclosed bold tag</title>
+<text>This paragraph must render at the top level.</text>
+<state name="z" value="2">
+<math>$$z^2 = 4$$</math>
+<callout tone="good">This callout follows a state tag written without its slash; z is {z}.</callout>

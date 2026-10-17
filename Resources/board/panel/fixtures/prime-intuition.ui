@@ -1,0 +1,18 @@
+<!-- expect: .step:4 .svg-figure -->
+<lead>Why the characteristic of a field can only be 0 or a prime, without the formal proof.</lead>
+<steps>
+<step n="1" title="Count ones"><text>Add $1+1+\cdots+1$ in the field. The characteristic $p$ is the smallest count that gives $0$.</text>
+<svg viewBox="0 0 360 120">
+  <each in="range(0, 5)" as="k">
+    <circle cx="{40 + k * 56}" cy="50" r="18" fill="c2" fill-opacity="0.18" stroke="c2"/>
+    <text x="{40 + k * 56}" y="55" fill="c2" text-anchor="middle" font-size="14">1</text>
+  </each>
+  <text x="320" y="55" fill="accent" font-size="16" font-weight="700">= 0</text>
+  <text x="180" y="104" fill="muted" text-anchor="middle">in 𝔽₅, five ones make zero and no fewer do</text>
+</svg>
+</step>
+<step n="2" title="Pretend p is composite"><text>Say $p=6=2\cdot3$. Six ones is two ones times three ones: $6_F=2_F\cdot3_F$.</text></step>
+<step n="3" title="No zero divisors"><text>$2_F\cdot3_F=6_F=0$, and in a field a product is zero only if a factor is, so $2_F=0$ or $3_F=0$.</text></step>
+<step n="4" title="Smaller than the smallest"><text>But 2 and 3 are smaller than 6, and $p$ was the smallest count. So $p$ cannot factor: it is prime.</text></step>
+</steps>
+<followups><chip ask="show me the formal proof that the characteristic is prime">the formal proof</chip></followups>
