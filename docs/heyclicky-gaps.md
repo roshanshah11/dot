@@ -77,6 +77,7 @@ Round seven landed first (555f36b, 4cd906b, its own session). On top of it, on m
 - **Batch 1:** the orb (d949002, 1194514), context modes and app skill offers (3e062e5), the scout (85a6183, 2ea7e28), tokens, the finance kit and figures that report back (5e07f43, 164ae22), the state chip and mode word (19fea48), the notch on the tokens (bec11f5).
 - **Batch 2a:** the prompt lines (285a285; PL-T9 went into round eight's panel rules), voice over agents (dcb857b), the turn contract and routines by title (a01b3fa, 8cae245, 0a9d8c2, 82c980e), lecture and call answers as text and voice speed per mode (2dd4d9f, 4404e9a), the hook (ea92f51, fdfe9c8).
 - **Batch 2b:** the sentinel (7086f13, ea92f51), agents that outlive a relaunch (1ac2e43, 60b5450).
+- **Review fixes** (db7d2be): eight defects a review found in the code above (voice routing, the offline rule, routines, crash recovery).
 - **Still partial:** AG-08 (strict MCP mode would drop the claude.ai connectors, so the gate covers inherited servers instead). Phone stays deferred (IN-01).
 
 The run's log, with every decision and check: `~/.claude/overnight/runs/2026-10-17-0107-run-the-fixes-and-the-13-additions-in-docs-heycl.md`.
