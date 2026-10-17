@@ -187,7 +187,8 @@ enum Snapshots {
         let candidates = [Bundle.main.resourceURL?.appendingPathComponent("board"), URL(fileURLWithPath: DotConfig.expand("~/Projects/dot/Resources/board"))].compactMap { $0 }
         guard let resources = candidates.first(where: { FileManager.default.fileExists(atPath: $0.appendingPathComponent("board.html").path) }),
               var page = try? String(contentsOf: resources.appendingPathComponent("board.html"), encoding: .utf8) else { return nil }
-        page = page.replacingOccurrences(of: "{{ACCENT}}", with: accentHex).replacingOccurrences(of: "{{CONTENT}}", with: html)
+        // The same tokens the board uses (VI-01), so a snapshot shows the look a card really gets.
+        page = StyleTokens.load().applyingPointerAccent(accentHex).cardPage(template: page, content: html).html
         let file = resources.appendingPathComponent("card-snapshot.html")
         try? page.write(to: file, atomically: true, encoding: .utf8)
         let configuration = WKWebViewConfiguration()

@@ -39,6 +39,8 @@ final class BoardManager {
 
     /// Style tokens, read again for every card so an edit to ~/Dot/style/tokens.json shows on the next one.
     private var tokenProblems: [String] = []
+    /// The context mode the next card is drawn for (VI-03): desk and study pick their look.
+    var mode: String?
     private func tokens() -> StyleTokens {
         let tokens = StyleTokens.load()
         if tokens.problems != tokenProblems {
@@ -86,7 +88,7 @@ final class BoardManager {
         card.onClose = { [weak self] in self?.close(id: id) }
         card.onNav = { [weak self] action, step in self?.onNav?(id, action, step) }
         card.onEvent = { [weak self] event in self?.received(event) }
-        card.load(title: title, html: html, resources: resources, tokens: tokens())
+        card.load(title: title, html: html, resources: resources, tokens: tokens(), mode: mode)
         if stage {
             card.setStageFrame(isNew ? CGRect(origin: origin, size: size) : CGRect(x: card.frame.minX, y: card.frame.maxY - size.height, width: size.width, height: size.height))
         } else if isNew {
@@ -278,7 +280,7 @@ final class CardPanel: NSPanel, WKNavigationDelegate {
 
     /// The page is board.html with the tokens filled in (StyleTokens.cardPage); the frame around it
     /// (ground, border, strip, title) wears the same look, desk when the card holds a finance piece.
-    func load(title: String, html: String, resources: URL, tokens: StyleTokens) {
+    func load(title: String, html: String, resources: URL, tokens: StyleTokens, mode: String? = nil) {
         self.title = title
         isWeb = false
         isStage = BoardManager.isStageHTML(html)
@@ -286,7 +288,7 @@ final class CardPanel: NSPanel, WKNavigationDelegate {
         shown = 0
         total = 0
         guard let template = try? String(contentsOf: resources.appendingPathComponent("board.html"), encoding: .utf8) else { return }
-        let (page, lookName) = tokens.cardPage(template: template, content: html)
+        let (page, lookName) = tokens.cardPage(template: template, content: html, mode: mode)
         let look = tokens.look(lookName)
         container.layer?.backgroundColor = Self.color(look.background, alpha: isStage ? look.stageAlpha : look.backgroundAlpha).cgColor
         container.layer?.borderColor = Self.color(look.border).cgColor

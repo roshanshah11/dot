@@ -127,6 +127,8 @@ final class Talk {
         self.speaker.onFinishedAll = { [weak self] in
             Task { @MainActor in self?.scheduleIdleCheck() }
         }
+        // He moved a figure (VI-06): a quiet turn that speaks only if the move changes the answer.
+        board.onEvent = { [weak self] event in self?.cardEvent(event) }
         board.onNav = { [weak self] id, action, step in
             guard let self else { return }
             if self.lessonCard != id, self.board.isStage(id) { self.resetLesson(); self.lessonCard = id }
@@ -876,6 +878,10 @@ final class Talk {
         case .morning(let yes, let adjust):
             sayLocal(morningAnswer?(yes, adjust) ?? "the morning card is gone.")
             return
+        case .setMode(let mode):
+            modeOverride = mode
+            sayLocal(mode.map { "\($0.rawValue) mode." } ?? "back to normal.")
+            return
         case .homeThread(let slug):
             // Typed or spoken, the open thread gets it; Dot says nothing (HeyClicky's thread focus).
             phase = .idle
@@ -1207,6 +1213,21 @@ final class Talk {
         sendTurn(built, images: images, to: session, kind: .talk)
     }
 
+    /// A figure on a card reported a drag, a slider or a tap (VI-06). It only ever starts a talk turn,
+    /// never an action; while a turn is running the move waits for the next one he makes.
+    private func cardEvent(_ event: CardEvent) {
+        if let active = activeSession, active.turnInFlight {
+            Log.info("board: event while a turn runs, not sent: \(event.summary)")
+            return
+        }
+        guard let session = session(for: .talk) else { return }
+        let message = "[card event] \(event.summary)"
+        let (built, _) = buildMessage(message, kind: .talk)
+        lastMessage = built
+        lastImages = []
+        sendTurn(built, images: [], to: session, kind: .talk)
+    }
+
     private func continueBoard(said text: String) {
         guard let session = session(for: .talk) else { return }
         acknowledge()
@@ -1223,7 +1244,7 @@ final class Talk {
         case consentAnswer(ConsentVoice.Answer), tellAgent(String), stopAgent(String), agentStatus(String?)
         /// Tonight's voice verbs (VO-01 to VO-13, MB-07).
         case openAgent(String), openArtifact(String, String), pauseAgent(String), steerAgent(String, String), retryAgent(String),
-             resumeRoutine(String), askWhichCard(ConsentVoice.Answer), morning(Bool, String?), homeThread(String)
+             resumeRoutine(String), askWhichCard(ConsentVoice.Answer), morning(Bool, String?), homeThread(String), setMode(ContextMode?)
         var description: String {
             switch self {
             case .answer: return "answer"
@@ -1259,6 +1280,7 @@ final class Talk {
             case .askWhichCard(let answer): return "askWhichCard(\(answer))"
             case .morning(let yes, let adjust): return "morning(\(yes ? "do it" : "skip")\(adjust.map { ", \($0)" } ?? ""))"
             case .homeThread(let slug): return "homeThread(\(slug))"
+            case .setMode(let mode): return "setMode(\(mode?.rawValue ?? "auto"))"
             }
         }
     }
@@ -1277,6 +1299,8 @@ final class Talk {
     private var pendingCardChoice: (answer: ConsentVoice.Answer, until: Date)?
     /// The kind of session the turn in flight belongs to, for the cut-off note (VO-07).
     private var activeKind: SessionKind?
+    /// The mode he named ("desk mode"); nil lets the detector decide (VI-03).
+    private var modeOverride: ContextMode?
 
     /// When Dot last ended an answer on a question: a "yes" or "no" soon after is his answer to it.
     private var askedHimAt = Date.distantPast
@@ -1395,6 +1419,11 @@ final class Talk {
         }
         if !board.isEmpty, Self.closeWords.firstMatch(in: text, range: range) != nil { return .closeBoard }
         if Self.listenWords.firstMatch(in: text, range: range) != nil { return .listen }
+        // "desk mode", "study mode", "back to normal" (VI-03): his word beats the detector until he changes it.
+        if let override = ContextMode.parseOverride(text) {
+            if case .force(let forced) = override { return .setMode(forced) }
+            return .setMode(nil)
+        }
         if lecture.isListening, Self.stopListenWords.firstMatch(in: text, range: range) != nil { return .stopListening }
         if Self.recapWords.firstMatch(in: text, range: range) != nil, lecture.isListening || !lecture.transcript.isEmpty { return .recapLecture }
         if let match = Self.dictionaryWords.firstMatch(in: text, range: range) {
@@ -1586,6 +1615,11 @@ final class Talk {
         var images = shots.map { (data: $0.jpeg, mediaType: "image/jpeg") }
         lines.append("[context]")
         lines.append("now: \(Self.nowLine())")
+        // The context mode (VI-03, PL-T10): how the answer should look and sound here.
+        let mode = ContextMode.decide(onCall: CallPresence.isOnCall(), lectureListening: lecture.isListening, bundleID: context.bundleIdentifier,
+                                      windowTitle: context.windowTitle, url: context.url, boardLesson: lessonCard != nil, override: modeOverride)
+        board.mode = mode.rawValue
+        if mode != .normal { lines.append("[mode] \(mode.rawValue)") }
         // This message cuts off the answer still being given in the same conversation (VO-07).
         if activeSession?.turnInFlight == true, activeKind == kind { lines.append("note: the last question was cut off by this one; don't mention it.") }
         if let app = context.appName {
