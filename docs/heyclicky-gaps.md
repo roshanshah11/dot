@@ -253,12 +253,12 @@ work, fixed once it is committed (or adopted as the baseline, step 1 above).
 | AG-04 | Consent holes: rm -rf ~, replies, guests, shares, run_script, unknown servers | Has it (round seven 555f36b) | small | none |
 | AG-05 | Helpers run in the foreground so the turn ends with the work | Has it (round seven 555f36b) | small | FX-05 |
 | AG-06 | The computer-use surface is fenced | Partial | small | B2a (CU-05) |
-| AG-07 | A PreToolUse hook sends every agent tool call through Dot | Has it (ea92f51) | medium | B2a |
+| AG-07 | A PreToolUse hook sends every agent tool call through Dot | Has it (ea92f51, fdfe9c8; seen live 10/17 04:33) | medium | B2a |
 | AG-08 | Each agent loads only its own MCP servers | Partial (ea92f51: strict mode would drop the claude.ai connectors, so per the spec strict stays off and the gate covers inherited servers; no per-agent mcp.json) | small | B2a |
 | AG-09 | Steering a running turn | Has it (round seven 555f36b) | small | B2a (VO-09) |
 | AG-10 | Reaching an agent by name | Has it (round seven 555f36b) | small | FX-02, FX-03 |
 | AG-11 | Approving or stopping an agent by voice | Has it (round seven 555f36b) | small | FX-01 |
-| AG-12 | Agents keep running across a Dot relaunch | Has it (1ac2e43, 60b5450; live relaunch check below) | large | B2b |
+| AG-12 | Agents keep running across a Dot relaunch | Has it (1ac2e43, 60b5450; a turn survived a relaunch live 10/17 04:33) | large | B2b |
 | AG-13 | A sentinel judges what runs without asking | Has it (7086f13, ea92f51) | medium | B2b |
 | AG-14 | Agents can make images | Missing | small | none |
 | AG-15 | A new routine's first run happens at once | Has it (round seven 555f36b) | small | none |
