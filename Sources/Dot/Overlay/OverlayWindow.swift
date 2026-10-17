@@ -25,6 +25,25 @@ final class OverlayWindow: NSPanel {
         becomesKeyOnlyIfNeeded = true
         alphaValue = 0
         setFrame(screen.frame, display: true)
+        // The window tells its orb what the system says (VI-07): covered or not, Reduce Motion or not.
+        NotificationCenter.default.addObserver(self, selector: #selector(occlusionChanged), name: NSWindow.didChangeOcclusionStateNotification, object: self)
+        NSWorkspace.shared.notificationCenter.addObserver(self, selector: #selector(displayOptionsChanged),
+                                                          name: NSWorkspace.accessibilityDisplayOptionsDidChangeNotification, object: nil)
+    }
+
+    private var companion: CompanionModel? { (contentView as? NSHostingView<CompanionView>)?.rootView.model }
+
+    @objc private func occlusionChanged() {
+        let covered = !occlusionState.contains(.visible)
+        if companion?.occluded != covered { companion?.occluded = covered }
+    }
+
+    @objc private func displayOptionsChanged() {
+        companion?.reduceMotion = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+    }
+
+    deinit {
+        NSWorkspace.shared.notificationCenter.removeObserver(self)
     }
 
     override var canBecomeKey: Bool { false }
@@ -89,9 +108,29 @@ final class CompanionModel: ObservableObject {
     /// Strokes already finished while the key stays held (he can mark two things).
     @Published var strokes: [[CGPoint]] = []
     @Published var color = Color(red: 1.0, green: 0.42, blue: 0.17)
+    /// What an agent is doing now (nil while none works): a small glyph circles the orb (VI-04).
+    @Published var agentActivity: AgentActivity?
+    /// Agents waiting on his yes: the orb pulses while any do.
+    @Published var agentsWaiting = 0
+    /// Reduce Motion is on (VI-07): no flights, no orbit, no pulse; the glyph and a ring hold still.
+    /// Kept current by OverlayWindow.
+    @Published var reduceMotion = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+    /// The overlay window is covered (the display asleep, a lock screen): the orb's timeline rests.
+    @Published var occluded = false
     let screenSize: CGSize
 
-    init(screenSize: CGSize) { self.screenSize = screenSize }
+    /// The last `.dotAgentActivity` report, so a screen added later starts from it.
+    static var agentReport = AgentActivityReport(activity: nil)
+
+    init(screenSize: CGSize) {
+        self.screenSize = screenSize
+        apply(Self.agentReport)
+    }
+
+    func apply(_ report: AgentActivityReport) {
+        if agentActivity != report.activity { agentActivity = report.activity }
+        if agentsWaiting != report.waiting { agentsWaiting = report.waiting }
+    }
 }
 
 // MARK: - Views
@@ -166,9 +205,12 @@ struct CompanionView: View {
                     .position(tail)
             }
             if model.visible {
+                // With Reduce Motion there is no flight to watch: Dot leaves and turns up at the spot.
                 OrbView(model: model)
                     .position(model.position)
                     .animation(.easeOut(duration: 0.12), value: model.level)
+                    .opacity(model.reduceMotion && model.motion == .flying ? 0 : 1)
+                    .animation(.easeInOut(duration: 0.15), value: model.reduceMotion && model.motion == .flying)
                 if model.motion == .parked, let text = model.chip, !text.isEmpty, !(model.bubbleVisible && !model.bubbleText.isEmpty) {
                     chip(text).offset(x: model.position.x + 16, y: model.position.y + 10)
                 }
@@ -360,14 +402,18 @@ private struct ArrowHead: Shape {
 }
 
 /// Dot itself: a small ember orb with two eyes. It breathes, blinks, leans into its motion,
-/// squints while listening, glances up while thinking, and glows with its voice.
+/// squints while listening, glances up while thinking, and glows with its voice. While an agent
+/// works a small glyph for what it is doing circles it, and while one waits on him it pulses.
 struct OrbView: View {
     @ObservedObject var model: CompanionModel
 
     private let size: CGFloat = 20
 
     var body: some View {
-        let paused = model.phase == .idle && model.motion != .flying && model.mood == .neutral
+        // The agent glyph circles and the pulse breathes only with motion allowed; with Reduce
+        // Motion they hold still and need no clock. Covered, nothing needs one.
+        let agentMotion = !model.reduceMotion && (model.agentActivity != nil || model.agentsWaiting > 0)
+        let paused = model.occluded || (model.phase == .idle && model.motion != .flying && model.mood == .neutral && !agentMotion)
         TimelineView(.animation(minimumInterval: 1 / 30, paused: paused)) { context in
             let t = context.date.timeIntervalSinceReferenceDate
             // The mouth opens with the voice: two overlapping sines read as speech, not a metronome.
@@ -377,18 +423,24 @@ struct OrbView: View {
             let talking: CGFloat = model.phase == .speaking ? CGFloat(voice * 0.35) : 0
             let listening = model.phase == .listening ? CGFloat(model.level) : 0
             let glow = 0.35 + talking * 0.5 + listening * 0.6
-            let body = size * model.breath * model.scale * (1 + listening * 0.35)
+            // Reduce Motion: no breathing swell and no lean; the orb holds its shape.
+            let still = model.reduceMotion
+            let body = size * (still ? 1 : model.breath) * model.scale * (1 + listening * 0.35)
+            let lean = still ? 0 : model.lean
             ZStack {
                 Circle()
                     .fill(model.color.opacity(glow))
                     .frame(width: body * 2.6, height: body * 2.6)
                     .blur(radius: 7)
+                if model.agentsWaiting > 0 {
+                    waitingPulse(body: body, t: t)
+                }
                 Circle()
                     .fill(RadialGradient(colors: [Color(red: 1.0, green: 0.78, blue: 0.5), model.color, Color(red: 0.72, green: 0.22, blue: 0.05)],
                                          center: UnitPoint(x: 0.38, y: 0.32), startRadius: 0, endRadius: body * 0.62))
                     .frame(width: body, height: body)
                     .shadow(color: model.color.opacity(0.9), radius: 5)
-                    .scaleEffect(x: 1 + model.lean * 0.28, y: 1 - model.lean * 0.14)
+                    .scaleEffect(x: 1 + lean * 0.28, y: 1 - lean * 0.14)
                     .rotationEffect(.radians(Double(model.heading)))
                 eyes(body: body)
                 face(body: body, talking: talking, t: t)
@@ -397,12 +449,66 @@ struct OrbView: View {
                         .trim(from: 0, to: 0.33)
                         .stroke(Color.white.opacity(0.9), style: StrokeStyle(lineWidth: 2, lineCap: .round))
                         .frame(width: body + 12, height: body + 12)
-                        .rotationEffect(.degrees(t.truncatingRemainder(dividingBy: 1.0) * 360))
+                        .rotationEffect(.degrees(still ? -90 : t.truncatingRemainder(dividingBy: 1.0) * 360))
                 }
                 if model.phase == .listening {
                     waveform(level: CGFloat(model.level), t: t)
                         .offset(x: body / 2 + 14)
                 }
+                // While he talks the waveform has that side; the agent glyph steps away until he is done.
+                if let activity = model.agentActivity, model.phase != .listening {
+                    orbiting(activity, body: body, t: t)
+                }
+            }
+            .animation(.easeOut(duration: 0.25), value: model.agentActivity)
+        }
+    }
+
+    /// The agent's glyph on a small dark disc, circling the orb on a tilted ellipse: in front of Dot
+    /// on the near half, behind it (smaller, dimmer) on the far half, once every 3.6 s. With Reduce
+    /// Motion it sits still at the upper right, like a badge.
+    @ViewBuilder
+    private func orbiting(_ activity: AgentActivity, body: CGFloat, t: Double) -> some View {
+        let disc = max(body * 0.72, 13)
+        let glyph = ZStack {
+            Circle().fill(Color(red: 0.12, green: 0.06, blue: 0.03).opacity(0.92))
+            Circle().stroke(model.color.opacity(0.95), lineWidth: 1)
+            Image(systemName: activity.symbol)
+                .font(.system(size: disc * 0.5, weight: .semibold))
+                .foregroundStyle(Color.white)
+        }
+        .frame(width: disc, height: disc)
+        .shadow(color: .black.opacity(0.35), radius: 2, x: 0, y: 1)
+        .id(activity)
+        .transition(model.reduceMotion ? .opacity : .scale(scale: 0.4).combined(with: .opacity))
+        if model.reduceMotion {
+            glyph.offset(x: body / 2 + 6, y: -body / 2 - 2).zIndex(2)
+        } else {
+            let angle = t * 2 * .pi / 3.6
+            let rx = body / 2 + 13, ry = rx * 0.55
+            let near = sin(angle) >= 0
+            glyph
+                .scaleEffect(0.8 + 0.2 * CGFloat((sin(angle) + 1) / 2))
+                .opacity(near ? 1 : 0.6)
+                .offset(x: CGFloat(cos(angle)) * rx, y: CGFloat(sin(angle)) * ry)
+                .zIndex(near ? 2 : -1)
+        }
+    }
+
+    /// An agent waits on his yes: two rings swell out of the orb and fade, over and over. With
+    /// Reduce Motion, one steady ring instead.
+    @ViewBuilder
+    private func waitingPulse(body: CGFloat, t: Double) -> some View {
+        if model.reduceMotion {
+            Circle()
+                .stroke(model.color.opacity(0.9), lineWidth: 1.8)
+                .frame(width: body * 1.7, height: body * 1.7)
+        } else {
+            ForEach(0..<2, id: \.self) { i in
+                let p = CGFloat((t / 1.6 + Double(i) * 0.5).truncatingRemainder(dividingBy: 1))
+                Circle()
+                    .stroke(model.color.opacity(0.95 * Double(1 - p)), lineWidth: 2.2 - p)
+                    .frame(width: body * (1.15 + p * 1.45), height: body * (1.15 + p * 1.45))
             }
         }
     }
@@ -554,6 +660,15 @@ final class OverlayManager {
         rebuild()
         NotificationCenter.default.addObserver(forName: NSApplication.didChangeScreenParametersNotification, object: nil, queue: .main) { [weak self] _ in
             Task { @MainActor in self?.rebuild() }
+        }
+        // Agents on the orb (VI-04): each post is the whole state (AgentActivityReport); a screen
+        // made later starts from the last one.
+        NotificationCenter.default.addObserver(forName: .dotAgentActivity, object: nil, queue: .main) { [weak self] note in
+            let report = AgentActivityReport(userInfo: note.userInfo)
+            Task { @MainActor in
+                CompanionModel.agentReport = report
+                self?.models.forEach { $0.apply(report) }
+            }
         }
         startTicking()
         scheduleBlink()
