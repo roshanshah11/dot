@@ -942,6 +942,7 @@ final class OverlayManager {
             model.color = color
             model.orbSize = orbSize
             let window = OverlayWindow(screen: screen)
+            window.sharingType = visibleInRecordings ? .readOnly : .none
             window.contentView = NSHostingView(rootView: CompanionView(model: model))
             windows.append(window)
             models.append(model)
@@ -950,6 +951,7 @@ final class OverlayManager {
             leashes.append(Leash(radius: 90 * orbSize / 24))
             callOvers.append(CallOverDetector())
             let handle = OrbHandle()
+            handle.sharingType = visibleInRecordings ? .readOnly : .none
             let index = models.count - 1
             handle.onDown = { [weak self] point in self?.pressed(index, at: point) }
             handle.onDrag = { [weak self] point in self?.dragged(index, to: point) }
@@ -1363,9 +1365,15 @@ final class OverlayManager {
         for model in models { model.strokes = []; model.stroke = [] }
     }
 
-    /// Whether screen recordings and shares capture Dot (HeyClicky's "Show in screen recordings").
+    /// Whether screen recordings and shares capture Dot (HeyClicky's "Show in screen recordings"). Kept, so the
+    /// windows `rebuild` makes after a display change get it too: they used to come back capturable, and Dot
+    /// showed up in his screenshots with the setting off (2026-10-17).
+    private var visibleInRecordings = true
+
     func setVisibleInRecordings(_ visible: Bool) {
+        visibleInRecordings = visible
         for window in windows { window.sharingType = visible ? .readOnly : .none }
+        for handle in handles { handle.sharingType = visible ? .readOnly : .none }
     }
 
     func clearRing() {
