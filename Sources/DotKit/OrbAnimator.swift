@@ -21,6 +21,8 @@ public enum OrbReaction: Equatable {
     case tilt
     /// He clicked Dot: a squish, a giggle wobble and a happy squint (round two).
     case boop
+    /// Told to stay: it sinks into a sit and looks content.
+    case settle
 }
 
 /// Spiral eyes after a landing, while the world spins (dizzy is one of the motions rated cute, cute-C3).
@@ -601,6 +603,7 @@ public final class OrbAnimator {
         if let reaction {
             switch reaction.kind {
             case .agentDone, .thanks, .boop: lower = 0.55
+            case .settle: lower = 0.4
             case .agentFailed: upper = max(upper, 0.4)
             default: break
             }
@@ -700,6 +703,10 @@ public final class OrbAnimator {
             case .agentFailed: offset.y += CGFloat(0.1 * sin(min(e / 0.25, 1) * .pi / 2) * (e > 0.45 ? max(0, 1 - (e - 0.45) / 0.15) : 1))
             case .dismissed: offset.y += CGFloat(0.1 * sin(min(e / 0.4, 1) * .pi))
             case .tilt: tiltTarget = 0.24
+            case .settle:
+                // Down into the sit, then most of the way back up.
+                let sink = e < 0.2 ? sin(e / 0.2 * .pi / 2) : max(0.3, 1 - (e - 0.2) / 0.4)
+                offer(1 - 0.16 * sink, -.pi / 2)
             case .boop:
                 if e < 0.12 { offer(1 - 0.2 * sin(e / 0.12 * .pi), -.pi / 2) }                    // the squish
                 else { rotation += 0.1 * sin((e - 0.12) * 2 * .pi * 5) * max(0, 1 - (e - 0.12) / 0.5) }   // the giggle
@@ -821,6 +828,7 @@ public final class OrbAnimator {
         case .appSwitch: return 0.5
         case .tilt: return 1.2
         case .boop: return 0.65
+        case .settle: return 0.8
         }
     }
 }

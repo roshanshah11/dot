@@ -651,6 +651,19 @@ final class OrbAnimatorTests: XCTestCase {
         XCTAssertEqual(pose.rotation, 0, accuracy: 0.01)
     }
 
+    func testSettleSinksIntoASitAndComesBack() {
+        let animator = OrbAnimator(seed: 37)
+        let input = OrbInput()
+        _ = animator.step(at: 0, input: input)
+        animator.react(.settle, at: 0.5)
+        let sunk = animator.step(at: 0.7, input: input)
+        XCTAssertLessThan(sunk.stretch, 0.9, "down into the sit")
+        XCTAssertEqual(sunk.stretchAngle, -.pi / 2, accuracy: 1e-9)
+        var pose = OrbPose()
+        for i in 0...60 { pose = animator.step(at: 1.4 + Double(i) / fps, input: input) }
+        XCTAssertEqual(pose.stretch, 1, accuracy: 0.02, "back to its shape once settled")
+    }
+
     func testNoPerchWhileHeldOrTossed() {
         let animator = OrbAnimator(seed: 35)
         var input = OrbInput()

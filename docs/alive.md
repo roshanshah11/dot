@@ -442,6 +442,12 @@ thrown", Android measures a fling's velocity. A fast cursor move alone can't be 
   clicks: a fast approach (over 900 px/s) hops it aside (`Dodge.spot`), and so does the cursor sitting on it for 0.6 s with no
   rub in the last 3 s (`Dodge.aside`). The call-over needs runs of 8 px or more and no button down. While he talks Dot stays
   beside the cursor as before, with no leash.
+- Sitting (his ask the same evening: "sometimes i dont want my clicky interferring... temporarily sit my dot with a long
+  press? can still pet"): pet Dot, then press and hold it for half a second, and it sinks into a sit (`.settle`) and stays
+  there instead of following; the same again, or the menu's "Dot stays put", and it comes back ("coming!"). A sitting Dot
+  can still be petted, booped, picked up and thrown (it sits where it lands), still steps out of a click's way, and skips the
+  call-over and the window-top perch. Talking or pointing take it along and it trots back to its spot after. Not kept
+  across a relaunch or a display change.
 - Throwing: `Toss` (friction 0.45 s, restitution 0.6, cap 4,000 px/s, release velocity over the last 50 ms). The animator stretches
   a held Dot, tumbles a thrown one, squashes it on each bounce, gives it spiral eyes for 1 s after it lands and a shake-off for 0.4 s.
 - Context lines: `QuipContext`, `QuipPrompt` and `QuipLine` in DotKit; the writer runs one `claude -p` per quip on `quipModel`

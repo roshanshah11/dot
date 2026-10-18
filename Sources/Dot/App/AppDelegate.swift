@@ -455,6 +455,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         presence.state = config.showCompanion ? .on : .off
         menu.addItem(presence)
         presenceItem = presence
+        let sit = NSMenuItem(title: "Dot stays put", action: #selector(toggleSit), keyEquivalent: "")
+        sit.state = overlay.isSitting ? .on : .off
+        menu.addItem(sit)
+        overlay.onSitChanged = { [weak sit] on in sit?.state = on ? .on : .off }
         let recordings = NSMenuItem(title: "Show Dot in screen recordings", action: #selector(toggleRecordings), keyEquivalent: "")
         recordings.state = config.showInRecordings ? .on : .off
         menu.addItem(recordings)
@@ -472,6 +476,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @objc private func askByTyping() { hud.showInput() }
+    /// Sit Dot where it is (it stops following; it can still be petted), or let it follow again. A long press on
+    /// Dot does the same.
+    @objc private func toggleSit() { overlay.setSitting(!overlay.isSitting) }
     @objc private func toggleLecture() {
         Task { @MainActor in
             if talk.lecture.isListening { await talk.stopLecture() } else { await talk.startLecture(title: AccessibilityContext.capture(maxElements: 0, timeBudget: 0.1).windowTitle ?? "") }

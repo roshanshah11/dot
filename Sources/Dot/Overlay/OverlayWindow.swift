@@ -842,6 +842,16 @@ final class OverlayManager {
     private var grab: (index: Int, samples: [(point: CGPoint, time: Double)], moved: Bool)?
     /// Dot was thrown: its flight until it comes to rest.
     private var toss: (index: Int, physics: Toss)?
+    /// Sitting (his ask, 2026-10-17: "sometimes i dont want my clicky interferring... temporarily sit my dot with a
+    /// long press? can still pet"): Dot stays at `spot` instead of following the cursor, and can still be petted,
+    /// booped, picked up and thrown (it sits where it lands). Talking and pointing take it along; it goes back
+    /// after. A long press on Dot (after a rub arms it) or the menu's "Dot stays put" toggles it.
+    private var sitting: (index: Int, spot: CGPoint)?
+    private var longPress: DispatchWorkItem?
+    private var longPressFired = false
+    /// Sitting started or ended (the menu's check mark).
+    var onSitChanged: ((Bool) -> Void)?
+    var isSitting: Bool { sitting != nil }
     private var rubs: [RubDetector] = []
     private var leads: [CGVector] = []
     private var speeds: [Double] = []
@@ -921,6 +931,10 @@ final class OverlayManager {
         parkedScreen = nil
         grab = nil
         toss = nil
+        if sitting != nil {
+            sitting = nil
+            onSitChanged?(false)
+        }
         for window in windows { window.orderOut(nil) }
         for handle in handles { handle.orderOut(nil) }
         windows = []
@@ -1473,6 +1487,16 @@ final class OverlayManager {
     private func returnToCursor() {
         guard let index = parkedScreen else { return }
         let model = models[index]
+        if let spot = sitting?.spot, sitting?.index == index {
+            // Done pointing: back to where it was told to stay.
+            perched = false
+            wakeReturnAt = nil
+            fly(model: model, to: spot, style: .trot) { [weak self] in
+                model.motion = .following
+                self?.parkedScreen = nil
+            }
+            return
+        }
         let mouse = NSEvent.mouseLocation
         perched = false
         wakeReturnAt = nil
@@ -1548,8 +1572,11 @@ final class OverlayManager {
         if parkedScreen == nil {
             for (index, window) in windows.enumerated() {
                 let model = models[index]
-                guard window.screenFrame.contains(mouse) else {
-                    if model.visible { model.visible = false }
+                let sitsHere = sitting?.index == index
+                // Sitting on another screen: no second Dot here, unless he is talking to it.
+                let sitsElsewhere = sitting != nil && !sitsHere && model.phase == .idle
+                guard window.screenFrame.contains(mouse), !sitsElsewhere else {
+                    if model.visible, !sitsHere { model.visible = false }
                     continue
                 }
                 let desired = followTarget(mouse: mouse, screenFrame: window.screenFrame)
@@ -1559,7 +1586,7 @@ final class OverlayManager {
                     followers[index].snap(to: desired)
                     model.position = desired
                 }
-                if jump {
+                if jump, !sitsHere {
                     followers[index].snap(to: desired)
                     model.position = desired
                     leads[index] = .zero
@@ -1567,7 +1594,7 @@ final class OverlayManager {
                 }
                 guard model.motion == .following else { if armed[index], grab?.index != index { setArmed(index, false) }; continue }
                 follow(index: index, desired: desired, mouse: mouse, velocity: velocity, now: now, dt: dt)
-                if animators[index].wantsPerch { startPerch(index: index, mouse: mouse, now: now) }
+                if animators[index].wantsPerch, !sitsHere { startPerch(index: index, mouse: mouse, now: now) }
             }
         }
         animate(now: now)
@@ -1589,6 +1616,7 @@ final class OverlayManager {
         if rubOn { lastRubAt[index] = now }
         animators[index].setRubbing(rubOn, direction: Double(rubs[index].lastDirection), at: now)
         let talking = model.phase != .idle
+        let sitSpot = sitting?.index == index && !talking ? sitting?.spot : nil
         let buttonDown = NSEvent.pressedMouseButtons != 0
         updateArming(index, cursor: cursor, now: now, rubbing: rubOn, allowed: !talking)
         let bounds = CGRect(origin: .zero, size: model.screenSize).insetBy(dx: radius + 2, dy: radius + 2)
@@ -1600,26 +1628,37 @@ final class OverlayManager {
                 return
             }
             // A gentle wiggle anywhere else calls Dot over, under the cursor, where the wiggle becomes a pet.
-            if callOvers[index].add(cursor: cursor, at: now, orb: model.position, radius: radius, buttonDown: buttonDown) {
+            if sitSpot == nil, callOvers[index].add(cursor: cursor, at: now, orb: model.position, radius: radius, buttonDown: buttonDown) {
                 let under = CGPoint(x: min(max(cursor.x, bounds.minX), bounds.maxX), y: min(max(cursor.y + radius * 0.5, bounds.minY), bounds.maxY))
                 hop(index, to: under)
                 return
             }
         }
+        // Sitting, and back from a talk or a pointing far away: trot home.
+        if let spot = sitSpot, hypot(spot.x - model.position.x, spot.y - model.position.y) > 40, !armed[index] {
+            fly(model: model, to: spot, style: .trot) { model.motion = .following }
+            return
+        }
         var spring = followers[index]
-        let moving = talking || (!animators[index].isRecovering && !armed[index]
-            && leashes[index].update(cursor: cursor, orb: model.position, target: desired))
+        let target = sitSpot ?? desired
+        let moving: Bool
+        if let spot = sitSpot {
+            moving = hypot(spot.x - model.position.x, spot.y - model.position.y) > 0.5
+        } else {
+            moving = talking || (!animators[index].isRecovering && !armed[index]
+                && leashes[index].update(cursor: cursor, orb: model.position, target: desired))
+        }
         if moving {
             spring.duration = 0.25
             spring.bounce = 0.12
-            spring.step(toward: desired, dt: dt)
+            spring.step(toward: target, dt: dt)
             if hypot(spring.position.x - model.position.x, spring.position.y - model.position.y) > 0.01 { model.position = spring.position }
         } else {
             spring.position = model.position
             spring.velocity = .zero
         }
         followers[index] = spring
-        leads[index] = moving ? CGVector(dx: desired.x - model.position.x, dy: desired.y - model.position.y) : .zero
+        leads[index] = moving ? CGVector(dx: target.x - model.position.x, dy: target.y - model.position.y) : .zero
         speeds[index] = spring.speed
     }
 
@@ -1643,6 +1682,7 @@ final class OverlayManager {
         fly(model: model, to: spot, style: .hop) { [weak self] in
             model.motion = .following
             self?.leashes[index].sit()
+            if self?.sitting?.index == index { self?.sitting?.spot = model.position }
         }
     }
 
@@ -1700,6 +1740,49 @@ final class OverlayManager {
     private func pressed(_ index: Int, at screenPoint: CGPoint) {
         guard index < models.count, armed[index] else { return }
         grab = (index, [(overlayPoint(screenPoint, index), clock)], false)
+        // Held still for half a second: sit, or follow again.
+        longPress?.cancel()
+        longPressFired = false
+        let work = DispatchWorkItem { [weak self] in
+            guard let self, let current = self.grab, current.index == index, !current.moved else { return }
+            self.longPressFired = true
+            if self.sitting?.index == index { self.unsit() } else { self.sit(index) }
+        }
+        longPress = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5, execute: work)
+    }
+
+    /// Sit Dot where it is, or let it follow again (the menu's "Dot stays put").
+    func setSitting(_ on: Bool) {
+        if on {
+            guard let index = models.firstIndex(where: { $0.visible }) ?? models.indices.first else { return }
+            sit(index)
+        } else {
+            unsit()
+        }
+    }
+
+    private func sit(_ index: Int) {
+        guard index < models.count else { return }
+        if sitting != nil, sitting?.index != index { unsit() }
+        sitting = (index, models[index].position)
+        leashes[index].sit()
+        animators[index].react(.settle, at: clock)
+        greet("ok, staying right here", for: 2.5)
+        Log.info("sit: staying at \(Int(models[index].position.x)),\(Int(models[index].position.y))")
+        onSitChanged?(true)
+    }
+
+    private func unsit() {
+        guard let current = sitting else { return }
+        sitting = nil
+        if current.index < models.count {
+            animators[current.index].react(.pounce, at: clock)
+            leashes[current.index].heel()
+        }
+        greet("coming!", for: 2)
+        Log.info("sit: following again")
+        onSitChanged?(false)
     }
 
     private func dragged(_ index: Int, to screenPoint: CGPoint) {
@@ -1709,15 +1792,21 @@ final class OverlayManager {
         if current.samples.count > 40 { current.samples.removeFirst(current.samples.count - 40) }
         if !current.moved, let first = current.samples.first, hypot(point.x - first.point.x, point.y - first.point.y) > 4 {
             current.moved = true
+            longPress?.cancel()
             models[index].motion = .held          // picked up
         }
         grab = current
     }
 
     private func released(_ index: Int, at screenPoint: CGPoint) {
+        longPress?.cancel()
         guard let current = grab, current.index == index else { return }
         grab = nil
         let model = models[index]
+        if longPressFired {
+            longPressFired = false   // the press was the long press; nothing more
+            return
+        }
         guard current.moved else {
             animators[index].react(.boop, at: clock)
             onPetted?()
@@ -1731,6 +1820,7 @@ final class OverlayManager {
             model.motion = .following           // set down here
             followers[index].snap(to: model.position)
             leashes[index].sit()
+            if sitting?.index == index { sitting?.spot = model.position }
             return
         }
         if let earlier = toss, earlier.index != index { land(earlier.index, now: clock) }   // one throw at a time
@@ -1780,6 +1870,7 @@ final class OverlayManager {
         followers[index].snap(to: models[index].position)
         leashes[index].sit()
         models[index].motion = .following
+        if sitting?.index == index { sitting?.spot = models[index].position }
     }
 
     /// Step every visible orb's animator and publish its pose: 60 Hz while something moves, 15 Hz for
