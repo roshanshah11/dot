@@ -6,7 +6,7 @@ final class MorningPlannerScoutTests: XCTestCase {
         let f = DateFormatter(); f.dateFormat = "yyyy-MM-dd HH:mm"; f.locale = Locale(identifier: "en_US_POSIX")
         return f.date(from: text)!
     }
-    private let deadlines = ["2026-10-17 Raymond James Sophomore Showcase application due 11:59 PM ET: short essays"]
+    private let deadlines = ["2026-10-17 Northwind Bank Sophomore Showcase application due 11:59 PM ET: short essays"]
     private let calls = ["Sat 10-17 12:30–12:45 Call: Alex Morgan (BlackRock) (at Call (555) 010-0199)"]
     private var scout: ScoutBriefFile { ScoutBriefFile.decode(Data(ScoutFixtures.good.utf8))! }
 
@@ -19,7 +19,7 @@ final class MorningPlannerScoutTests: XCTestCase {
         XCTAssertEqual(items[0].routine?.when, "every day at 7am")
         XCTAssertEqual(items[0].sources.count, 2)
         XCTAssertNil(items[1].agentRole)
-        XCTAssertFalse(items.contains { $0.text.contains("raymond james") })
+        XCTAssertFalse(items.contains { $0.text.contains("northwind bank") })
     }
 
     func testYesterdaysFileIsIgnored() {
@@ -47,8 +47,8 @@ final class MorningPlannerScoutTests: XCTestCase {
         XCTAssertEqual(MorningPlanner.greeting(count: 5, hour: 8, titles: ["prepping Citizen", "the week plan", "the postings"]),
                        "morning. i can do 5 things today, like prepping Citizen, the week plan and the postings.")
         // Three that run long become two.
-        XCTAssertEqual(MorningPlanner.greeting(count: 4, hour: 14, titles: ["a brief on Alex Morgan at BlackRock", "the Raymond James essays", "the postings"]),
-                       "afternoon. i can do 4 things today, like a brief on Alex Morgan at BlackRock and the Raymond James essays.")
+        XCTAssertEqual(MorningPlanner.greeting(count: 4, hour: 14, titles: ["a brief on Alex Morgan at BlackRock", "the Northwind Bank essays", "the postings"]),
+                       "afternoon. i can do 4 things today, like a brief on Alex Morgan at BlackRock and the Northwind Bank essays.")
         XCTAssertEqual(MorningPlanner.greeting(count: 2, hour: 8, titles: ["prepping Citizen", "the week plan"]),
                        "morning. i can do 2 things today: prepping Citizen and the week plan.")
         XCTAssertEqual(MorningPlanner.greeting(count: 1, hour: 19, titles: ["the week plan"]), "evening. i can do 1 thing today: the week plan.")

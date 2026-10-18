@@ -69,7 +69,7 @@ public struct TodayBrief: Codable, Equatable {
     }
 
     /// The event happening now or the next one today, from lines like
-    /// "Thu 10-15 10:00–10:15 Call: Radha Gupta (at Phone)". Returns the title and minutes until it
+    /// "Thu 10-15 10:00–10:15 Call: Sam Rivera (at Phone)". Returns the title and minutes until it
     /// starts (negative while it is on) and minutes until it ends.
     public func nextEvent(from date: Date = Date()) -> (title: String, startsIn: Int, endsIn: Int)? {
         let pattern = try! NSRegularExpression(pattern: #"^\w{3} \d{2}-\d{2} (\d{1,2}):(\d{2})[–-](\d{1,2}):(\d{2}) (.+)$"#)
