@@ -444,7 +444,7 @@ thrown", Android measures a fling's velocity. A fast cursor move alone can't be 
   beside the cursor as before, with no leash.
 - Sitting (his ask the same evening: "sometimes i dont want my clicky interferring... temporarily sit my dot with a long
   press? can still pet"): pet Dot, then press and hold it for half a second, and it sinks into a sit (`.settle`) and stays
-  there instead of following; the same again, or the menu's "Dot stays put", and it comes back ("coming!"). A sitting Dot
+  there instead of following; the same again, or "Dot stays put" in Dot's menu (right-click the notch), and it comes back ("coming!"). A sitting Dot
   can still be petted, booped, picked up and thrown (it sits where it lands), still steps out of a click's way, and skips the
   call-over and the window-top perch. Talking or pointing take it along and it trots back to its spot after. Not kept
   across a relaunch or a display change.

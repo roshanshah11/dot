@@ -54,6 +54,14 @@ public struct NotchGeometry: Equatable {
         return abs(point.x - geometry.centerX) > (geometry.hasNotch ? geometry.notchWidth : geometry.compactSize.width) / 2
     }
 
+    /// Whether a point (AppKit screen coordinates) is on the notch itself, the tab's stem, which stays Dot's whatever
+    /// hangs below it. A right-click there opens Dot's menu.
+    public static func onNotch(_ point: CGPoint, geometry: NotchGeometry) -> Bool {
+        let band = max(geometry.notchHeight, 24)
+        guard point.y >= geometry.topY - band, point.y <= geometry.topY else { return false }
+        return !passesThrough(point, geometry: geometry)
+    }
+
     public static func measure(frame: CGRect, safeAreaTop: CGFloat, auxLeft: CGRect?, auxRight: CGRect?) -> NotchGeometry {
         let hasNotch = safeAreaTop > 0
         var centerX = frame.midX

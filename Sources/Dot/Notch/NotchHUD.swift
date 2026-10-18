@@ -180,6 +180,13 @@ final class NotchHUD {
     private var shrinkWork: DispatchWorkItem?
     private var sizeSink: AnyCancellable?
     private var mouseMonitors: [Any] = []
+    /// Dot's menu, the one the ● in the menu bar opens. A right-click (or control-click) on the notch opens it too,
+    /// so a menu bar too full to show the ● still leaves the menu a click away (his ask, 2026-10-17).
+    var menu: NSMenu?
+    /// Called when the notch starts or stops holding the menu (notch presence, a screen change).
+    var onHoldsMenuChanged: (() -> Void)?
+    /// Whether a right-click on the notch reaches the menu: the resting tab is up on a notched screen.
+    var holdsMenu: Bool { model.presence && currentGeometry().hasNotch }
 
     init() {
         model.onCollapseChanged = { [weak self] in self?.refreshVisibility() }
@@ -190,8 +197,12 @@ final class NotchHUD {
         if let color = Color(hex: accentHex) { model.accent = color }
         observeContentSize()
         watchMouse()
+        watchRightClicks()
         NotificationCenter.default.addObserver(forName: NSApplication.didChangeScreenParametersNotification, object: nil, queue: .main) { [weak self] _ in
-            Task { @MainActor in self?.reposition() }
+            Task { @MainActor in
+                self?.reposition()
+                self?.onHoldsMenuChanged?()
+            }
         }
         model.onOpenAgent = nil
         NotificationCenter.default.addObserver(forName: .dotShowInput, object: nil, queue: .main) { [weak self] _ in
@@ -592,9 +603,29 @@ final class NotchHUD {
         if panel.ignoresMouseEvents != through { panel.ignoresMouseEvents = through }
     }
 
+    private func watchRightClicks() {
+        let monitor = NSEvent.addLocalMonitorForEvents(matching: [.rightMouseDown, .leftMouseDown]) { [weak self] event in
+            let opened = MainActor.assumeIsolated { self?.openMenu(for: event) ?? false }
+            return opened ? nil : event
+        }
+        if let monitor { mouseMonitors.append(monitor) }
+    }
+
+    /// A right-click or control-click on the notch, or anywhere on the idle tab and its hover peek, opens Dot's menu
+    /// at the pointer. On a card hanging below, the click stays the card's.
+    private func openMenu(for event: NSEvent) -> Bool {
+        guard let menu, let panel, event.window === panel, let view = panel.contentView else { return false }
+        guard event.type == .rightMouseDown || event.modifierFlags.contains(.control) else { return false }
+        let point = panel.convertPoint(toScreen: event.locationInWindow)
+        guard !model.hasContent || NotchGeometry.onNotch(point, geometry: currentGeometry()) else { return false }
+        NSMenu.popUpContextMenu(menu, with: event, for: view)
+        return true
+    }
+
     func setPresence(_ on: Bool) {
         model.presence = on
         refreshVisibility()
+        onHoldsMenuChanged?()
     }
 
     private func refreshVisibility() {
@@ -735,7 +766,8 @@ struct NotchHUDView: View {
                     }.buttonStyle(.plain)
                 }
             }
-            Text("click to type, hold ⌃⌥ to talk, double-tap fn to record").font(.system(size: 10)).foregroundStyle(text.opacity(0.4))
+            Text("click to type, right-click for the menu, hold ⌃⌥ to talk, double-tap fn to record").font(.system(size: 10)).foregroundStyle(text.opacity(0.4))
+                .multilineTextAlignment(.center).lineLimit(2)
         }
         .padding(.horizontal, 14).padding(.bottom, 8)
     }

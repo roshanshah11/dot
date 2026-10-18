@@ -220,6 +220,15 @@ final class CoordinatesTests: XCTestCase {
         XCTAssertFalse(NotchGeometry.passesThrough(CGPoint(x: 952, y: 940), geometry: geometry), "below the menu bar is the tab's")
     }
 
+    func testRightClickOnTheNotchFindsTheMenu() {
+        let geometry = NotchGeometry.measure(frame: CGRect(x: 0, y: 0, width: 1512, height: 982), safeAreaTop: 32,
+                                             auxLeft: CGRect(x: 0, y: 950, width: 663, height: 32), auxRight: CGRect(x: 848, y: 950, width: 664, height: 32))
+        XCTAssertTrue(NotchGeometry.onNotch(CGPoint(x: 755, y: 966), geometry: geometry), "the middle of the notch")
+        XCTAssertTrue(NotchGeometry.onNotch(CGPoint(x: 665, y: 980), geometry: geometry), "its left edge")
+        XCTAssertFalse(NotchGeometry.onNotch(CGPoint(x: 952, y: 966), geometry: geometry), "a status item beside it")
+        XCTAssertFalse(NotchGeometry.onNotch(CGPoint(x: 755, y: 900), geometry: geometry), "a card hanging below")
+    }
+
     func testNotchSilhouetteKeepsTheMenuBarClearBesideTheNotch() {
         // A folded-task tab 415 wide under a 185 pt notch with a 32 pt menu bar band.
         let rect = CGRect(x: 0, y: 0, width: 415, height: 57)

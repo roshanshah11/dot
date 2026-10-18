@@ -90,6 +90,9 @@ struct DotConfig: Codable {
     var suggestionCooldownMinutes = 10
     /// Keep a small black tab under the notch when idle, so Dot visibly lives there.
     var notchPresence = true
+    /// The ● in the menu bar. Off, Dot's menu is a right-click on the notch, and the ● comes back only when there is no
+    /// notch tab to click (notch presence off, or no notched screen). His menu bar ran out of room (2026-10-17).
+    var menuBarIcon = false
     /// When he says "do it" in a walkthrough, Dot moves the real cursor and clicks the steps itself
     /// (never a send, buy or delete; his first move or key stops it).
     var driveEnabled = true
@@ -219,6 +222,7 @@ struct DotConfig: Codable {
         suggestions = get(.suggestions, d.suggestions)
         suggestionCooldownMinutes = get(.suggestionCooldownMinutes, d.suggestionCooldownMinutes)
         notchPresence = get(.notchPresence, d.notchPresence)
+        menuBarIcon = get(.menuBarIcon, d.menuBarIcon)
         driveEnabled = get(.driveEnabled, d.driveEnabled)
         eagerSpeech = get(.eagerSpeech, d.eagerSpeech)
         streamingTranscription = get(.streamingTranscription, d.streamingTranscription)

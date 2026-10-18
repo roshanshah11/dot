@@ -239,6 +239,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             hud.setAccent(hex: changed.pointerColorHex)
         }
         if changed.notchPresence != before.notchPresence { hud.setPresence(changed.notchPresence) }
+        if changed.menuBarIcon != before.menuBarIcon { placeStatusItem() }
         if changed.microphoneName != before.microphoneName { talk.setMicrophone(name: changed.microphoneName) }
         applyAliveSettings(changed, before: before)
         Log.info("settings: applied from the dot window")
@@ -473,6 +474,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         for menuItem in menu.items { menuItem.target = self }
         item.menu = menu
         statusItem = item
+        hud.menu = menu
+        hud.onHoldsMenuChanged = { [weak self] in self?.placeStatusItem() }
+        placeStatusItem()
+    }
+
+    /// The ● stays out of the menu bar while a right-click on the notch opens the same menu, unless `menuBarIcon` asks
+    /// for it. With no notch tab to click (notch presence off, no notched screen) it comes back, so the menu is never lost.
+    private func placeStatusItem() {
+        guard let statusItem else { return }
+        let show = config.menuBarIcon || !hud.holdsMenu
+        if statusItem.isVisible != show {
+            statusItem.isVisible = show
+            Log.info("menu: the ● \(show ? "is in the menu bar" : "steps aside; right-click the notch for the menu")")
+        }
     }
 
     @objc private func askByTyping() { hud.showInput() }

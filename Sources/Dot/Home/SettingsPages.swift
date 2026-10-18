@@ -511,6 +511,7 @@ struct CursorPage: View {
                 SettingToggle("Floating companion", detail: "dot beside the cursor", isOn: $model.settings.showCompanion)
                 SettingToggle("Show in screen recordings", detail: "Dot's windows appear in recordings and screen shares", isOn: $model.settings.showInRecordings)
                 SettingToggle("Notch presence", detail: "a small black tab under the notch when idle, so Dot visibly lives there", isOn: $model.settings.notchPresence)
+                SettingToggle("Menu bar icon", detail: "the ● in the menu bar; off, right-click the notch for Dot's menu (the ● comes back when there is no notch tab)", isOn: $model.settings.menuBarIcon)
                 SettingToggle("Caption bubble", detail: "a caption bubble beside the orb while it speaks; off keeps the words in the notch", isOn: $model.settings.cursorBubble)
             }
             SettingsSaveBar(model: model)

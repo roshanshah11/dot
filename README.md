@@ -125,7 +125,8 @@ and answers `{"wav": "/path"}` lines, as `scripts/dot-tts-kokoro.py` does.
 
 Phase 2 keys (all optional, defaults shown in `~/.config/dot/config.json` after the first launch):
 `showCompanion` (Dot beside the cursor at all times), `bubbleText`, `hudShowsResponse`,
-`morningGreeting`, `notchPresence` (the tab under the notch), `atlasRoot`, `atlasHarness`,
+`morningGreeting`, `notchPresence` (the tab under the notch), `menuBarIcon` (the ● in the menu bar; off by default,
+since a right-click on the notch opens the same menu, and it comes back on its own when there is no notch tab), `atlasRoot`, `atlasHarness`,
 `atlasPython`, `todayRefreshMinutes`, `talkSessionMaxTurns`, `talkEffort`, `walkthroughMaxSteps`,
 `jevEnabled`, `jevKeyFile`, `jevRouteThreshold`, `proactiveNotices`, `noticeCooldownMinutes`.
 Talk-mode Atlas tools come from `~/.config/dot/mcp-talk.json`, which starts Atlas's MCP server
