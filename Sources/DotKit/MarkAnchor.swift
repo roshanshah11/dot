@@ -56,12 +56,21 @@ public enum MarkTrackMath {
 
     /// Combine the prediction (instant, sometimes off: apps scale and smooth wheel deltas) with a measured
     /// translation from image registration (exact, a frame late). A measurement wins when it is confident and
-    /// plausible: within `slack` points of the prediction plus a generous factor for acceleration.
+    /// plausible: within `slack` points of the prediction plus a generous factor for acceleration. A shy one
+    /// (at least `agreeing`) still wins when it is close to the prediction: on a dark page (ChatGPT, 2026-10-17)
+    /// Vision's confidence stayed at 0.07-0.39 through a whole scroll while its shifts were right, and the
+    /// rare wrong ones (a fast flick past the captured region) are far off the prediction.
     public static func reconcile(predicted: CGVector, measured: CGVector?, confidence: Double, minConfidence: Double = 0.5,
-                                 slack: CGFloat = 80) -> CGVector {
-        guard let m = measured, confidence >= minConfidence else { return predicted }
-        let limitY = abs(predicted.dy) * 3 + slack, limitX = abs(predicted.dx) * 3 + slack
-        guard abs(m.dy) <= limitY, abs(m.dx) <= limitX else { return predicted }
+                                 slack: CGFloat = 80, agreeing: Double = 0.05) -> CGVector {
+        guard let m = measured else { return predicted }
+        if confidence >= minConfidence {
+            let limitY = abs(predicted.dy) * 3 + slack, limitX = abs(predicted.dx) * 3 + slack
+            guard abs(m.dy) <= limitY, abs(m.dx) <= limitX else { return predicted }
+            return m
+        }
+        guard confidence >= agreeing else { return predicted }
+        let toleranceY = max(16, abs(predicted.dy) * 0.35), toleranceX = max(16, abs(predicted.dx) * 0.35)
+        guard abs(m.dy - predicted.dy) <= toleranceY, abs(m.dx - predicted.dx) <= toleranceX else { return predicted }
         return m
     }
 
@@ -105,5 +114,38 @@ public enum MarkTrackMath {
         }
         let clipped = r.intersection(window)
         return clipped.isNull ? .null : clipped.integral
+    }
+}
+
+/// A scroll gesture moves content along one axis: NSScrollView scrolls only along the predominant axis
+/// (`usesPredominantAxisScrolling`, on by default) and browsers rail the same way. A trackpad stroke up a page
+/// still reports some sideways delta, and moving a mark by it walked a box 120 points off a ChatGPT equation
+/// in one scroll (2026-10-17) while the page never moved sideways. The axis is the one the gesture starts along,
+/// kept through its momentum.
+public struct ScrollRails: Equatable {
+    public enum Axis: Equatable, Sendable { case vertical, horizontal }
+    public private(set) var axis: Axis?
+    private var pending = CGVector.zero
+    private var lastEvent = -Double.infinity
+
+    public init() {}
+
+    /// One event's predicted translation kept to its gesture's axis. `began` is the event's scroll phase
+    /// "began"; a momentum event, or one within `gap` seconds of the last, continues the gesture.
+    public mutating func rail(_ delta: CGVector, at time: Double, began: Bool, isMomentum: Bool, gap: Double = 0.3) -> CGVector {
+        if began || (!isMomentum && time - lastEvent > gap) {
+            axis = nil
+            pending = .zero
+        }
+        lastEvent = time
+        if axis == nil {
+            pending.dx += delta.dx
+            pending.dy += delta.dy
+            if abs(pending.dx) + abs(pending.dy) >= 3 { axis = abs(pending.dy) >= abs(pending.dx) ? .vertical : .horizontal }
+        }
+        switch axis ?? (abs(delta.dy) >= abs(delta.dx) ? .vertical : .horizontal) {
+        case .vertical: return CGVector(dx: 0, dy: delta.dy)
+        case .horizontal: return CGVector(dx: delta.dx, dy: 0)
+        }
     }
 }

@@ -62,6 +62,7 @@ final class MarkTracker {
     private var tap: CFMachPort?
     private var tapSource: CFRunLoopSource?
     private var lastScroll: TimeInterval = 0
+    private var rails = ScrollRails()
     private var frameTimer: Timer?
     private var registering = false
     private var activationObserver: NSObjectProtocol?
@@ -212,12 +213,14 @@ final class MarkTracker {
                 let dx = event.getDoubleValueField(.scrollWheelEventPointDeltaAxis2), dy = event.getDoubleValueField(.scrollWheelEventPointDeltaAxis1)
                 let lx = event.getDoubleValueField(.scrollWheelEventDeltaAxis2), ly = event.getDoubleValueField(.scrollWheelEventDeltaAxis1)
                 let continuous = event.getIntegerValueField(.scrollWheelEventIsContinuous) != 0
+                let began = event.getIntegerValueField(.scrollWheelEventScrollPhase) == 1          // kCGScrollPhaseBegan
+                let momentum = event.getIntegerValueField(.scrollWheelEventMomentumPhase) != 0
                 let at = event.location
                 let target = pid_t(truncatingIfNeeded: event.getIntegerValueField(.eventTargetUnixProcessID))
                 MainActor.assumeIsolated {
                     // scrolling Dot's own panel or a card is not scrolling the window under it
                     guard target != me.ownPid, !me.isOverOwnWindow(at) else { return }
-                    me.scrolled(dx: dx, dy: dy, lx: lx, ly: ly, continuous: continuous, at: at)
+                    me.scrolled(dx: dx, dy: dy, lx: lx, ly: ly, continuous: continuous, began: began, momentum: momentum, at: at)
                 }
             }
             return Unmanaged.passUnretained(event)
@@ -264,7 +267,7 @@ final class MarkTracker {
             var cleared = m; cleared.needsRefind = false; marks[kind] = cleared
             let windowFrame = source.windowFrame
             let inWindow = m.rect.offsetBy(dx: -windowFrame.minX, dy: -windowFrame.minY)
-            let band = inWindow.insetBy(dx: -24, dy: -48).intersection(CGRect(origin: .zero, size: windowFrame.size)).integral
+            let band = inWindow.insetBy(dx: -40, dy: -80).intersection(CGRect(origin: .zero, size: windowFrame.size)).integral
             guard !band.isNull, band.width >= CGFloat(patch.width), band.height >= CGFloat(patch.height) else { continue }
             let windowID = source.windowID
             registering = true
@@ -287,6 +290,15 @@ final class MarkTracker {
                                         y: windowFrame.minY + band.minY + CGFloat(match.y) - now.patchOffset.dy)
                     let d = CGVector(dx: found.x - now.rect.minX, dy: found.y - now.rect.minY)
                     Log.info("track: re-found \(kind) at \(Int(d.dx)),\(Int(d.dy)) from the mark, score \(String(format: "%.2f", match.score)) vs \(String(format: "%.2f", match.runnerUp))")
+                    // What the mark covered is nowhere near it: it would sit on the wrong thing, so it goes, the way
+                    // marks go when he switches apps. A box on the wrong line is worse than no box.
+                    if match.score < Self.lostScore {
+                        Log.info("track: lost \(kind) (best match \(String(format: "%.2f", match.score))); cleared")
+                        self.onUpdate?(kind, Self.appKitRect(fromCG: now.rect), false, nil)
+                        self.marks[kind] = nil
+                        if self.marks.isEmpty { self.stop() }
+                        return
+                    }
                     guard match.score >= 0.8, match.score - match.runnerUp >= 0.02, abs(d.dx) > 0.5 || abs(d.dy) > 0.5 else { return }
                     now.rect = now.rect.offsetBy(dx: d.dx, dy: d.dy)
                     self.marks[kind] = now
@@ -297,10 +309,12 @@ final class MarkTracker {
         }
     }
 
-    private func scrolled(dx: Double, dy: Double, lx: Double, ly: Double, continuous: Bool, at point: CGPoint) {
+    private func scrolled(dx: Double, dy: Double, lx: Double, ly: Double, continuous: Bool, began: Bool = false, momentum: Bool = false,
+                          at point: CGPoint) {
         lastScroll = ProcessInfo.processInfo.systemUptime
+        let raw = MarkTrackMath.predictedTranslation(pointDeltaX: dx, pointDeltaY: dy, lineDeltaX: lx, lineDeltaY: ly, isContinuous: continuous)
+        let predicted = rails.rail(raw, at: lastScroll, began: began, isMomentum: momentum)
         guard var source = pixel, source.windowFrame.contains(point) else { return }
-        let predicted = MarkTrackMath.predictedTranslation(pointDeltaX: dx, pointDeltaY: dy, lineDeltaX: lx, lineDeltaY: ly, isContinuous: continuous)
         source.moveSinceImage.dx += predicted.dx
         source.moveSinceImage.dy += predicted.dy
         pixel = source
@@ -314,6 +328,8 @@ final class MarkTracker {
     }
 
     private var tickCount = 0
+    /// Below this the patch matched nothing near the mark (the ChatGPT box that walked off: 0.21).
+    static let lostScore: Float = 0.45
 
     private func tick() {
         tickCount += 1
