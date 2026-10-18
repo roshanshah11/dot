@@ -446,7 +446,8 @@ thrown", Android measures a fling's velocity. A fast cursor move alone can't be 
   "yo i crushed that handoff" (1.3-2.6 s each). `Dot --quip-test` runs it by hand.
 - Home: chattiness and context lines on General, the size picker on Cursor.
 - The notch (a side fix the same day): HeyClicky's resting notch, measured from its window, is exactly the camera housing (black
-  from x 663 to 848.5 pt, 32 pt tall). Dot's idle tab was the notch plus 18 pt a side and a 10 pt lip, and a folded task made it
+  from x 663 to 849 pt, 33 pt tall, on a notch that spans 663-848 by 32). Dot's idle tab was the notch plus 18 pt a side and a 10 pt lip, and a folded task made it
   415 x 57, covering the status items beside the notch. Now the resting tab is the notch, and anything wider hangs below the menu
   bar from a notch-wide stem (`NotchSilhouette`, after HeyClicky's `NotchSilhouetteShape`, `menuBarBandHeight`, `stemWidth`).
+  The window still spans the tab, so in the menu bar band beside the stem it lets clicks through (`NotchGeometry.passesThrough`).
   At rest Dot is invisible, part of the notch; hover the notch to see it.

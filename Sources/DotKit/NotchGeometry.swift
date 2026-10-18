@@ -31,8 +31,8 @@ public struct NotchGeometry: Equatable {
     }
 
     /// The resting tab: exactly the notch, the way HeyClicky's resting notch matches the camera housing
-    /// (measured 2026-10-17: black from x 663 to 848.5 pt and 32 pt tall on a 1512 pt screen whose notch
-    /// spans 663-848). Anything wider hangs below the menu bar (`NotchSilhouette`), so the status items
+    /// (measured from a screenshot on 2026-10-17: black from x 663 to 849 pt and 33 pt tall, on a 1512 pt
+    /// screen whose notch spans 663-848 and 32 pt). Anything wider hangs below the menu bar (`NotchSilhouette`), so the status items
     /// either side of the notch stay uncovered. A screen without a notch gets a thin sliver.
     public var compactSize: CGSize { hasNotch ? CGSize(width: notchWidth, height: notchHeight) : CGSize(width: 120, height: 4) }
 
@@ -44,6 +44,14 @@ public struct NotchGeometry: Equatable {
         let width = max(ceil(size.width), compactSize.width)
         let height = max(ceil(size.height), compactSize.height)
         return CGRect(x: (centerX - width / 2).rounded(), y: topY - height, width: width, height: height)
+    }
+
+    /// Whether a point (AppKit screen coordinates) is in the menu bar band beside the notch, where the idle
+    /// tab draws nothing and the status items must get the click.
+    public static func passesThrough(_ point: CGPoint, geometry: NotchGeometry) -> Bool {
+        let band = max(geometry.notchHeight, 24)
+        guard point.y >= geometry.topY - band else { return false }
+        return abs(point.x - geometry.centerX) > (geometry.hasNotch ? geometry.notchWidth : geometry.compactSize.width) / 2
     }
 
     public static func measure(frame: CGRect, safeAreaTop: CGFloat, auxLeft: CGRect?, auxRight: CGRect?) -> NotchGeometry {

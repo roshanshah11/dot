@@ -179,6 +179,7 @@ final class NotchHUD {
     private var contentSize: CGSize = .zero
     private var shrinkWork: DispatchWorkItem?
     private var sizeSink: AnyCancellable?
+    private var mouseMonitors: [Any] = []
 
     init() {
         model.onCollapseChanged = { [weak self] in self?.refreshVisibility() }
@@ -188,6 +189,7 @@ final class NotchHUD {
     init(accentHex: String) {
         if let color = Color(hex: accentHex) { model.accent = color }
         observeContentSize()
+        watchMouse()
         NotificationCenter.default.addObserver(forName: NSApplication.didChangeScreenParametersNotification, object: nil, queue: .main) { [weak self] _ in
             Task { @MainActor in self?.reposition() }
         }
@@ -497,6 +499,7 @@ final class NotchHUD {
         panel.becomesKeyOnlyIfNeeded = false
         panel.hidesOnDeactivate = false
         panel.isReleasedWhenClosed = false
+        panel.acceptsMouseMovedEvents = true   // so the local monitor sees the mouse leave the stem for the band beside it
         panel.contentView = NSHostingView(rootView: NotchHUDView(model: model, geometry: currentGeometry(), onClose: { [weak self] in
             self?.hideInput()
             self?.dismissAnswer()
@@ -557,6 +560,7 @@ final class NotchHUD {
         shrinkWork?.cancel()
         let roomy = geometry.frame(fitting: CGSize(width: max(target.width, current.width), height: max(target.height, current.height)))
         if roomy != current { panel.setFrame(roomy, display: true) }
+        updateMousePassThrough()
         guard target != roomy else { return }
         let work = DispatchWorkItem { [weak self] in
             guard let self, let panel = self.panel else { return }
@@ -564,6 +568,28 @@ final class NotchHUD {
         }
         shrinkWork = work
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.35, execute: work)
+    }
+
+    /// The idle tab draws only a notch-wide stem through the menu bar, but its window spans the whole tab,
+    /// and this window takes the clicks under its clear parts too (the old 620 x 620 panel took every click
+    /// under it, round six). So in the menu bar band beside the stem, the window lets the mouse through to
+    /// the status items there.
+    private func watchMouse() {
+        let check: (NSEvent) -> Void = { [weak self] _ in MainActor.assumeIsolated { self?.updateMousePassThrough() } }
+        if let global = NSEvent.addGlobalMonitorForEvents(matching: [.mouseMoved, .leftMouseDragged], handler: check) {
+            mouseMonitors.append(global)
+        }
+        if let local = NSEvent.addLocalMonitorForEvents(matching: [.mouseMoved, .leftMouseDragged], handler: { check($0); return $0 }) {
+            mouseMonitors.append(local)
+        }
+    }
+
+    private func updateMousePassThrough() {
+        guard let panel, panel.isVisible else { return }
+        let geometry = currentGeometry()
+        let idle = !model.hasContent && model.presence
+        let through = idle && NotchGeometry.passesThrough(NSEvent.mouseLocation, geometry: geometry)
+        if panel.ignoresMouseEvents != through { panel.ignoresMouseEvents = through }
     }
 
     func setPresence(_ on: Bool) {
