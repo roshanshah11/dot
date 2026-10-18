@@ -131,8 +131,6 @@ final class HUDModel: ObservableObject {
     @Published var notices: [NotchNotice] = []
     /// The panel's corners glow for a moment when something live lands (a notice, a finished agent).
     @Published var glow = false
-    /// Files the agents made lately, as tiles on the hover peek; each can be dragged out.
-    @Published var peekFiles: [URL] = []
     @Published var morning: MorningCard?
     /// The context mode in words ("desk mode"), the idle header when nothing else is on (VI-03).
     @Published var modeWord: String?
@@ -700,7 +698,7 @@ struct NotchHUDView: View {
     /// Dot's idle presence, after HeyClicky's resting notch (measured 2026-10-17): at rest exactly the notch,
     /// nothing beside it and nothing below it, so the status items either side stay uncovered. Anything it
     /// shows (a task, a meeting line, the hover peek) hangs below the menu bar from a notch-wide stem
-    /// (`NotchSilhouette`). Hover the notch for the day in one line and the agents' latest files; click to type.
+    /// (`NotchSilhouette`). Hover the notch for "open dot"; click to type; right-click for Dot's menu.
     private var idleStrip: some View {
         let shape = NotchSilhouetteShape(stem: geometry.hasNotch ? geometry.notchWidth : 0, band: geometry.notchHeight)
         return VStack(spacing: 0) {
@@ -744,44 +742,25 @@ struct NotchHUDView: View {
     }
 
     private var idleWidth: CGFloat {
-        if model.hovering { return min(geometry.notchWidth + (model.peekFiles.isEmpty ? 220 : 300), 500) }
+        if model.hovering { return geometry.notchWidth }
         if !model.foldedTasks.isEmpty { return min(geometry.notchWidth + 80 + CGFloat(min(model.foldedTasks.count, 3)) * 150, 560) }
         return (model.recordingLine ?? model.listeningLine ?? model.meetingLine) == nil ? geometry.compactSize.width : geometry.notchWidth + 120
     }
 
-    /// The hover peek: the day in a line, the ways in, and the agents' latest files as tiles he can drag out.
+    /// The hover peek: one way in, to the Dot window. The day line, the agents' file tiles and the hints went
+    /// (his verdict 2026-10-18: "it looks bad... just give me the option to open dot").
     private var hoverPeek: some View {
-        VStack(spacing: 6) {
-            Text(model.todayLine ?? "hold control and option and talk").font(.system(size: 11.5)).foregroundStyle(text.opacity(0.75)).lineLimit(2)
-            if !model.peekFiles.isEmpty {
-                HStack(spacing: 8) {
-                    ForEach(model.peekFiles.prefix(4), id: \.self) { url in fileTile(url) }
-                    Button { NotificationCenter.default.post(name: .dotOpenHome, object: nil) } label: {
-                        VStack(spacing: 3) {
-                            Image(systemName: "rectangle.grid.2x2").font(.system(size: 14)).foregroundStyle(model.accent)
-                            Text("open dot").font(.system(size: 9.5)).foregroundStyle(text.opacity(0.6))
-                        }
-                        .frame(width: 56, height: 44)
-                        .background(Color.white.opacity(0.05), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-                    }.buttonStyle(.plain)
-                }
+        Button { NotificationCenter.default.post(name: .dotOpenHome, object: nil) } label: {
+            HStack(spacing: 5) {
+                Image(systemName: "rectangle.grid.2x2").font(.system(size: 10.5)).foregroundStyle(model.accent)
+                Text("open dot").font(.system(size: 11, weight: .medium)).foregroundStyle(text.opacity(0.85))
             }
-            Text("click to type, right-click for the menu, hold ⌃⌥ to talk, double-tap fn to record").font(.system(size: 10)).foregroundStyle(text.opacity(0.4))
-                .multilineTextAlignment(.center).lineLimit(2)
+            .padding(.horizontal, 12).padding(.vertical, 5)
+            .background(Color.white.opacity(0.08), in: Capsule())
+            .contentShape(Capsule())
         }
-        .padding(.horizontal, 14).padding(.bottom, 8)
-    }
-
-    private func fileTile(_ url: URL) -> some View {
-        VStack(spacing: 3) {
-            Image(systemName: Self.symbol(forFile: url)).font(.system(size: 14)).foregroundStyle(Theme.fileColor(url) ?? model.accent)
-            Text(url.lastPathComponent).font(.system(size: 9.5)).foregroundStyle(text.opacity(0.8)).lineLimit(1).truncationMode(.middle)
-        }
-        .frame(width: 72, height: 44)
-        .background(Color.white.opacity(0.07), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-        .onTapGesture { NSWorkspace.shared.open(url) }
-        .onDrag { NSItemProvider(object: url as NSURL) }
-        .help(url.lastPathComponent)
+        .buttonStyle(.plain)
+        .padding(.bottom, 8)
     }
 
     static func symbol(forFile url: URL) -> String {

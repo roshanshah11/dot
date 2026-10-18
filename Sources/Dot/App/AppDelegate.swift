@@ -176,10 +176,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 // A hop when it lands, a droop when it fails (docs/alive.md 2.6), and maybe a quip.
                 self?.overlay.react(failed ? .agentFailed : .agentDone)
                 self?.noticer.quip(failed ? .agentFailed : .agentDone)
-                self?.refreshPeek()
             }
         }
-        refreshPeek()
         installStatusItem()
         AccessibilityContext.observeForegroundApp()
         hotkeys.onEvent = { [weak self] event in self?.talk.hotkey(event) }
@@ -194,17 +192,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         morning.start()
         routines.start()
         announceUpdate()
-    }
-
-    /// The agents' latest files, as tiles on the notch's hover peek (HeyClicky's agent peek).
-    private func refreshPeek() {
-        let files = agents.roster().flatMap { agents.outputFiles(for: $0).prefix(3) }
-            .sorted { a, b in
-                let da = (try? a.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? .distantPast
-                let db = (try? b.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? .distantPast
-                return da > db
-            }
-        hud.model.peekFiles = Array(files.prefix(4))
     }
 
     /// Once after an update: what changed, with the README a click away.

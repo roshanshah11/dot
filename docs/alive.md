@@ -445,8 +445,9 @@ thrown", Android measures a fling's velocity. A fast cursor move alone can't be 
 - Sitting (his ask the same evening: "sometimes i dont want my clicky interferring... temporarily sit my dot with a long
   press? can still pet"): pet Dot, then press and hold it for half a second, and it sinks into a sit (`.settle`) and stays
   there instead of following; the same again, or "Dot stays put" in Dot's menu (right-click the notch), and it comes back ("coming!"). A sitting Dot
-  can still be petted, booped, picked up and thrown (it sits where it lands), still steps out of a click's way, and skips the
-  call-over and the window-top perch. Talking or pointing take it along and it trots back to its spot after. Not kept
+  can still be petted, booped and thrown (it sits where it lands). It holds its spot: no dodging, and its click target is up
+  whenever the cursor is on it, no rub needed, so a plain drag moves it to a new spot (his ask 2026-10-18: "allow me to change
+  where i move it after i put it put"). It skips the call-over and the window-top perch. Talking or pointing take it along and it trots back to its spot after. Not kept
   across a relaunch or a display change.
 - Throwing: `Toss` (friction 0.45 s, restitution 0.6, cap 4,000 px/s, release velocity over the last 50 ms). The animator stretches
   a held Dot, tumbles a thrown one, squashes it on each bounce, gives it spiral eyes for 1 s after it lands and a shake-off for 0.4 s.

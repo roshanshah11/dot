@@ -1618,12 +1618,13 @@ final class OverlayManager {
         let talking = model.phase != .idle
         let sitSpot = sitting?.index == index && !talking ? sitting?.spot : nil
         let buttonDown = NSEvent.pressedMouseButtons != 0
-        updateArming(index, cursor: cursor, now: now, rubbing: rubOn, allowed: !talking)
+        updateArming(index, cursor: cursor, now: now, allowed: !talking, sitting: sitSpot != nil)
         let bounds = CGRect(origin: .zero, size: model.screenSize).insetBy(dx: radius + 2, dy: radius + 2)
         if talking {
             leashes[index].heel()
         } else {
-            if let spot = aside(index, cursor: cursor, velocity: velocity, now: now, buttonDown: buttonDown, bounds: bounds) {
+            // A sitting Dot holds its spot (he moves it by dragging); a following one gets out of a click's way.
+            if sitSpot == nil, let spot = aside(index, cursor: cursor, velocity: velocity, now: now, buttonDown: buttonDown, bounds: bounds) {
                 hop(index, to: spot)
                 return
             }
@@ -1688,18 +1689,19 @@ final class OverlayManager {
 
     // MARK: Boop, grab and toss (round two)
 
-    /// The click target takes the mouse only around a rub: while he rubs Dot and for 1.5 s after, with the
-    /// cursor still on it. Anything else over Dot (a careful click, a context menu's item under it) goes
-    /// through to whatever is underneath. A press in progress keeps it.
-    private func updateArming(_ index: Int, cursor: CGPoint, now: Double, rubbing rubOn: Bool, allowed: Bool) {
+    /// The click target takes the mouse only when the cursor on Dot can pick it up (`Grip`): around a rub, or any
+    /// time Dot sits where he put it. Anything else over a following Dot (a careful click, a context menu's item
+    /// under it) goes through to whatever is underneath. A press in progress keeps it.
+    private func updateArming(_ index: Int, cursor: CGPoint, now: Double, allowed: Bool, sitting: Bool) {
         let distance = hypot(cursor.x - models[index].position.x, cursor.y - models[index].position.y)
         if distance <= orbSize / 2 * 1.25 {
             if restingOnOrbSince[index] == nil { restingOnOrbSince[index] = now }
         } else if distance > orbSize / 2 * 1.8 {
             restingOnOrbSince[index] = nil
         }
-        let petting = rubOn || now - lastRubAt[index] < 1.5
-        let on = allowed && petting && distance <= orbSize / 2 * 1.3 && now >= armSuppressedUntil && !mouseCaptured && parkedScreen == nil
+        let reachable = Grip.reachable(cursor: cursor, orb: models[index].position, radius: orbSize / 2,
+                                       sinceRub: now - lastRubAt[index], sitting: sitting)
+        let on = allowed && reachable && now >= armSuppressedUntil && !mouseCaptured && parkedScreen == nil
         setArmed(index, on || grab?.index == index)
     }
 

@@ -80,8 +80,7 @@ enum Snapshots {
                                  nextActions: ["Add a section on their CEO", "Compare with Citadel's year", "Turn it into a one-pager"], startedAt: Date().addingTimeInterval(-176))
         return [
             ("idle", make { _ in }),
-            ("idle-hover", make { m in m.hovering = true; m.todayLine = "next: ugе interview in 42 min · 8 on the calendar today · 48 mail waiting"
-                m.peekFiles = [URL(fileURLWithPath: "/tmp/bridgewater_news_brief.pdf"), URL(fileURLWithPath: "/tmp/comps.xlsx"), URL(fileURLWithPath: "/tmp/notes.md")] }),
+            ("idle-hover", make { m in m.hovering = true }),
             ("idle-recording", make { m in m.recordingLine = "recording 1:23" }),
             ("listening", make { m in m.phase = .listening; m.level = 0.55; m.transcript = "where does it explain the discount rate" }),
             ("thinking", make { m in m.phase = .thinking; m.transcript = "where does it explain the discount rate" }),

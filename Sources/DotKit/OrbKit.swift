@@ -356,6 +356,18 @@ public enum Dodge {
     }
 }
 
+/// When the cursor on Dot can pick it up. Following, only around a rub (while rubbing and for 1.5 s after), so a
+/// careful click on whatever is under Dot still lands there. Sitting where he put it, any time: moving a sitting Dot
+/// is a plain drag (his ask, 2026-10-18: "allow me to change where i move it after i put it put").
+public enum Grip {
+    public static let afterRub: Double = 1.5
+
+    public static func reachable(cursor: CGPoint, orb: CGPoint, radius: CGFloat, sinceRub: Double, sitting: Bool) -> Bool {
+        guard hypot(cursor.x - orb.x, cursor.y - orb.y) <= radius * 1.3 else { return false }
+        return sitting || sinceRub < afterRub
+    }
+}
+
 /// Waking from the pet routine: a cursor move of more than 6 px (oneko's IdleSpace, cute-C43) or a key.
 public enum PetWake {
     public static let distance: CGFloat = 6

@@ -607,6 +607,16 @@ final class OrbAnimatorTests: XCTestCase {
         XCTAssertGreaterThan(centre.x, orb.x)
     }
 
+    func testASittingDotCanBePickedUpWithoutARub() {
+        let orb = CGPoint(x: 500, y: 400), on = CGPoint(x: 505, y: 402)
+        XCTAssertFalse(Grip.reachable(cursor: on, orb: orb, radius: 12, sinceRub: .infinity, sitting: false),
+                       "following, a plain click goes through to what is under Dot")
+        XCTAssertTrue(Grip.reachable(cursor: on, orb: orb, radius: 12, sinceRub: 0.4, sitting: false), "just after a rub")
+        XCTAssertTrue(Grip.reachable(cursor: on, orb: orb, radius: 12, sinceRub: .infinity, sitting: true), "sitting: drag it anywhere")
+        XCTAssertFalse(Grip.reachable(cursor: CGPoint(x: 540, y: 400), orb: orb, radius: 12, sinceRub: .infinity, sitting: true),
+                       "but only with the cursor on it")
+    }
+
     func testHeldTossedThenDizzyThenBackToNormal() {
         let animator = OrbAnimator(seed: 31)
         var input = OrbInput()
