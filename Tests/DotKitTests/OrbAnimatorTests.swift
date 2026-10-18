@@ -539,6 +539,14 @@ final class OrbAnimatorTests: XCTestCase {
         XCTAssertFalse(wiggle(span: 300, hz: 4, at: CGPoint(x: 200, y: 200)), "a big shake (find-my-cursor) does not")
         XCTAssertFalse(wiggle(span: 30, hz: 12, at: CGPoint(x: 200, y: 200)), "a fast jitter does not")
         XCTAssertFalse(wiggle(span: 24, hz: 3, at: CGPoint(x: 605, y: 600)), "on Dot it's a rub, not a call")
+        XCTAssertFalse(wiggle(span: 6, hz: 3, at: CGPoint(x: 200, y: 200)), "aiming corrections of a few points don't count")
+        var held = CallOverDetector()
+        var heldFired = false
+        for i in 0..<72 {
+            let t = Double(i) / fps
+            if held.add(cursor: CGPoint(x: 200 + 12 * sin(t * 2 * .pi * 3), y: 200), at: t, orb: orb, radius: 12, buttonDown: true) { heldFired = true }
+        }
+        XCTAssertFalse(heldFired, "not while a button is down (a drag, a selection)")
         var straight = CallOverDetector()
         var fired = false
         for i in 0..<60 { if straight.add(cursor: CGPoint(x: 100 + CGFloat(i), y: 100), at: Double(i) / fps, orb: orb, radius: 12) { fired = true } }
@@ -582,6 +590,21 @@ final class OrbAnimatorTests: XCTestCase {
         XCTAssertNotNil(spot)
         XCTAssertGreaterThan(abs(spot!.y - orb.y), 30, "out of the cursor's path")
         XCTAssertNil(Dodge.spot(cursor: CGPoint(x: 200, y: 200), velocity: CGVector(dx: 3000, dy: 0), orb: orb, radius: 12, bounds: bounds), "far away: no hop")
+    }
+
+    func testAsideMovesDotOutFromUnderTheCursor() {
+        let bounds = CGRect(x: 14, y: 14, width: 972, height: 772)
+        let orb = CGPoint(x: 500, y: 400)
+        let spot = Dodge.aside(cursor: CGPoint(x: 496, y: 398), orb: orb, radius: 12, bounds: bounds)
+        XCTAssertGreaterThan(hypot(spot.x - 496, spot.y - 398), 26, "clear of the cursor")
+        XCTAssertGreaterThan(spot.x, orb.x, "away from the cursor")
+        // In a corner, it goes the other way instead of staying under the cursor.
+        let corner = Dodge.aside(cursor: CGPoint(x: 980, y: 780), orb: CGPoint(x: 984, y: 784), radius: 12, bounds: bounds)
+        XCTAssertGreaterThan(hypot(corner.x - 980, corner.y - 780), 26)
+        XCTAssertTrue(bounds.contains(corner))
+        // Dead centre: down and to the right.
+        let centre = Dodge.aside(cursor: orb, orb: orb, radius: 12, bounds: bounds)
+        XCTAssertGreaterThan(centre.x, orb.x)
     }
 
     func testHeldTossedThenDizzyThenBackToNormal() {

@@ -435,9 +435,13 @@ thrown", Android measures a fling's velocity. A fast cursor move alone can't be 
 
 - Petting: `Leash` (90 px scaled by orbSize / 24), `RubDetector` over the orb, `CallOverDetector` anywhere else, all in
   `Sources/DotKit/OrbKit.swift`. The click target is `OrbHandle` in `OverlayWindow.swift`: a non-activating panel over the orb
-  that paints an almost invisible disc (fully clear pixels let clicks fall through) and ignores the mouse until he has rested on
-  Dot for 0.3 s or is rubbing it. A press boops; a drag over 4 px picks Dot up; letting go throws it (`Toss`), or sets it down
-  under 300 px/s or with Reduce Motion on. A fast approach (over 900 px/s) hops Dot aside (`Dodge`).
+  that ignores the mouse except while he rubs Dot and for 1.5 s after (the review found that arming after a 0.3 s rest would take
+  a careful click, or a context menu's item, meant for what sits under Dot). So: pet it, then a press boops, a drag over 4 px
+  picks Dot up, and letting go throws it (`Toss`), or sets it down under 300 px/s (counting the release point) or with Reduce
+  Motion on. A scroll or a right-click over the armed target is passed on to the window underneath. Dot gets out of the way of
+  clicks: a fast approach (over 900 px/s) hops it aside (`Dodge.spot`), and so does the cursor sitting on it for 0.6 s with no
+  rub in the last 3 s (`Dodge.aside`). The call-over needs runs of 8 px or more and no button down. While he talks Dot stays
+  beside the cursor as before, with no leash.
 - Throwing: `Toss` (friction 0.45 s, restitution 0.6, cap 4,000 px/s, release velocity over the last 50 ms). The animator stretches
   a held Dot, tumbles a thrown one, squashes it on each bounce, gives it spiral eyes for 1 s after it lands and a shake-off for 0.4 s.
 - Context lines: `QuipContext`, `QuipPrompt` and `QuipLine` in DotKit; the writer runs one `claude -p` per quip on `quipModel`

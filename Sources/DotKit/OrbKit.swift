@@ -234,6 +234,8 @@ public struct CallOverDetector {
     public var maxSpan: CGFloat = 40
     public var maxSpeed: Double = 800
     public var cooldown: Double = 3
+    /// Each run between reversals is at least this long, so aiming corrections of a few points don't count.
+    public var minRun: CGFloat = 8
 
     private var samples: [(x: CGFloat, y: CGFloat, t: Double)] = []
     private var lastFired = -Double.infinity
@@ -241,8 +243,8 @@ public struct CallOverDetector {
     public init() {}
 
     /// Feed one cursor sample; true once when a call-over completes.
-    public mutating func add(cursor: CGPoint, at time: Double, orb: CGPoint, radius: CGFloat) -> Bool {
-        if hypot(cursor.x - orb.x, cursor.y - orb.y) <= radius * 1.6 { samples.removeAll(); return false }
+    public mutating func add(cursor: CGPoint, at time: Double, orb: CGPoint, radius: CGFloat, buttonDown: Bool = false) -> Bool {
+        if buttonDown || hypot(cursor.x - orb.x, cursor.y - orb.y) <= radius * 1.6 { samples.removeAll(); return false }
         if let last = samples.last {
             let speed = Double(hypot(cursor.x - last.x, cursor.y - last.y)) / max(time - last.t, 1e-3)
             if speed > maxSpeed { samples.removeAll() }
@@ -261,7 +263,7 @@ public struct CallOverDetector {
             guard abs(dx) > 0.01 else { continue }
             let sign: CGFloat = dx > 0 ? 1 : -1
             if direction == 0 || sign == direction { run += abs(dx) } else {
-                if run >= 1.5 { flips += 1 }
+                if run >= minRun { flips += 1 }
                 run = abs(dx)
             }
             direction = sign
@@ -338,6 +340,19 @@ public enum Dodge {
         let hop = radius * 3.2
         let spot = CGPoint(x: orb.x + side.dx * hop, y: orb.y + side.dy * hop)
         return CGPoint(x: min(max(spot.x, bounds.minX), bounds.maxX), y: min(max(spot.y, bounds.minY), bounds.maxY))
+    }
+
+    /// Where to scoot when the cursor sits on Dot: away from the cursor (down and right when it is dead
+    /// centre), and the other way when a screen edge would leave it under the cursor.
+    public static func aside(cursor: CGPoint, orb: CGPoint, radius: CGFloat, bounds: CGRect) -> CGPoint {
+        var away = CGVector(dx: orb.x - cursor.x, dy: orb.y - cursor.y)
+        let length = hypot(away.dx, away.dy)
+        away = length < 1 ? CGVector(dx: 0.8, dy: 0.6) : CGVector(dx: away.dx / length, dy: away.dy / length)
+        let hop = radius * 3.2
+        func clamp(_ p: CGPoint) -> CGPoint { CGPoint(x: min(max(p.x, bounds.minX), bounds.maxX), y: min(max(p.y, bounds.minY), bounds.maxY)) }
+        let spot = clamp(CGPoint(x: orb.x + away.dx * hop, y: orb.y + away.dy * hop))
+        if hypot(spot.x - cursor.x, spot.y - cursor.y) >= radius * 2.2 { return spot }
+        return clamp(CGPoint(x: cursor.x - away.dx * hop, y: cursor.y - away.dy * hop))
     }
 }
 

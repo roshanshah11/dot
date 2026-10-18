@@ -830,7 +830,13 @@ final class OverlayManager {
     /// The click target over each orb, and since when the cursor has rested on the orb (round two).
     private var handles: [OrbHandle] = []
     private var restingOnOrbSince: [Double?] = []
+    /// The last frame each orb was being rubbed; the click target stays armed a moment after.
+    private var lastRubAt: [Double] = []
     private var armed: [Bool] = []
+    /// A scroll or a right-click just went through the armed target: don't re-arm it for a second.
+    private var armSuppressedUntil: Double = 0
+    /// The orb whose flight `flightTimer` is running, so a new flight can settle it.
+    private weak var flyingModel: CompanionModel?
     private var mouseCaptured = false
     /// He pressed on Dot: where the press was, the drag's samples (overlay points), and whether it moved.
     private var grab: (index: Int, samples: [(point: CGPoint, time: Double)], moved: Bool)?
@@ -925,6 +931,7 @@ final class OverlayManager {
         callOvers = []
         handles = []
         restingOnOrbSince = []
+        lastRubAt = []
         armed = []
         rubs = []
         leads = []
@@ -947,8 +954,14 @@ final class OverlayManager {
             handle.onDown = { [weak self] point in self?.pressed(index, at: point) }
             handle.onDrag = { [weak self] point in self?.dragged(index, to: point) }
             handle.onUp = { [weak self] point in self?.released(index, at: point) }
+            handle.onPassOn = { [weak self] in
+                guard let self else { return }
+                self.armSuppressedUntil = self.clock + 1
+                for i in self.handles.indices where self.grab?.index != i { self.setArmed(i, false) }
+            }
             handles.append(handle)
             restingOnOrbSince.append(nil)
+            lastRubAt.append(-.infinity)
             armed.append(false)
             rubs.append(RubDetector())
             leads.append(.zero)
@@ -1055,6 +1068,7 @@ final class OverlayManager {
     func setOrbSize(_ size: CGFloat) {
         orbSize = min(max(size, 16), 36)
         for model in models { model.orbSize = orbSize }
+        for index in leashes.indices { leashes[index].radius = 90 * orbSize / 24 }
     }
 
     private var clock: Double { ProcessInfo.processInfo.systemUptime }
@@ -1439,7 +1453,12 @@ final class OverlayManager {
         for i in handles.indices { setArmed(i, false) }
         parkedScreen = index
         mouseAtPark = NSEvent.mouseLocation
-        for (i, model) in models.enumerated() where i != index { model.visible = false; model.chip = nil; model.tailTo = nil }
+        for (i, model) in models.enumerated() where i != index {
+            model.visible = false
+            model.chip = nil
+            model.tailTo = nil
+            if [.flying, .held, .tossed].contains(model.motion) { model.motion = .following }
+        }
         models[index].visible = true
     }
 
@@ -1489,7 +1508,7 @@ final class OverlayManager {
     private var tickCount = 0
 
     private func tick(jump: Bool) {
-        guard presence || transientVisible else { return }
+        guard presence || transientVisible else { letGo(); return }
         tickCount += 1
         let now = clock
         let dt = min(max(now - (lastTickTime ?? now - 1.0 / 60.0), 1.0 / 240.0), 0.1)
@@ -1547,8 +1566,9 @@ final class OverlayManager {
     }
 
     /// One frame of following, on the leash (round two): Dot sits while the cursor stays near and trots to
-    /// its spot once the cursor goes far. It reads a rub off the cursor's wiggle over it, a call-over off a
-    /// gentle wiggle anywhere else, hops aside from a fast approach, and arms its click target when he rests on it.
+    /// its spot once the cursor goes far. It reads a rub off the cursor's wiggle over it and a call-over off
+    /// a gentle wiggle anywhere else, gets out of the way of a click (`aside`), and arms its click target
+    /// only around a rub. While he talks it stays beside the cursor as before, without the leash.
     private func follow(index: Int, desired: CGPoint, mouse: CGPoint, velocity: CGVector, now: Double, dt: Double) {
         let model = models[index]
         let radius = orbSize / 2
@@ -1558,24 +1578,29 @@ final class OverlayManager {
             rubbing[index] = rubOn
             if rubOn { onPetted?() }
         }
+        if rubOn { lastRubAt[index] = now }
         animators[index].setRubbing(rubOn, direction: Double(rubs[index].lastDirection), at: now)
-        updateArming(index, cursor: cursor, now: now, rubbing: rubOn)
+        let talking = model.phase != .idle
+        let buttonDown = NSEvent.pressedMouseButtons != 0
+        updateArming(index, cursor: cursor, now: now, rubbing: rubOn, allowed: !talking)
         let bounds = CGRect(origin: .zero, size: model.screenSize).insetBy(dx: radius + 2, dy: radius + 2)
-        // A fast approach is a click on something under Dot: hop out of the way.
-        if !armed[index], !model.reduceMotion,
-           let spot = Dodge.spot(cursor: cursor, velocity: velocity, orb: model.position, radius: radius, bounds: bounds) {
-            hop(index, to: spot)
-            return
-        }
-        // A gentle wiggle anywhere else calls Dot over, under the cursor, where the wiggle becomes a pet.
-        if callOvers[index].add(cursor: cursor, at: now, orb: model.position, radius: radius) {
-            let under = CGPoint(x: min(max(cursor.x, bounds.minX), bounds.maxX), y: min(max(cursor.y + radius * 0.5, bounds.minY), bounds.maxY))
-            hop(index, to: under)
-            return
+        if talking {
+            leashes[index].heel()
+        } else {
+            if let spot = aside(index, cursor: cursor, velocity: velocity, now: now, buttonDown: buttonDown, bounds: bounds) {
+                hop(index, to: spot)
+                return
+            }
+            // A gentle wiggle anywhere else calls Dot over, under the cursor, where the wiggle becomes a pet.
+            if callOvers[index].add(cursor: cursor, at: now, orb: model.position, radius: radius, buttonDown: buttonDown) {
+                let under = CGPoint(x: min(max(cursor.x, bounds.minX), bounds.maxX), y: min(max(cursor.y + radius * 0.5, bounds.minY), bounds.maxY))
+                hop(index, to: under)
+                return
+            }
         }
         var spring = followers[index]
-        let moving = !animators[index].isRecovering && !armed[index]
-            && leashes[index].update(cursor: cursor, orb: model.position, target: desired)
+        let moving = talking || (!animators[index].isRecovering && !armed[index]
+            && leashes[index].update(cursor: cursor, orb: model.position, target: desired))
         if moving {
             spring.duration = 0.25
             spring.bounce = 0.12
@@ -1590,6 +1615,19 @@ final class OverlayManager {
         speeds[index] = spring.speed
     }
 
+    /// Out of the way of a click: a fast approach means something under Dot is about to be clicked, and so
+    /// does a cursor that sits on Dot for 0.6 s without a rub (the leash leaves Dot where things get clicked).
+    private func aside(_ index: Int, cursor: CGPoint, velocity: CGVector, now: Double, buttonDown: Bool, bounds: CGRect) -> CGPoint? {
+        let model = models[index]
+        let radius = orbSize / 2
+        guard !armed[index], !buttonDown else { return nil }
+        if !model.reduceMotion, let spot = Dodge.spot(cursor: cursor, velocity: velocity, orb: model.position, radius: radius, bounds: bounds) {
+            return spot
+        }
+        guard let since = restingOnOrbSince[index], now - since >= 0.6, now - lastRubAt[index] > 3 else { return nil }
+        return Dodge.aside(cursor: cursor, orb: model.position, radius: radius, bounds: bounds)
+    }
+
     /// A quick hop to a spot nearby (a dodge or a call-over); it sits there after.
     private func hop(_ index: Int, to spot: CGPoint) {
         let model = models[index]
@@ -1602,17 +1640,33 @@ final class OverlayManager {
 
     // MARK: Boop, grab and toss (round two)
 
-    /// The click target takes the mouse only once he has rested on Dot for 0.3 s or is rubbing it, so a
-    /// click meant for whatever is under Dot still lands there.
-    private func updateArming(_ index: Int, cursor: CGPoint, now: Double, rubbing rubOn: Bool) {
+    /// The click target takes the mouse only around a rub: while he rubs Dot and for 1.5 s after, with the
+    /// cursor still on it. Anything else over Dot (a careful click, a context menu's item under it) goes
+    /// through to whatever is underneath. A press in progress keeps it.
+    private func updateArming(_ index: Int, cursor: CGPoint, now: Double, rubbing rubOn: Bool, allowed: Bool) {
         let distance = hypot(cursor.x - models[index].position.x, cursor.y - models[index].position.y)
         if distance <= orbSize / 2 * 1.25 {
             if restingOnOrbSince[index] == nil { restingOnOrbSince[index] = now }
         } else if distance > orbSize / 2 * 1.8 {
             restingOnOrbSince[index] = nil
         }
-        let rested = restingOnOrbSince[index].map { now - $0 >= 0.3 } ?? false
-        setArmed(index, (rested || rubOn) && !mouseCaptured && parkedScreen == nil)
+        let petting = rubOn || now - lastRubAt[index] < 1.5
+        let on = allowed && petting && distance <= orbSize / 2 * 1.3 && now >= armSuppressedUntil && !mouseCaptured && parkedScreen == nil
+        setArmed(index, on || grab?.index == index)
+    }
+
+    /// Hidden: nothing of Dot takes a click, and a grab or a throw in progress ends where it is.
+    private func letGo() {
+        guard grab != nil || toss != nil || armed.contains(true) else { return }
+        grab = nil
+        toss = nil
+        for (index, model) in models.enumerated() where model.motion == .held || model.motion == .tossed {
+            model.motion = .following
+            followers[index].snap(to: model.position)
+            leads[index] = .zero
+            speeds[index] = 0
+        }
+        for index in handles.indices { setArmed(index, false) }
     }
 
     private func setArmed(_ index: Int, _ on: Bool) {
@@ -1663,13 +1717,15 @@ final class OverlayManager {
         }
         setArmed(index, false)
         restingOnOrbSince[index] = nil
-        let velocity = Toss.releaseVelocity(current.samples)
+        // The release point too: a drag that paused before letting go is a set-down, not a throw.
+        let velocity = Toss.releaseVelocity(current.samples + [(overlayPoint(screenPoint, index), clock)])
         if model.reduceMotion || !Toss.isThrow(velocity) {
             model.motion = .following           // set down here
             followers[index].snap(to: model.position)
             leashes[index].sit()
             return
         }
+        if let earlier = toss, earlier.index != index { land(earlier.index, now: clock) }   // one throw at a time
         model.motion = .tossed
         toss = (index, Toss(position: model.position, velocity: velocity))
     }
@@ -1700,15 +1756,22 @@ final class OverlayManager {
         if let normal = result.bounce { animators[current.index].bounced(normal: normal, at: now) }
         if result.done {
             toss = nil
-            leads[current.index] = .zero
-            speeds[current.index] = 0
-            animators[current.index].landed(at: now)
-            followers[current.index].snap(to: model.position)
-            leashes[current.index].sit()
-            model.motion = .following
+            land(current.index, now: now)
         } else {
             toss = current
         }
+    }
+
+    /// A thrown Dot comes to rest where it is: dizzy, then it sits until the cursor goes far.
+    private func land(_ index: Int, now: Double) {
+        guard index < models.count else { return }
+        if toss?.index == index { toss = nil }
+        leads[index] = .zero
+        speeds[index] = 0
+        animators[index].landed(at: now)
+        followers[index].snap(to: models[index].position)
+        leashes[index].sit()
+        models[index].motion = .following
     }
 
     /// Step every visible orb's animator and publish its pose: 60 Hz while something moves, 15 Hz for
@@ -1827,6 +1890,15 @@ final class OverlayManager {
 
     private func fly(model: CompanionModel, to destination: CGPoint, style: FlightPath.Style = .flight, completion: @escaping () -> Void) {
         flightTimer?.invalidate()
+        // A flight cut short on another screen would leave that orb flying for good.
+        if let previous = flyingModel, previous !== model, previous.motion == .flying,
+           let i = models.firstIndex(where: { $0 === previous }) {
+            previous.motion = .following
+            followers[i].snap(to: previous.position)
+            leads[i] = .zero
+            speeds[i] = 0
+        }
+        flyingModel = model
         guard let index = models.firstIndex(where: { $0 === model }) else { return }
         let start = model.position
         if hypot(destination.x - start.x, destination.y - start.y) < 2 {
@@ -1911,13 +1983,20 @@ extension OrbMotionState {
 }
 
 /// The click target over the orb (round two): a small transparent panel that ignores the mouse until he
-/// rests on Dot or rubs it, then takes a press for a boop or a grab. Non-activating, so a press never
-/// makes Dot the frontmost app. Its view paints an almost invisible disc, since the window server lets
-/// clicks fall through pixels that are fully clear.
+/// rubs Dot, then takes a press for a boop or a grab. Non-activating, so a press never makes Dot the
+/// frontmost app. Its view paints an almost invisible disc so there is something to click. A scroll or
+/// another button over it was meant for what is underneath: it lets go and sends the event on.
 final class OrbHandle: NSPanel {
     var onDown: ((CGPoint) -> Void)?
     var onDrag: ((CGPoint) -> Void)?
     var onUp: ((CGPoint) -> Void)?
+    var onPassOn: (() -> Void)?
+
+    func passOn(_ event: NSEvent) {
+        onPassOn?()
+        guard let copy = event.cgEvent?.copy() else { return }
+        DispatchQueue.main.async { copy.post(tap: .cghidEventTap) }
+    }
 
     init() {
         super.init(contentRect: NSRect(x: 0, y: 0, width: 38, height: 38), styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
@@ -1949,5 +2028,8 @@ final class OrbHandle: NSPanel {
         override func mouseDown(with event: NSEvent) { handle?.onDown?(NSEvent.mouseLocation) }
         override func mouseDragged(with event: NSEvent) { handle?.onDrag?(NSEvent.mouseLocation) }
         override func mouseUp(with event: NSEvent) { handle?.onUp?(NSEvent.mouseLocation) }
+        override func scrollWheel(with event: NSEvent) { handle?.passOn(event) }
+        override func rightMouseDown(with event: NSEvent) { handle?.passOn(event) }
+        override func otherMouseDown(with event: NSEvent) { handle?.passOn(event) }
     }
 }

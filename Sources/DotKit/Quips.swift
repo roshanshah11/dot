@@ -230,9 +230,18 @@ public enum Quips {
     /// situation, and the event for an upcoming one (`event` is its Upcoming key).
     public static func stamp(_ line: String, _ situation: QuipSituation, now: Date, history: QuipHistory, event: String? = nil,
                              calendar: Calendar = .current) -> QuipHistory {
-        var next = history
+        var next = attempted(situation, now: now, history: history, event: event, calendar: calendar)
         next.shown = next.shown.filter { within(noRepeat, of: $0.value, now: now) }
         next.shown[line] = now
+        return next
+    }
+
+    /// The history with a try at `situation` made now, whether or not a line comes of it: the cooldown, the
+    /// day for a once-a-day situation and, for an upcoming event, its once. A quip model's line that fails
+    /// the check must not leave the slot open, or every break would start another run.
+    public static func attempted(_ situation: QuipSituation, now: Date, history: QuipHistory, event: String? = nil,
+                                 calendar: Calendar = .current) -> QuipHistory {
+        var next = history
         next.lastAt = now
         if onceADay.contains(situation) { next.days[situation.rawValue] = day(now, calendar) }
         if let event {

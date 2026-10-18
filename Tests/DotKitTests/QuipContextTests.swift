@@ -217,4 +217,13 @@ final class QuipContextTests: XCTestCase {
         XCTAssertEqual(Upcoming.relevant(to: .deadlineToday, in: events, now: now, calendar: calendar), dueToday, "the deadline that's due today")
         XCTAssertNil(Upcoming.relevant(to: .petted, in: [far, past], now: now, calendar: calendar), "nothing within 24 h")
     }
+
+    func testATryClosesTheSlotEvenWithoutALine() {
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        let tried = Quips.attempted(.backShort, now: now, history: QuipHistory())
+        XCTAssertFalse(Quips.allows(.backShort, now: now.addingTimeInterval(60), chattiness: 2, history: tried), "the cooldown runs from the try")
+        XCTAssertTrue(tried.shown.isEmpty, "no line was shown")
+        let event = Quips.attempted(.upcoming, now: now, history: QuipHistory(), event: "2026-10-17 math midterm")
+        XCTAssertNotNil(event.events["2026-10-17 math midterm"], "once per event counts the try")
+    }
 }

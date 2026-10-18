@@ -212,6 +212,7 @@ final class ClaudeSession {
     func terminateNow() {
         if let id = follower?.id {
             host.signal(id: id, "TERM")
+            DispatchQueue.global().asyncAfter(deadline: .now() + 2) { [host] in _ = host.signal(id: id, "KILL") }
             follower?.cancel()
             follower = nil
             isRunning = false
@@ -221,7 +222,10 @@ final class ClaudeSession {
         guard let process else { return }
         try? stdinHandle?.close()
         stdinHandle = nil
-        if process.isRunning { kill(process.processIdentifier, SIGTERM) }
+        let pid = process.processIdentifier
+        if process.isRunning { kill(pid, SIGTERM) }
+        // A process that ignores TERM (a hung quip run) still goes.
+        DispatchQueue.global().asyncAfter(deadline: .now() + 2) { if process.isRunning { kill(pid, SIGKILL) } }
         self.process = nil
         isRunning = false
         turnInFlight = false

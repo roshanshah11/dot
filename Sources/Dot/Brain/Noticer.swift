@@ -179,14 +179,18 @@ final class Noticer {
         }) else { return false }
         let events = upcomingEvents()
         let event = situation == .upcoming ? Upcoming.due(events, now: now, history: history) : nil
-        guard writes else { return showWritten(situation, event: event) }
+        // At most one quip-model run a minute, and the try takes the slot, so a line that fails the
+        // check can't start another run at every break.
+        guard writes, lastWriteAt.map({ now.timeIntervalSince($0) >= 60 }) ?? true else { return showWritten(situation, event: event) }
+        lastWriteAt = now
+        quipHistory = Quips.attempted(situation, now: now, history: quipHistory, event: event.map { Upcoming.key($0) })
         let screen = screen ?? AccessibilityContext.capture(maxElements: 0, timeBudget: 0.12)
         let context = QuipContext(situation: situation, now: now, app: screen.appName, windowTitle: screen.windowTitle,
                                   next: event ?? Upcoming.relevant(to: situation, in: events, now: now), agent: recentAgent(at: now))
         writer.write(context) { [weak self] outcome in
             guard let self else { return }
-            // Up to six seconds have passed: long enough to start typing or take a call.
-            guard self.chat.quipCooldown != nil, self.quipGatesOpen else {
+            // Up to six seconds have passed: long enough to start typing, take a call or get an offer up.
+            guard self.chat.quipCooldown != nil, self.quipGatesOpen, Self.pending == nil else {
                 Log.info("quip: \(situation.rawValue): a gate closed while the line was written")
                 return
             }
@@ -221,6 +225,7 @@ final class Noticer {
     // MARK: Context lines (docs/alive.md, round two)
 
     private let writer: QuipWriter
+    private var lastWriteAt: Date?
     /// The last agent result, for a line in the minute or two after it lands.
     private var lastAgent: (agent: QuipContext.Agent, at: Date)?
 
