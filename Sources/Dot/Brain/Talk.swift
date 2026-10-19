@@ -22,12 +22,36 @@ final class Talk {
     private let atlas: AtlasBridge
     private let jev: Jev?
     private let driver = Driver()
+    /// Dot's own hands for the small things: open, scroll, back, click, type, keys (the basics pass).
+    private let hands: Hands
+    /// This Mac's calendar (EventKit); Atlas's copy until he grants access.
+    let localCalendar = LocalCalendar()
+    /// `Dot --ask --bench`: write tools refused, agents logged and not started, actions only on the bench fixture.
+    private var benchMode = false
+    private var talkSessionIsBench = false
+    /// Results still owed by turns Dot cut off, by session: each is dropped with everything it streams, so a cut-off
+    /// turn is never spoken, retried or acted on (2026-10-18: "I" was spoken and the old question asked again).
+    private var drainCounts: [ObjectIdentifier: Int] = [:]
+    /// How many of this turn's tags have been acted on as they streamed in.
+    private var actsDone = 0
+    /// He asked for something to be done, not explained: this turn's rings are pressed by Dot.
+    private var doIntent = false
+    /// A [GO] goal waiting for the turn that wrote it to end.
+    private var pendingGo: String?
+    /// Driven steps allowed in a [GO] or a do-request (the plan: at most six).
+    private var driveCap: Int?
+    /// Course maps already in each conversation.
+    private var coursesInSession: [ObjectIdentifier: Set<String>] = [:]
+    /// The question before this one, for "start another agent on that".
+    private var previousAsked = ""
     let board: BoardManager
     /// The explainer panel's talk side (round eight).
     let panels: PanelCoach
 
     private let recorder = AudioRecorder()
     private var talkSession: ClaudeSession?
+    /// The next talk conversation, started before the current one reaches its turn limit.
+    private var spareTalk: ClaudeSession?
     private var thinkSession: ClaudeSession?
 
     private(set) var phase: Phase = .idle
@@ -67,6 +91,7 @@ final class Talk {
     private var idleTimer: Timer?
     private var idleCheckTimer: Timer?
     private var turnStartedAt = Date()
+    private var firstSentenceLogged = false
     private var turnModel = ""
     private var turnsInSession = 0
     private var lastTurnAt = Date()
@@ -117,6 +142,7 @@ final class Talk {
         self.ledger = ledger
         self.atlas = atlas
         self.jev = jev
+        self.hands = Hands(cometPort: config.cometDebugPort)
         self.board = BoardManager(accentHex: config.pointerColorHex)
         self.panels = PanelCoach(accentHex: config.pointerColorHex)
         self.lecture = LectureListener(transcriber: transcriber)
@@ -199,7 +225,18 @@ final class Talk {
         case .talk:
             if let talkSession, talkSession.isRunning {
                 let stale = Date().timeIntervalSince(lastTurnAt) > 3 * 3600
-                if (turnsInSession >= config.talkSessionMaxTurns || stale), !talkSession.turnInFlight {
+                if talkSessionIsBench != benchMode, !talkSession.turnInFlight {
+                    Log.info("talk: \(benchMode ? "bench" : "normal") session for this turn")
+                    talkSession.stop()
+                } else if let spare = spareTalk, spare.isRunning, turnsInSession >= config.talkSessionMaxTurns || stale, !talkSession.turnInFlight {
+                    // the next conversation was started ahead (pre-warm), so the recycle costs nothing
+                    Log.info("talk: recycling the session after \(turnsInSession) turns into the warm spare")
+                    talkSession.stop()
+                    spareTalk = nil
+                    turnsInSession = 0
+                    self.talkSession = spare
+                    return spare
+                } else if (turnsInSession >= config.talkSessionMaxTurns || stale), !talkSession.turnInFlight {
                     Log.info("talk: recycling the session after \(turnsInSession) turns\(stale ? " (idle)" : "")")
                     talkSession.stop()
                 } else {
@@ -218,7 +255,7 @@ final class Talk {
 
     private func makeSession(kind: SessionKind) -> ClaudeSession? {
         var options = ClaudeSession.Options(cwd: config.talkRootURL, model: kind == .talk ? config.talkModel : config.thinkModel)
-        options.systemPrompt = (kind == .talk ? Prompts.talk : Prompts.think) + Prompts.contextFiles(in: config.talkRootURL)
+        options.systemPrompt = (kind == .talk ? Prompts.talk : Prompts.think) + Prompts.courseIndex(in: config.talkRootURL)
         options.tools = ["Bash", "WebSearch", "WebFetch"]
         options.maxTurns = 6
         options.settingSources = ""
@@ -227,13 +264,27 @@ final class Talk {
         options.strictMCP = true
         // Events with guests go out to them (FX-08): those two tools are judged per call below, never pre-allowed.
         options.allowedTools = options.mcpConfigPath == nil ? [] : config.talkAllowedTools.filter { !Talk.guestTools.contains($0) }
-        if kind == .talk { options.effort = config.talkEffort }
+        let bench = kind == .talk && benchMode
+        if bench {
+            // a bench turn reads only: nothing remembered, drafted or put on his calendar
+            let writes = Set(DotConfig.talkWriteTools.map { "mcp__atlas__\($0)" })
+            options.allowedTools = options.allowedTools.filter { !writes.contains($0) }
+        }
+        if kind == .talk {
+            options.effort = config.talkEffort
+            // Thinking showed up on 23% of talk turns even at effort low and cost about 1.2 s to the first word
+            // (2026-10-18); quips turn it off the same way.
+            options.environment["MAX_THINKING_TOKENS"] = "0"
+        }
         let session = ClaudeSession(label: kind.rawValue, claudePath: config.claudeExecutable, options: options)
         session.onEvent = { [weak self, weak session] event in
-            guard let self, let session, self.activeSession === session else { return }
+            guard let self, let session else { return }
+            if self.drain(event, from: session) { return }
+            guard self.activeSession === session else { return }
             self.handle(event)
         }
-        let allowed = Set(config.talkAllowedTools + ["WebSearch", "WebFetch"])
+        var allowed = Set(config.talkAllowedTools + ["WebSearch", "WebFetch"])
+        if bench { allowed.subtract(DotConfig.talkWriteTools.map { "mcp__atlas__\($0)" }) }
         session.permissionHandler = { request, completion in
             if Talk.guestTools.contains(request.toolName), ConsentPolicy.isOutwardMCP(tool: request.toolName, input: request.toolRequest.input) {
                 completion(false, "an event with guests sends them an invitation, which needs his yes on a card; hand it to an agent with [AGENT:...].")
@@ -245,6 +296,8 @@ final class Talk {
                 Log.warn("talk: refused tool \(request.toolName)")
             }
         }
+        if kind == .talk { talkSessionIsBench = bench }
+        coursesInSession[ObjectIdentifier(session)] = []
         do {
             try session.start()
             return session
@@ -288,7 +341,7 @@ final class Talk {
 
     private func beginListening(mode: HotkeyMonitor.Mode) {
         guard phase == .idle || phase == .speaking || phase == .thinking else { return }
-        if phase == .speaking || phase == .thinking { stopSpeaking(); activeSession?.interrupt() }
+        if phase == .speaking || phase == .thinking { stopSpeaking(); cutActiveTurn() }
         self.mode = mode
         quietTurn = false   // a spoken question is always answered aloud, whatever the last test turn was
         idleTimer?.invalidate()
@@ -755,12 +808,15 @@ final class Talk {
 
     /// `fromField`: he typed in the notch, so the answer is text there (and spoken only when
     /// `speakTypedAnswers` is on); the command line keeps the voice unless `quiet`.
-    func askTyped(_ text: String, quiet: Bool = false, drive: Bool = false, fromField: Bool = false, dry: Bool = false) {
+    func askTyped(_ text: String, quiet: Bool = false, drive: Bool = false, fromField: Bool = false, dry: Bool = false,
+                  bench: Bool = false, spoken: Bool = false, shift: Bool = false, cometPort: Int? = nil) {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
         dryRun = dry
-        if phase == .speaking || phase == .thinking { stopSpeaking(); activeSession?.interrupt() }
-        quietTurn = quiet || (fromField && !config.speakTypedAnswers)
+        benchMode = bench
+        hands.bench = bench ? Hands.Bench(cometPort: cometPort ?? 9471) : nil
+        if phase == .speaking || phase == .thinking { stopSpeaking(); cutActiveTurn() }
+        quietTurn = quiet || bench || (fromField && !config.speakTypedAnswers)
         textSurface = fromField
         if drive, config.driveEnabled { driveRequested = true }
         hud.dismissAnswer()
@@ -772,7 +828,31 @@ final class Talk {
         overlay.hideBubble(after: 0)
         startCapture()
         overlay.setPhase(.thinking)
-        Task { @MainActor in await ask(trimmed, typed: true) }
+        if shift { mode = .agent }
+        Task { @MainActor in
+            await ask(trimmed, typed: !spoken)
+            if shift { self.mode = .talk }
+        }
+    }
+
+    /// Interrupt the turn in flight and drop its result when it comes (the basics pass).
+    private func cutActiveTurn() {
+        guard let session = activeSession, session.turnInFlight else { return }
+        drainCounts[ObjectIdentifier(session), default: 0] += 1
+        session.interrupt()
+        Log.info("talk: interrupted")
+    }
+
+    /// Events from a turn Dot cut off: swallowed through its result.
+    private func drain(_ event: StreamEvent, from session: ClaudeSession) -> Bool {
+        let key = ObjectIdentifier(session)
+        guard let owed = drainCounts[key], owed > 0 else { return false }
+        if case .result(let result) = event {
+            drainCounts[key] = owed - 1
+            Log.info("talk: dropped the cut-off turn (\(result.subtype), \(result.durationMs) ms)")
+            ledger.record(kind: session === thinkSession ? "think" : "talk", agent: nil, model: turnModel, result: result, summary: "(cut off)")
+        }
+        return true
     }
 
     // MARK: Asking
@@ -780,9 +860,14 @@ final class Talk {
     private var lastAskWasLecture = false
 
     private func ask(_ text: String, typed: Bool) async {
-        if !typed { dryRun = false }
+        Log.info("ask: received bench=\(benchMode ? 1 : 0) \(typed ? "typed" : "spoken") text=\(Log.short(text, 120))")
+        if !typed, !benchMode { dryRun = false }
+        doIntent = false
+        driveCap = nil
+        pendingGo = nil
         lastAskWasTyped = typed
         lastAskWasLecture = false
+        if !lastAsked.isEmpty { previousAsked = lastAsked }
         lastAsked = text
         if Gratitude.isThanks(text) { overlay.react(.thanks) }
         if !typed { textSurface = false }
@@ -792,6 +877,8 @@ final class Talk {
             context = captured.context
         }
         captureTask = nil
+        // The other screen's picture rides along only when he points at it in words (each image is ~1.2k tokens).
+        if shots.count > 1, !Self.mentionsOtherScreen(text) { shots = shots.filter { $0.isCursorScreen } }
         // A muted Mac would lose a spoken answer: show it in the notch as well.
         if !textSurface, !quietTurn, AudioDevices.outputIsSilent() {
             textSurface = true
@@ -816,6 +903,20 @@ final class Talk {
         // message to the agent (FX-02); it takes the ordinary route, which stops it or answers.
         let addressed = AgentAddress.find(in: text, roster: addressBook)
         let agentMode = mode == .agent && (addressed.map { $0.intent == .tell } ?? true)
+        // Shift held over a stray word or two ("Yeah.", "Lori like.") is not a job (2026-10-18 01:34 made two agents).
+        if agentMode, addressed == nil, hud.currentConsent == nil, walkthrough == nil, AgentModeFilter.isStray(text) {
+            Log.info("jev: nothing asked (shift): \(Log.short(text, 60))")
+            hud.flash(status: "didn't catch a request", for: 2)
+            phase = .idle
+            settle()
+            return
+        }
+        if agentMode, benchMode {
+            Log.info("bench: would spawn agent (shift) for \"\(Log.short(text, 80))\"")
+            phase = .idle
+            settle()
+            return
+        }
         if agentMode, dryRun {
             // The last hotkey press held shift; a dry run still hands nothing to an agent.
             let named = addressed.flatMap { $0.intent == .tell ? $0.slug : nil }
@@ -834,9 +935,9 @@ final class Talk {
             // Held shift and named an agent: it goes to that one (G2).
             if let slug = addressed.flatMap({ $0.intent == .tell ? $0.slug : nil })
                 ?? AgentAddress.mentioned(in: text, roster: addressBook)?.slug {
-                agents.reply(to: slug, text: text)
+                replyToAgent(slug, text)
             } else {
-                agents.handoff(brief: text, agentName: nil, context: context, shots: shots)
+                startAgent(brief: text, name: nil, fresh: AgentModeFilter.wantsFreshAgent(text))
             }
             region = nil
             settle()
@@ -863,7 +964,7 @@ final class Talk {
             phase = .idle
             let name = agents.roster().first(where: { $0.slug == slug })?.name ?? slug
             sayLocal("passing that to \(name.lowercased()).")
-            agents.reply(to: slug, text: text)
+            replyToAgent(slug, text)
             region = nil
             return
         case .stopAgent(let slug):
@@ -984,13 +1085,27 @@ final class Talk {
         case .drive:
             startDriving()
             return
+        case .act(let command):
+            await performAct(command, local: true)
+            return
+        case .agentFresh:
+            phase = .idle
+            overlay.setPhase(.speaking)
+            speaker.speak("on it, a separate agent has that.")
+            overlay.setBubble("on it, a separate agent has that.")
+            hud.set(phase: .hidden)
+            let brief = previousAsked.isEmpty ? text : "\(text)\n(what he was asking about just before: \(previousAsked))"
+            startAgent(brief: brief, name: nil, fresh: true)
+            region = nil
+            scheduleIdleCheck()
+            return
         case .agent:
             phase = .idle
             overlay.setPhase(.speaking)
             speaker.speak("on it, i'll tell you when it's done.")
             overlay.setBubble("on it, i'll tell you when it's done.")
             hud.set(phase: .hidden)
-            agents.handoff(brief: text, agentName: nil, context: context, shots: shots)
+            startAgent(brief: text, name: nil)
             region = nil
             scheduleIdleCheck()
             return
@@ -1000,7 +1115,7 @@ final class Talk {
             speaker.speak("passing that along.")
             overlay.setBubble("passing that along.")
             hud.set(phase: .hidden)
-            agents.reply(to: slug, text: text)
+            replyToAgent(slug, text)
             region = nil
             scheduleIdleCheck()
             return
@@ -1285,6 +1400,8 @@ final class Talk {
     }
 
     private enum Route: CustomStringConvertible {
+        /// The basics pass: a small thing Dot does itself; a job for a new agent, never the running one.
+        case act(ActionCommand), agentFresh
         case answer, agent, think, explain, reopenPanel, closePanel, followUp(String), continueWalkthrough, drive, closeBoard, lessonNext, lessonBack, lessonAgain, lecture, suggestion(String), dismiss, find(String), listen, stopListening, recapLecture, dictionary(heard: String?, correct: String), place(what: String, whereWord: String?), images(String)
         /// Round seven (G2): his spoken answer to the card on show; a named agent told, stopped or asked after.
         case consentAnswer(ConsentVoice.Answer), tellAgent(String), stopAgent(String), agentStatus(String?)
@@ -1293,6 +1410,8 @@ final class Talk {
              resumeRoutine(String), askWhichCard(ConsentVoice.Answer), morning(Bool, String?), homeThread(String), setMode(ContextMode?)
         var description: String {
             switch self {
+            case .act(let command): return "act(\(command.verb) \(command.object))"
+            case .agentFresh: return "agentFresh"
             case .answer: return "answer"
             case .agent: return "agent"
             case .think: return "think"
@@ -1366,6 +1485,92 @@ final class Talk {
 
     private static let yesWords = try! NSRegularExpression(pattern: #"^(yes|yeah|yep|yup|sure|ok(ay)?|go( ahead)?|do it|please|yes please|sounds good)\W*$"#, options: .caseInsensitive)
     private static let noWords = try! NSRegularExpression(pattern: #"^(no|nah|nope|not now|later|no thanks|skip|never mind|nevermind)\W*$"#, options: .caseInsensitive)
+
+    // MARK: Doing the small things (the basics pass, 2026-10-18)
+
+    /// "my other screen", "the left monitor", "on screen two": the other screens' pictures ride along.
+    static func mentionsOtherScreen(_ text: String) -> Bool {
+        text.range(of: #"\b(other|second|left|right|external|top|bottom) (screen|monitor|display|mac)\b|\bscreen (two|2|one|1)\b|\bboth screens\b"#, options: [.regularExpression, .caseInsensitive]) != nil
+    }
+
+    /// Run one action now. `local`: a fixed phrase with no model turn, so Dot says the line itself; from a tag, the
+    /// model's own sentence already says it, and only a failure gets words.
+    private func performAct(_ command: ActionCommand, local: Bool) async {
+        if dryRun {
+            Log.info("dry-run: act \(command.verb) \(Log.short(command.object, 60))")
+            if local { phase = .idle; settle() }
+            return
+        }
+        if case .go(let goal) = command {
+            if local { startGo(goal) } else { pendingGo = goal }
+            return
+        }
+        let started = Date()
+        // "go to the part about x" in a document: Dot's own finder reads the text and highlights it
+        if case .scroll(.toText(let phrase)) = command, context.bundleIdentifier != Hands.cometBundle {
+            Log.info("act: scroll \(Log.short(phrase, 60)) handed to the document finder")
+            await findInDocument(phrase)
+            return
+        }
+        let outcome = await hands.perform(command, context: context)
+        let ms = Int(Date().timeIntervalSince(started) * 1000)
+        Log.info("act: \(command.verb) \(Log.short(command.object, 60)) \(outcome.ok ? "ok" : "fail") \(ms) ms (\(outcome.detail))")
+        if let point = outcome.point { overlay.point(at: point, label: Log.short(command.object, 24)) }
+        if let commit = outcome.commitLabel {
+            // his rule: ring it for his own hand, never press it
+            if let point = outcome.point { overlay.target(at: point, radius: 24, label: commit, hover: false) }
+            let line = "that one sends or commits something, so it's yours to press: \(commit.lowercased())."
+            if local { sayLocal(line) } else { speaker.speak(line) }
+            return
+        }
+        if case .scroll(.toText(let phrase)) = command, outcome.ok {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) { [weak self] in self?.findOnScreen(phrase: phrase, label: Log.short(phrase, 24)) }
+        }
+        if outcome.unresolved { askedHimAt = Date() }
+        if local {
+            if outcome.line.isEmpty { phase = .idle; settle() } else { sayLocal(outcome.line) }
+        } else if !outcome.ok, !outcome.line.isEmpty {
+            speaker.speak(outcome.line)
+        }
+    }
+
+    /// Several steps on what is in front: a walkthrough Dot drives itself, one ring at a time, six steps at most.
+    private func startGo(_ goal: String) {
+        guard let session = session(for: .talk) else { return }
+        doIntent = true
+        if config.driveEnabled { driveRequested = true; driveCap = 6 }
+        let text = "[go] do this on the screen for him, one step at a time: \(goal). ring the next control with [TARGET] and dot presses it; use [INSERT] to type into a field and [KEY:return] to run a search; when the result is on screen, point at it and stop, without opening it. anything that sends, submits, applies or pays stays his."
+        let (message, images) = buildMessage(text, kind: .talk)
+        lastMessage = message
+        lastImages = images
+        Log.info("act: go \(Log.short(goal, 80)) (driven walkthrough)")
+        sendTurn(message, images: images, to: session, kind: .talk)
+    }
+
+    /// Every new agent goes through here: a bench turn logs it instead.
+    private func startAgent(brief: String, name: String?, fresh: Bool = false) {
+        if benchMode {
+            Log.info("bench: would spawn agent \(name ?? "(unnamed)") for \"\(Log.short(brief, 80))\"")
+            return
+        }
+        agents.handoff(brief: brief, agentName: name, context: context, shots: shots, fresh: fresh)
+    }
+
+    private func replyToAgent(_ slug: String, _ text: String) {
+        if benchMode { Log.info("bench: would spawn agent \(slug) (follow-up) for \"\(Log.short(text, 80))\""); return }
+        agents.reply(to: slug, text: text)
+    }
+
+    /// Acts the model wrote, run the moment their tag is complete in the stream.
+    private func runNewActs() {
+        let tags = streamer.allTags
+        guard actsDone < tags.count else { return }
+        let fresh = tags[actsDone...]
+        actsDone = tags.count
+        for tag in fresh {
+            if case .act(let command) = tag { Task { @MainActor in await self.performAct(command, local: false) } }
+        }
+    }
 
     // MARK: Suggestions in context (from the noticer: "want the gist of this? say yes.")
     private var pendingSuggestion: (Noticer.Suggestion, Date)?
@@ -1535,6 +1740,16 @@ final class Talk {
             if inWalkthrough, walkthrough?.awaitingNextStep == false { return .drive }
             driveRequested = true   // the walkthrough about to start is his to watch, not to click
         }
+        // The small things, with no model (the basics pass): "scroll down", "go back", "open spotify", "pause".
+        // An "open X" Dot can't name goes on to the model, which asks one short question.
+        if !inWalkthrough, let command = ActionPhrases.match(text) {
+            if case .open(let name) = command, !hands.canResolve(name) {
+                Log.info("act: \"\(name)\" is no app, folder or bookmark; the model takes it")
+            } else {
+                return .act(command)
+            }
+        }
+        if AgentModeFilter.wantsFreshAgent(text), !inWalkthrough { return .agentFresh }
         guard let jev else {
             if inWalkthrough { endWalkthrough(reason: "new question") }
             return .answer
@@ -1555,8 +1770,9 @@ final class Talk {
             state["walkthrough_in_progress"] = ["last_instruction": "\(step.kind == .hover ? "rest on" : "click") \(step.label)", "steps_done": step.history]
         }
         var routeCriteria = [
-            "answer": "answer out loud from the screen, the day's calendar and deadlines, or general knowledge, including a quick web lookup; or show something on the board: a card, a drawing, a picture, a live web page (the companion opens pages itself); no files, nothing to operate",
-            "agent": "real work in the background: looking something up properly across apps or sites, drafting or writing, making or changing files, going through mail, operating an app for a while, anything that sends or submits",
+            "answer": "answer out loud from the screen, the day's calendar and deadlines, or general knowledge, including a quick web lookup; or show something on the board: a card, a drawing, a picture, a live web page (the companion opens pages itself)",
+            "act": "a small thing for the companion to do itself right now: open an app, a site, a file or a folder; scroll; go back; click, type into or search something in the window in front; find something on this page or site in a few clicks",
+            "agent": "real work in the background that takes minutes: researching across many sources, drafting or writing, making or changing files, going through mail, a long job in another app, anything that sends or submits",
             "think": "a hard reasoning question (a calculation, a tricky technical or finance judgment) that deserves a stronger model",
         ]
         if !lastAskWasTyped, text.count >= 40 || lecture.isListening {
@@ -1631,6 +1847,13 @@ final class Talk {
             overlay.point(at: CGPoint(x: hit.frame.midX, y: hit.frame.midY), label: String(hit.title.prefix(24)))
         }
         if route.choice == "lecture", route.probability >= 0.6, route.confidence >= 0.5 { return .lecture }
+        if route.choice == "act", route.probability >= 0.5 {
+            // done, not explained: the talk model writes the action tags, and any rings it gives are pressed by Dot
+            Log.info("jev: do it (\(String(format: "%.2f", route.probability)))")
+            doIntent = true
+            if config.driveEnabled { driveRequested = true; driveCap = 6 }
+            return .answer
+        }
         if route.choice == "agent", route.probability >= config.jevRouteThreshold, route.confidence >= 0.6 {
             // Agent work that names one of his agents goes to that agent (G2), not the default one.
             if let named = AgentAddress.mentioned(in: text, roster: addressBook) { return .tellAgent(named.slug) }
@@ -1659,11 +1882,12 @@ final class Talk {
     static let guestTools: Set<String> = ["mcp__atlas__calendar_create", "mcp__atlas__calendar_update"]
 
     private func sendTurn(_ message: String, images: [(data: Data, mediaType: String)], to session: ClaudeSession, kind: SessionKind) {
-        // A new question supersedes the one still being answered, like talking over someone.
+        // A new question supersedes the one still being answered, like talking over someone; its result is dropped.
         if let active = activeSession, active.turnInFlight {
-            active.interrupt()
+            cutActiveTurn()
             stopSpeaking()
         }
+        actsDone = 0
         hud.hideInput()
         activeSession = session
         streamer = BeatStreamer(eagerFirst: config.eagerSpeech && !quietTurn)
@@ -1677,6 +1901,7 @@ final class Talk {
         quietWork = []
         quietClock = Date()
         turnStartedAt = Date()
+        firstSentenceLogged = false
         lastTurnAt = Date()
         if kind == .talk { turnsInSession += 1 }
         turnModel = kind == .talk ? config.talkModel : config.thinkModel
@@ -1708,8 +1933,12 @@ final class Talk {
         hud.model.modeWord = mode == .normal ? nil : "\(mode.rawValue) mode"
         speaker.setRate(StyleTokens.load().mode(mode.rawValue).voiceRate)
         if mode != .normal { lines.append("[mode] \(mode.rawValue)") }
-        // This message cuts off the answer still being given in the same conversation (VO-07).
-        if activeSession?.turnInFlight == true, activeKind == kind { lines.append("note: the last question was cut off by this one; don't mention it.") }
+        // This message cuts off the answer still being given in the same conversation (VO-07). Claude Code records the
+        // cut as "the user doesn't want to proceed": it isn't a refusal (2026-10-18 12:49, "i held off searching").
+        if activeSession?.turnInFlight == true, activeKind == kind {
+            lines.append("note: dot cut off the last turn because he asked something new; he declined nothing, and a \"doesn't want to proceed\" in the history is only that cut. don't mention it; redo any lookup this question needs.")
+        }
+        if doIntent { lines.append("[do] he wants this done, not explained: use the action tags; for several steps ring one at a time and dot presses each.") }
         if let app = context.appName {
             lines.append("app: \(app)" + (context.bundleIdentifier.map { " (\($0))" } ?? ""))
         }
@@ -1763,6 +1992,11 @@ final class Talk {
             lines.append("board: " + board.stateLines().joined(separator: "; "))
         }
         lines.append(contentsOf: panels.contextLines())
+        lines.append(contentsOf: calendarLines(for: transcript))
+        if let stale = AtlasFreshness.parse(replicaState: try? Data(contentsOf: Self.replicaStateURL), boxWatch: try? Data(contentsOf: Self.boxWatchURL)).staleLine(now: Date()) {
+            lines.append(stale)
+        }
+        lines.append(contentsOf: courseMapLines(for: transcript, kind: kind))
         // Who is working for him and what they just said, so "what did the agent find" has an answer.
         let recent = agents.recentRuns()
         if !recent.isEmpty {
@@ -1797,6 +2031,38 @@ final class Talk {
         return (lines.joined(separator: "\n"), images)
     }
 
+    static let replicaStateURL = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("roshan/Atlas/private/replica-state.json")
+    static let boxWatchURL = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("roshan/Atlas/private/box-watch.json")
+
+    /// His calendar for this turn: this Mac's own (live) once he has granted it, else Atlas's copy with its age.
+    private func calendarLines(for transcript: String) -> [String] {
+        let wide = CalendarLines.isCalendarAsk(transcript)
+        if let items = localCalendar.items(days: 15) {
+            return CalendarLines.block(items, now: Date(), wide: wide, source: "this mac's calendar, live")
+        }
+        guard let brief = atlas.brief else { return [] }
+        let lines = wide && !brief.calendar14.isEmpty ? brief.calendar14 : brief.today
+        let age = brief.builtAt.isEmpty ? "" : ", read \(brief.builtAt.replacingOccurrences(of: "T", with: " "))"
+        let span = wide && !brief.calendar14.isEmpty ? "the next \(lines.count) events, up to 14 days out" : "today"
+        var block = ["[calendar] atlas's copy\(age)\(brief.calendarCoverage.map { " (\($0))" } ?? ""); \(span)" + (lines.isEmpty ? ": nothing" : ":")]
+        block += lines.prefix(45).map { "- \($0)" }
+        block.append("[/calendar]")
+        return block
+    }
+
+    /// A course's map joins the conversation once, the first time that course is on screen or named.
+    private func courseMapLines(for transcript: String, kind: SessionKind) -> [String] {
+        guard let session = kind == .talk ? talkSession : thinkSession else { return [] }
+        let key = ObjectIdentifier(session)
+        let seen = coursesInSession[key] ?? []
+        let where_ = [context.windowTitle, context.url, transcript, context.documentPath].compactMap { $0 }.joined(separator: " ")
+        guard let course = CourseTag.detect(context: where_, content: context.selectedText ?? "", among: panels.courses),
+              !seen.contains(course.code), let map = Prompts.courseMap(course.code, in: config.talkRootURL) else { return [] }
+        coursesInSession[key] = seen.union([course.code])
+        Log.info("talk: \(course.label) course map joins this conversation")
+        return ["[course map] \(course.label), for this and later questions in this conversation:", map, "[/course map]"]
+    }
+
     static func nowLine() -> String {
         let formatter = DateFormatter()
         formatter.locale = Locale(identifier: "en_US")
@@ -1810,6 +2076,7 @@ final class Talk {
         switch event {
         case .textDelta(let delta):
             for beat in streamer.feed(panels.filter(delta)) { enqueue(beat) }
+            runNewActs()
             if textSurface {
                 // A typed question: the words appear in the notch as they are written.
                 let ahead = (streamer.spokenSoFar + " " + streamer.partial).trimmingCharacters(in: .whitespaces)
@@ -1949,6 +2216,10 @@ final class Talk {
 
     private func beatStarted(_ beat: Beat) {
         beatsFired += 1
+        if !beat.text.isEmpty, !firstSentenceLogged {
+            firstSentenceLogged = true
+            Log.info("turn[\(activeKind?.rawValue ?? "talk")] first sentence \(Int(Date().timeIntervalSince(turnStartedAt) * 1000)) ms")
+        }
         speechStarted = true
         if phase != .speaking, !beat.text.isEmpty {
             phase = .speaking
@@ -2150,6 +2421,7 @@ final class Talk {
     private func finishTurn(_ result: ResultInfo) {
         for beat in streamer.feed(panels.endTurn()) { enqueue(beat) }
         for beat in streamer.flush() { enqueue(beat) }
+        runNewActs()
         // A failed turn's result is the CLI's diagnostic ("[ede_diagnostic] ..." was spoken aloud on
         // 2026-10-15 13:22), never words for him.
         if !result.isError, streamer.spokenSoFar.isEmpty, streamer.allTags.isEmpty, !panels.openedThisTurn, let text = result.resultText, !text.isEmpty,
@@ -2176,7 +2448,8 @@ final class Talk {
         if result.isError, spoken.isEmpty {
             // 2026-10-15: two turns in class failed with error_during_execution in 44 and 413 ms, nothing
             // said and nothing spent: the CLI dropped them before the model saw them. One retry covers that.
-            if result.subtype == "error_during_execution", result.durationMs < 2000, !retriedTurn, !lastMessage.isEmpty,
+            // A cut-off turn never gets here (drain drops it); only a turn the CLI dropped on its own is sent again.
+            if TurnRetry.shouldRetry(subtype: result.subtype, durationMs: result.durationMs, cutOffByDot: false, alreadyRetried: retriedTurn, hasMessage: !lastMessage.isEmpty),
                let session = activeSession {
                 retriedTurn = true
                 Log.warn("turn[\(kind)] failed in \(result.durationMs) ms with nothing said: \(Log.short(result.resultText ?? "no detail", 200)); sending it once more")
@@ -2202,16 +2475,16 @@ final class Talk {
             case .agent(let brief):
                 // "for <name>: ..." was the prompt's way to reach a named agent before [TELL]; honour it.
                 if let named = AgentAddress.leadingFor(brief, roster: addressBook) {
-                    agents.reply(to: named.slug, text: named.brief)
+                    replyToAgent(named.slug, named.brief)
                 } else {
-                    agents.handoff(brief: brief, agentName: nil, context: context, shots: shots)
+                    startAgent(brief: brief, name: nil)
                 }
             case .newAgent(let name, let brief):
-                agents.handoff(brief: brief, agentName: name, context: context, shots: shots, fresh: true)
+                startAgent(brief: brief, name: name, fresh: true)
             case .tell(let name, let message):
                 let fits = AgentAddress.candidates(named: name, in: addressBook)
                 if fits.count == 1 {
-                    agents.reply(to: fits[0].slug, text: message)
+                    replyToAgent(fits[0].slug, message)
                 } else if fits.count > 1 {
                     // "Lab" with Lab Desk and Lab Notes: ask, rather than found a third agent called Lab.
                     let names = fits.map { $0.name.lowercased() }
@@ -2219,7 +2492,7 @@ final class Talk {
                     Log.warn("tell tag for \"\(name)\" fits \(names.joined(separator: ", ")); asked which")
                 } else {
                     // No agent by that name yet: the message founds one, the way NEW_AGENT does.
-                    agents.handoff(brief: message, agentName: name, context: context, shots: shots)
+                    startAgent(brief: message, name: name)
                 }
             case .stopAgent(let name):
                 if let agent = AgentAddress.agent(named: name, in: addressBook) {
@@ -2258,6 +2531,15 @@ final class Talk {
         }
         let rings = tags.contains { if case .target = $0 { return true }; if case .hover = $0 { return true }; return false }
         if !rings, walkthrough != nil, !escalated { endWalkthrough(reason: "the model gave a step with no target") }
+        if let goal = pendingGo, !escalated, walkthrough == nil {
+            pendingGo = nil
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in self?.startGo(goal) }
+        }
+        // Pre-warm: the next conversation starts before this one reaches its turn limit, so the recycle is free.
+        if kind == "talk", spareTalk == nil, !benchMode, turnsInSession >= config.talkSessionMaxTurns - 1 {
+            spareTalk = makeSession(kind: .talk)
+            if spareTalk != nil { Log.info("talk: next conversation warming up") }
+        }
         region = nil
         marks = []
         overlay.setDrawRect(nil)
@@ -2374,6 +2656,12 @@ final class Talk {
     private func target(pixel: CGPoint, radius: CGFloat, label: String, screen: Int?, hover: Bool) -> Bool {
         guard let shot = shot(forScreen: screen) else { return false }
         let step = (walkthrough?.step ?? 0) + 1
+        if let cap = driveCap, (walkthrough?.driving == true || driveRequested), step > cap {
+            Log.info("walkthrough: driven steps capped at \(cap)")
+            endWalkthrough(reason: "driven step cap")
+            speaker.speak("that's as far as i'll click on my own; tell me what to do next.")
+            return false
+        }
         if step > config.walkthroughMaxSteps {
             Log.info("walkthrough: stopping at step \(step), max reached")
             endWalkthrough(reason: "max steps")
@@ -2436,7 +2724,8 @@ final class Talk {
 
     private func driveStep() {
         guard let step = walkthrough, step.driving, !step.awaitingNextStep else { return }
-        if Driver.isCommitLabel(step.label) {
+        let under = Hands.label(atAppKit: step.target) ?? ""
+        if Driver.isCommitLabel(step.label) || CommitGuard.isCommit(step.label) || CommitGuard.isCommit(under) {
             let line = "this one looks like it commits something, so it's yours: \(step.kind == .hover ? "rest on" : "click") \(step.label)."
             Log.info("drive: leaving \"\(step.label)\" to him")
             speaker.speak(line)
@@ -2444,12 +2733,23 @@ final class Talk {
             return
         }
         driver.begin()
-        // The glide starts once the instruction has been spoken, so the voice and the hand agree.
-        let delay: TimeInterval = quietTurn ? 0.3 : 1.0
+        // The press comes once the instruction has been spoken, so the voice and the hand agree. His cursor never
+        // moves (his call, 2026-10-18): accessibility presses the control; his own mouse or key still stops the drive.
+        let delay: TimeInterval = quietTurn ? 0.3 : 0.8
         DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
-            guard let self, let current = self.walkthrough, current.driving, current.step == step.step, !current.awaitingNextStep else { return }
-            self.driver.go(to: current.target, click: current.kind == .click) { done in
-                Log.info("drive: step \(current.step) \(current.kind == .click ? "clicked" : "rested on") \(current.label): \(done ? "ok" : "stopped")")
+            guard let self, let current = self.walkthrough, current.driving, current.step == step.step, !current.awaitingNextStep, self.driver.active else { return }
+            guard current.kind == .click else {
+                let line = "rest the cursor on \(current.label.lowercased()) and i'll keep going."
+                self.speaker.speak(line)
+                return
+            }
+            if Hands.press(atAppKit: current.target) {
+                Log.info("drive: step \(current.step) pressed \(current.label) (accessibility, cursor still)")
+                self.stepCompleted(how: "clicked")
+            } else {
+                Log.info("drive: step \(current.step) \(current.label) takes no press from accessibility; left to him")
+                let line = "i can't press \(current.label.lowercased()) from here; click it and i'll keep going."
+                self.speaker.speak(line)
             }
         }
     }
@@ -2613,7 +2913,7 @@ final class Talk {
         ActionBarPanel.dismiss()
         let wasBusy = phase != .idle || speaker.isSpeaking || walkthrough != nil
         stopSpeaking()
-        activeSession?.interrupt()
+        cutActiveTurn()
         if phase == .listening { recorder.cancel(); overlay.setMouseCapture(false) }
         levelTimer?.invalidate()
         phase = .idle

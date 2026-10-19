@@ -132,6 +132,7 @@ final class ClaudeSession {
     private func exited(_ status: Int32) {
         isRunning = false
         turnInFlight = false
+        pendingResults = 0
         process = nil
         stdinHandle = nil
         follower = nil
@@ -169,6 +170,7 @@ final class ClaudeSession {
         })
         isRunning = true
         turnInFlight = inFlight
+        pendingResults = inFlight ? 1 : 0
         lastActivity = Date()
     }
 
@@ -181,6 +183,7 @@ final class ClaudeSession {
         host.detach(id: follower.id)
         isRunning = false
         turnInFlight = false
+        pendingResults = 0
         return lastHostSeq
     }
 
@@ -205,6 +208,7 @@ final class ClaudeSession {
         self.process = nil
         isRunning = false
         turnInFlight = false
+        pendingResults = 0
     }
 
     /// Dot is quitting: end the process now. `stop()` waits three seconds before its signal, and a
@@ -229,11 +233,17 @@ final class ClaudeSession {
         self.process = nil
         isRunning = false
         turnInFlight = false
+        pendingResults = 0
     }
 
     // MARK: Messages
 
+    /// Messages sent whose result has not come back. A message sent right after an interrupt waits behind the cut-off
+    /// turn, whose result arrives first: the session is still busy after that one (the basics pass, 2026-10-18).
+    private var pendingResults = 0
+
     func send(text: String, images: [(data: Data, mediaType: String)] = []) {
+        pendingResults += 1
         turnInFlight = true
         lastActivity = Date()
         write(StreamJSON.userMessage(text: text, images: images))
@@ -284,7 +294,8 @@ final class ClaudeSession {
         case .systemInit(let id, _):
             if !id.isEmpty { sessionId = id }
         case .result(let info):
-            turnInFlight = false
+            pendingResults = max(0, pendingResults - 1)
+            turnInFlight = pendingResults > 0
             let turnCost = max(0, info.costUSD - lastTotalCost)
             lastTotalCost = max(lastTotalCost, info.costUSD)
             event = .result(ResultInfo(sessionId: info.sessionId, subtype: info.subtype, isError: info.isError, costUSD: turnCost,

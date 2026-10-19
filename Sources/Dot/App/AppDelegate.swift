@@ -285,7 +285,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             let quiet = (note.userInfo?["quiet"] as? Bool) ?? false
             let drive = (note.userInfo?["drive"] as? Bool) ?? false
             let dry = (note.userInfo?["dry"] as? Bool) ?? false
-            Task { @MainActor in self?.talk.askTyped(text, quiet: quiet || dry, drive: drive, dry: dry) }
+            let bench = (note.userInfo?["bench"] as? Bool) ?? false
+            let spoken = (note.userInfo?["spoken"] as? Bool) ?? false
+            let shift = (note.userInfo?["shift"] as? Bool) ?? false
+            let port = (note.userInfo?["cometPort"] as? Int) ?? 0
+            Task { @MainActor in
+                self?.talk.askTyped(text, quiet: quiet || dry, drive: drive, dry: dry, bench: bench, spoken: spoken, shift: shift, cometPort: port > 0 ? port : nil)
+            }
         }
         center.addObserver(forName: DotIPC.agent, object: nil, queue: .main) { [weak self] note in
             guard let text = note.userInfo?["text"] as? String else { return }
@@ -403,6 +409,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if !Permissions.status().accessibility { Permissions.requestAccessibility() }
         startHotkeysWhenTrusted()
         talk.warmUp()
+        // This Mac's calendar (the basics pass): macOS asks him once; until he allows it, Atlas's copy is used.
+        talk.localCalendar.requestAccess()
         let status = Permissions.status()
         if !status.allGranted {
             home.show()

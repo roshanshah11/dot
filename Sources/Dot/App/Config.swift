@@ -96,6 +96,9 @@ struct DotConfig: Codable {
     /// When he says "do it" in a walkthrough, Dot moves the real cursor and clicks the steps itself
     /// (never a send, buy or delete; his first move or key stops it).
     var driveEnabled = true
+    /// Comet's DevTools port (his Comet listens on 9222): Dot scrolls, finds, clicks and types in the tab in front through
+    /// it, bound only to the tab whose url and title match the window. A bench turn names its own port.
+    var cometDebugPort = 9222
     /// Start speaking at the first long clause instead of the first full sentence.
     var eagerSpeech = true
     /// Words appear while the key is held (FluidAudio sliding window); the WAV is the fallback.
@@ -150,14 +153,23 @@ struct DotConfig: Codable {
 
     /// Atlas tools a talk turn may call without asking: everything that reads, remembers or drafts.
     /// Sends, submits, posts and harness administration stay with agents and his yes.
+    /// The basics pass (2026-10-18) cut the list from 56 to the 28 a talk turn has used or plainly needs: every schema
+    /// rides along on every turn, and agents keep all of Atlas.
     static let talkAtlasTools = [
-        "now", "search", "facts", "people", "contacts", "calendar", "calendars", "free", "commitments", "todo", "unanswered",
-        "mail", "messages", "messages_thread", "thread", "canvas_find", "canvas_courses", "canvas_read", "docs", "read_doc",
-        "recent_files", "proposals", "history", "state", "status", "preferences", "postings", "project", "task", "deliverable",
-        "apple_note_read", "view_note", "get", "quote", "sec_lookup", "sec_facts", "sec_filings", "fin_calc", "vocabulary", "lesson",
-        "remember", "deadline_add", "deadline_confirm", "commit", "commit_done", "commit_update", "contact_upsert", "reminder", "journal",
-        "draft_email", "write_note", "apple_note", "calendar_create", "calendar_update", "watch_add", "xlsx_write",
+        "now", "search", "facts", "people", "calendar", "free", "commitments", "todo", "unanswered",
+        "mail", "messages", "thread", "canvas_find", "canvas_read", "docs", "read_doc", "postings", "get",
+        "sec_lookup", "sec_facts", "fin_calc",
+        "remember", "deadline_add", "commit", "reminder",
+        "draft_email", "calendar_create", "calendar_update",
     ]
+    /// Taken out of talk by the basics pass; a saved config that still lists them does not bring them back.
+    static let retiredTalkAtlasTools: Set<String> = [
+        "contacts", "calendars", "messages_thread", "canvas_courses", "recent_files", "proposals", "history", "state", "status",
+        "preferences", "project", "task", "deliverable", "apple_note_read", "view_note", "quote", "sec_filings", "vocabulary", "lesson",
+        "deadline_confirm", "commit_done", "commit_update", "contact_upsert", "journal", "write_note", "apple_note", "watch_add", "xlsx_write",
+    ]
+    /// Atlas tools that write (remember, draft, create): refused in a bench turn.
+    static let talkWriteTools: Set<String> = ["todo", "remember", "deadline_add", "commit", "reminder", "draft_email", "calendar_create", "calendar_update"]
     static let defaultTalkTools = talkAtlasTools.map { "mcp__atlas__\($0)" }
 
     init() {}
@@ -182,7 +194,8 @@ struct DotConfig: Codable {
         agentMCPConfig = c.contains(.agentMCPConfig) ? (try? c.decodeIfPresent(String.self, forKey: .agentMCPConfig)) : d.agentMCPConfig
         talkMCPConfig = c.contains(.talkMCPConfig) ? (try? c.decodeIfPresent(String.self, forKey: .talkMCPConfig)) : d.talkMCPConfig
         // The file's list adds to the built-in set, so a widened default reaches an old config.
-        let extra = get(.talkAllowedTools, [String]()).filter { !d.talkAllowedTools.contains($0) }
+        let retired = Set(DotConfig.retiredTalkAtlasTools.map { "mcp__atlas__\($0)" })
+        let extra = get(.talkAllowedTools, [String]()).filter { !d.talkAllowedTools.contains($0) && !retired.contains($0) }
         talkAllowedTools = d.talkAllowedTools + extra
         allowTools = get(.allowTools, d.allowTools)
         allowToolPrefixes = get(.allowToolPrefixes, d.allowToolPrefixes)
@@ -224,6 +237,7 @@ struct DotConfig: Codable {
         notchPresence = get(.notchPresence, d.notchPresence)
         menuBarIcon = get(.menuBarIcon, d.menuBarIcon)
         driveEnabled = get(.driveEnabled, d.driveEnabled)
+        cometDebugPort = get(.cometDebugPort, d.cometDebugPort)
         eagerSpeech = get(.eagerSpeech, d.eagerSpeech)
         streamingTranscription = get(.streamingTranscription, d.streamingTranscription)
         homeLatitude = get(.homeLatitude, d.homeLatitude)

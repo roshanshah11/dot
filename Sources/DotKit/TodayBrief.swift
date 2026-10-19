@@ -22,10 +22,14 @@ public struct TodayBrief: Codable, Equatable {
     public var stateHead: String?
     public var block: String
     public var elapsedS: Double?
+    /// The next 14 days of his calendar, one line per event, and the calendar source's coverage (the basics pass).
+    public var calendar14: [String] = []
+    public var calendarCoverage: String?
 
     enum CodingKeys: String, CodingKey {
         case builtAt = "built_at", weekday, date, deadlines, today, tomorrow, commitments, todo, waiting, unanswered
         case unansweredCount = "unanswered_count", preferences, priorities, facts, profileBlock = "profile_block", chatPrompt = "chat_prompt", stateHead = "state_head", block, elapsedS = "elapsed_s"
+        case calendar14 = "calendar_14", calendarCoverage = "calendar_coverage"
     }
 
     public init(from decoder: Decoder) throws {
@@ -49,6 +53,8 @@ public struct TodayBrief: Codable, Equatable {
         stateHead = try c.decodeIfPresent(String.self, forKey: .stateHead)
         block = try c.decodeIfPresent(String.self, forKey: .block) ?? ""
         elapsedS = try c.decodeIfPresent(Double.self, forKey: .elapsedS)
+        calendar14 = try c.decodeIfPresent([String].self, forKey: .calendar14) ?? []
+        calendarCoverage = try c.decodeIfPresent(String.self, forKey: .calendarCoverage)
     }
 
     public static func parse(_ data: Data) -> TodayBrief? {

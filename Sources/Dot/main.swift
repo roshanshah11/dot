@@ -127,17 +127,24 @@ case "--ask", "--agent":
     // Talk to the running app: `Dot --ask "what's in front?"`, `Dot --agent "sort my downloads"`.
     // `--ask --quiet` runs the turn with the bubble and marks but no voice (tests at night).
     var rest = Array(arguments.dropFirst())
-    var quiet = false, drive = false, dry = false
+    var quiet = false, drive = false, dry = false, bench = false, spoken = false, shift = false
+    var cometPort = 0
     while let flag = rest.first, flag.hasPrefix("--") {
-        if flag == "--quiet" { quiet = true } else if flag == "--drive" { drive = true } else if flag == "--dry" { dry = true } else { break }
+        if flag == "--quiet" { quiet = true } else if flag == "--drive" { drive = true } else if flag == "--dry" { dry = true }
+        // the basics bench: read-only tools, no agents, actions only on the fixture (Tests/Fixtures/bench)
+        else if flag == "--bench" { bench = true } else if flag == "--spoken" { spoken = true } else if flag == "--shift" { shift = true }
+        else if flag == "--comet-port", rest.count > 1, let port = Int(rest[1]) { cometPort = port; rest.removeFirst() }
+        else { break }
         rest.removeFirst()
     }
+    guard !(bench && cometPort == 9222) else { print("--comet-port 9222 is his own Comet; the bench uses a throwaway one (scripts/bench-comet.sh)"); exit(2) }
     let text = rest.joined(separator: " ").trimmingCharacters(in: .whitespacesAndNewlines)
-    guard !text.isEmpty else { print("usage: Dot --ask [--quiet] [--drive] [--dry] <question> | Dot --agent <brief>"); exit(2) }
+    guard !text.isEmpty else { print("usage: Dot --ask [--quiet] [--drive] [--dry] [--bench [--spoken] [--shift] [--comet-port N]] <question> | Dot --agent <brief>"); exit(2) }
     // --dry is for --ask: a brief sent with --agent would still start the agent.
     guard !(dry && arguments.first == "--agent") else { print("--dry works with --ask only; Dot --agent always starts the agent"); exit(2) }
     let name = arguments.first == "--ask" ? DotIPC.ask : DotIPC.agent
-    DistributedNotificationCenter.default().postNotificationName(name, object: nil, userInfo: ["text": text, "quiet": quiet, "drive": drive, "dry": dry], deliverImmediately: true)
+    DistributedNotificationCenter.default().postNotificationName(name, object: nil, userInfo: ["text": text, "quiet": quiet, "drive": drive, "dry": dry,
+                                                                                            "bench": bench, "spoken": spoken, "shift": shift, "cometPort": cometPort], deliverImmediately: true)
     print("sent to Dot")
     exit(0)
 case "--track-selftest":

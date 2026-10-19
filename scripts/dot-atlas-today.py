@@ -69,6 +69,26 @@ def main():
             lines.append(clip(head + (f' ({where})' if where else ''), 120))
         return lines
 
+    # The basics pass: the next 14 days ride along for "when is" and "where is" questions, each line with its day,
+    # time and place, plus the calendar's coverage so a stale copy says so.
+    d14 = (now + timedelta(days=15)).date().isoformat()
+    try:
+        span = srv.calendar(now.strftime('%Y-%m-%dT%H:%M'), d14)
+    except Exception:
+        span = ''
+    def dated_lines(text):
+        lines = []
+        for raw in text.splitlines():
+            raw = strip_ids(raw)
+            if not raw or raw.startswith(('nothing', 'no events', 'coverage')): continue
+            raw = raw.split(' | notes:')[0]
+            parts = [p.strip() for p in raw.split(' | ')]
+            where = next((p for p in parts[1:] if p.startswith('at ')), '')
+            lines.append(clip(parts[0] + (f' ({where})' if where else ''), 150))
+        return lines
+    out['calendar_14'] = dated_lines(span)[:60]
+    cov = next((l for l in span.splitlines() if l.startswith('coverage:')), '')
+    out['calendar_coverage'] = cov.replace('coverage:', '').strip() or None
     out['deadlines'] = [clip(strip_ids(l).lstrip('- '), 150) for l in deadlines[:10]]
     out['today'] = cal_lines(today)[:8]
     out['tomorrow'] = cal_lines(tomorrow)[:6]

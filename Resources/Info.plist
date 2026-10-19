@@ -28,6 +28,17 @@
 	<string>14.2</string>
 	<key>LSUIElement</key>
 	<true/>
+	<key>NSAppTransportSecurity</key>
+	<dict>
+		<key>NSAllowsLocalNetworking</key>
+		<true/>
+	</dict>
+	<key>NSAppleEventsUsageDescription</key>
+	<string>Dot's agents may drive other apps only after you allow each action.</string>
+	<key>NSCalendarsFullAccessUsageDescription</key>
+	<string>Dot reads your calendar on this Mac so when is and what is on today are answered from the real thing.</string>
+	<key>NSCalendarsUsageDescription</key>
+	<string>Dot reads your calendar on this Mac so when is and what is on today are answered from the real thing.</string>
 	<key>NSHighResolutionCapable</key>
 	<true/>
 	<key>NSMicrophoneUsageDescription</key>
@@ -36,7 +47,5 @@
 	<string>Dot looks at your screen when you ask it something, so it can answer about what you see and point at it.</string>
 	<key>NSSpeechRecognitionUsageDescription</key>
 	<string>Dot transcribes your voice on this Mac.</string>
-	<key>NSAppleEventsUsageDescription</key>
-	<string>Dot's agents may drive other apps only after you allow each action.</string>
 </dict>
 </plist>
