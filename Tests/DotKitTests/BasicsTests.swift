@@ -175,3 +175,15 @@ final class AgentModeFilterTests: XCTestCase {
         XCTAssertFalse(TurnRetry.shouldRetry(subtype: "error_max_turns", durationMs: 400, cutOffByDot: false, alreadyRetried: false, hasMessage: true))
     }
 }
+
+final class TodayBriefCalendarTests: XCTestCase {
+    func testCalendarFourteenDecodes() {
+        let json = #"{"date": "2026-10-18", "today": ["17:00 Practice"], "calendar_14": ["Sun 10-18 17:00–19:00 Practice (at Dance Room)"], "calendar_coverage": "calendar=complete 3m ago"}"#
+        let brief = TodayBrief.parse(json.data(using: .utf8)!)
+        XCTAssertEqual(brief?.calendar14, ["Sun 10-18 17:00–19:00 Practice (at Dance Room)"])
+        XCTAssertEqual(brief?.calendarCoverage, "calendar=complete 3m ago")
+        let old = TodayBrief.parse(#"{"date": "2026-10-18"}"#.data(using: .utf8)!)
+        XCTAssertEqual(old?.calendar14, [])
+        XCTAssertNil(old?.calendarCoverage)
+    }
+}
