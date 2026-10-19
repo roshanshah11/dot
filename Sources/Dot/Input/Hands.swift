@@ -292,6 +292,22 @@ final class Hands {
         if let label, let element = Self.bestElement(label, in: context.elements.filter { ["AXTextField", "AXSearchField", "AXTextArea", "AXComboBox"].contains($0.role) } ) ?? Self.bestElement(label, in: context.elements) {
             _ = Self.focus(atAppKit: CGPoint(x: element.frame.midX, y: element.frame.midY))
         }
+        // A web page only hears typing that comes as input events: an accessibility write sets the value
+        // silently (the bench's search box never filtered, 2026-10-19). In a browser, paste, then give his
+        // clipboard back.
+        if Self.browsers.contains(NSWorkspace.shared.frontmostApplication?.bundleIdentifier ?? "") {
+            let board = NSPasteboard.general
+            let saved = board.string(forType: .string)
+            board.clearContents()
+            board.setString(text, forType: .string)
+            let pasted = Driver.paste()
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
+                guard board.string(forType: .string) == text else { return }
+                board.clearContents()
+                if let saved { board.setString(saved, forType: .string) }
+            }
+            return Outcome(ok: pasted, line: pasted ? "typed it in." : "it's on your clipboard, paste it where you want it.", detail: "insert via paste (browser)")
+        }
         let method = TextInjection.insert(text)
         let ok = method == .accessibility || method == .paste
         return Outcome(ok: ok, line: ok ? "typed it in." : "it's on your clipboard, paste it where you want it.", detail: "insert via \(method.rawValue)")

@@ -1,123 +1,612 @@
 {
-  "about": "Placeholder bench rows for scripts/dot-bench.py (gate rows 1-14 and 19-22). {base} is the bench server URL, {host} its host:port, {bench_dir} the scratch folder /tmp/dot-bench. Calendar and mail rows (15-18) are generated privately at run time and never committed.",
-  "rows": [
-    {"id": "1", "kind": "new", "ask": "open TextEdit", "flags": [],
-     "setup": {"front": "safari", "open_url": "{base}/index.html"},
-     "expect": {"front_app": "TextEdit", "act": {"verb": "open", "target": "TextEdit"}, "no_turn": true, "no_agent": true, "cursor_unchanged": true},
-     "limit_ms": 1500},
-
-    {"id": "2", "kind": "new", "ask": "open {host}/page2.html in a new tab", "flags": [],
-     "setup": {"front": "bench-comet", "open_url": "{base}/index.html"},
-     "expect": {"server_event": {"type": "get", "url": "/page2\\.html"}, "new_tab": true, "act": {"verb": "open"}, "no_agent": true, "cursor_unchanged": true},
-     "limit_ms": 2500},
-
-    {"id": "3", "kind": "new", "ask": "open the folder {bench_dir}", "flags": [],
-     "setup": {"front": "safari", "open_url": "{base}/index.html"},
-     "expect": {"front_app": "Finder", "act": {"verb": "open"}, "no_turn": true, "no_agent": true, "cursor_unchanged": true},
-     "limit_ms": 1500},
-
-    {"id": "4", "kind": "new", "ask": "scroll down", "flags": [],
-     "setup": {"front": "safari", "open_url": "{base}/long.html"},
-     "expect": {"scroll_delta_min": 300, "route": "phrase|fixed", "act": {"verb": "scroll"}, "no_turn": true, "no_agent": true, "cursor_unchanged": true},
-     "limit_ms": 500},
-
-    {"id": "5", "kind": "new", "ask": "go to the part about tidal energy storage", "flags": [],
-     "setup": {"front": "safari", "open_url": "{base}/long.html"},
-     "expect": {"server_event": {"type": "scroll", "in_view": "^tidal$"}, "act": {"verb": "scroll|find|go"}, "no_agent": true, "cursor_unchanged": true},
-     "limit_ms": 1500},
-
-    {"id": "6", "kind": "new", "ask": "where's the export button", "flags": [],
-     "setup": {"front": "safari", "open_url": "{base}/form.html"},
-     "expect": {"point_in_element": {"id": "export", "pad": 16}, "no_server_event": {"type": "click"}, "no_act": ["click"], "no_agent": true},
-     "limit_ms": 3000, "latency_to": "^turn\\[talk\\] first sentence"},
-
-    {"id": "7", "kind": "new", "ask": "click export", "flags": [],
-     "setup": {"front": "safari", "open_url": "{base}/form.html"},
-     "expect": {"server_event": {"type": "click", "id": "^export$"}, "no_server_click_text": ["Submit application", "^Apply$"], "act": {"verb": "click", "target": "export"}, "no_agent": true, "cursor_unchanged": true},
-     "limit_ms": 2000},
-
-    {"id": "8", "kind": "new", "ask": "type Sam Rivera in the name field", "flags": [],
-     "setup": {"front": "safari", "open_url": "{base}/form.html"},
-     "expect": {"server_event": {"type": "input", "id": "^name$", "value": "^Sam Rivera$"}, "no_server_event": {"type": "key", "key": "^Enter$"}, "no_agent": true, "cursor_unchanged": true},
-     "limit_ms": 2000},
-
-    {"id": "9", "kind": "new", "ask": "go back", "flags": [],
-     "setup": {"front": "safari", "history": ["{base}/page1.html", "{base}/page2.html"]},
-     "expect": {"server_event": {"type": "^(load|pageshow)$", "url": "/page1\\.html$"}, "act": {"verb": "back"}, "no_turn": true, "no_agent": true, "cursor_unchanged": true},
-     "limit_ms": 1000},
-
-    {"id": "10", "kind": "new", "ask": "go to settings and turn on email alerts", "flags": [],
-     "setup": {"front": "safari", "open_url": "{base}/index.html"},
-     "expect": {"server_event": {"type": "change", "id": "^email-alerts$", "checked": true}, "max_acts": 6, "no_server_click_text": ["Submit", "^Apply$"], "no_agent": true, "cursor_unchanged": true},
-     "limit_ms": 15000, "latency_to": "^act: go\\b"},
-
-    {"id": "11", "kind": "new", "ask": "find the Northwind job I applied to", "flags": [],
-     "setup": {"front": "safari", "open_url": "{base}/jobs.html"},
-     "expect": {"server_event": {"type": "^(input|search)$", "id": "^job-q$", "value": "northwind"}, "no_server_event": {"type": "get", "url": "/job\\.html"}, "no_server_click_text": "Northwind", "no_agent": true, "cursor_unchanged": true},
-     "limit_ms": 15000, "latency_to": "^act: go\\b"},
-
-    {"id": "12", "kind": "new", "ask": "submit the application", "flags": [],
-     "then": [{"ask": "click apply"}],
-     "setup": {"front": "safari", "open_url": "{base}/form.html"},
-     "expect": {"no_server_click_text": ["Submit application", "^Apply$"], "no_server_event": {"type": "key", "key": "^Enter$"},
-                "log_count": {"pattern": "target\\(", "min": 2}, "no_act": ["click", "key"], "no_agent": true},
-     "limit_ms": 3000},
-
-    {"id": "13", "kind": "regression", "ask": "how do i turn on email alerts here", "flags": [],
-     "setup": {"front": "safari", "open_url": "{base}/settings.html"},
-     "expect": {"log_has": "target\\(", "no_server_event": {"type": "click"}, "no_act": true, "no_agent": true},
-     "limit_ms": 3000, "latency_to": "^turn\\[talk\\] first sentence"},
-
-    {"id": "14", "kind": "new", "ask": "open chain stream", "flags": [],
-     "setup": {"front": "safari", "open_url": "{base}/index.html"},
-     "expect": {"reply_contains": "\\?", "reply_not_contains": ["tell me the site", "i'll open it", "^opening"], "no_act": ["open"], "no_agent": true},
-     "limit_ms": 2000},
-
-    {"id": "19a", "kind": "new", "ask": "Yeah.", "flags": ["--spoken"],
-     "setup": {"front": "safari", "open_url": "{base}/index.html"},
-     "expect": {"no_turn": true, "no_agent": true, "expect_would_spawn": false},
-     "limit_ms": 500, "latency_to": "^(jev: nothing asked|route|bench: )"},
-
-    {"id": "19b", "kind": "new", "ask": "Yeah.", "flags": ["--shift"],
-     "setup": {"front": "safari", "open_url": "{base}/index.html"},
-     "expect": {"no_turn": true, "no_agent": true, "expect_would_spawn": false},
-     "limit_ms": 500, "latency_to": "^(jev: nothing asked|route|bench: )"},
-
-    {"id": "20", "kind": "regression", "ask": "explain how a heat pump works, step by step", "flags": [],
-     "then": [{"ask": "actually, what is 12 times 12?", "after": "^beat 1\\b"}],
-     "setup": {"front": "safari", "open_url": "{base}/index.html"},
-     "expect": {"interrupt_within_ms": 500, "not_reasked": true, "answered_last": true, "no_agent": true}},
-
-    {"id": "21.1", "kind": "regression", "group": "replay", "ask": "what is the kernel of a matrix", "flags": [],
-     "setup": {"front": "safari", "open_url": "{base}/index.html"}, "expect": {"route": "route=(answer|lecture|think)", "no_agent": true}},
-    {"id": "21.2", "kind": "regression", "group": "replay", "ask": "how do i find a basis for a subspace", "flags": [],
-     "setup": {"front": "safari", "open_url": "{base}/index.html"}, "expect": {"route": "route=(answer|lecture|think)", "no_agent": true}},
-    {"id": "21.3", "kind": "regression", "group": "replay", "ask": "what does span mean", "flags": [],
-     "setup": {"front": "safari", "open_url": "{base}/index.html"}, "expect": {"route": "route=(answer|lecture|think)", "no_agent": true}},
-    {"id": "21.4", "kind": "regression", "group": "replay", "ask": "what is the definition of a field", "flags": [],
-     "setup": {"front": "safari", "open_url": "{base}/index.html"}, "expect": {"route": "route=(answer|lecture|think)", "no_agent": true}},
-    {"id": "21.5", "kind": "regression", "group": "replay", "ask": "what does PCR do", "flags": [],
-     "setup": {"front": "safari", "open_url": "{base}/index.html"}, "expect": {"route": "route=(answer|lecture|think)", "no_agent": true}},
-    {"id": "21.6", "kind": "regression", "group": "replay", "ask": "how does DNA replication work", "flags": [],
-     "setup": {"front": "safari", "open_url": "{base}/index.html"}, "expect": {"route": "route=(answer|lecture|think)", "no_agent": true}},
-    {"id": "21.7", "kind": "regression", "group": "replay", "ask": "explain how pcr works", "flags": [],
-     "setup": {"front": "safari", "open_url": "{base}/index.html"}, "expect": {"route": "route=(answer|lecture|think)", "no_agent": true}},
-    {"id": "21.8", "kind": "regression", "group": "replay", "ask": "what does the plus or minus mean on a lab measurement", "flags": [],
-     "setup": {"front": "safari", "open_url": "{base}/index.html"}, "expect": {"route": "route=(answer|lecture|think)", "no_agent": true}},
-    {"id": "21.9", "kind": "regression", "group": "replay", "ask": "what is a subspace", "flags": [],
-     "setup": {"front": "safari", "open_url": "{base}/index.html"}, "expect": {"route": "route=(answer|lecture|think)", "no_agent": true}},
-    {"id": "21.10", "kind": "regression", "group": "replay", "ask": "how do i know if A is invertible", "flags": [],
-     "setup": {"front": "safari", "open_url": "{base}/index.html"}, "expect": {"route": "route=(answer|lecture|think)", "no_agent": true}},
-
-    {"id": "22.1", "kind": "regression", "group": "simple", "ask": "what is 17 times 23", "flags": [],
-     "setup": {"front": "safari", "open_url": "{base}/index.html"}, "expect": {"route": "route=answer", "no_agent": true},
-     "latency_to": "^turn\\[talk\\] first sentence"},
-    {"id": "22.2", "kind": "regression", "group": "simple", "ask": "how many days are in a leap year", "flags": [],
-     "setup": {"front": "safari", "open_url": "{base}/index.html"}, "expect": {"route": "route=answer", "no_agent": true},
-     "latency_to": "^turn\\[talk\\] first sentence"},
-    {"id": "22.3", "kind": "regression", "group": "simple", "ask": "what does RREF stand for", "flags": [],
-     "setup": {"front": "safari", "open_url": "{base}/index.html"}, "expect": {"route": "route=answer", "no_agent": true},
-     "latency_to": "^turn\\[talk\\] first sentence"},
-    {"id": "22", "kind": "regression", "aggregate": {"group": "simple", "baseline_ms": 1600, "tolerance": 0.10, "median_target_ms": 1500}}
-  ]
+ "about": "Placeholder bench rows for scripts/dot-bench.py (gate rows 1-14 and 19-22). {base} is the bench server URL, {host} its host:port, {bench_dir} the scratch folder /tmp/dot-bench. Calendar and mail rows (15-18) are generated privately at run time and never committed.",
+ "rows": [
+  {
+   "id": "1",
+   "kind": "new",
+   "ask": "open TextEdit",
+   "flags": [],
+   "setup": {
+    "front": "safari",
+    "open_url": "{base}/index.html"
+   },
+   "expect": {
+    "front_app": "TextEdit",
+    "act": {
+     "verb": "open",
+     "target": "TextEdit"
+    },
+    "no_turn": true,
+    "no_agent": true,
+    "cursor_unchanged": true
+   },
+   "limit_ms": 1500
+  },
+  {
+   "id": "2",
+   "kind": "new",
+   "ask": "open {host}/page2.html in a new tab",
+   "flags": [],
+   "setup": {
+    "front": "bench-comet",
+    "open_url": "{base}/index.html"
+   },
+   "expect": {
+    "server_event": {
+     "type": "get",
+     "url": "/page2\\.html"
+    },
+    "new_tab": true,
+    "act": {
+     "verb": "open"
+    },
+    "no_agent": true,
+    "cursor_unchanged": true
+   },
+   "limit_ms": 2500
+  },
+  {
+   "id": "3",
+   "kind": "new",
+   "ask": "open the folder {bench_dir}",
+   "flags": [],
+   "setup": {
+    "front": "safari",
+    "open_url": "{base}/index.html"
+   },
+   "expect": {
+    "front_app": "Finder",
+    "act": {
+     "verb": "open"
+    },
+    "no_turn": true,
+    "no_agent": true,
+    "cursor_unchanged": true
+   },
+   "limit_ms": 1500
+  },
+  {
+   "id": "4",
+   "kind": "new",
+   "ask": "scroll down",
+   "flags": [],
+   "setup": {
+    "front": "safari",
+    "open_url": "{base}/long.html"
+   },
+   "expect": {
+    "scroll_delta_min": 300,
+    "route": "phrase|fixed",
+    "act": {
+     "verb": "scroll"
+    },
+    "no_turn": true,
+    "no_agent": true,
+    "cursor_unchanged": true
+   },
+   "limit_ms": 500
+  },
+  {
+   "id": "5",
+   "kind": "new",
+   "ask": "go to the part about tidal energy storage",
+   "flags": [],
+   "setup": {
+    "front": "safari",
+    "open_url": "{base}/long.html"
+   },
+   "expect": {
+    "server_event": {
+     "type": "scroll",
+     "in_view": "^tidal$"
+    },
+    "act": {
+     "verb": "scroll|find|go"
+    },
+    "no_agent": true,
+    "cursor_unchanged": true
+   },
+   "limit_ms": 1500
+  },
+  {
+   "id": "6",
+   "kind": "new",
+   "ask": "where's the export button",
+   "flags": [],
+   "setup": {
+    "front": "safari",
+    "open_url": "{base}/form.html"
+   },
+   "expect": {
+    "point_in_element": {
+     "id": "export",
+     "pad": 16
+    },
+    "no_server_event": {
+     "type": "click"
+    },
+    "no_act": [
+     "click"
+    ],
+    "no_agent": true
+   },
+   "limit_ms": 3000,
+   "latency_to": "^turn\\[talk\\] first sentence"
+  },
+  {
+   "id": "7",
+   "kind": "new",
+   "ask": "click export",
+   "flags": [],
+   "setup": {
+    "front": "safari",
+    "open_url": "{base}/form.html"
+   },
+   "expect": {
+    "server_event": {
+     "type": "click",
+     "id": "^export$"
+    },
+    "no_server_click_text": [
+     "Submit application",
+     "^Apply$"
+    ],
+    "act": {
+     "verb": "click",
+     "target": "export"
+    },
+    "no_agent": true,
+    "cursor_unchanged": true
+   },
+   "limit_ms": 2000
+  },
+  {
+   "id": "8",
+   "kind": "new",
+   "ask": "type Sam Rivera in the name field",
+   "flags": [],
+   "setup": {
+    "front": "safari",
+    "open_url": "{base}/form.html"
+   },
+   "expect": {
+    "server_event": {
+     "type": "input",
+     "id": "^name$",
+     "value": "^Sam Rivera$"
+    },
+    "no_server_event": {
+     "type": "key",
+     "key": "^Enter$"
+    },
+    "no_agent": true,
+    "cursor_unchanged": true
+   },
+   "limit_ms": 2000
+  },
+  {
+   "id": "9",
+   "kind": "new",
+   "ask": "go back",
+   "flags": [],
+   "setup": {
+    "front": "safari",
+    "history": [
+     "{base}/page1.html",
+     "{base}/page2.html"
+    ]
+   },
+   "expect": {
+    "server_event": {
+     "type": "^(load|pageshow)$",
+     "url": "/page1\\.html$"
+    },
+    "act": {
+     "verb": "back"
+    },
+    "no_turn": true,
+    "no_agent": true,
+    "cursor_unchanged": true
+   },
+   "limit_ms": 1000
+  },
+  {
+   "id": "10",
+   "kind": "new",
+   "ask": "go to settings and turn on email alerts",
+   "flags": [],
+   "setup": {
+    "front": "safari",
+    "open_url": "{base}/index.html"
+   },
+   "expect": {
+    "server_event": {
+     "type": "change",
+     "id": "^email-alerts$",
+     "checked": true
+    },
+    "max_acts": 6,
+    "no_server_click_text": [
+     "Submit",
+     "^Apply$"
+    ],
+    "no_agent": true,
+    "cursor_unchanged": true
+   },
+   "limit_ms": 15000,
+   "latency_to": "^act: go\\b"
+  },
+  {
+   "id": "11",
+   "kind": "new",
+   "ask": "find the Northwind job I applied to",
+   "flags": [],
+   "setup": {
+    "front": "safari",
+    "open_url": "{base}/jobs.html"
+   },
+   "expect": {
+    "server_event": {
+     "type": "^(input|search)$",
+     "id": "^job-q$",
+     "value": "northwind"
+    },
+    "no_server_event": {
+     "type": "get",
+     "url": "/job\\.html"
+    },
+    "no_server_click_text": "Northwind",
+    "no_agent": true,
+    "cursor_unchanged": true
+   },
+   "limit_ms": 15000,
+   "latency_to": "^act: go\\b"
+  },
+  {
+   "id": "12",
+   "kind": "new",
+   "ask": "submit the application",
+   "flags": [],
+   "then": [
+    {
+     "ask": "click apply"
+    }
+   ],
+   "setup": {
+    "front": "safari",
+    "open_url": "{base}/form.html"
+   },
+   "expect": {
+    "no_server_click_text": [
+     "Submit application",
+     "^Apply$"
+    ],
+    "no_server_event": {
+     "type": "key",
+     "key": "^Enter$"
+    },
+    "log_count": {
+     "pattern": "(target|point)\\(",
+     "min": 2
+    },
+    "no_act": [
+     "click",
+     "key"
+    ],
+    "no_agent": true
+   },
+   "limit_ms": 3000
+  },
+  {
+   "id": "13",
+   "kind": "regression",
+   "ask": "how do i turn on email alerts here",
+   "flags": [],
+   "setup": {
+    "front": "safari",
+    "open_url": "{base}/settings.html"
+   },
+   "expect": {
+    "log_has": "target\\(",
+    "no_server_event": {
+     "type": "click"
+    },
+    "no_act": true,
+    "no_agent": true
+   },
+   "limit_ms": 3000,
+   "latency_to": "^turn\\[talk\\] first sentence"
+  },
+  {
+   "id": "14",
+   "kind": "new",
+   "ask": "open chain stream",
+   "flags": [],
+   "setup": {
+    "front": "safari",
+    "open_url": "{base}/index.html"
+   },
+   "expect": {
+    "reply_contains": "\\?",
+    "reply_not_contains": [
+     "tell me the site",
+     "i'll open it",
+     "^opening"
+    ],
+    "no_act": [
+     "open"
+    ],
+    "no_agent": true
+   },
+   "limit_ms": 2000
+  },
+  {
+   "id": "19a",
+   "kind": "new",
+   "ask": "Yeah.",
+   "flags": [
+    "--spoken"
+   ],
+   "setup": {
+    "front": "safari",
+    "open_url": "{base}/index.html"
+   },
+   "expect": {
+    "no_turn": true,
+    "no_agent": true,
+    "expect_would_spawn": false
+   },
+   "limit_ms": 500,
+   "latency_to": "^(jev: nothing asked|route|bench: )"
+  },
+  {
+   "id": "19b",
+   "kind": "new",
+   "ask": "Yeah.",
+   "flags": [
+    "--shift"
+   ],
+   "setup": {
+    "front": "safari",
+    "open_url": "{base}/index.html"
+   },
+   "expect": {
+    "no_turn": true,
+    "no_agent": true,
+    "expect_would_spawn": false
+   },
+   "limit_ms": 500,
+   "latency_to": "^(jev: nothing asked|route|bench: )"
+  },
+  {
+   "id": "20",
+   "kind": "regression",
+   "ask": "explain how a heat pump works, step by step",
+   "flags": [],
+   "then": [
+    {
+     "ask": "actually, what is 12 times 12?",
+     "after": "^beat 1\\b"
+    }
+   ],
+   "setup": {
+    "front": "safari",
+    "open_url": "{base}/index.html"
+   },
+   "expect": {
+    "interrupt_within_ms": 500,
+    "not_reasked": true,
+    "answered_last": true,
+    "no_agent": true
+   }
+  },
+  {
+   "id": "21.1",
+   "kind": "regression",
+   "group": "replay",
+   "ask": "what is the kernel of a matrix",
+   "flags": [],
+   "setup": {
+    "front": "safari",
+    "open_url": "{base}/index.html"
+   },
+   "expect": {
+    "route": "route=(answer|lecture|think)",
+    "no_agent": true
+   }
+  },
+  {
+   "id": "21.2",
+   "kind": "regression",
+   "group": "replay",
+   "ask": "how do i find a basis for a subspace",
+   "flags": [],
+   "setup": {
+    "front": "safari",
+    "open_url": "{base}/index.html"
+   },
+   "expect": {
+    "route": "route=(answer|lecture|think)",
+    "no_agent": true
+   }
+  },
+  {
+   "id": "21.3",
+   "kind": "regression",
+   "group": "replay",
+   "ask": "what does span mean",
+   "flags": [],
+   "setup": {
+    "front": "safari",
+    "open_url": "{base}/index.html"
+   },
+   "expect": {
+    "route": "route=(answer|lecture|think)",
+    "no_agent": true
+   }
+  },
+  {
+   "id": "21.4",
+   "kind": "regression",
+   "group": "replay",
+   "ask": "what is the definition of a field",
+   "flags": [],
+   "setup": {
+    "front": "safari",
+    "open_url": "{base}/index.html"
+   },
+   "expect": {
+    "route": "route=(answer|lecture|think)",
+    "no_agent": true
+   }
+  },
+  {
+   "id": "21.5",
+   "kind": "regression",
+   "group": "replay",
+   "ask": "what does PCR do",
+   "flags": [],
+   "setup": {
+    "front": "safari",
+    "open_url": "{base}/index.html"
+   },
+   "expect": {
+    "route": "route=(answer|lecture|think)",
+    "no_agent": true
+   }
+  },
+  {
+   "id": "21.6",
+   "kind": "regression",
+   "group": "replay",
+   "ask": "how does DNA replication work",
+   "flags": [],
+   "setup": {
+    "front": "safari",
+    "open_url": "{base}/index.html"
+   },
+   "expect": {
+    "route": "route=(answer|lecture|think)",
+    "no_agent": true
+   }
+  },
+  {
+   "id": "21.7",
+   "kind": "regression",
+   "group": "replay",
+   "ask": "explain how pcr works",
+   "flags": [],
+   "setup": {
+    "front": "safari",
+    "open_url": "{base}/index.html"
+   },
+   "expect": {
+    "route": "route=(answer|lecture|think)",
+    "no_agent": true
+   }
+  },
+  {
+   "id": "21.8",
+   "kind": "regression",
+   "group": "replay",
+   "ask": "what does the plus or minus mean on a lab measurement",
+   "flags": [],
+   "setup": {
+    "front": "safari",
+    "open_url": "{base}/index.html"
+   },
+   "expect": {
+    "route": "route=(answer|lecture|think)",
+    "no_agent": true
+   }
+  },
+  {
+   "id": "21.9",
+   "kind": "regression",
+   "group": "replay",
+   "ask": "what is a subspace",
+   "flags": [],
+   "setup": {
+    "front": "safari",
+    "open_url": "{base}/index.html"
+   },
+   "expect": {
+    "route": "route=(answer|lecture|think)",
+    "no_agent": true
+   }
+  },
+  {
+   "id": "21.10",
+   "kind": "regression",
+   "group": "replay",
+   "ask": "how do i know if A is invertible",
+   "flags": [],
+   "setup": {
+    "front": "safari",
+    "open_url": "{base}/index.html"
+   },
+   "expect": {
+    "route": "route=(answer|lecture|think)",
+    "no_agent": true
+   }
+  },
+  {
+   "id": "22.1",
+   "kind": "regression",
+   "group": "simple",
+   "ask": "what is 17 times 23",
+   "flags": [],
+   "setup": {
+    "front": "safari",
+    "open_url": "{base}/index.html"
+   },
+   "expect": {
+    "route": "route=answer",
+    "no_agent": true
+   },
+   "latency_to": "^turn\\[talk\\] first sentence"
+  },
+  {
+   "id": "22.2",
+   "kind": "regression",
+   "group": "simple",
+   "ask": "how many days are in a leap year",
+   "flags": [],
+   "setup": {
+    "front": "safari",
+    "open_url": "{base}/index.html"
+   },
+   "expect": {
+    "route": "route=answer",
+    "no_agent": true
+   },
+   "latency_to": "^turn\\[talk\\] first sentence"
+  },
+  {
+   "id": "22.3",
+   "kind": "regression",
+   "group": "simple",
+   "ask": "what does RREF stand for",
+   "flags": [],
+   "setup": {
+    "front": "safari",
+    "open_url": "{base}/index.html"
+   },
+   "expect": {
+    "route": "route=answer",
+    "no_agent": true
+   },
+   "latency_to": "^turn\\[talk\\] first sentence"
+  },
+  {
+   "id": "22",
+   "kind": "regression",
+   "aggregate": {
+    "group": "simple",
+    "baseline_ms": 1600,
+    "tolerance": 0.1,
+    "median_target_ms": 1500
+   }
+  }
+ ]
 }

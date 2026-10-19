@@ -133,8 +133,8 @@ class LogTail:
 
 
 # The line contract (see Tests/Fixtures/bench/README.md). Messages only: the timestamp and level are gone.
-RE_ASK = re.compile(r'^ask: received bench=(\d) text=(.*)$', re.S)
-RE_ACT_OK = re.compile(r'^act: (\S+)(?: (.*?))? ok (\d+) ms$')
+RE_ASK = re.compile(r'^ask: received bench=(\d) (?:typed |spoken )?text=(.*)$', re.S)
+RE_ACT_OK = re.compile(r'^act: (\S+)(?: (.*?))? ok (\d+) ms(?: \(.*\))?$')
 RE_ACT_FAIL = re.compile(r'^act: (\S+)(?: (.*?))? fail(?: (.*))?$')
 RE_SPAWN = re.compile(r'^bench: would spawn agent ?(.*)$')
 RE_BLOCKED = re.compile(r'^bench: blocked action ?(\S*)(?: (.*))?$')
