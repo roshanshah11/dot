@@ -250,7 +250,7 @@ def act_lines(lines):
     return out
 
 
-DEFAULT_LATENCY_END = re.compile(r'^(act: \S+(?: .*?)? ok \d+ ms$|turn\[talk\] first sentence|beat \d+)')
+DEFAULT_LATENCY_END = re.compile(r'^(act: \S+(?: .*?)? ok \d+ ms(?: \(.*\))?$|turn\[talk\] first sentence|beat \d+)')
 
 
 def latency_ms(lines, end_regex=None, ask_index=0):

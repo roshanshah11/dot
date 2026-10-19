@@ -1301,7 +1301,7 @@ final class Talk {
             hud.setCaption(line)
             hud.set(phase: .speaking)
             speaker.speak("\(located.isPDF ? "it's on page \(located.page)" : where_). \(Log.short(sentence, 220))")
-            TranscriptLog.append(kind: .talk, you: lastAsked, dot: line, app: context.appName, extra: ["via": "document"])
+            if !benchMode { TranscriptLog.append(kind: .talk, you: lastAsked, dot: line, app: context.appName, extra: ["via": "document"]) }
             scheduleIdleCheck()
             return
         }
