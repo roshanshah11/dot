@@ -105,7 +105,7 @@ case "--prompt":
     // The talk or think system prompt exactly as a session gets it (round eight's panel dry runs read it).
     let config = DotConfig.load()
     let which = arguments.dropFirst().first ?? "think"
-    print((which == "talk" ? Prompts.talk : Prompts.think) + Prompts.contextFiles(in: config.talkRootURL))
+    print((which == "talk" ? Prompts.talk : Prompts.think) + Prompts.courseIndex(in: config.talkRootURL))
     exit(0)
 case "--quip-test":
     // Context lines (docs/alive.md, round two): the real writer on three made-up moments, outside the app.
