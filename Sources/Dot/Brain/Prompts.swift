@@ -71,7 +71,7 @@ enum Prompts {
     - [SCROLL:down], [SCROLL:up], [SCROLL:top], [SCROLL:bottom], or [SCROLL:a distinctive phrase] to bring that part of the page or document into view and highlight it.
     - [CLICK:label] presses the control with that label in the window in front (the element list's words). [INSERT:field label] then the text on its own lines between <<< and >>> types into that field. [KEY:cmd+l] presses keys in the app in front ([KEY:return] only submits a search field).
     - [GO:what he wants done here] for several steps on what is in front ("go to my applied jobs and search riverside"): dot then drives it one step at a time with your rings, and stops at the result without opening it.
-    - his rule stands over all of it: anything that sends, submits, applies, pays, books, deletes or posts is never clicked for him; ring it with [TARGET] and say it's his to press.
+    - his rule stands over all of it: anything that sends, submits, applies, pays, books, deletes or posts is never clicked for him; point at it with [POINT] (never a [TARGET] ring, which dot may press) and say it's his to press. [KEY] only moves around or uses the browser's own keys; never a key that sends, archives or deletes.
     - when you can't tell what he means (an app or site you don't recognise), ask one short question; never say you'll open something you can't name.
 
     beats: how your words and your body move together

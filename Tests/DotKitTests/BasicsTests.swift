@@ -47,6 +47,11 @@ final class ActionPhraseTests: XCTestCase {
         XCTAssertEqual(ActionPhrases.match("open a new tab"), .browser(.newTab))
         XCTAssertEqual(ActionPhrases.match("close this tab"), .browser(.closeTab))
         XCTAssertEqual(ActionPhrases.match("pause the music"), .media(.playPause))
+        XCTAssertNil(ActionPhrases.match("pause"), "a bare pause would start music when nothing plays")
+        XCTAssertNil(ActionPhrases.match("start again"))
+        XCTAssertNil(ActionPhrases.match("start the video"))
+        XCTAssertNil(ActionPhrases.match("open the board"))
+        XCTAssertNil(ActionPhrases.match("Open the."))
         XCTAssertEqual(ActionPhrases.match("next song"), .media(.next))
         XCTAssertEqual(ActionPhrases.match("open spotify"), .open("spotify"))
         XCTAssertEqual(ActionPhrases.match("hey can you um open chain stream"), .open("chain stream"))
@@ -72,12 +77,20 @@ final class ActionPhraseTests: XCTestCase {
         XCTAssertEqual(KeyChord.parse("return")?.isPlainReturn, true)
         XCTAssertEqual(KeyChord.parse("cmd+return")?.isPlainReturn, false)
         XCTAssertNil(KeyChord.parse("cmd+banana"))
+        for allowed in ["down", "pagedown", "cmd+l", "cmd+f", "cmd+[", "cmd+shift+t", "tab", "escape", "return"] {
+            XCTAssertEqual(KeyChord.parse(allowed)?.isAllowedForDot, true, allowed)
+        }
+        for refused in ["cmd+q", "cmd+delete", "e", "shift+3", "cmd+w", "cmd+a", "ctrl+c", "delete"] {
+            XCTAssertEqual(KeyChord.parse(refused)?.isAllowedForDot, false, refused)
+        }
+        XCTAssertEqual(KeyChord.parse("cmd+return")?.isReturn, true)
     }
 }
 
 final class CommitGuardTests: XCTestCase {
     func testCommitWordsRefused() {
-        for label in ["Submit application", "Apply", "Send", "Confirm order", "Delete", "Pay now", "Reply all", "Share", "Accept"] {
+        for label in ["Submit application", "Apply", "Send", "Confirm order", "Delete", "Pay now", "Reply all", "Share", "Accept",
+                      "Place your order", "Decline", "Withdraw application", "Connect", "Turn in", "Start quiz", "Take the Quiz"] {
             XCTAssertTrue(CommitGuard.isCommit(label), label)
         }
         for label in ["Export", "Settings", "Email alerts", "My Jobs", "Search", "Next page", "Notifications"] {
@@ -160,12 +173,17 @@ final class AgentModeFilterTests: XCTestCase {
         XCTAssertTrue(AgentModeFilter.isStray("Lori like."))
         XCTAssertTrue(AgentModeFilter.isStray("um okay so yeah"))
         XCTAssertFalse(AgentModeFilter.isStray("find me a usb c cable on amazon"))
+        XCTAssertFalse(AgentModeFilter.isStray("cover letter for Northwind"))
         XCTAssertFalse(AgentModeFilter.isStray("draft a reply to the recruiter"))
     }
 
     func testFreshAgent() {
         XCTAssertTrue(AgentModeFilter.wantsFreshAgent("can you start another agent on that? like not you"))
         XCTAssertFalse(AgentModeFilter.wantsFreshAgent("how is the agent doing"))
+        XCTAssertFalse(AgentModeFilter.wantsFreshAgent("what did the new agent find?"))
+        XCTAssertFalse(AgentModeFilter.wantsFreshAgent("is the new agent done"))
+        XCTAssertFalse(AgentModeFilter.wantsFreshAgent("it's not you, it's the formula"))
+        XCTAssertTrue(AgentModeFilter.wantsFreshAgent("get a separate agent to do the cover letter"))
     }
 
     func testRetryOnlyWhenTheCLIDroppedIt() {

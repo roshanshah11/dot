@@ -105,20 +105,21 @@ public struct AtlasFreshness: Equatable {
 
 /// Shift held means "give this to an agent". A stray word or two ("Yeah.", "Lori like.") is not a job.
 public enum AgentModeFilter {
-    static let requestWords = try! NSRegularExpression(
-        pattern: #"\b(find|look|search|check|make|write|draft|reply|email|send|book|build|fix|sort|clean|research|read|summari[sz]e|compare|pull|get|put|add|remind|schedule|plan|prep|prepare|apply|fill|go|open|do|start|run|track|watch|monitor|figure|help|tell|ask|create|update|change|move|delete|organi[sz]e|download|upload|list|show|explain)\b"#,
+    static let filler = try! NSRegularExpression(
+        pattern: #"^(?:\W*(?:yeah|yes|yep|yup|no|nope|ok(?:ay)?|um+|uh+|hmm+|mm+|so|like|right|sure|well|oh|ah|and|but|the|i|you|it|that|this|thanks|thank you|cool|nice|wait|what)\W*)+$"#,
         options: .caseInsensitive)
 
-    /// True when the words carry no job: fewer than three words, or no request in them.
+    /// True when the words carry no job: fewer than three words, or nothing but filler.
     public static func isStray(_ text: String) -> Bool {
         let words = text.split(whereSeparator: { $0.isWhitespace }).filter { $0.contains(where: { $0.isLetter }) }
         if words.count < 3 { return true }
-        return requestWords.firstMatch(in: text, range: NSRange(location: 0, length: (text as NSString).length)) == nil
+        return filler.firstMatch(in: text, range: NSRange(location: 0, length: (text as NSString).length)) != nil
     }
 
-    /// "another agent", "a new agent", "not you", "a separate one": found a new agent, never follow up the running one.
+    /// "start another agent on that", "get a separate agent", "not you, another agent": found a new agent, never
+    /// follow up the running one. Asking about one ("what did the new agent find") is not a request for one.
     static let freshWords = try! NSRegularExpression(
-        pattern: #"\b(another agent|a new agent|new agent|separate agent|a separate one|different agent|not you|someone else|another one on)\b"#,
+        pattern: #"\b(start|spin up|get|use|make|create|spawn|launch|have|put|assign|give (?:it|this|that) to|hand (?:it|this|that) to|send (?:it|this|that) to)\b[^.?!]{0,30}\b(another|a new|a separate|a different|new|separate|different)\b[^.?!]{0,12}\bagent\b|\bnot you\b[^.?!]{0,40}\b(agent|someone else|another one)\b|\b(another|a separate|a different|a new) agent\b[^.?!]{0,30}\bnot you\b"#,
         options: .caseInsensitive)
 
     public static func wantsFreshAgent(_ text: String) -> Bool {

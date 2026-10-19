@@ -32,6 +32,12 @@ final class Talk {
     /// Results still owed by turns Dot cut off, by session: each is dropped with everything it streams, so a cut-off
     /// turn is never spoken, retried or acted on (2026-10-18: "I" was spoken and the old question asked again).
     private var drainCounts: [ObjectIdentifier: Int] = [:]
+    /// Sessions whose next message should say the last turn was cut by a new question, not declined.
+    private var cutNoteOwed: Set<ObjectIdentifier> = []
+    /// Acts from one answer run one after another ([INSERT] then [KEY:return] must not race).
+    private var actChain: Task<Void, Never>?
+    /// The course on screen last, and when: a proof in "pset7.pdf" still gets the math map.
+    private var lastCourse: (code: String, at: Date)?
     /// How many of this turn's tags have been acted on as they streamed in.
     private var actsDone = 0
     /// He asked for something to be done, not explained: this turn's rings are pressed by Dot.
@@ -227,8 +233,10 @@ final class Talk {
         case .talk:
             if let talkSession, talkSession.isRunning {
                 let stale = Date().timeIntervalSince(lastTurnAt) > 3 * 3600
-                if talkSessionIsBench != benchMode, !talkSession.turnInFlight {
+                if talkSessionIsBench != benchMode {
+                    // a bench turn never runs where write tools are pre-allowed, and a normal one never in the bench's
                     Log.info("talk: \(benchMode ? "bench" : "normal") session for this turn")
+                    if talkSession.turnInFlight { cutActiveTurn() }
                     talkSession.stop()
                 } else if let spare = spareTalk, spare.isRunning, turnsInSession >= config.talkSessionMaxTurns || stale, !talkSession.turnInFlight {
                     // the next conversation was started ahead (pre-warm), so the recycle costs nothing
@@ -300,6 +308,8 @@ final class Talk {
         }
         if kind == .talk { talkSessionIsBench = bench }
         coursesInSession[ObjectIdentifier(session)] = []
+        drainCounts[ObjectIdentifier(session)] = nil
+        cutNoteOwed.remove(ObjectIdentifier(session))
         do {
             try session.start()
             return session
@@ -346,8 +356,8 @@ final class Talk {
         if phase == .speaking || phase == .thinking { stopSpeaking(); cutActiveTurn() }
         self.mode = mode
         quietTurn = false   // a spoken question is always answered aloud, whatever the last test turn was
-        benchMode = false   // nor is it ever a bench turn
-        hands.bench = nil
+        endBench()          // nor is it ever a bench turn
+        driveRequested = false   // a ring in this new question is his to click unless he asks Dot to do it
         idleTimer?.invalidate()
         overlay.clearMarks(keepRing: walkthrough != nil)
         overlay.hideBubble(after: 0)
@@ -819,6 +829,7 @@ final class Talk {
         dryRun = dry
         benchMode = bench
         hands.bench = bench ? Hands.Bench(cometPort: cometPort ?? 9471) : nil
+        driveRequested = false
         if phase == .speaking || phase == .thinking { stopSpeaking(); cutActiveTurn() }
         quietTurn = quiet || bench || (fromField && !config.speakTypedAnswers)
         textSurface = fromField
@@ -842,9 +853,20 @@ final class Talk {
     /// Interrupt the turn in flight and drop its result when it comes (the basics pass).
     private func cutActiveTurn() {
         guard let session = activeSession, session.turnInFlight else { return }
-        drainCounts[ObjectIdentifier(session), default: 0] += 1
+        let key = ObjectIdentifier(session)
+        // a turn already cut once owes one result, not two (Escape then a quick ask, a cut during a slow tool)
+        guard drainCounts[key, default: 0] < session.pendingResults else { return }
+        drainCounts[key, default: 0] += 1
+        cutNoteOwed.insert(key)
         session.interrupt()
         Log.info("talk: interrupted")
+    }
+
+    /// Back to normal after a bench turn: write tools, agents and his own apps again.
+    private func endBench() {
+        guard benchMode || hands.bench != nil else { return }
+        benchMode = false
+        hands.bench = nil
     }
 
     /// Events from a turn Dot cut off: swallowed through its result.
@@ -1383,6 +1405,7 @@ final class Talk {
     /// A figure on a card reported a drag, a slider or a tap (VI-06). It only ever starts a talk turn,
     /// never an action; while a turn is running the move waits for the next one he makes.
     private func cardEvent(_ event: CardEvent) {
+        endBench()
         if let active = activeSession, active.turnInFlight {
             Log.info("board: event while a turn runs, not sent: \(event.summary)")
             return
@@ -1495,6 +1518,11 @@ final class Talk {
     // MARK: Doing the small things (the basics pass, 2026-10-18)
 
     /// "my other screen", "the left monitor", "on screen two": the other screens' pictures ride along.
+    /// "how do i", "show me how", "teach me", "where is": he wants to learn it, so the rings stay his to click.
+    static func teachWords(_ text: String) -> Bool {
+        text.range(of: #"\b(how (do|can|would|should) (i|you|we)|show me how|teach me|walk me through|where('s| is| do i find)|what('s| is) the way to)\b"#, options: [.regularExpression, .caseInsensitive]) != nil
+    }
+
     static func mentionsOtherScreen(_ text: String) -> Bool {
         text.range(of: #"\b(other|second|left|right|external|top|bottom) (screen|monitor|display|mac)\b|\bscreen (two|2|one|1)\b|\bboth screens\b"#, options: [.regularExpression, .caseInsensitive]) != nil
     }
@@ -1514,6 +1542,7 @@ final class Talk {
         let started = Date()
         // "go to the part about x" in a document: Dot's own finder reads the text and highlights it
         if case .scroll(.toText(let phrase)) = command, context.bundleIdentifier != Hands.cometBundle {
+            if benchMode, !hands.benchAllows(context) { Log.info("bench: blocked action scroll outside the fixture"); return }
             Log.info("act: scroll \(Log.short(phrase, 60)) handed to the document finder")
             await findInDocument(phrase)
             return
@@ -1575,7 +1604,12 @@ final class Talk {
         let fresh = tags[actsDone...]
         actsDone = tags.count
         for tag in fresh {
-            if case .act(let command) = tag { Task { @MainActor in await self.performAct(command, local: false) } }
+            guard case .act(let command) = tag else { continue }
+            let previous = actChain
+            actChain = Task { @MainActor in
+                await previous?.value
+                await self.performAct(command, local: false)
+            }
         }
     }
 
@@ -1855,7 +1889,7 @@ final class Talk {
             overlay.point(at: CGPoint(x: hit.frame.midX, y: hit.frame.midY), label: String(hit.title.prefix(24)))
         }
         if route.choice == "lecture", route.probability >= 0.6, route.confidence >= 0.5 { return .lecture }
-        if route.choice == "act", route.probability >= 0.5 {
+        if route.choice == "act", route.probability >= 0.5, route.confidence >= 0.5, !PanelCoach.wantsPanel(text), !Self.teachWords(text) {
             // done, not explained: the talk model writes the action tags, and any rings it gives are pressed by Dot
             Log.info("jev: do it (\(String(format: "%.2f", route.probability)))")
             doIntent = true
@@ -1877,6 +1911,7 @@ final class Talk {
     /// A quiz answer on the panel: the quick model grades it in one spoken sentence with no routing and no screenshot
     /// (the plan: Sonnet grades and moves on); when the next step needs a new panel it hands over with [THINK].
     func panelEvent(_ line: String) {
+        endBench()
         guard let session = session(for: .talk) else { return }
         lastAsked = line
         lastAskWasTyped = false
@@ -1944,7 +1979,8 @@ final class Talk {
         if mode != .normal { lines.append("[mode] \(mode.rawValue)") }
         // This message cuts off the answer still being given in the same conversation (VO-07). Claude Code records the
         // cut as "the user doesn't want to proceed": it isn't a refusal (2026-10-18 12:49, "i held off searching").
-        if activeSession?.turnInFlight == true, activeKind == kind {
+        let target = kind == .talk ? talkSession : thinkSession
+        if let target, cutNoteOwed.remove(ObjectIdentifier(target)) != nil || activeSession?.turnInFlight == true && activeKind == kind {
             lines.append("note: dot cut off the last turn because he asked something new; he declined nothing, and a \"doesn't want to proceed\" in the history is only that cut. don't mention it; redo any lookup this question needs.")
         }
         if doIntent { lines.append("[do] he wants this done, not explained: use the action tags; for several steps ring one at a time and dot presses each.") }
@@ -2065,8 +2101,14 @@ final class Talk {
         let key = ObjectIdentifier(session)
         let seen = coursesInSession[key] ?? []
         let where_ = [context.windowTitle, context.url, transcript, context.documentPath].compactMap { $0 }.joined(separator: " ")
-        guard let course = CourseTag.detect(context: where_, content: context.selectedText ?? "", among: panels.courses),
-              !seen.contains(course.code), let map = Prompts.courseMap(course.code, in: config.talkRootURL) else { return [] }
+        let screenWords = ([context.selectedText ?? ""] + context.elements.prefix(60).map(\.title)).joined(separator: " ")
+        var detected = CourseTag.detect(context: where_, content: screenWords, among: panels.courses)
+        if detected == nil, let last = lastCourse, Date().timeIntervalSince(last.at) < 2 * 3600 {
+            detected = panels.courses.first { $0.code == last.code }
+        }
+        guard let course = detected else { return [] }
+        lastCourse = (course.code, Date())
+        guard !seen.contains(course.code), let map = Prompts.courseMap(course.code, in: config.talkRootURL) else { return [] }
         coursesInSession[key] = seen.union([course.code])
         Log.info("talk: \(course.label) course map joins this conversation")
         return ["[course map] \(course.label), for this and later questions in this conversation:", map, "[/course map]"]
@@ -2264,11 +2306,12 @@ final class Talk {
                     NSPasteboard.general.setString(body, forType: .string)
                 }
                 point(pixel: CGPoint(x: x, y: y), label: text.isEmpty ? "paste here" : text, screen: screen)
-                if walkthrough?.driving == true || driveRequested, let shot = shot(forScreen: screen), !body.isEmpty {
+                if walkthrough?.driving == true || driveRequested, let shot = shot(forScreen: screen), !body.isEmpty, !benchMode || hands.benchAllows(context) {
+                    // his cursor never moves: focus the field through accessibility and put the text in
                     let target = Coordinates.screenPoint(fromPixel: CGPoint(x: x, y: y), in: shot.frame)
-                    driver.begin()
-                    driver.go(to: target, click: true) { ok in
-                        if ok { DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { Driver.paste() } }
+                    if Hands.focus(atAppKit: target) {
+                        let method = TextInjection.insert(body)
+                        Log.info("act: insert (type tag) via \(method.rawValue)")
                     }
                 }
                 label = label ?? (text.isEmpty ? "paste" : text)
@@ -2671,6 +2714,12 @@ final class Talk {
     private func target(pixel: CGPoint, radius: CGFloat, label: String, screen: Int?, hover: Bool) -> Bool {
         guard let shot = shot(forScreen: screen) else { return false }
         let step = (walkthrough?.step ?? 0) + 1
+        if let run = goRun, (walkthrough?.driving == true || driveRequested), Date().timeIntervalSince(run.started) > 45 {
+            Log.info("walkthrough: driven run past 45 s")
+            endWalkthrough(reason: "driven time cap")
+            speaker.speak("that's taking too long for me; tell me what to do next.")
+            return false
+        }
         if let cap = driveCap, (walkthrough?.driving == true || driveRequested), step > cap {
             Log.info("walkthrough: driven steps capped at \(cap)")
             endWalkthrough(reason: "driven step cap")
@@ -2758,13 +2807,28 @@ final class Talk {
                 self.speaker.speak(line)
                 return
             }
-            if Hands.press(atAppKit: current.target) {
+            if self.benchMode, !self.hands.benchAllows(self.context) {
+                Log.info("bench: blocked action press outside the fixture")
+                return
+            }
+            if WindowOcclusion.isCovered(current.target).covered {
+                Log.info("drive: step \(current.step) \(current.label) is covered; left to him")
+                self.speaker.speak("\(current.label.lowercased()) is behind another window, so that click is yours.")
+                return
+            }
+            switch Hands.press(atAppKit: current.target, frontPid: NSWorkspace.shared.frontmostApplication?.processIdentifier) {
+            case .pressed:
                 Log.info("drive: step \(current.step) pressed \(current.label) (accessibility, cursor still)")
                 self.stepCompleted(how: "clicked")
-            } else {
+            case .commit(let words):
+                Log.info("drive: step \(current.step) reads like a commit (\(Log.short(words, 40))); left to him")
+                self.speaker.speak("this one looks like it commits something, so it's yours: \(current.label.lowercased()).")
+            case .otherApp:
+                Log.info("drive: step \(current.step) \(current.label) belongs to another app; left to him")
+                self.speaker.speak("something else is on top of \(current.label.lowercased()), so that click is yours.")
+            case .failed:
                 Log.info("drive: step \(current.step) \(current.label) takes no press from accessibility; left to him")
-                let line = "i can't press \(current.label.lowercased()) from here; click it and i'll keep going."
-                self.speaker.speak(line)
+                self.speaker.speak("i can't press \(current.label.lowercased()) from here; click it and i'll keep going.")
             }
         }
     }

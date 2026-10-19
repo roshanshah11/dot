@@ -39,11 +39,14 @@ final class Hands {
 
     static let cometBundle = "ai.perplexity.comet"
 
-    private var port: Int { bench?.cometPort ?? cometPort }
+    /// The DevTools port for the action in progress, read once so a bench action can't switch ports partway.
+    private var port: Int = 9222
 
     // MARK: Entry
 
     func perform(_ command: ActionCommand, context: ScreenContext) async -> Outcome {
+        port = bench?.cometPort ?? cometPort
+        if bench != nil, port == 9222 { return Outcome(ok: false, line: "", detail: "bench on 9222 refused") }
         if let bench, let refusal = benchRefusal(command, context: context, bench: bench) {
             Log.info("bench: blocked action \(command.verb) \(refusal)")
             return Outcome(ok: false, line: "that's outside the bench, so i left it.", detail: "bench: \(refusal)")
@@ -59,7 +62,9 @@ final class Hands {
         case .browser(let move):
             if isComet, let r = await cometBrowser(move, context: context) { return r }
             return keyBrowser(move, context: context)
-        case .key(let chord): return key(chord, context: context)
+        case .key(let chord):
+            if isComet, KeyChord.parse(chord)?.isPlainReturn == true, let r = await cometSubmitSearch(context: context) { return r }
+            return key(chord, context: context)
         case .click(let label):
             if CommitGuard.isCommit(label) { return Outcome(ok: false, line: "", detail: "commit word in \"\(label)\"", commitLabel: label) }
             if isComet, let r = await cometClick(label, context: context) { return r }
@@ -111,8 +116,15 @@ final class Hands {
 
     private func open(path: String) -> Outcome {
         let url = URL(fileURLWithPath: (path as NSString).expandingTildeInPath)
-        guard FileManager.default.fileExists(atPath: url.path) else {
+        var isDir: ObjCBool = false
+        guard FileManager.default.fileExists(atPath: url.path, isDirectory: &isDir) else {
             return Outcome(ok: false, line: "i can't find \((path as NSString).lastPathComponent).", detail: "no file at \(url.path)", unresolved: true)
+        }
+        // Opening a script, an app or an installer runs code: those stay his.
+        let runs: Set<String> = ["command", "sh", "zsh", "bash", "app", "pkg", "mpkg", "workflow", "tool", "terminal", "scpt", "applescript",
+                                 "jar", "py", "rb", "pl", "dmg", "action", "prefpane", "kext", "plugin"]
+        if runs.contains(url.pathExtension.lowercased()) || (!isDir.boolValue && FileManager.default.isExecutableFile(atPath: url.path)) {
+            return Outcome(ok: false, line: "\(url.lastPathComponent.lowercased()) would run something, so open it yourself.", detail: "refused executable \(url.path)", commitLabel: url.lastPathComponent)
         }
         let config = NSWorkspace.OpenConfiguration()
         config.activates = true
@@ -136,9 +148,11 @@ final class Hands {
         config.activates = true
         if let comet = NSWorkspace.shared.urlForApplication(withBundleIdentifier: Self.cometBundle), bench == nil {
             _ = try? await NSWorkspace.shared.open([url], withApplicationAt: comet, configuration: config)
-        } else if bench != nil, let tab = await anyTab() {
-            // bench: the throwaway Comet only
-            _ = await cdpBrowserNewTab(url, near: tab)
+        } else if bench != nil {
+            // bench: the throwaway Comet only, never the default browser (his Comet)
+            guard let tab = await anyTab(), await cdpBrowserNewTab(url, near: tab) else {
+                return Outcome(ok: false, line: "", detail: "bench: no bench comet to open it in")
+            }
         } else {
             NSWorkspace.shared.open(url)
         }
@@ -147,8 +161,14 @@ final class Hands {
 
     // MARK: Native scroll, keys, click, type
 
+    private func frontIs(_ context: ScreenContext) -> Bool {
+        guard let front = NSWorkspace.shared.frontmostApplication, front.processIdentifier != ProcessInfo.processInfo.processIdentifier else { return false }
+        return context.bundleIdentifier == nil || front.bundleIdentifier == context.bundleIdentifier
+    }
+
     private func nativeScroll(_ move: ActionCommand.Scroll, context: ScreenContext) -> Outcome {
         if case .toText = move { return Outcome(ok: false, line: "", detail: "native find: caller uses the document finder") }
+        guard frontIs(context) else { return Outcome(ok: false, line: "the app in front changed, so i didn't scroll.", detail: "front app changed") }
         if let bar = verticalScrollBar(), setScroll(bar, move) {
             return Outcome(ok: true, line: ActionCommand.scroll(move).doneLine, detail: "ax scroll bar")
         }
@@ -168,7 +188,8 @@ final class Hands {
         var queue: [(AXUIElement, Int)] = [(window, 0)]
         var best: (AXUIElement, CGFloat)?
         var visited = 0
-        while !queue.isEmpty, visited < 600 {
+        let deadline = Date().addingTimeInterval(0.3)
+        while !queue.isEmpty, visited < 600, Date() < deadline {
             let (element, depth) = queue.removeFirst()
             visited += 1
             if Self.string(element, kAXRoleAttribute) == "AXScrollArea", let bar = Self.ax(element, kAXVerticalScrollBarAttribute) {
@@ -215,7 +236,10 @@ final class Hands {
               context.bundleIdentifier == nil || front.bundleIdentifier == context.bundleIdentifier else {
             return Outcome(ok: false, line: "the app in front changed, so i didn't press anything.", detail: "front app changed")
         }
-        if chord.isPlainReturn, !returnAllowedInFocusedField() {
+        guard chord.isAllowedForDot else {
+            return Outcome(ok: false, line: "that key could change or send something, so it's yours.", detail: "chord \(chordText) not on Dot's list", commitLabel: chordText)
+        }
+        if chord.isReturn, !chord.isPlainReturn || !returnAllowedInFocusedField() {
             return Outcome(ok: false, line: "return there could send something, so that one's yours.", detail: "return outside a search field", commitLabel: "return")
         }
         var flags: CGEventFlags = []
@@ -240,14 +264,21 @@ final class Hands {
         }
         if CommitGuard.isCommit(element.title) { return Outcome(ok: false, line: "", detail: "commit word in \"\(element.title)\"", commitLabel: element.title) }
         let center = CGPoint(x: element.frame.midX, y: element.frame.midY)
-        if Self.press(atAppKit: center) {
+        switch Self.press(atAppKit: center, frontPid: NSWorkspace.shared.frontmostApplication?.processIdentifier) {
+        case .pressed:
             return Outcome(ok: true, line: "clicked \(element.title.lowercased()).", detail: "axpress \(element.role) \"\(element.title)\"", point: center)
+        case .commit(let label):
+            return Outcome(ok: false, line: "", detail: "commit word in \"\(label)\"", point: center, commitLabel: label)
+        case .otherApp:
+            return Outcome(ok: false, line: "something else is on top of \(element.title.lowercased()), so i left it.", detail: "element belongs to another app", point: center)
+        case .failed:
+            return Outcome(ok: false, line: "\(element.title.lowercased()) didn't take a click from me.", detail: "axpress failed", point: center)
         }
-        return Outcome(ok: false, line: "\(element.title.lowercased()) didn't take a click from me.", detail: "axpress failed", point: center)
     }
 
     private func nativeInsert(label: String?, text: String, context: ScreenContext) -> Outcome {
         guard !text.isEmpty else { return Outcome(ok: false, line: "", detail: "nothing to type") }
+        guard frontIs(context) else { return Outcome(ok: false, line: "the app in front changed, so i didn't type.", detail: "front app changed") }
         if let label, let element = Self.bestElement(label, in: context.elements.filter { ["AXTextField", "AXSearchField", "AXTextArea", "AXComboBox"].contains($0.role) } ) ?? Self.bestElement(label, in: context.elements) {
             _ = Self.focus(atAppKit: CGPoint(x: element.frame.midX, y: element.frame.midY))
         }
@@ -288,7 +319,8 @@ final class Hands {
         let title = context.windowTitle ?? ""
         func norm(_ u: String) -> String { var s = u; if let hash = s.firstIndex(of: "#") { s = String(s[..<hash]) }; return s.hasSuffix("/") ? String(s.dropLast()) : s }
         var matches = list.filter { !$0.title.isEmpty && title.contains($0.title) }
-        if let url = context.url { let byURL = matches.filter { norm($0.url) == norm(url) }; if !byURL.isEmpty { matches = byURL } }
+        // the url decides when Dot knows it: a title alone binds only when the window gave no url
+        if let url = context.url { matches = matches.filter { norm($0.url) == norm(url) } }
         if matches.count == 1 { return matches[0] }
         if bench != nil, matches.isEmpty, list.count == 1 { return list[0] }   // the bench Comet holds one tab
         Log.info("act: comet tab binding found \(matches.count) matches; refusing")
@@ -304,17 +336,19 @@ final class Hands {
         let id = Int.random(in: 1...1_000_000)
         guard let body = try? JSONSerialization.data(withJSONObject: ["id": id, "method": method, "params": params]),
               let text = String(data: body, encoding: .utf8) else { return nil }
+        // A page stuck in an alert or a beforeunload dialog never answers: three seconds, then the socket goes.
+        let timeout = Task { try? await Task.sleep(nanoseconds: 3_000_000_000); task.cancel(with: .goingAway, reason: nil) }
+        defer { timeout.cancel() }
         do {
             try await task.send(.string(text))
-            let deadline = Date().addingTimeInterval(3)
-            while Date() < deadline {
+            while true {
                 let message = try await task.receive()
                 guard case .string(let reply) = message, let data = reply.data(using: .utf8),
                       let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any], (json["id"] as? Int) == id else { continue }
                 return json["result"] as? [String: Any] ?? [:]
             }
         } catch {
-            Log.warn("act: cdp \(method) failed: \(error.localizedDescription)")
+            Log.warn("act: cdp \(method) failed or timed out: \(error.localizedDescription)")
         }
         return nil
     }
@@ -394,9 +428,15 @@ final class Hands {
     best.scrollIntoView({block: 'center', behavior: 'instant'});
     const r = best.getBoundingClientRect();
     if (fields) best.focus();
-    return {found: true, x: r.left + r.width / 2, y: r.top + r.height / 2, name: name(best), role: best.getAttribute('role') || '',
-            tag: best.tagName.toLowerCase(), type: (best.getAttribute('type') || '').toLowerCase(), placeholder: best.getAttribute('placeholder') || '',
-            chromeTop: outerHeight - innerHeight, value: fields ? (best.value || best.innerText || '') : ''};
+    const cx = r.left + r.width / 2, cy = r.top + r.height / 2;
+    const top = document.elementFromPoint(cx, cy);
+    const onTop = !!top && (top === best || best.contains(top) || top.contains(best));
+    const tag = best.tagName.toLowerCase();
+    const type = (best.type || best.getAttribute('type') || '').toLowerCase();
+    const submits = !!best.form && (tag === 'button' && type === 'submit' || tag === 'input' && (type === 'submit' || type === 'image'));
+    return {found: true, x: cx, y: cy, name: name(best), role: best.getAttribute('role') || '', tag: tag, type: type, submits: submits,
+            onTop: onTop, covering: onTop || !top ? '' : (top.innerText || top.getAttribute('aria-label') || top.tagName).slice(0, 60),
+            placeholder: best.getAttribute('placeholder') || '', chromeTop: outerHeight - innerHeight, value: fields ? (best.value || best.innerText || '') : ''};
     """
 
     private func cometScroll(_ move: ActionCommand.Scroll, context: ScreenContext) async -> Outcome? {
@@ -443,9 +483,13 @@ final class Hands {
         }
         let name = (hit["name"] as? String) ?? label
         let point = screenPoint(x: x, y: y, chromeTop: (hit["chromeTop"] as? Double) ?? 80, context: context)
-        let type = (hit["type"] as? String) ?? ""
-        if CommitGuard.isCommit(name) || type == "submit" && !name.lowercased().contains("search") {
+        let submits = (hit["submits"] as? Bool) ?? false
+        if CommitGuard.isCommit(name) || submits && !name.lowercased().contains("search") {
             return Outcome(ok: false, line: "", detail: "commit control \"\(name)\"", point: point, commitLabel: name)
+        }
+        if (hit["onTop"] as? Bool) == false {
+            let cover = (hit["covering"] as? String) ?? "something"
+            return Outcome(ok: false, line: "something is covering \(name.lowercased()) on the page, so i left it.", detail: "covered by \"\(cover)\"", point: point)
         }
         for kind in ["mouseMoved", "mousePressed", "mouseReleased"] {
             var params: [String: Any] = ["type": kind, "x": x, "y": y, "button": "left", "clickCount": 1]
@@ -488,6 +532,12 @@ final class Hands {
 
     // MARK: Bench
 
+    /// A driven press or a [TYPE] in a bench turn: only on the fixture window.
+    func benchAllows(_ context: ScreenContext) -> Bool {
+        guard let bench else { return true }
+        return benchRefusal(.click(label: "bench"), context: context, bench: bench) == nil
+    }
+
     private func benchRefusal(_ command: ActionCommand, context: ScreenContext, bench: Bench) -> String? {
         if bench.cometPort == 9222 { return "comet port 9222 is his browser" }
         let fixtureFront: Bool = {
@@ -526,19 +576,28 @@ final class Hands {
         return scored.max { $0.1 < $1.1 }?.0
     }
 
+    enum Press: Equatable { case pressed, commit(String), otherApp, failed }
+
     /// AXPress on the element under an AppKit point (or its nearest pressable ancestor). The cursor stays put.
-    static func press(atAppKit point: CGPoint) -> Bool {
-        guard let element = elementAt(point) else { return false }
+    /// Every element on the way up is checked against his rule, so an icon inside a Send button can't slip past;
+    /// an element of another app than the one in front (a window on top) is never pressed.
+    static func press(atAppKit point: CGPoint, frontPid: pid_t?) -> Press {
+        guard let element = elementAt(point) else { return .failed }
+        var pid: pid_t = 0
+        if let frontPid, AXUIElementGetPid(element, &pid) == .success, pid != frontPid { return .otherApp }
         var current: AXUIElement? = element
         for _ in 0..<6 {
             guard let e = current else { break }
+            for name in [kAXTitleAttribute, kAXDescriptionAttribute, kAXHelpAttribute, kAXValueAttribute] {
+                if let words = string(e, name), CommitGuard.isCommit(words) { return .commit(words) }
+            }
             var names: CFArray?
             if AXUIElementCopyActionNames(e, &names) == .success, let list = names as? [String], list.contains(kAXPressAction as String) {
-                return AXUIElementPerformAction(e, kAXPressAction as CFString) == .success
+                return AXUIElementPerformAction(e, kAXPressAction as CFString) == .success ? .pressed : .failed
             }
             current = ax(e, kAXParentAttribute)
         }
-        return false
+        return .failed
     }
 
     static func focus(atAppKit point: CGPoint) -> Bool {
@@ -605,7 +664,7 @@ final class Hands {
             (dict["children"] as? [Any])?.forEach(walk)
         }
         roots.values.forEach(walk)
-        let exact = hits.first { $0.0 == want } ?? hits.first { $0.0.hasPrefix(want) } ?? (want.count >= 5 ? hits.first { $0.0.contains(want) } : nil)
+        let exact = hits.first { $0.0 == want } ?? (want.count >= 4 ? hits.first { $0.0.hasPrefix(want + " ") || $0.0.hasPrefix(want + " -") || $0.0 == want } : nil)
         return exact.flatMap { URL(string: $0.1) }
     }
 

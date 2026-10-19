@@ -240,7 +240,7 @@ final class ClaudeSession {
 
     /// Messages sent whose result has not come back. A message sent right after an interrupt waits behind the cut-off
     /// turn, whose result arrives first: the session is still busy after that one (the basics pass, 2026-10-18).
-    private var pendingResults = 0
+    private(set) var pendingResults = 0
 
     func send(text: String, images: [(data: Data, mediaType: String)] = []) {
         pendingResults += 1

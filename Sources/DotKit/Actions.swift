@@ -156,10 +156,10 @@ public enum ActionPhrases {
     static let reload = re(lead + #"(?:reload|refresh)(?: (?:the|this) page| it)?"# + tail)
     static let newTab = re(lead + #"(?:open )?(?:a )?new tab"# + tail)
     static let closeTab = re(lead + #"close (?:this|the|that) tab"# + tail)
-    static let pause = re(lead + #"(?:pause(?: the)?(?: music| song| spotify| video| it)?|(?:resume|play|unpause)(?: the)? (?:music|song|spotify))"# + tail)
+    static let pause = re(lead + #"(?:pause|resume|play|unpause)(?: the| my)? (?:music|song|spotify|video|podcast)"# + tail)
     static let nextSong = re(lead + #"(?:next|skip(?: this)?) (?:song|track)"# + tail)
     static let previousSong = re(lead + #"(?:previous|last) (?:song|track)"# + tail)
-    static let open = re(lead + #"(?:open(?: up)?|launch|start|switch to|bring up) (?:the |my |up )?(.{2,40}?)(?: app| application| folder)?"# + tail)
+    static let open = re(lead + #"(?:open(?: up)?|launch|switch to|bring up) (?:the |my |up )?(.{2,40}?)(?: app| application| folder)?"# + tail)
 
     /// The command for a fixed phrase, or nil when the words need the model. `open X` is returned
     /// unresolved: the caller acts on it only when X is an app, a folder or a site it can name.
@@ -185,8 +185,10 @@ public enum ActionPhrases {
             let target = (t as NSString).substring(with: m.range(at: 1)).trimmingCharacters(in: .whitespaces)
             let lower = target.lowercased()
             // pronouns and board asks ("open it", "open the page on pcr on the board") are the model's
-            let pronouns: Set<String> = ["it", "this", "that", "them", "this one", "that one", "the page", "the link", "the email", "the file", "the pdf"]
-            guard !pronouns.contains(lower), !lower.contains(" on the board"), !lower.contains(" about "), !lower.contains(" from "),
+            let pronouns: Set<String> = ["it", "this", "that", "them", "this one", "that one", "the page", "the link", "the email", "the file", "the pdf",
+                                         "board", "the board", "panel", "the panel", "card", "the card", "home", "dot", "again", "up", "the", "a", "an", "my"]
+            let letters = lower.filter { $0.isLetter }
+            guard letters.count >= 3, !pronouns.contains(lower.trimmingCharacters(in: CharacterSet.punctuationCharacters)), !lower.contains(" on the board"), !lower.contains(" about "), !lower.contains(" from "),
                   !lower.contains(" page on "), lower.split(separator: " ").count <= 4 else { return nil }
             return ActionTags.openCommand(target)
         }
@@ -229,13 +231,29 @@ public struct KeyChord: Equatable, Sendable {
 
     /// Return or Enter with no modifier: it submits whatever field has the keyboard.
     public var isPlainReturn: Bool { keyCode == 36 && !command && !shift && !option && !control }
+    /// Return with any modifier is still Return (cmd+return sends a mail draft).
+    public var isReturn: Bool { keyCode == 36 }
+
+    /// The only chords Dot presses itself: moving around and the browser's own keys. A letter or a symbol could
+    /// archive or delete in a mail app, cmd+q quits, cmd+delete deletes (the basics review, 2026-10-18).
+    public var isAllowedForDot: Bool {
+        let movement: Set<UInt16> = [123, 124, 125, 126, 116, 121, 115, 119, 48, 49, 53]   // arrows, page, home/end, tab, space, escape
+        if isReturn { return true }   // judged by the field it lands in
+        if !command, !option, !control, movement.contains(keyCode) { return true }
+        if command, !option, !control {
+            // cmd+f find, cmd+l address bar, cmd+t new tab, cmd+[ back, cmd+] forward, cmd+r reload; cmd+shift+t reopens a tab
+            let browser: Set<UInt16> = [3, 37, 17, 33, 30, 15]
+            if browser.contains(keyCode) { return !shift || keyCode == 17 }
+        }
+        return false
+    }
 }
 
 /// His standing rule, in one place: what Dot never presses for him. The union of the agent gate's
 /// words (ConsentPolicy) and the old drive list, plus the short forms both missed ("apply", "confirm").
 public enum CommitGuard {
     static let words = try! NSRegularExpression(
-        pattern: #"\b(send|submit|pay|buy|purchase|checkout|check out|place order|order now|delete|remove|erase|trash|empty trash|post|post it|publish|tweet|share|confirm|transfer|sign and|sign up|sign|apply|apply now|agree|accept|reply|forward|unsubscribe|cancel|shut ?down|restart|log ?out|sign ?out|format|overwrite|replace all|book|reserve|enroll|register|donate)\b"#,
+        pattern: #"\b(send|submit|pay|buy|purchase|checkout|check out|place order|order now|delete|remove|erase|trash|empty trash|post|post it|publish|tweet|share|confirm|transfer|sign and|sign up|sign|apply|apply now|agree|accept|reply|forward|unsubscribe|cancel|shut ?down|restart|log ?out|sign ?out|format|overwrite|replace all|book|reserve|enroll|register|donate|place your order|decline|withdraw|connect|turn in|start quiz|take the quiz|begin quiz|rsvp|follow|invite|join|accept invitation|merge|deploy|publish)\b"#,
         options: .caseInsensitive)
 
     public static func isCommit(_ label: String) -> Bool {
