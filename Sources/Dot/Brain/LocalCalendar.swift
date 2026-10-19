@@ -19,8 +19,9 @@ final class LocalCalendar {
         case .fullAccess:
             granted = true
             Log.info("calendar: this mac's calendar is readable")
-        case .notDetermined:
-            Log.info("calendar: asking for calendar access (his click; atlas's copy until then)")
+        case .notDetermined, .writeOnly:
+            // write-only (status 4) is what an app gets from adding events; reading needs the full grant, asked once
+            Log.info("calendar: asking for full calendar access (status \(status.rawValue); his click; atlas's copy until then)")
             store.requestFullAccessToEvents { [weak self] ok, error in
                 DispatchQueue.main.async {
                     guard let self else { return }
