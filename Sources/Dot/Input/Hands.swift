@@ -38,8 +38,9 @@ final class Hands {
     init(cometPort: Int) { self.cometPort = cometPort }
 
     static let cometBundle = "ai.perplexity.comet"
+    static let browsers: Set<String> = [cometBundle, "com.apple.Safari", "com.google.Chrome", "company.thebrowser.Browser", "org.mozilla.firefox", "com.brave.Browser", "com.microsoft.edgemac"]
 
-    /// The DevTools port for the action in progress, read once so a bench action can't switch ports partway.
+    /// The DevTools port, set at the start of each action (acts from one answer run one at a time).
     private var port: Int = 9222
 
     // MARK: Entry
@@ -224,9 +225,14 @@ final class Hands {
         case .newTab: chord = "cmd+t"
         case .closeTab: chord = "cmd+w"
         }
-        var outcome = key(chord, context: context)
-        if outcome.ok { outcome.line = ActionCommand.browser(move).doneLine }
-        return outcome
+        guard let parsed = KeyChord.parse(chord), let front = NSWorkspace.shared.frontmostApplication,
+              Self.browsers.contains(front.bundleIdentifier ?? ""), frontIs(context) else {
+            return Outcome(ok: false, line: "that only works in a browser in front.", detail: "\(move.rawValue): front app is no browser")
+        }
+        var flags: CGEventFlags = [.maskCommand]
+        if parsed.shift { flags.insert(.maskShift) }
+        Navigator.chord(key: CGKeyCode(parsed.keyCode), flags: flags)
+        return Outcome(ok: true, line: ActionCommand.browser(move).doneLine, detail: "key \(chord) to \(front.bundleIdentifier ?? "?")")
     }
 
     /// A key chord to the app in front, after checking it is still the app he was looking at.
@@ -235,6 +241,9 @@ final class Hands {
         guard let front = NSWorkspace.shared.frontmostApplication, front.processIdentifier != ProcessInfo.processInfo.processIdentifier,
               context.bundleIdentifier == nil || front.bundleIdentifier == context.bundleIdentifier else {
             return Outcome(ok: false, line: "the app in front changed, so i didn't press anything.", detail: "front app changed")
+        }
+        if chord.isBrowserChord, !Self.browsers.contains(front.bundleIdentifier ?? "") {
+            return Outcome(ok: false, line: "that key is for a browser, and this isn't one.", detail: "browser chord \(chordText) outside a browser", commitLabel: chordText)
         }
         guard chord.isAllowedForDot else {
             return Outcome(ok: false, line: "that key could change or send something, so it's yours.", detail: "chord \(chordText) not on Dot's list", commitLabel: chordText)
@@ -259,6 +268,7 @@ final class Hands {
     }
 
     private func nativeClick(_ label: String, context: ScreenContext) -> Outcome {
+        guard frontIs(context) else { return Outcome(ok: false, line: "the app in front changed, so i didn't click.", detail: "front app changed") }
         guard let element = Self.bestElement(label, in: context.elements) else {
             return Outcome(ok: false, line: "i don't see \(label.lowercased()) on screen.", detail: "no element \"\(label)\"")
         }

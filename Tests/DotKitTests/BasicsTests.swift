@@ -80,7 +80,7 @@ final class ActionPhraseTests: XCTestCase {
         for allowed in ["down", "pagedown", "cmd+l", "cmd+f", "cmd+[", "cmd+shift+t", "tab", "escape", "return"] {
             XCTAssertEqual(KeyChord.parse(allowed)?.isAllowedForDot, true, allowed)
         }
-        for refused in ["cmd+q", "cmd+delete", "e", "shift+3", "cmd+w", "cmd+a", "ctrl+c", "delete"] {
+        for refused in ["cmd+q", "cmd+delete", "e", "shift+3", "cmd+w", "cmd+a", "ctrl+c", "delete", "space"] {
             XCTAssertEqual(KeyChord.parse(refused)?.isAllowedForDot, false, refused)
         }
         XCTAssertEqual(KeyChord.parse("cmd+return")?.isReturn, true)

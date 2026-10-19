@@ -36,6 +36,8 @@ final class Talk {
     private var cutNoteOwed: Set<ObjectIdentifier> = []
     /// Acts from one answer run one after another ([INSERT] then [KEY:return] must not race).
     private var actChain: Task<Void, Never>?
+    /// Bumped by every new turn and by escape: an act queued by an earlier answer is dropped.
+    private var actGeneration = 0
     /// The course on screen last, and when: a proof in "pset7.pdf" still gets the math map.
     private var lastCourse: (code: String, at: Date)?
     /// How many of this turn's tags have been acted on as they streamed in.
@@ -236,7 +238,7 @@ final class Talk {
                 if talkSessionIsBench != benchMode {
                     // a bench turn never runs where write tools are pre-allowed, and a normal one never in the bench's
                     Log.info("talk: \(benchMode ? "bench" : "normal") session for this turn")
-                    if talkSession.turnInFlight { cutActiveTurn() }
+                    if talkSession.turnInFlight, activeSession === talkSession { cutActiveTurn() }
                     talkSession.stop()
                 } else if let spare = spareTalk, spare.isRunning, turnsInSession >= config.talkSessionMaxTurns || stale, !talkSession.turnInFlight {
                     // the next conversation was started ahead (pre-warm), so the recycle costs nothing
@@ -1406,6 +1408,7 @@ final class Talk {
     /// never an action; while a turn is running the move waits for the next one he makes.
     private func cardEvent(_ event: CardEvent) {
         endBench()
+        driveRequested = false
         if let active = activeSession, active.turnInFlight {
             Log.info("board: event while a turn runs, not sent: \(event.summary)")
             return
@@ -1606,8 +1609,10 @@ final class Talk {
         for tag in fresh {
             guard case .act(let command) = tag else { continue }
             let previous = actChain
+            let generation = actGeneration
             actChain = Task { @MainActor in
                 await previous?.value
+                guard generation == self.actGeneration else { Log.info("act: \(command.verb) dropped (its answer was cut off)"); return }
                 await self.performAct(command, local: false)
             }
         }
@@ -1912,6 +1917,7 @@ final class Talk {
     /// (the plan: Sonnet grades and moves on); when the next step needs a new panel it hands over with [THINK].
     func panelEvent(_ line: String) {
         endBench()
+        driveRequested = false
         guard let session = session(for: .talk) else { return }
         lastAsked = line
         lastAskWasTyped = false
@@ -1944,6 +1950,7 @@ final class Talk {
         quietWork.forEach { $0.cancel() }
         quietWork = []
         quietClock = Date()
+        actGeneration += 1
         turnStartedAt = Date()
         firstSentenceLogged = false
         lastTurnAt = Date()
@@ -2999,6 +3006,8 @@ final class Talk {
         let wasBusy = phase != .idle || speaker.isSpeaking || walkthrough != nil
         stopSpeaking()
         cutActiveTurn()
+        driveRequested = false
+        actGeneration += 1   // acts still queued from the answer he stopped don't run
         if phase == .listening { recorder.cancel(); overlay.setMouseCapture(false) }
         levelTimer?.invalidate()
         phase = .idle

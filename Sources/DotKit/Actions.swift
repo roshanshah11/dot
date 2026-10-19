@@ -236,8 +236,12 @@ public struct KeyChord: Equatable, Sendable {
 
     /// The only chords Dot presses itself: moving around and the browser's own keys. A letter or a symbol could
     /// archive or delete in a mail app, cmd+q quits, cmd+delete deletes (the basics review, 2026-10-18).
+    /// True for the browser chords (cmd+f/l/t/[/]/r, cmd+shift+t): Dot presses those only in a browser.
+    public var isBrowserChord: Bool { command && [3, 37, 17, 33, 30, 15].contains(keyCode) }
+
     public var isAllowedForDot: Bool {
-        let movement: Set<UInt16> = [123, 124, 125, 126, 116, 121, 115, 119, 48, 49, 53]   // arrows, page, home/end, tab, space, escape
+        // arrows, page, home/end, tab, escape; never space (it presses a focused button) or a bare letter (mail shortcuts)
+        let movement: Set<UInt16> = [123, 124, 125, 126, 116, 121, 115, 119, 48, 53]
         if isReturn { return true }   // judged by the field it lands in
         if !command, !option, !control, movement.contains(keyCode) { return true }
         if command, !option, !control {
