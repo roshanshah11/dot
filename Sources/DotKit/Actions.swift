@@ -134,6 +134,8 @@ public enum ActionTags {
         let lower = t.lowercased()
         if lower.hasPrefix("http://") || lower.hasPrefix("https://") { return .openURL(t, newTab: newTab) }
         if t.hasPrefix("/") || t.hasPrefix("~") { return .openPath(t) }
+        // "the folder /tmp/x", "file ~/notes.txt": the path is the target
+        if let path = t.split(separator: " ").first(where: { $0.hasPrefix("/") || $0.hasPrefix("~/") }) { return .openPath(String(path)) }
         // a bare domain ("espn.com", "news.ycombinator.com/item?id=1"): a site, not an app
         if !t.contains(" "), let dot = t.firstIndex(of: "."), t[t.index(after: dot)...].count >= 2,
            t.range(of: #"^[a-z0-9-]+(\.[a-z0-9-]+)+(/\S*)?$"#, options: [.regularExpression, .caseInsensitive]) != nil {

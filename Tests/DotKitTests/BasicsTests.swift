@@ -57,6 +57,7 @@ final class ActionPhraseTests: XCTestCase {
         XCTAssertEqual(ActionPhrases.match("hey can you um open chain stream"), .open("chain stream"))
         XCTAssertEqual(ActionPhrases.match("open my downloads folder"), .open("downloads"))
         XCTAssertEqual(ActionPhrases.match("open espn.com"), .openURL("https://espn.com", newTab: true))
+        XCTAssertEqual(ActionPhrases.match("open the folder /tmp/dot-bench"), .openPath("/tmp/dot-bench"))
     }
 
     func testPhrasesThatNeedTheModel() {
