@@ -2500,8 +2500,9 @@ final class Talk {
         }
         let kind = activeSession === thinkSession ? "think" : "talk"
         ledger.record(kind: kind, agent: nil, model: turnModel, result: result, summary: hud.model.transcript)
-        TranscriptLog.append(kind: lastAskWasTyped ? .typed : (lastAskWasLecture ? .lecture : .talk), you: lastAsked, dot: spoken, app: context.appName,
-                             extra: ["model": turnModel, "ms": String(result.durationMs)])
+        // bench turns are tests, not his history
+        if !benchMode { TranscriptLog.append(kind: lastAskWasTyped ? .typed : (lastAskWasLecture ? .lecture : .talk), you: lastAsked, dot: spoken, app: context.appName,
+                             extra: ["model": turnModel, "ms": String(result.durationMs)]) }
         Log.info("turn[\(kind)] done in \(result.durationMs) ms, $\(String(format: "%.4f", result.costUSD)), \(tags.filter { $0.isVisual }.count) visual beat(s), tags \(tags.map { "\($0)" }.joined(separator: " | "))")
         Log.info("turn[\(kind)] said: \(Log.short(spoken, 240))")
         if !result.isError { retriedTurn = false }
