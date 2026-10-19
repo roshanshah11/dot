@@ -18,7 +18,7 @@ public struct CalendarItem: Equatable, Sendable {
         self.location = location; self.notes = notes; self.calendar = calendar
     }
 
-    /// Title, place and notes, each case-insensitive: "dance" finds "... Dance Room", "bhangra" the title.
+    /// Title, place and notes, each case-insensitive: "dance" finds "... Dance Room", "practice" the title.
     public func matches(_ query: String) -> Bool {
         let words = query.lowercased().split(whereSeparator: { !$0.isLetter && !$0.isNumber }).map(String.init).filter { $0.count >= 3 }
         guard !words.isEmpty else { return false }
@@ -37,7 +37,7 @@ public enum CalendarLines {
         asks.firstMatch(in: text, range: NSRange(location: 0, length: (text as NSString).length)) != nil
     }
 
-    /// One line per event: "Sun 10-18 17:00–19:00 Bhangra practice (at Ida Noyes Dance Room)".
+    /// One line per event: "Sun 10-18 17:00–19:00 Team practice (at Student Center Dance Room)".
     public static func line(_ item: CalendarItem, calendar cal: Calendar = .current) -> String {
         let day = DateFormatter()
         day.locale = Locale(identifier: "en_US"); day.calendar = cal; day.timeZone = cal.timeZone
@@ -103,7 +103,7 @@ public struct AtlasFreshness: Equatable {
     }
 }
 
-/// Shift held means "give this to an agent". A stray word or two ("Yeah.", "Lori like.") is not a job.
+/// Shift held means "give this to an agent". A stray word or two ("Yeah.", "Sam like.") is not a job.
 public enum AgentModeFilter {
     static let filler = try! NSRegularExpression(
         pattern: #"^(?:\W*(?:yeah|yes|yep|yup|no|nope|ok(?:ay)?|um+|uh+|hmm+|mm+|so|like|right|sure|well|oh|ah|and|but|the|i|you|it|that|this|thanks|thank you|cool|nice|wait|what)\W*)+$"#,

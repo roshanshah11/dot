@@ -19,7 +19,7 @@ public enum ActionCommand: Equatable, Sendable {
     case click(label: String)
     case insert(label: String?, text: String)
     case media(Media)
-    /// Several steps on what is in front ("go to my applied jobs and search riverside"): Dot drives a
+    /// Several steps on what is in front ("go to my applied jobs and search northwind"): Dot drives a
     /// walkthrough itself, one step at a time, and stops at the result.
     case go(goal: String)
 

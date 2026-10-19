@@ -933,7 +933,7 @@ final class Talk {
         // message to the agent (FX-02); it takes the ordinary route, which stops it or answers.
         let addressed = AgentAddress.find(in: text, roster: addressBook)
         let agentMode = mode == .agent && (addressed.map { $0.intent == .tell } ?? true)
-        // Shift held over a stray word or two ("Yeah.", "Lori like.") is not a job (2026-10-18 01:34 made two agents).
+        // Shift held over a stray word or two ("Yeah.", "Sam like.") is not a job (2026-10-18 01:34 made two agents).
         if agentMode, addressed == nil, hud.currentConsent == nil, walkthrough == nil, AgentModeFilter.isStray(text) {
             Log.info("jev: nothing asked (shift): \(Log.short(text, 60))")
             hud.flash(status: "didn't catch a request", for: 2)
@@ -2045,7 +2045,7 @@ final class Talk {
         }
         lines.append(contentsOf: panels.contextLines())
         lines.append(contentsOf: calendarLines(for: transcript))
-        if let stale = AtlasFreshness.parse(replicaState: try? Data(contentsOf: Self.replicaStateURL), boxWatch: try? Data(contentsOf: Self.boxWatchURL)).staleLine(now: Date()) {
+        if let stale = AtlasFreshness.parse(replicaState: try? Data(contentsOf: replicaStateURL), boxWatch: try? Data(contentsOf: boxWatchURL)).staleLine(now: Date()) {
             lines.append(stale)
         }
         lines.append(contentsOf: courseMapLines(for: transcript, kind: kind))
@@ -2083,8 +2083,9 @@ final class Talk {
         return (lines.joined(separator: "\n"), images)
     }
 
-    static let replicaStateURL = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("roshan/Atlas/private/replica-state.json")
-    static let boxWatchURL = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("roshan/Atlas/private/box-watch.json")
+    /// Atlas's replica files (present only on a Mac that holds a copy of the brain): how old the copy is.
+    private var replicaStateURL: URL { URL(fileURLWithPath: DotConfig.expand(config.atlasRoot)).appendingPathComponent("Atlas/private/replica-state.json") }
+    private var boxWatchURL: URL { URL(fileURLWithPath: DotConfig.expand(config.atlasRoot)).appendingPathComponent("Atlas/private/box-watch.json") }
 
     /// His calendar for this turn: this Mac's own (live) once he has granted it, else Atlas's copy with its age.
     private func calendarLines(for transcript: String) -> [String] {

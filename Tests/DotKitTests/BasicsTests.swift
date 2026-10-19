@@ -143,7 +143,7 @@ final class CalendarLinesTests: XCTestCase {
     }
 
     func testCalendarAsks() {
-        for ask in ["when is bhangra practice", "where is my dinner tn", "what's on today", "do i have class tomorrow", "what time is the interview"] {
+        for ask in ["when is team practice", "where is my dinner tn", "what's on today", "do i have class tomorrow", "what time is the interview"] {
             XCTAssertTrue(CalendarLines.isCalendarAsk(ask), ask)
         }
         XCTAssertFalse(CalendarLines.isCalendarAsk("explain what a kernel is"))
@@ -170,7 +170,7 @@ final class FreshnessTests: XCTestCase {
 final class AgentModeFilterTests: XCTestCase {
     func testStrayWords() {
         XCTAssertTrue(AgentModeFilter.isStray("Yeah."))
-        XCTAssertTrue(AgentModeFilter.isStray("Lori like."))
+        XCTAssertTrue(AgentModeFilter.isStray("Sam like."))
         XCTAssertTrue(AgentModeFilter.isStray("um okay so yeah"))
         XCTAssertFalse(AgentModeFilter.isStray("find me a usb c cable on amazon"))
         XCTAssertFalse(AgentModeFilter.isStray("cover letter for Northwind"))

@@ -661,7 +661,7 @@ final class Hands {
         return loose
     }
 
-    /// A site he bookmarked in Comet, by its title ("canvas", "handshake").
+    /// A site he bookmarked in Comet, by its title ("course site", "job board").
     static func bookmark(named name: String) -> URL? {
         let file = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Application Support/Comet/Default/Bookmarks")
         guard let data = try? Data(contentsOf: file), let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
