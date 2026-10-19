@@ -22,7 +22,9 @@ Clicky and from Murmur.
 | Ask "show me around" or "what is all this" | A tour: three to six beats, each pointing at, outlining or circling one part of the page with one sentence about it |
 | Drag while holding | Draws in ink around something; Dot answers about what you circled (the region is cropped and enlarged for the model) |
 | Ask "how do I..." | One step at a time: Dot rings the control to click (or to rest on, for hover menus), sees you do it, and gives the next step. Say "next" or "done" to move on, or ask about the step |
-| Say "do it" or "you click it" in a walkthrough | Dot glides the real cursor to each ringed step and clicks it while you watch. Anything that reads like a send, a purchase or a delete stays yours. Move the mouse or press a key and it stops |
+| Say "open spotify", "scroll down", "go back", "find the export button and click it", "type my name in the name field" | Dot does it itself in about a second, with no agent: fixed phrases skip the model, the rest are action tags the talk model writes. Your cursor never moves: native apps are driven through accessibility, Comet through its own DevTools port, only on the tab in front. Anything that reads like a send, a submit, an apply, a payment or a delete is rung for you to press |
+| Say "do it", or ask for something that takes a few clicks here | Dot presses each ringed step itself, six steps at most, and stops at the result without opening it. Move the mouse or press a key and it stops |
+| Ask "when is ...", "where is my ...", "what's on today" | Answered from your calendar on this Mac (EventKit, once you allow it), else Atlas's copy, which says how old it is |
 | Hold **control + option + shift** and talk | Hands the request to a background agent and tells you when it is done |
 | Tap **control + option**, or click the tab under the notch | A text field for a typed question |
 | Press **escape** | Stops Dot talking |
@@ -197,6 +199,13 @@ are small floating panels Dot owns; the model writes them as `[CARD:id:auto:titl
 a `<<< ... >>>` html block, then `[REVEAL:id:n]` before each step. Nothing is fetched.
 
 ## Testing it without a voice
+
+`Dot --ask --bench [--spoken] [--shift] [--comet-port N] "..."` is a bench turn: Atlas tools that write are
+refused, agents are logged instead of started, and actions run only on the bench fixture (Tests/Fixtures/bench,
+served by `scripts/bench-server.py`, with a throwaway Comet from `scripts/bench-comet.sh`; port 9222 is refused).
+`scripts/dot-bench.py` runs a list of bench rows one at a time and checks the route, the action, the page's own
+event log and the latency from the `ask: received`, `act:` and `first sentence` log lines. See
+Tests/Fixtures/bench/README.md.
 
 `Dot --ask --quiet "show me around this page"` runs a turn with the bubble and the marks but
 no speech (beats pace themselves), and `Dot --ask --drive "how do i ..."` lets Dot click the

@@ -5,6 +5,13 @@ bottom with the date. "His ask" quotes the message that created the item.
 
 ## Now
 
+- [ ] 2026-10-18 The basics pass, overnight (plan agreed in /grilling; his ask: "it is really struggling with doing the work i want the way i want it ... it loads smth stuff for such trivial tasks of like traversing my page or opening smth for me. its overcomplicating or undercomplicating things", and "why does it not have access to my calendar"):
+      1. [x] Dot does the small things itself: ActionPhrases (no model), a Jev "act" route, action tags ([OPEN] [SCROLL] [KEY] [CLICK] [INSERT] [GO]) run as they stream; Hands (accessibility, Comet DevTools bound to the tab in front); CommitGuard (DotKit, tested); driven rings pressed through accessibility, the cursor never moves, six steps at most.
+      2. [x] The calendar: this Mac's own through EventKit (one Allow from him), else Atlas's copy with its age; the next 14 days ride along on "when/where" questions.
+      3. [x] Speed: thinking off for talk turns, course maps once per conversation (talk prompt 39.2k to 19.2k chars), talk tools 56 to 28, the other screen's picture only when asked, the next conversation pre-warmed; no unasked closers or exam reminders.
+      4. [x] Interrupts: a cut-off turn's result is dropped (never spoken, retried or acted on); shift-held stray words start nothing; "another agent, not you" founds a new one.
+      5. [ ] the bench run (Tests/Fixtures/bench, scripts/dot-bench.py) on the installed build, and his verdict by voice.
+
 - [x] 2026-10-17 Round eight, overnight (plan: the round-eight overnight plan agreed in /grilling), his asks ("my dot is awful at 1. keeping the box on the content as i scroll. 2. the visualizations ... especially when i want rendered JS to just walk me through and explain things"; "bring chatgpt's intelligent UI to dot"):
       1. [x] P1 marks follow scrolled content: element anchors, pixel anchors (scroll tap, Vision registration, settle-time patch re-find), hide/chevron/return, app switch clears; MarkAnchor, ImageRegistration, PatchFinder tests; `Dot --track-selftest` live on 10/17 (Preview pixel mark back within 4 pt after a 1,800 pt round trip; Safari element mark 0 pt drift in the run where Safari took the scrolls).
       2. [x] P2 the explainer panel and Dot's UI language: renderer, 18 fixtures (every old card re-expressed), panel-check, ExplainerPanel/PanelMessage/PanelDock/PanelStream/CourseTag with tests, an Opus review against ChatGPT's answers applied.
