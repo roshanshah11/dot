@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Dot bench - Email notifications</title>
+<link rel="icon" href="data:,">
+<link rel="stylesheet" href="bench.css">
+</head>
+<body>
+<header class="bench-nav"><strong>Dot bench</strong><a href="index.html">Home</a><a href="long.html">Long read</a><a href="page1.html">Page 1</a><a href="settings.html">Settings</a><a href="jobs.html">Applied jobs</a><a href="form.html">Application form</a></header>
+<main>
+<h1>Email</h1>
+<p class="lede">Email notifications go to sam.rivera@example.com (placeholder).</p>
+<div class="switch-row"><label for="email-alerts">Email alerts</label><input type="checkbox" role="switch" id="email-alerts" aria-checked="false" data-bench-rect="email-alerts"></div>
+<div class="switch-row"><label for="weekly-digest">Weekly digest</label><input type="checkbox" role="switch" id="weekly-digest" aria-checked="false"></div>
+<p class="status" id="status" aria-live="polite">Email alerts are off.</p>
+<p><a href="notifications.html">Back to Notifications</a></p>
+<script>
+document.querySelectorAll('input[role=switch]').forEach(function (box) {
+  box.addEventListener('change', function () {
+    box.setAttribute('aria-checked', String(box.checked));
+    if (box.id === 'email-alerts') document.getElementById('status').textContent = 'Email alerts are ' + (box.checked ? 'on.' : 'off.');
+  });
+});
+</script>
+</main>
+<footer>Placeholder content for Dot's bench (Tests/Fixtures/bench). Nothing on this site leaves this machine.</footer>
+<script src="bench.js"></script>
+</body>
+</html>

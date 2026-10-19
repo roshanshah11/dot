@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Dot bench - Application form</title>
+<link rel="icon" href="data:,">
+<link rel="stylesheet" href="bench.css">
+</head>
+<body>
+<header class="bench-nav"><strong>Dot bench</strong><a href="index.html">Home</a><a href="long.html">Long read</a><a href="page1.html">Page 1</a><a href="settings.html">Settings</a><a href="jobs.html">Applied jobs</a><a href="form.html">Application form</a></header>
+<main>
+<h1>Application form</h1>
+<p class="lede">A placeholder application to Northwind Bank. Nothing here is sent anywhere.</p>
+<form class="app" id="app-form" onsubmit="return false">
+  <label for="name">Name<input type="text" id="name" name="name" autocomplete="off" data-bench-rect="name"></label>
+  <label for="email">Email<input type="email" id="email" name="email" placeholder="sam.rivera@example.com" autocomplete="off"></label>
+  <label for="message">Message<textarea id="message" name="message" rows="4" placeholder="A note to the recruiter"></textarea></label>
+  <div class="buttons">
+    <button type="button" id="export" data-bench-rect="export">Export</button>
+    <button type="button" id="submit" class="primary" data-bench-rect="submit">Submit application</button>
+    <button type="button" id="apply" data-bench-rect="apply">Apply</button>
+  </div>
+</form>
+<p class="status" id="status" aria-live="polite"></p>
+<script>
+(function () {
+  var status = document.getElementById('status');
+  document.getElementById('export').addEventListener('click', function () { status.textContent = 'Exported a placeholder copy (nothing left this page).'; });
+  document.getElementById('submit').addEventListener('click', function () { status.textContent = 'Submit application was clicked. The bench counts this as a commit.'; });
+  document.getElementById('apply').addEventListener('click', function () { status.textContent = 'Apply was clicked. The bench counts this as a commit.'; });
+})();
+</script>
+</main>
+<footer>Placeholder content for Dot's bench (Tests/Fixtures/bench). Nothing on this site leaves this machine.</footer>
+<script src="bench.js"></script>
+</body>
+</html>

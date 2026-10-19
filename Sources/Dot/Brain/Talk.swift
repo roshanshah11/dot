@@ -40,6 +40,8 @@ final class Talk {
     private var pendingGo: String?
     /// Driven steps allowed in a [GO] or a do-request (the plan: at most six).
     private var driveCap: Int?
+    /// The goal of the driven run in progress and when it began, for its closing `act: go` line.
+    private var goRun: (goal: String, started: Date)?
     /// Course maps already in each conversation.
     private var coursesInSession: [ObjectIdentifier: Set<String>] = [:]
     /// The question before this one, for "start another agent on that".
@@ -852,6 +854,7 @@ final class Talk {
         if case .result(let result) = event {
             drainCounts[key] = owed - 1
             Log.info("talk: dropped the cut-off turn (\(result.subtype), \(result.durationMs) ms)")
+            Log.info("turn[\(session === thinkSession ? "think" : "talk")] done in \(result.durationMs) ms, $\(String(format: "%.4f", result.costUSD)), cut off")
             ledger.record(kind: session === thinkSession ? "think" : "talk", agent: nil, model: turnModel, result: result, summary: "(cut off)")
         }
         return true
@@ -867,6 +870,7 @@ final class Talk {
         doIntent = false
         driveCap = nil
         pendingGo = nil
+        goRun = nil
         lastAskWasTyped = typed
         lastAskWasLecture = false
         if !lastAsked.isEmpty { previousAsked = lastAsked }
@@ -1546,6 +1550,7 @@ final class Talk {
         lastMessage = message
         lastImages = images
         Log.info("act: go \(Log.short(goal, 80)) (driven walkthrough)")
+        goRun = (goal, Date())
         sendTurn(message, images: images, to: session, kind: .talk)
     }
 
@@ -1748,6 +1753,7 @@ final class Talk {
             if case .open(let name) = command, !hands.canResolve(name) {
                 Log.info("act: \"\(name)\" is no app, folder or bookmark; the model takes it")
             } else {
+                Log.info("route: fixed phrase \(command.verb) \(Log.short(command.object, 60))")
                 return .act(command)
             }
         }
@@ -1854,6 +1860,7 @@ final class Talk {
             Log.info("jev: do it (\(String(format: "%.2f", route.probability)))")
             doIntent = true
             if config.driveEnabled { driveRequested = true; driveCap = 6 }
+            goRun = (text, Date())
             return .answer
         }
         if route.choice == "agent", route.probability >= config.jevRouteThreshold, route.confidence >= 0.6 {
@@ -2533,6 +2540,12 @@ final class Talk {
         }
         let rings = tags.contains { if case .target = $0 { return true }; if case .hover = $0 { return true }; return false }
         if !rings, walkthrough != nil, !escalated { endWalkthrough(reason: "the model gave a step with no target") }
+        // A do-request answered with action tags and no rings ends here.
+        if let run = goRun, walkthrough == nil, pendingGo == nil, !escalated, kind == "talk" {
+            let acted = tags.contains { if case .act = $0 { return true }; return false }
+            Log.info("act: go \(Log.short(run.goal, 80)) \(acted ? "ok \(Int(Date().timeIntervalSince(run.started) * 1000)) ms" : "fail no action or ring in the answer")")
+            goRun = nil
+        }
         if let goal = pendingGo, !escalated, walkthrough == nil {
             pendingGo = nil
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in self?.startGo(goal) }
@@ -2882,6 +2895,12 @@ final class Talk {
     private func endWalkthrough(reason: String) {
         guard walkthrough != nil else { return }
         Log.info("walkthrough: ended (\(reason))")
+        if let run = goRun, walkthrough?.driving == true {
+            let ms = Int(Date().timeIntervalSince(run.started) * 1000)
+            let finished = reason == "the model gave a step with no target"
+            Log.info("act: go \(Log.short(run.goal, 80)) \(finished ? "ok \(ms) ms" : "fail \(reason)")")
+            goRun = nil
+        }
         walkthrough = nil
         walkthroughStartedAt = nil
         hud.removeAgent(id: "walkthrough")

@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Dot bench - Long read</title>
+<link rel="icon" href="data:,">
+<link rel="stylesheet" href="bench.css">
+</head>
+<body>
+<header class="bench-nav"><strong>Dot bench</strong><a href="index.html">Home</a><a href="long.html">Long read</a><a href="page1.html">Page 1</a><a href="settings.html">Settings</a><a href="jobs.html">Applied jobs</a><a href="form.html">Application form</a></header>
+<main>
+<h1>Grid storage, a field guide</h1>
+<p class="lede">Ten short sections on the ways a power grid keeps energy for later. Each section is at least 560 px tall, so every heading sits at a known depth (see Tests/Fixtures/bench/README.md).</p>
+
+<section class="chapter" id="intro" data-bench-mark="intro">
+<h2>Why the grid needs storage</h2>
+<p>A power grid has to match supply and demand every second. Wind and sun do not follow the evening peak, and a plant that ramps up and down all day wears out faster. Storage lets the grid buy energy when it is cheap and plentiful and sell it back when it is scarce, which flattens the daily curve and keeps the frequency steady.</p>
+<p>The options differ mostly in three numbers: how long they can discharge, how much of the stored energy comes back out, and what each kilowatt-hour of capacity costs to build. No single technology wins on all three, which is why most grids end up with a mix.</p>
+</section>
+
+<section class="chapter" id="pumped" data-bench-mark="pumped">
+<h2>Pumped hydro</h2>
+<p>Pumped hydro moves water uphill between two reservoirs when power is cheap and lets it run back down through turbines when power is needed. It is the oldest form of grid storage and still holds most of the stored energy on many grids, because a large upper lake can run a plant for many hours.</p>
+<p>Its limits are geography and time. It needs a height difference, room for two reservoirs and years of permitting. Round-trip efficiency is usually between seventy and eighty-five percent, and once built, a plant can run for half a century or more.</p>
+</section>
+
+<section class="chapter" id="lithium" data-bench-mark="lithium">
+<h2>Lithium-ion banks</h2>
+<p>Battery banks built from the same cells used in electric cars can be installed in months, almost anywhere, and respond in milliseconds. That speed makes them good at frequency regulation, where the grid needs small, fast corrections many times a minute.</p>
+<p>Most battery banks are sized for two to four hours of discharge. Beyond that the cost per hour of storage climbs quickly, and the cells slowly lose capacity with every cycle, so operators plan for replacements over the life of a site.</p>
+</section>
+
+<section class="chapter" id="caverns" data-bench-mark="caverns">
+<h2>Compressed air caverns</h2>
+<p>Compressed air storage pumps air into a sealed underground space, such as a salt cavern, and releases it later through a turbine. The cavern acts like a very large, very cheap tank, and a single site can store energy for a full day of output.</p>
+<p>The catch is heat. Compressing air makes it hot and expanding it makes it cold. Older designs burned gas to reheat the air on the way out; newer adiabatic designs keep the heat of compression in a thermal store and give it back, which raises efficiency without any fuel.</p>
+</section>
+
+<section class="chapter" id="thermal" data-bench-mark="thermal">
+<h2>Thermal salt tanks</h2>
+<p>Some solar plants focus sunlight onto a tower and use it to heat molten salt to several hundred degrees. The hot salt sits in an insulated tank and loses only a little heat overnight, so the plant can keep making steam and electricity long after sunset.</p>
+<p>Thermal storage is cheap per hour stored but only makes sense where the heat is already being made. Researchers are also testing tanks of hot sand, crushed rock and even firebrick that are charged from the grid with simple electric heaters.</p>
+</section>
+
+<section class="chapter" id="hydrogen" data-bench-mark="hydrogen">
+<h2>Hydrogen as a buffer</h2>
+<p>Surplus power can split water into hydrogen and oxygen. The hydrogen can be stored in tanks or caverns for weeks or months and later burned in a turbine or run through a fuel cell. That makes it one of the few candidates for seasonal storage, moving summer sun into winter.</p>
+<p>The round trip is lossy, often well under half of the original energy, so hydrogen tends to be used where nothing else fits: long gaps, heavy industry, and places where the gas can be sold as a product rather than turned back into power.</p>
+</section>
+
+<section class="chapter" id="tidal" data-bench-mark="tidal">
+<h2>Tidal energy storage</h2>
+<p>Tidal energy storage uses a lagoon or basin that fills as the tide comes in and drains through turbines as it goes out. Because the tides are set by the moon, the output can be predicted years ahead, which grid planners value as much as the energy itself.</p>
+<p>The hard part is the quiet hour of slack water, when the tide turns and there is little head to drive the turbines. Some designs pump extra water into the basin at high tide, using cheap power, to stretch the useful head and fill that gap.</p>
+</section>
+
+<section class="chapter" id="gravity" data-bench-mark="gravity">
+<h2>Gravity blocks</h2>
+<p>Gravity storage lifts heavy blocks with cranes or winches when power is cheap and lowers them through generators when it is needed. It is pumped hydro without the water, which means it can be built on flat land or down old mine shafts.</p>
+<p>The idea is simple, but the energy stored per tonne lifted is small, so a useful system needs thousands of tonnes of mass and very reliable machinery. Early pilot sites are measuring how well the mechanics hold up after many thousands of cycles.</p>
+</section>
+
+<section class="chapter" id="flywheel" data-bench-mark="flywheel">
+<h2>Flywheel arrays</h2>
+<p>A flywheel stores energy in a spinning steel rotor, often in a vacuum on magnetic bearings to cut friction. It can absorb or release power almost instantly and survive millions of cycles, which suits the second-by-second balancing work of a grid.</p>
+<p>Flywheels lose their charge within minutes to hours, so they are a shock absorber rather than a reservoir. Arrays of them sit beside data centres and rail lines as well as substations, smoothing out short spikes and dips.</p>
+</section>
+
+<section class="chapter" id="outro" data-bench-mark="outro">
+<h2>What to watch next</h2>
+<p>The next decade will test which of these scale. Watch the cost per kilowatt-hour of four-hour and eight-hour batteries, the first commercial long-duration sites that run for days, and how grid rules pay for flexibility rather than only for energy.</p>
+<p>Whatever wins, the grid of the future will likely store far more energy than today's, spread across many small sites as well as a few large ones, and coordinated by software that decides second by second where each kilowatt goes.</p>
+</section>
+</main>
+<footer>Placeholder content for Dot's bench (Tests/Fixtures/bench). Nothing on this site leaves this machine.</footer>
+<script src="bench.js"></script>
+</body>
+</html>

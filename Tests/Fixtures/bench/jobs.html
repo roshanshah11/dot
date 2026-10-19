@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Dot bench - Applied jobs</title>
+<link rel="icon" href="data:,">
+<link rel="stylesheet" href="bench.css">
+</head>
+<body>
+<header class="bench-nav"><strong>Dot bench</strong><a href="index.html">Home</a><a href="long.html">Long read</a><a href="page1.html">Page 1</a><a href="settings.html">Settings</a><a href="jobs.html">Applied jobs</a><a href="form.html">Application form</a></header>
+<main>
+<h1>Applied jobs</h1>
+<p class="lede">Applications submitted by Sam Rivera this season (placeholders).</p>
+<form class="search-row" role="search" id="job-search" onsubmit="return false">
+  <input type="search" role="searchbox" id="job-q" aria-label="Search applied jobs" placeholder="Search applied jobs" autocomplete="off" data-bench-rect="search">
+</form>
+<p class="count" id="count" aria-live="polite">12 applications</p>
+<table class="jobs">
+  <thead><tr><th>Role</th><th>Location</th><th>Status</th></tr></thead>
+  <tbody id="rows">
+    <tr data-row="1"><td><a id="job-1" href="job.html?id=1">Contoso Capital, Investment Banking Summer Analyst</a></td><td>Chicago, IL</td><td>Applied Sep 12</td></tr>
+    <tr data-row="2"><td><a id="job-2" href="job.html?id=2">Fabrikam Partners, Equity Research Intern</a></td><td>New York, NY</td><td>Applied Sep 15</td></tr>
+    <tr data-row="3"><td><a id="job-3" href="job.html?id=3">Tailspin Advisors, Restructuring Summer Analyst</a></td><td>Chicago, IL</td><td>Applied Sep 18</td></tr>
+    <tr data-row="4"><td><a id="job-4" href="job.html?id=4">Woodgrove Bank, Sales and Trading Intern</a></td><td>New York, NY</td><td>Applied Sep 20</td></tr>
+    <tr data-row="5"><td><a id="job-5" href="job.html?id=5">Litware Securities, Capital Markets Summer Analyst</a></td><td>Boston, MA</td><td>Applied Sep 22</td></tr>
+    <tr data-row="6"><td><a id="job-6" href="job.html?id=6">Proseware Holdings, Corporate Development Intern</a></td><td>Remote</td><td>Applied Sep 25</td></tr>
+    <tr data-row="7"><td><a id="job-7" href="job.html?id=7">Adventure Works Group, Private Equity Summer Associate</a></td><td>Dallas, TX</td><td>Applied Sep 29</td></tr>
+    <tr data-row="8"><td><a id="job-8" href="job.html?id=8">Wide World Importers, Finance Rotational Intern</a></td><td>Seattle, WA</td><td>Applied Oct 1</td></tr>
+    <tr data-row="9"><td><a id="job-9" href="job.html?id=9">Fourth Coffee Ventures, Venture Capital Fellow</a></td><td>San Francisco, CA</td><td>Applied Oct 3</td></tr>
+    <tr data-row="10"><td><a id="job-10" href="job.html?id=10">Northwind Bank, Summer Analyst</a></td><td>Chicago, IL</td><td>Applied Oct 6</td></tr>
+    <tr data-row="11"><td><a id="job-11" href="job.html?id=11">Alpine Ski House Capital, Quantitative Research Intern</a></td><td>Chicago, IL</td><td>Applied Oct 8</td></tr>
+    <tr data-row="12"><td><a id="job-12" href="job.html?id=12">Margie Travel Partners, Strategy Summer Analyst</a></td><td>Atlanta, GA</td><td>Applied Oct 10</td></tr>
+  </tbody>
+</table>
+<script>
+(function () {
+  var q = document.getElementById('job-q'), rows = document.querySelectorAll('#rows tr'), timer = null;
+  function apply(report) {
+    var needle = q.value.trim().toLowerCase(), shown = [];
+    rows.forEach(function (tr) {
+      var hit = !needle || tr.textContent.toLowerCase().indexOf(needle) >= 0;
+      tr.classList.toggle('hidden', !hit);
+      if (hit) shown.push(tr.querySelector('a').textContent);
+    });
+    document.getElementById('count').textContent = shown.length + (shown.length === 1 ? ' application' : ' applications');
+    if (report && window.DotBench) DotBench.send('filter', { query: q.value, visible_count: shown.length, visible: shown.slice(0, 5), via: report });
+  }
+  q.addEventListener('input', function () { apply(false); clearTimeout(timer); timer = setTimeout(function () { apply('input'); }, 200); });
+  q.addEventListener('search', function () { apply('search-event'); });
+  q.addEventListener('keydown', function (e) { if (e.key === 'Enter') { e.preventDefault(); apply('enter'); } });
+})();
+</script>
+</main>
+<footer>Placeholder content for Dot's bench (Tests/Fixtures/bench). Nothing on this site leaves this machine.</footer>
+<script src="bench.js"></script>
+</body>
+</html>
