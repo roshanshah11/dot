@@ -344,6 +344,8 @@ final class Talk {
         if phase == .speaking || phase == .thinking { stopSpeaking(); cutActiveTurn() }
         self.mode = mode
         quietTurn = false   // a spoken question is always answered aloud, whatever the last test turn was
+        benchMode = false   // nor is it ever a bench turn
+        hands.bench = nil
         idleTimer?.invalidate()
         overlay.clearMarks(keepRing: walkthrough != nil)
         overlay.hideBubble(after: 0)
