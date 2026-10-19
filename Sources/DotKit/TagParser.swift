@@ -23,6 +23,8 @@ import Foundation
 ///   [STOCK:NVDA]                   a live quote card on the board
 ///   [PLACE:coffee near campus]     a place card: the nearest matches on a map
 ///   [IMAGES:artemis ii launch]     a strip of pictures on the board
+///   [OPEN:spotify] [OPEN:https://example.com:same] [SCROLL:down] [KEY:cmd+l] [CLICK:export]
+///   [INSERT:name] <<< text >>> [GO:goal]   Dot does it itself, right away (ActionCommand)
 public enum DotTag: Equatable {
     case point(x: Int, y: Int, label: String, screen: Int?)
     case pointNone
@@ -56,6 +58,8 @@ public enum DotTag: Equatable {
     case place(query: String)
     /// A strip of pictures of something.
     case images(query: String)
+    /// Something Dot does itself the moment the tag streams in: open, scroll, click, type, keys.
+    case act(ActionCommand)
 }
 
 public enum ShapeKind: String, Equatable, Sendable { case line, arrow, circle, curve, polygon }
@@ -80,7 +84,7 @@ public extension DotTag {
     var isVisual: Bool {
         switch self {
         case .point, .highlight, .target, .hover, .shape, .card, .reveal, .step, .clearBoard, .type, .web, .find, .stock, .place, .images: return true
-        case .pointNone, .agent, .newAgent, .tell, .stopAgent, .routine, .think: return false
+        case .pointNone, .agent, .newAgent, .tell, .stopAgent, .routine, .think, .act: return false
         }
     }
 
@@ -88,6 +92,7 @@ public extension DotTag {
     public var hasBlock: Bool {
         switch self {
         case .card, .type: return true
+        case .act(.insert): return true
         default: return false
         }
     }
@@ -97,6 +102,7 @@ public extension DotTag {
         switch self {
         case .card(let id, let rect, let title, _, let screen): return .card(id: id, rect: rect, title: title, html: body, screen: screen)
         case .type(let x, let y, let label, _, let screen): return .type(x: x, y: y, label: label, text: body.trimmingCharacters(in: .whitespacesAndNewlines), screen: screen)
+        case .act(.insert(let label, _)): return .act(.insert(label: label, text: body.trimmingCharacters(in: .whitespacesAndNewlines)))
         default: return self
         }
     }
@@ -114,11 +120,11 @@ public struct ParsedResponse: Equatable {
 }
 
 public enum TagParser {
-    static let tagNames = ["POINT", "HIGHLIGHT", "TARGET", "HOVER", "SHAPE", "CARD", "REVEAL", "STEP", "CLEAR_BOARD", "TYPE", "WEB", "FIND", "STOCK", "PLACE", "IMAGES", "AGENT", "NEW_AGENT", "TELL", "STOP_AGENT", "ROUTINE", "THINK"]
+    static let tagNames = ["POINT", "HIGHLIGHT", "TARGET", "HOVER", "SHAPE", "CARD", "REVEAL", "STEP", "CLEAR_BOARD", "TYPE", "WEB", "FIND", "STOCK", "PLACE", "IMAGES", "AGENT", "NEW_AGENT", "TELL", "STOP_AGENT", "ROUTINE", "THINK", "OPEN", "SCROLL", "KEY", "CLICK", "INSERT", "GO"]
 
     // swiftlint:disable:next force_try
     static let pattern = try! NSRegularExpression(
-        pattern: #"\[(POINT|HIGHLIGHT|TARGET|HOVER|SHAPE|CARD|REVEAL|STEP|CLEAR_BOARD|TYPE|WEB|FIND|STOCK|PLACE|IMAGES|AGENT|NEW_AGENT|TELL|STOP_AGENT|ROUTINE|THINK)(?::([^\]]*))?\]"#,
+        pattern: #"\[(POINT|HIGHLIGHT|TARGET|HOVER|SHAPE|CARD|REVEAL|STEP|CLEAR_BOARD|TYPE|WEB|FIND|STOCK|PLACE|IMAGES|AGENT|NEW_AGENT|TELL|STOP_AGENT|ROUTINE|THINK|OPEN|SCROLL|KEY|CLICK|INSERT|GO)(?::([^\]]*))?\]"#,
         options: []
     )
 
@@ -173,6 +179,8 @@ public enum TagParser {
         switch kind {
         case "THINK":
             return .think
+        case "OPEN", "SCROLL", "KEY", "CLICK", "INSERT", "GO":
+            return ActionTags.make(kind: kind, payload: payload).map { .act($0) }
         case "CLEAR_BOARD":
             return .clearBoard
         case "FIND":
