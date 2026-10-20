@@ -188,6 +188,8 @@ struct DotConfig: Codable {
         "draft_email", "calendar_create", "calendar_update",
         // The fast lane's site tools (06, 08): one call for "download my readings", live mail.
         "canvas_readings", "canvas_download", "mail_live", "mail_read",
+        // 09, 10: where an application stands; which library rooms are free (both read-only).
+        "app_status", "rooms_free",
     ]
     /// Taken out of talk by the basics pass; a saved config that still lists them does not bring them back.
     static let retiredTalkAtlasTools: Set<String> = [

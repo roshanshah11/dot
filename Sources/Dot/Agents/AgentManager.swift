@@ -932,7 +932,9 @@ final class AgentManager {
                          "sec_batch", "sec_filings", "sec_section", "quote", "fin_calc", "web_text", "canvas_courses", "canvas_find", "canvas_read",
                          "state", "preferences", "lesson", "deliverable", "project", "todo", "reminder", "remember", "deadline_add", "commit", "file",
                          // the fast lane's site tools (06, 08): reads, Canvas files to Downloads or the vault, a draft in the thread
-                         "canvas_readings", "canvas_download", "mail_live", "mail_read", "mail_triage", "thread_draft"] {
+                         "canvas_readings", "canvas_download", "mail_live", "mail_read", "mail_triage", "thread_draft",
+                         // 09, 10: application status, Google Docs read and export to Downloads, library rooms (reads)
+                         "app_status", "gdoc_read", "gdoc_export", "rooms_free"] {
                 allow.insert("mcp__atlas__\(name)")
             }
         }

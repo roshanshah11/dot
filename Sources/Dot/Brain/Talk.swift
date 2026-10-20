@@ -2280,6 +2280,12 @@ final class Talk {
         if liveTools.contains("mail_live") {
             lines.append("[mail] mail questions: mail_live first (live); mail is the box's history.")
         }
+        if liveTools.contains("app_status") {
+            lines.append("[applications] where an application stands: app_status first; say a rejection only when he asked about that firm, never unprompted.")
+        }
+        if liveTools.contains("rooms_free") {
+            lines.append("[rooms] library rooms: rooms_free first; booking is a job up to Submit my Booking, which is his; remind him to check in within 15 minutes.")
+        }
         // Every agent he has, not only the last 45 minutes' (G2): an idle one is reached by name, not founded twice.
         let busy = Set(recent.map { $0.name.lowercased() })
         let idle = agents.roster().filter { $0.slug != "dot" && !busy.contains($0.name.lowercased()) }.map(\.name)
@@ -3290,7 +3296,9 @@ final class Talk {
         case "messages": return "your messages"
         case "search", "facts", "people", "commitments", "todo": return "your notes"
         case "canvas_find", "canvas_read", "canvas_readings", "canvas_download": return "canvas"
-        case "docs", "read_doc": return "your docs"
+        case "docs", "read_doc", "gdoc_read", "gdoc_export": return "your docs"
+        case "app_status": return "your applications"
+        case "rooms_free": return "the library rooms"
         case "WebSearch", "WebFetch": return "the web"
         default: return nil
         }
