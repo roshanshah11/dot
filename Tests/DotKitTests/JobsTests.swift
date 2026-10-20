@@ -473,3 +473,51 @@ final class FastLaneWiringTests: XCTestCase {
         XCTAssertEqual(copyEnv?["ATLAS_CANVAS_NO_REFRESH"] as? String, "1")
     }
 }
+
+final class BenchRowPhraseTests: XCTestCase {
+    /// The S rows' asks, at the phrase layer (no model): play, search, media keys.
+    func testSRows() {
+        if case .play? = ActionPhrases.match("play some lofi on spotify") {} else { XCTFail("S1") }
+        if case .play? = ActionPhrases.match("find piano playlist i would like need to study") {} else { XCTFail("S2") }
+        if case .openURL(let u, _)? = ActionPhrases.match("search spotify for Northwind Quartet") { XCTAssertTrue(u.hasPrefix("spotify:search:")) } else { XCTFail("S3") }
+        XCTAssertEqual(ActionPhrases.match("next song"), .media(.next), "S4")
+        if case .play? = ActionPhrases.match("open spotify to a piano playlist for studying") {} else { XCTFail("S5") }
+        if case .play? = ActionPhrases.match("play a piano playlist for studying") {} else { XCTFail("S6") }
+    }
+
+    /// G3 and G4 at the word layer.
+    func testAgentWordsRows() {
+        for ask in ["spawn an agent and download my readings for week three", "start an agent on it", "have an agent do it", "get an agent on it",
+                    "can an agent do this", "spawn a new agent for that", "use a background agent for this", "an agent that opens its own browser"] {
+            XCTAssertTrue(AgentWords.asksForAgent(ask), ask)
+        }
+        for ask in ["don't spawn an agent, just open the page", "what did the agent find", "stop the agent", "scroll down"] {
+            XCTAssertFalse(AgentWords.asksForAgent(ask), ask)
+        }
+    }
+
+    func testWatchRow() {
+        XCTAssertTrue(WatchWords.isWatch("keep an eye on my outlook for anything from Sam Rivera"))
+    }
+}
+
+final class J16PlacementTests: XCTestCase {
+    func testJ16Placements() {
+        let rows: [(String, String, JobPlacement)] = [
+            ("open 127.0.0.1:8766/page2.html", "Comet", .front),
+            ("download the readings from 127.0.0.1:8766/long.html", "Comet", .behind),
+            ("in a separate tab, open 127.0.0.1:8766/page1.html", "Comet", .behind),
+            ("find the Northwind job I applied to", "Comet", .front),
+            ("check the email alerts setting", "Comet", .behind),
+            ("turn on email alerts on this page", "Comet", .front),
+            ("research what grid storage options exist and write me a one page summary", "Comet", .behind),
+            ("make me a 5 slide deck on the bench fixture", "Comet", .behind),
+        ]
+        for (ask, app, want) in rows {
+            XCTAssertEqual(JobPlacementRule.decide(text: ask, frontApp: app).placement, want, ask)
+        }
+        XCTAssertEqual(JobModel.decide(text: "research what grid storage options exist and write me a one page summary"), "opus", "J15")
+        XCTAssertEqual(JobModel.decide(text: "make me a 5 slide deck on the bench fixture"), "opus", "D1")
+        XCTAssertEqual(JobModel.decide(text: "download the week 3 reading in a separate tab"), "sonnet")
+    }
+}
