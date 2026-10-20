@@ -16,6 +16,7 @@ Dot, stops when Dot's model spend (the SUM of the ledger's cost column) grows pa
 writes results-<stamp>.json and results-<stamp>.md to --out-dir. The row schema and the dot.log line
 contract are in Tests/Fixtures/bench/README.md. Stdlib only.
 """
+import urllib.request
 import argparse, base64, ctypes, hashlib, json, os, re, socket, sqlite3, statistics, struct, subprocess, sys, time
 import urllib.error, urllib.request
 from datetime import datetime
@@ -1176,6 +1177,16 @@ def comet_show(port, urls, base, log=print):
         cdp.close()
 
 
+def screen_locked():
+    """True when the login window holds the screen: focus and window-order rows mean nothing then."""
+    try:
+        out = subprocess.run(['ioreg', '-n', 'Root', '-d1', '-a'], capture_output=True, timeout=5).stdout
+        import plistlib
+        return bool(plistlib.loads(out).get('IOConsoleUsers', [{}])[0].get('CGSSessionScreenIsLocked', False))
+    except Exception:
+        return False
+
+
 def setup_tab_focused(port, url):
     """Whether the bench Comet's tab on the setup page still has focus (a behind job must not take it)."""
     try:
@@ -1565,6 +1576,10 @@ class Runner:
         rid = str(row['id'])
         res = {'id': rid, 'kind': row.get('kind'), 'ask': row.get('ask'), 'group': row.get('group'),
                'limit_ms': row.get('limit_ms'), 'started': datetime.now().isoformat(timespec='seconds')}
+        if row.get('needs_unlocked') and screen_locked():
+            # focus and window order can't be judged on a locked screen: skipped and reported, never passed
+            res.update({'pass': None, 'skipped': 'needs_unlocked: the screen is locked', 'latency_ms': None, 'checks': [], 'reasons': ['skipped: screen locked']})
+            return res
         ok, note = self.setup(row)
         res['setup'] = note
         if not ok:
@@ -1588,6 +1603,20 @@ class Runner:
                 else:
                     notes.append(self.wait_done(tracker, lines, time.time()))
                 time.sleep(step.get('delay_ms', 0) / 1000.0)
+            if step.get('open_app'):
+                # bring another app in front mid-row (J10b: Escape with Finder in front must not stop the job)
+                subprocess.run(['open', '-a', step['open_app']], check=False, timeout=10)
+                notes.append('open_app %s' % step['open_app'])
+                continue
+            if step.get('new_tab'):
+                # another bench tab opened by the runner during a job (J18)
+                url = step['new_tab'].replace('{base}', self.base)
+                try:
+                    urllib.request.urlopen(urllib.request.Request('http://127.0.0.1:%d/json/new?%s' % (self.args.comet_port, url), method='PUT'), timeout=3).read()
+                    notes.append('new_tab %s' % url)
+                except Exception as e:
+                    notes.append('new_tab failed: %s' % e)
+                continue
             if step.get('cli'):
                 # `--stop`, `--job-test click`: Dot's own commands, not an ask
                 r = subprocess.run([str(self.args.dot)] + str(step['cli']).split(), capture_output=True, text=True, timeout=15)

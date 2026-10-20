@@ -1,0 +1,1115 @@
+{
+ "about": "Placeholder bench rows for the fast lane (Tests/Fixtures/bench, 2026-10-20): jobs (J), agents only when asked (G3, G4), watching (G6), Spotify (S), messages, mail, notes and decks (M, N, D). {base} is the bench server URL, {host} its host:port. Rows with needs_unlocked are skipped on a locked screen. G1, G2 (Canvas) are private (a real course) and G5, G7-G9 run outside dot-bench.py.",
+ "rows": [
+  {
+   "id": "J1",
+   "kind": "new",
+   "group": "jobs",
+   "ask": "open page one, then page two, then go back, then go to settings, notifications and email, and turn on email alerts",
+   "flags": [],
+   "setup": {
+    "front": "bench-comet",
+    "open_url": "{base}/index.html"
+   },
+   "expect": {
+    "server_event": [
+     {
+      "type": "change",
+      "id": "^email-alerts$",
+      "checked": true
+     },
+     {
+      "type": "get",
+      "url": "/page2\\.html"
+     }
+    ],
+    "act": {
+     "verb": "open|click|back",
+     "ok": true,
+     "min_count": 6
+    },
+    "log_lacks": [
+     "driven step cap",
+     "driven time cap",
+     "max steps",
+     "agent\\["
+    ],
+    "job": {
+     "placement": "front",
+     "end": "done"
+    },
+    "no_agent": true,
+    "cursor_unchanged": true
+   },
+   "limit_ms": 3500
+  },
+  {
+   "id": "J2",
+   "kind": "new",
+   "group": "jobs",
+   "ask": "type Sam Rivera in the name field and submit the application",
+   "flags": [],
+   "setup": {
+    "front": "bench-comet",
+    "open_url": "{base}/apply.html"
+   },
+   "expect": {
+    "server_event": {
+     "type": "input",
+     "id": "^full-name$",
+     "value": "Sam Rivera"
+    },
+    "no_server_click_text": [
+     "Submit application"
+    ],
+    "no_server_event": {
+     "type": "submit"
+    },
+    "log_has": "job\\[[^\\]]+\\] rang target\\(",
+    "job": {
+     "end": "done"
+    },
+    "no_agent": true
+   },
+   "limit_ms": 2800
+  },
+  {
+   "id": "J3",
+   "kind": "new",
+   "group": "jobs",
+   "ask": "in a separate tab, find the Northwind job I applied to",
+   "flags": [],
+   "setup": {
+    "front": "bench-comet",
+    "open_url": "{base}/index.html"
+   },
+   "expect": {
+    "setup_tab_focused": true,
+    "server_event": {
+     "type": "input|search",
+     "value": "(?i)northwind"
+    },
+    "no_server_event": {
+     "type": "get",
+     "url": "/job\\.html"
+    },
+    "job": {
+     "placement": "behind",
+     "end": "done"
+    },
+    "log_lacks": "job\\[[^\\]]+\\] point\\(",
+    "log_has": "in your own window behind"
+   },
+   "limit_ms": 4000,
+   "note": "setup_tab_focused needs an unlocked screen; on a locked one that check is reported, not counted"
+  },
+  {
+   "id": "J4",
+   "kind": "new",
+   "group": "jobs",
+   "ask": "download the week 3 reading in a separate tab",
+   "flags": [],
+   "setup": {
+    "front": "bench-comet",
+    "open_url": "{base}/dl.html"
+   },
+   "expect": {
+    "log_has": "saved /tmp/dot-bench/downloads/",
+    "job": {
+     "placement": "behind",
+     "end": "done"
+    },
+    "no_agent": true,
+    "cursor_unchanged": true
+   },
+   "limit_ms": 20000
+  },
+  {
+   "id": "J4.2",
+   "kind": "new",
+   "group": "jobs",
+   "ask": "download the week 3 reading in a separate tab",
+   "flags": [],
+   "setup": {
+    "front": "bench-comet",
+    "open_url": "{base}/dl.html"
+   },
+   "expect": {
+    "log_has": "saved /tmp/dot-bench/downloads/.* \\(\\d+\\)",
+    "job": {
+     "placement": "behind",
+     "end": "done"
+    },
+    "no_agent": true,
+    "cursor_unchanged": true
+   },
+   "limit_ms": 20000,
+   "note": "the second download of the same file gets \" (n)\", never an overwrite"
+  },
+  {
+   "id": "J5",
+   "kind": "new",
+   "group": "jobs",
+   "ask": "in a separate tab, open {host}/page1.html",
+   "flags": [],
+   "setup": {
+    "front": "safari",
+    "open_url": "{base}/index.html"
+   },
+   "expect": {
+    "front_app": "Safari",
+    "log_lacks": "page: window took focus",
+    "job": {
+     "placement": "behind",
+     "end": "done"
+    }
+   },
+   "needs_unlocked": true
+  },
+  {
+   "id": "J6",
+   "kind": "new",
+   "group": "jobs",
+   "ask": "in a separate tab, open {host}/page1.html",
+   "flags": [],
+   "setup": {
+    "front": "bench-comet",
+    "open_url": "{base}/index.html"
+   },
+   "expect": {
+    "job": {
+     "placement": "behind"
+    },
+    "log_has": "job\\[[^\\]]+\\] shown"
+   },
+   "limit_ms": 1500,
+   "needs_unlocked": true,
+   "then": [
+    {
+     "ask": "show me",
+     "after": "job\\[[^\\]]+\\] (done|rang)"
+    }
+   ]
+  },
+  {
+   "id": "J7",
+   "kind": "new",
+   "group": "jobs",
+   "ask": "go to settings, then notifications, then email, and turn on email alerts",
+   "flags": [],
+   "setup": {
+    "front": "bench-comet",
+    "open_url": "{base}/index.html"
+   },
+   "expect": {
+    "log_has": [
+     "job\\[.*\\] paused",
+     "job\\[.*\\] resumed"
+    ],
+    "server_event": {
+     "type": "change",
+     "id": "^email-alerts$",
+     "checked": true
+    },
+    "job": {
+     "end": "done"
+    }
+   },
+   "then": [
+    {
+     "cli": "--job-test click",
+     "after": "^act: "
+    },
+    {
+     "ask": "go on",
+     "after": "job\\[.*\\] paused"
+    }
+   ]
+  },
+  {
+   "id": "J8",
+   "kind": "new",
+   "group": "jobs",
+   "ask": "go to settings, then notifications, then email, and turn on email alerts",
+   "flags": [],
+   "setup": {
+    "front": "bench-comet",
+    "open_url": "{base}/index.html"
+   },
+   "expect": {
+    "log_has": "job\\[.*\\] dropped",
+    "reply_contains": "391",
+    "no_act_after": "job\\[.*\\] dropped"
+   },
+   "then": [
+    {
+     "cli": "--job-test click",
+     "after": "^act: "
+    },
+    {
+     "ask": "what is 17 times 23",
+     "after": "job\\[.*\\] paused"
+    }
+   ]
+  },
+  {
+   "id": "J9",
+   "kind": "new",
+   "group": "jobs",
+   "ask": "open page one, then page two, then go back, then go to settings, notifications and email, and turn on email alerts",
+   "flags": [],
+   "setup": {
+    "front": "bench-comet",
+    "open_url": "{base}/index.html"
+   },
+   "expect": {
+    "log_has": "job\\[.*\\] stopped",
+    "no_act_after": "job\\[.*\\] stopped",
+    "stop_within_ms": 800
+   },
+   "then": [
+    {
+     "ask": "stop",
+     "after": "^act: "
+    }
+   ]
+  },
+  {
+   "id": "J10",
+   "kind": "new",
+   "group": "jobs",
+   "ask": "open page one, then page two, then go back, then go to settings, notifications and email, and turn on email alerts",
+   "flags": [],
+   "setup": {
+    "front": "bench-comet",
+    "open_url": "{base}/index.html"
+   },
+   "expect": {
+    "log_has": "job\\[.*\\] stopped \\(escape\\)",
+    "no_act_after": "job\\[.*\\] stopped"
+   },
+   "then": [
+    {
+     "cli": "--stop",
+     "after": "^act: "
+    }
+   ]
+  },
+  {
+   "id": "J10b",
+   "kind": "new",
+   "group": "jobs",
+   "ask": "open page one, then page two, then go back, then go to settings, notifications and email, and turn on email alerts",
+   "flags": [],
+   "setup": {
+    "front": "bench-comet",
+    "open_url": "{base}/index.html"
+   },
+   "expect": {
+    "log_lacks": "job\\[.*\\] stopped",
+    "job": {
+     "end": "done"
+    }
+   },
+   "then": [
+    {
+     "open_app": "Finder",
+     "after": "^act: "
+    },
+    {
+     "cli": "--stop",
+     "after": "open_app|^act: ",
+     "delay_ms": 800
+    }
+   ]
+  },
+  {
+   "id": "J11",
+   "kind": "new",
+   "group": "jobs",
+   "ask": "in a separate tab, open {host}/page1.html and then {host}/page2.html",
+   "flags": [],
+   "setup": {
+    "front": "bench-comet",
+    "open_url": "{base}/index.html"
+   },
+   "expect": {
+    "log_lacks": "job\\[.*\\] stopped",
+    "job": {
+     "placement": "behind",
+     "end": "done"
+    }
+   },
+   "then": [
+    {
+     "cli": "--stop",
+     "after": "job\\[[^\\]]+\\] started"
+    }
+   ]
+  },
+  {
+   "id": "J12",
+   "kind": "new",
+   "group": "jobs",
+   "ask": "open page one, then page two, then go back, then go to settings, notifications and email, and turn on email alerts",
+   "flags": [],
+   "setup": {
+    "front": "bench-comet",
+    "open_url": "{base}/index.html"
+   },
+   "expect": {
+    "reply_contains": "391",
+    "job": {
+     "end": "done"
+    },
+    "log_lacks": "talk: interrupted.*job"
+   },
+   "limit_ms": 2500,
+   "then": [
+    {
+     "ask": "what is 17 times 23",
+     "after": "^act: "
+    }
+   ],
+   "latency_to": "turn\\[talk\\] first sentence"
+  },
+  {
+   "id": "J13",
+   "kind": "new",
+   "group": "jobs",
+   "ask": "in a separate tab, open {host}/page1.html",
+   "flags": [],
+   "setup": {
+    "front": "bench-comet",
+    "open_url": "{base}/index.html"
+   },
+   "expect": {
+    "log_count": {
+     "pattern": "job\\[[^\\]]+\\] done",
+     "min": 2
+    }
+   },
+   "then": [
+    {
+     "ask": "in a separate tab, find the Northwind job I applied to",
+     "after": "job\\[[^\\]]+\\] started"
+    }
+   ]
+  },
+  {
+   "id": "J14",
+   "kind": "new",
+   "group": "jobs",
+   "ask": "spawn an agent to find the Northwind job I applied to",
+   "flags": [],
+   "setup": {
+    "front": "bench-comet",
+    "open_url": "{base}/index.html"
+   },
+   "expect": {
+    "expect_would_spawn": true,
+    "no_job": true
+   },
+   "limit_ms": 1000,
+   "latency_to": "^bench: would spawn"
+  },
+  {
+   "id": "J15",
+   "kind": "new",
+   "group": "jobs",
+   "ask": "research what grid storage options exist and write me a one page summary",
+   "flags": [
+    "--dry"
+   ],
+   "setup": {
+    "front": "bench-comet",
+    "open_url": "{base}/index.html"
+   },
+   "expect": {
+    "log_has": "dry-run: route job\\(behind\\) model=opus",
+    "expect_would_spawn": false,
+    "no_agent": true
+   },
+   "limit_ms": 1500,
+   "latency_to": "^dry-run: route"
+  },
+  {
+   "id": "J16.1",
+   "kind": "new",
+   "group": "jobs",
+   "ask": "open {host}/page2.html",
+   "flags": [
+    "--dry"
+   ],
+   "setup": {
+    "front": "bench-comet",
+    "open_url": "{base}/index.html"
+   },
+   "expect": {
+    "log_has": "dry-run: route job\\(front\\)"
+   },
+   "limit_ms": 1500,
+   "latency_to": "^dry-run: route",
+   "note": "'open {host}/page2.html' may stay a fixed phrase (act open, no route line); then the row reads the act"
+  },
+  {
+   "id": "J16.2",
+   "kind": "new",
+   "group": "jobs",
+   "ask": "download the readings from {host}/long.html",
+   "flags": [
+    "--dry"
+   ],
+   "setup": {
+    "front": "bench-comet",
+    "open_url": "{base}/index.html"
+   },
+   "expect": {
+    "log_has": "dry-run: route job\\(behind\\)"
+   },
+   "limit_ms": 1500,
+   "latency_to": "^dry-run: route",
+   "note": "'open {host}/page2.html' may stay a fixed phrase (act open, no route line); then the row reads the act"
+  },
+  {
+   "id": "J16.3",
+   "kind": "new",
+   "group": "jobs",
+   "ask": "in a separate tab, open {host}/page1.html",
+   "flags": [
+    "--dry"
+   ],
+   "setup": {
+    "front": "bench-comet",
+    "open_url": "{base}/index.html"
+   },
+   "expect": {
+    "log_has": "dry-run: route job\\(behind\\)"
+   },
+   "limit_ms": 1500,
+   "latency_to": "^dry-run: route",
+   "note": "'open {host}/page2.html' may stay a fixed phrase (act open, no route line); then the row reads the act"
+  },
+  {
+   "id": "J16.4",
+   "kind": "new",
+   "group": "jobs",
+   "ask": "find the Northwind job I applied to",
+   "flags": [
+    "--dry"
+   ],
+   "setup": {
+    "front": "bench-comet",
+    "open_url": "{base}/index.html"
+   },
+   "expect": {
+    "log_has": "dry-run: route job\\(front\\)"
+   },
+   "limit_ms": 1500,
+   "latency_to": "^dry-run: route",
+   "note": "'open {host}/page2.html' may stay a fixed phrase (act open, no route line); then the row reads the act"
+  },
+  {
+   "id": "J16.5",
+   "kind": "new",
+   "group": "jobs",
+   "ask": "check the email alerts setting",
+   "flags": [
+    "--dry"
+   ],
+   "setup": {
+    "front": "bench-comet",
+    "open_url": "{base}/index.html"
+   },
+   "expect": {
+    "log_has": "dry-run: route job\\(behind\\)"
+   },
+   "limit_ms": 1500,
+   "latency_to": "^dry-run: route",
+   "note": "'open {host}/page2.html' may stay a fixed phrase (act open, no route line); then the row reads the act"
+  },
+  {
+   "id": "J16.6",
+   "kind": "new",
+   "group": "jobs",
+   "ask": "turn on email alerts on this page",
+   "flags": [
+    "--dry"
+   ],
+   "setup": {
+    "front": "bench-comet",
+    "open_url": "{base}/email.html"
+   },
+   "expect": {
+    "log_has": "dry-run: route job\\(front\\)"
+   },
+   "limit_ms": 1500,
+   "latency_to": "^dry-run: route",
+   "note": "'open {host}/page2.html' may stay a fixed phrase (act open, no route line); then the row reads the act"
+  },
+  {
+   "id": "J17",
+   "kind": "new",
+   "group": "jobs",
+   "ask": "type hello in the message box and press enter",
+   "flags": [],
+   "setup": {
+    "front": "bench-comet",
+    "open_url": "{base}/compose.html"
+   },
+   "expect": {
+    "no_server_event": [
+     {
+      "type": "submit"
+     },
+     {
+      "type": "click",
+      "text": "^Send$"
+     }
+    ],
+    "job": {
+     "end": "done"
+    }
+   },
+   "limit_ms": 15000
+  },
+  {
+   "id": "J18",
+   "kind": "new",
+   "group": "jobs",
+   "ask": "go to settings, then notifications, then email, and turn on email alerts",
+   "flags": [],
+   "setup": {
+    "front": "bench-comet",
+    "open_url": "{base}/index.html"
+   },
+   "expect": {
+    "job": {
+     "end": "done"
+    },
+    "server_event": {
+     "type": "change",
+     "id": "^email-alerts$",
+     "checked": true
+    }
+   },
+   "limit_ms": 20000,
+   "then": [
+    {
+     "new_tab": "{base}/page1.html",
+     "after": "^act: "
+    }
+   ]
+  },
+  {
+   "id": "J19",
+   "kind": "new",
+   "group": "jobs",
+   "ask": "type Sam Rivera in the full name field, then go to {host}/page2.html",
+   "flags": [],
+   "setup": {
+    "front": "bench-comet",
+    "open_url": "{base}/apply.html"
+   },
+   "expect": {
+    "log_has": "the page asks to leave",
+    "no_server_event": {
+     "type": "get",
+     "url": "/page2\\.html"
+    }
+   }
+  },
+  {
+   "id": "J21",
+   "kind": "new",
+   "group": "jobs",
+   "ask": "use rba to read example.com",
+   "flags": [],
+   "setup": {
+    "front": "bench-comet",
+    "open_url": "{base}/index.html"
+   },
+   "expect": {
+    "log_lacks": "rba run"
+   },
+   "limit_ms": 30000,
+   "note": "the bench denies all Bash ('bench: reads only'); the live rba deny is JobGate's unit tests"
+  },
+  {
+   "id": "J22.1",
+   "kind": "new",
+   "group": "jobs",
+   "ask": "click export",
+   "flags": [],
+   "setup": {
+    "front": "safari",
+    "open_url": "{base}/form.html"
+   },
+   "expect": {
+    "no_job": true,
+    "act": {
+     "verb": "click",
+     "target": "(?i)export"
+    }
+   },
+   "limit_ms": 2000
+  },
+  {
+   "id": "J22.2",
+   "kind": "new",
+   "group": "jobs",
+   "ask": "click export",
+   "flags": [],
+   "setup": {
+    "front": "safari",
+    "open_url": "{base}/form.html"
+   },
+   "expect": {
+    "no_job": true,
+    "act": {
+     "verb": "click",
+     "target": "(?i)export"
+    }
+   },
+   "limit_ms": 2000
+  },
+  {
+   "id": "J22b",
+   "kind": "new",
+   "group": "jobs",
+   "ask": "open {host}/page1.html, then click continue to page 2",
+   "flags": [],
+   "setup": {
+    "front": "bench-comet",
+    "open_url": "{base}/index.html"
+   },
+   "expect": {
+    "log_has": "job\\[[^\\]]+\\] started placement=front warm=1",
+    "job": {
+     "end": "done"
+    }
+   },
+   "limit_ms": 2000,
+   "latency_to": "job\\[[^\\]]+\\] first action"
+  },
+  {
+   "id": "G3.1",
+   "kind": "new",
+   "group": "jobs",
+   "ask": "spawn an agent and download my readings for week three",
+   "flags": [],
+   "setup": {
+    "front": "bench-comet",
+    "open_url": "{base}/index.html"
+   },
+   "expect": {
+    "expect_would_spawn": true,
+    "no_job": true
+   },
+   "limit_ms": 1000,
+   "latency_to": "^bench: would spawn"
+  },
+  {
+   "id": "G3.2",
+   "kind": "new",
+   "group": "jobs",
+   "ask": "start an agent on it",
+   "flags": [],
+   "setup": {
+    "front": "bench-comet",
+    "open_url": "{base}/index.html"
+   },
+   "expect": {
+    "expect_would_spawn": true,
+    "no_job": true
+   },
+   "limit_ms": 1000,
+   "latency_to": "^bench: would spawn"
+  },
+  {
+   "id": "G3.3",
+   "kind": "new",
+   "group": "jobs",
+   "ask": "have an agent do it",
+   "flags": [],
+   "setup": {
+    "front": "bench-comet",
+    "open_url": "{base}/index.html"
+   },
+   "expect": {
+    "expect_would_spawn": true,
+    "no_job": true
+   },
+   "limit_ms": 1000,
+   "latency_to": "^bench: would spawn"
+  },
+  {
+   "id": "G3.4",
+   "kind": "new",
+   "group": "jobs",
+   "ask": "get an agent on it",
+   "flags": [],
+   "setup": {
+    "front": "bench-comet",
+    "open_url": "{base}/index.html"
+   },
+   "expect": {
+    "expect_would_spawn": true,
+    "no_job": true
+   },
+   "limit_ms": 1000,
+   "latency_to": "^bench: would spawn"
+  },
+  {
+   "id": "G3.5",
+   "kind": "new",
+   "group": "jobs",
+   "ask": "can an agent do this",
+   "flags": [],
+   "setup": {
+    "front": "bench-comet",
+    "open_url": "{base}/index.html"
+   },
+   "expect": {
+    "expect_would_spawn": true,
+    "no_job": true
+   },
+   "limit_ms": 1000,
+   "latency_to": "^bench: would spawn"
+  },
+  {
+   "id": "G3.6",
+   "kind": "new",
+   "group": "jobs",
+   "ask": "spawn a new agent for that",
+   "flags": [],
+   "setup": {
+    "front": "bench-comet",
+    "open_url": "{base}/index.html"
+   },
+   "expect": {
+    "expect_would_spawn": true,
+    "no_job": true
+   },
+   "limit_ms": 1000,
+   "latency_to": "^bench: would spawn"
+  },
+  {
+   "id": "G3.7",
+   "kind": "new",
+   "group": "jobs",
+   "ask": "use a background agent for this",
+   "flags": [],
+   "setup": {
+    "front": "bench-comet",
+    "open_url": "{base}/index.html"
+   },
+   "expect": {
+    "expect_would_spawn": true,
+    "no_job": true
+   },
+   "limit_ms": 1000,
+   "latency_to": "^bench: would spawn"
+  },
+  {
+   "id": "G3.8",
+   "kind": "new",
+   "group": "jobs",
+   "ask": "an agent that opens its own browser",
+   "flags": [],
+   "setup": {
+    "front": "bench-comet",
+    "open_url": "{base}/index.html"
+   },
+   "expect": {
+    "expect_would_spawn": true,
+    "no_job": true
+   },
+   "limit_ms": 1000,
+   "latency_to": "^bench: would spawn"
+  },
+  {
+   "id": "G4.1",
+   "kind": "new",
+   "group": "jobs",
+   "ask": "don't spawn an agent, just open {host}/page2.html",
+   "flags": [],
+   "setup": {
+    "front": "bench-comet",
+    "open_url": "{base}/long.html"
+   },
+   "expect": {
+    "expect_would_spawn": false
+   }
+  },
+  {
+   "id": "G4.2",
+   "kind": "new",
+   "group": "jobs",
+   "ask": "what did the agent find",
+   "flags": [],
+   "setup": {
+    "front": "bench-comet",
+    "open_url": "{base}/long.html"
+   },
+   "expect": {
+    "expect_would_spawn": false,
+    "no_job": true
+   }
+  },
+  {
+   "id": "G4.3",
+   "kind": "new",
+   "group": "jobs",
+   "ask": "stop the agent",
+   "flags": [],
+   "setup": {
+    "front": "bench-comet",
+    "open_url": "{base}/long.html"
+   },
+   "expect": {
+    "expect_would_spawn": false,
+    "no_job": true
+   }
+  },
+  {
+   "id": "G4.4",
+   "kind": "new",
+   "group": "jobs",
+   "ask": "scroll down",
+   "flags": [],
+   "setup": {
+    "front": "bench-comet",
+    "open_url": "{base}/long.html"
+   },
+   "expect": {
+    "expect_would_spawn": false,
+    "no_job": true,
+    "act": {
+     "verb": "scroll"
+    }
+   }
+  },
+  {
+   "id": "G6",
+   "kind": "new",
+   "group": "jobs",
+   "ask": "keep an eye on my outlook for anything from Sam Rivera",
+   "flags": [],
+   "setup": {
+    "front": "bench-comet",
+    "open_url": "{base}/index.html"
+   },
+   "expect": {
+    "log_has": "bench: would add routine .*every 2 hours.*watch",
+    "no_job": true
+   }
+  },
+  {
+   "id": "S1",
+   "kind": "new",
+   "group": "jobs",
+   "ask": "play some lofi on spotify",
+   "flags": [],
+   "setup": {
+    "front": "safari",
+    "open_url": "{base}/index.html"
+   },
+   "expect": {
+    "act": {
+     "verb": "play"
+    },
+    "log_has": "bench dry play spotify:playlist:",
+    "no_turn": true,
+    "no_job": true,
+    "no_agent": true
+   },
+   "limit_ms": 4000
+  },
+  {
+   "id": "S2",
+   "kind": "new",
+   "group": "jobs",
+   "ask": "find piano playlist i would like need to study",
+   "flags": [],
+   "setup": {
+    "front": "safari",
+    "open_url": "{base}/index.html"
+   },
+   "expect": {
+    "act": {
+     "verb": "play"
+    },
+    "no_act": [
+     "insert"
+    ],
+    "no_job": true,
+    "no_agent": true,
+    "reply_not_contains": "typing|search box"
+   },
+   "limit_ms": 4000
+  },
+  {
+   "id": "S3",
+   "kind": "new",
+   "group": "jobs",
+   "ask": "search spotify for Northwind Quartet",
+   "flags": [],
+   "setup": {
+    "front": "safari",
+    "open_url": "{base}/index.html"
+   },
+   "expect": {
+    "blocked": true,
+    "no_turn": true
+   },
+   "limit_ms": 1500
+  },
+  {
+   "id": "S4",
+   "kind": "new",
+   "group": "jobs",
+   "ask": "next song",
+   "flags": [],
+   "setup": {
+    "front": "safari",
+    "open_url": "{base}/index.html"
+   },
+   "expect": {
+    "blocked": true
+   },
+   "limit_ms": 1000
+  },
+  {
+   "id": "S5",
+   "kind": "new",
+   "group": "jobs",
+   "ask": "open spotify to a piano playlist for studying",
+   "flags": [],
+   "setup": {
+    "front": "safari",
+    "open_url": "{base}/index.html"
+   },
+   "expect": {
+    "act": {
+     "verb": "play"
+    },
+    "log_has": "bench dry play",
+    "no_job": true
+   },
+   "limit_ms": 4000
+  },
+  {
+   "id": "S6",
+   "kind": "new",
+   "group": "jobs",
+   "ask": "play a piano playlist for studying",
+   "flags": [],
+   "setup": {
+    "front": "safari",
+    "open_url": "{base}/index.html"
+   },
+   "expect": {
+    "act": {
+     "verb": "play"
+    },
+    "log_has": "bench dry play",
+    "no_job": true
+   },
+   "limit_ms": 4000
+  },
+  {
+   "id": "M1",
+   "kind": "new",
+   "group": "jobs",
+   "ask": "what did my last text say",
+   "flags": [],
+   "setup": {
+    "front": "safari",
+    "open_url": "{base}/index.html"
+   },
+   "expect": {
+    "log_has": "mcp__atlas__messages|tool messages",
+    "no_act": [
+     "click",
+     "insert"
+    ],
+    "no_agent": true
+   },
+   "limit_ms": 7000
+  },
+  {
+   "id": "M2",
+   "kind": "new",
+   "group": "jobs",
+   "ask": "text Alex Example running late",
+   "flags": [],
+   "setup": {
+    "front": "safari",
+    "open_url": "{base}/index.html"
+   },
+   "expect": {
+    "log_lacks": [
+     "proposal: card",
+     "imessage_send.*sent"
+    ],
+    "no_agent": true
+   },
+   "limit_ms": 30000
+  },
+  {
+   "id": "M3",
+   "kind": "new",
+   "group": "jobs",
+   "ask": "email sam@example.com that the meeting moved to 3",
+   "flags": [],
+   "setup": {
+    "front": "safari",
+    "open_url": "{base}/index.html"
+   },
+   "expect": {
+    "log_lacks": [
+     "proposal: card",
+     "send_email.*sent"
+    ],
+    "no_agent": true
+   },
+   "limit_ms": 30000
+  },
+  {
+   "id": "N1",
+   "kind": "new",
+   "group": "jobs",
+   "ask": "make a note called bench list with eggs",
+   "flags": [],
+   "setup": {
+    "front": "safari",
+    "open_url": "{base}/index.html"
+   },
+   "expect": {
+    "log_lacks": "apple_note.*ok",
+    "no_agent": true
+   },
+   "limit_ms": 30000
+  },
+  {
+   "id": "D1",
+   "kind": "new",
+   "group": "jobs",
+   "ask": "make me a 5 slide deck on the bench fixture",
+   "flags": [
+    "--dry"
+   ],
+   "setup": {
+    "front": "bench-comet",
+    "open_url": "{base}/index.html"
+   },
+   "expect": {
+    "log_has": "dry-run: route job\\(behind\\) model=opus",
+    "no_agent": true
+   },
+   "limit_ms": 1500,
+   "latency_to": "^dry-run: route"
+  }
+ ]
+}
