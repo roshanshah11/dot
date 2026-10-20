@@ -575,7 +575,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         stack.onOpenHome = { [weak self] id in self?.home.show(agent: id) }
         stack.onReply = { [weak self] id, text in
             guard let self else { return }
-            if id.hasPrefix("job-") { self.jobAction("reply", id); return }
+            if id.hasPrefix("job-") { self.talk.jobs.chipAction("reply", chipId: id, text: text); return }
             self.agents.reply(to: id, text: text)
         }
         stack.onShow = { [weak self] id in self?.jobAction("show me", id) }
@@ -588,12 +588,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             Log.info("agent[\(id)] continue from the stack")
             self.agents.reply(to: id, text: AgentManager.continueLabel)
         }
-        Log.info("stack: job feed not wired yet (02's JobManager feeds stack.upsert with job-<id> chips after the merge)")
+        talk.jobs.stack = stack
     }
 
-    /// A job chip's button before 02's JobManager is wired: logged, nothing else.
+    /// A job chip's button: JobManager acts on it (02).
     private func jobAction(_ what: String, _ id: String) {
-        Log.info("stack: \(what) on \(id): no job feed wired yet")
+        talk.jobs.chipAction(what, chipId: id)
     }
     @objc private func openHome() { home.show() }
     @objc private func interrupt() { talk.interrupt() }

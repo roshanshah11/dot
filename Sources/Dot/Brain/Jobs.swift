@@ -43,6 +43,8 @@ final class JobManager {
         var repeatNudged = false
         /// Proposals already shown as cards.
         var cardsShown: Set<String> = []
+        /// Files it put in his folders (the done card's open button).
+        var outputs: [URL] = []
 
         init(id: String, goal: String, hisWords: String, placement: JobPlacement, model: String, page: PageDriver, hands: Hands,
              askedAt: Date?, bench: Bool, folder: URL, stamp: String) {
@@ -79,6 +81,8 @@ final class JobManager {
     var presentCard: ((ConsentCard) -> Void)?
     /// Jev's injection check on page text (the agents' PostToolUse check isn't in a job's path).
     var jev: Jev?
+    /// The top-right stack (04): a behind job is a chip there; front jobs get none.
+    weak var stack: AgentStack?
 
     init(config: DotConfig, overlay: OverlayManager?, speaker: TTSProvider?, ledger: Ledger?) {
         self.config = config
@@ -310,6 +314,7 @@ final class JobManager {
         }
         first += "\nhe said: \"\(words)\""
         if goal != words { first += "\nwhat talk saw that matters: \(goal)" }
+        if Self.isDeck(words) { first += "\n" + Self.deckBrief }
         Log.info("job[\(job.id)] started placement=\(placement.rawValue) warm=\(warm ? 1 : 0) model=\(model) goal=\(Log.short(goal, 120))")
         if placement == .front, comet {
             // Pin his tab now, while the model writes its first step.
@@ -334,7 +339,7 @@ final class JobManager {
                 self.spawnSpare(bench: true)
             }
         }
-        onChange?()
+        publish(job)
         if announce || placement != asked { say(line, job: job, start: true) } else { Log.info("job[\(job.id)] said: (talk said the start line)") }
         return line
     }
@@ -371,7 +376,7 @@ final class JobManager {
             } else if job.steps.count >= 2, job.steps.suffix(2).allSatisfy({ $0 != job.steps.last }) {
                 job.repeatNudged = false
             }
-            onChange?()
+            publish(job)
         case .assistantText(let text):
             let t = text.trimmingCharacters(in: .whitespacesAndNewlines)
             if !t.isEmpty { job.lastLine = t }
@@ -403,6 +408,16 @@ final class JobManager {
         }
     }
 
+    static let deckWords = try! NSRegularExpression(pattern: #"\b(?:deck|presentation|slides?|slideshow|pitch deck|powerpoint)\b"#, options: .caseInsensitive)
+
+    static func isDeck(_ text: String) -> Bool {
+        deckWords.firstMatch(in: text, range: NSRange(location: 0, length: (text as NSString).length)) != nil
+    }
+
+    /// The deck job's brief (05, I F11): the powerpoint-design skill, decided without him, built with python-pptx in the
+    /// job folder, and copied to his Desktop.
+    static let deckBrief = "[deck] use the powerpoint-design skill. he isn't here for the interview: decide the bar, the thesis and every Mine question yourself and list them under 'Decided without asking' in BRIEF.md. never call AskUserQuestion. do the skill's critic pass yourself (no helpers in a job). build with /opt/homebrew/bin/python3.13 and python-pptx (pptxgenjs needs node, which a job doesn't have), in your output folder, and end with 'saved: <output>/<Title>.pptx -> desktop': dot copies it to the Desktop under a free name and the card shows an open button. never run the PowerPoint gate while PowerPoint is in front."
+
     static func stepLine(_ name: String, _ input: [String: AnyCodableValue]) -> String {
         let short = name.replacingOccurrences(of: "mcp__dot__", with: "").replacingOccurrences(of: "mcp__atlas__", with: "atlas ")
         let keys = ["ref", "label", "target", "to", "keys", "text", "query", "url", "command", "file_path"]
@@ -417,7 +432,10 @@ final class JobManager {
         // Files for his folders: "saved: <output path> -> <folder>".
         var copied: [String] = []
         for line in text.components(separatedBy: .newlines) {
-            if let (from, to) = Self.savedLine(line), let path = copyOut(job, from: from, to: to) { copied.append(path) }
+            if let (from, to) = Self.savedLine(line), let path = copyOut(job, from: from, to: to) {
+                copied.append(path)
+                job.outputs.append(URL(fileURLWithPath: path))
+            }
             if line.hasPrefix("Routine:"), let command = RoutineCommand.parse(json: String(line.dropFirst("Routine:".count)).trimmingCharacters(in: .whitespaces)),
                command.action == .create, let when = command.when, let task = command.task {
                 if job.bench { Log.info("bench: would add routine \(command.title) \(when) watch") } else { onRoutine?(command.title, when, task) }
@@ -516,7 +534,7 @@ final class JobManager {
         }
         if stopReason == nil { say(line, job: job, start: false) }
         if running.isEmpty { NotificationCenter.default.post(name: .dotAgentActivity, object: nil, userInfo: AgentActivityReport(activity: nil).userInfo) }
-        onChange?()
+        publish(job)
         // A queued ask starts now.
         if !queue.isEmpty, running.count < config.jobsMax {
             let next = queue.removeFirst()
@@ -549,7 +567,7 @@ final class JobManager {
         let first = "[job] id \(job.id), placement \(placement.rawValue), output folder \(job.folder.appendingPathComponent("output").path), now: \(Talk.nowLine())\nhe said: \"\(words)\""
         Log.info("job[\(job.id)] started placement=\(placement.rawValue) warm=0 model=\(model) goal=\(Log.short(goal, 120))")
         made.session.send(text: first)
-        onChange?()
+        publish(job)
     }
 
     private func sessionExited(id: String, code: Int32) {
@@ -839,7 +857,7 @@ final class JobManager {
             overlay?.target(at: point, radius: 24, label: label, hover: false)
             say("that one's yours to press: \(label.lowercased()).", job: job, start: false)
         }
-        onChange?()
+        publish(job)
     }
 
     // MARK: Queued sends become his cards (02 E)
@@ -954,7 +972,7 @@ final class JobManager {
         job.session?.interrupt()
         Log.info("job[\(job.id)] paused (\(reason))")
         say("paused.", job: job, start: false, short: true)
-        onChange?()
+        publish(job)
     }
 
     func resume(_ job: Job) {
@@ -962,7 +980,7 @@ final class JobManager {
         job.phase = next
         job.session?.send(text: "[resume] he used the tab and said go on. continue where you left off; look first, the page may have changed.")
         Log.info("job[\(job.id)] resumed")
-        onChange?()
+        publish(job)
     }
 
     func drop(_ job: Job, reason: String) {
@@ -1064,6 +1082,58 @@ final class JobManager {
         return "job-test \(kind.rawValue) for job \(job.id)"
     }
 
+    // MARK: The stack
+
+    /// A behind job as a chip at the top right (04): its last steps, its state, stop, show me and a reply field.
+    func publish(_ job: Job) {
+        onChange?()
+        guard job.placement == .behind, !job.bench, let stack else { return }
+        let state: AgentChip.State
+        var line = job.lastLine.isEmpty ? (job.steps.last.map { "working: \($0)" } ?? "starting") : job.lastLine
+        switch job.phase {
+        case .starting, .running: state = job.rung != nil ? .attention : .running
+        case .paused: state = .paused; line = "paused · say go on"
+        case .done:
+            if let rung = job.rung { state = .attention; line = "ready for you: \(rung.label.lowercased()). say show me" }
+            else if AgentRecovery.promisesLater(job.endLine) { state = .unfinished; line = job.endLine }
+            else { state = .done; line = job.endLine }
+        case .failed: state = .failed; line = job.endLine.isEmpty ? "it stopped" : job.endLine
+        case .stopped: state = .stopped; line = "stopped"
+        }
+        let title = Log.short(job.hisWords.components(separatedBy: .newlines).first ?? job.goal, 40)
+        var chip = StackChip(id: "job-\(job.id)", kind: .job, title: title, line: Log.short(line, 140), steps: Array(job.steps.suffix(3)),
+                             state: state, startedAt: job.startedAt, costText: job.cost >= 3 ? String(format: "$%.2f", job.cost) : nil,
+                             canStop: job.phase.isLive)
+        chip.canOpen = false
+        chip.outputs = job.outputs
+        if !job.endLine.isEmpty { chip.result = job.endLine }
+        stack.upsert(chip)
+    }
+
+    /// The chip's buttons (AppDelegate.wireStack).
+    func chipAction(_ what: String, chipId: String, text: String? = nil) {
+        guard chipId.hasPrefix("job-"), let job = job(String(chipId.dropFirst(4))) else { return }
+        switch what {
+        case "stop": stop(job, reason: "his stop on the chip")
+        case "show me": Task { @MainActor in await self.show(job) }
+        case "reply":
+            if let text, !text.isEmpty {
+                if job.phase.isLive { followUp(job, text: text) } else { continueJob(job, with: text) }
+            }
+        case "continue": continueJob(job, with: "continue where you left off")
+        default: Log.info("stack: \(what) on \(chipId)")
+        }
+    }
+
+    /// A finished job's Continue or a reply after it ended: a new job with the old goal and what it said.
+    func continueJob(_ old: Job, with words: String) {
+        var context = ScreenContext()
+        context.appName = old.appName
+        context.bundleIdentifier = old.appBundle
+        let goal = "\(old.goal)\n(an earlier job on this ended: \"\(Log.short(old.endLine, 200))\". he said: \(words))"
+        start(goal: goal, placement: old.placement, context: context, askedAt: Date(), bench: old.bench, hisWords: old.hisWords)
+    }
+
     // MARK: Speech
 
     /// Start lines Dot says itself; end lines when talk is idle and the Mac isn't muted, else as text. Bench jobs never speak.
@@ -1080,10 +1150,9 @@ final class JobManager {
         }
         overlay?.greet(line, for: short ? 3 : 6)
         if AudioDevices.outputIsSilent() {
-            Log.info("speak: job (muted, text) \(Log.short(line, 60))")
+            Log.info("job[\(job.id)] muted: the line is text only")
             return
         }
-        Log.info("speak: job \(Log.short(line, 60))")
-        speaker?.speak(line)
+        SpeakLog.as("job (\(job.id))") { speaker?.speak(line) }
     }
 }

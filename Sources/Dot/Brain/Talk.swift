@@ -1964,6 +1964,11 @@ final class Talk {
                 return .act(command)
             }
         }
+        // Watching something over time is a routine, never a job that runs forever (07): talk writes the tag.
+        if config.jobsEnabled, !inWalkthrough, WatchWords.isWatch(text) {
+            Log.info("route: watching; talk writes the routine")
+            return .answer
+        }
         if AgentModeFilter.wantsFreshAgent(text), !inWalkthrough { return .agentFresh }
         if config.jobsEnabled, AgentWords.asksForAgent(text) {
             // His words for an agent: nothing else starts one when jobs are on.
