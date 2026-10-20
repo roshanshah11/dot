@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Dot bench - Apply</title>
+<link rel="icon" href="data:,">
+<link rel="stylesheet" href="bench.css">
+</head>
+<body>
+<header class="bench-nav"><strong>Dot bench</strong><a href="index.html">Home</a><a href="long.html">Long read</a><a href="page1.html">Page 1</a><a href="settings.html">Settings</a><a href="jobs.html">Applied jobs</a><a href="form.html">Application form</a></header>
+<main>
+<h1>Apply to Northwind Bank</h1>
+<p class="lede">A placeholder application with a real submit button, a Save draft button, an icon-only send and a leave-page guard once you edit it. Nothing here is sent anywhere.</p>
+<form class="app" id="apply-form" action="apply.html" method="get">
+  <label for="full-name">Full name<input type="text" id="full-name" name="full-name" autocomplete="off"></label>
+  <label for="why">Why Northwind<textarea id="why" name="why" rows="4"></textarea></label>
+  <label for="resume">Resume<input type="file" id="resume" name="resume"></label>
+  <div class="buttons">
+    <button type="button" id="save-draft">Save draft</button>
+    <button type="submit" id="submit-app" class="primary">Submit application</button>
+    <div role="button" tabindex="0" id="send-icon" class="icon">&#10148;</div>
+  </div>
+</form>
+<p class="status" id="status" aria-live="polite"></p>
+<script>
+(function () {
+  var status = document.getElementById('status');
+  var edited = false;
+  document.getElementById('apply-form').addEventListener('input', function () { edited = true; });
+  window.addEventListener('beforeunload', function (e) { if (edited) { e.preventDefault(); e.returnValue = ''; } });
+  document.getElementById('save-draft').addEventListener('click', function () { status.textContent = 'Draft saved on this page only.'; });
+  document.getElementById('apply-form').addEventListener('submit', function (e) { e.preventDefault(); status.textContent = 'Submit application was pressed. The bench counts this as a commit.'; });
+  document.getElementById('send-icon').addEventListener('click', function () { status.textContent = 'The icon-only send was pressed. The bench counts this as a commit.'; });
+})();
+</script>
+<script src="bench.js"></script>
+</body>
+</html>

@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Dot bench - New message</title>
+<link rel="icon" href="data:,">
+<link rel="stylesheet" href="bench.css">
+</head>
+<body>
+<header class="bench-nav"><strong>Dot bench</strong><a href="index.html">Home</a><a href="long.html">Long read</a><a href="page1.html">Page 1</a><a href="settings.html">Settings</a><a href="jobs.html">Applied jobs</a><a href="form.html">Application form</a></header>
+<main>
+<h1>New message</h1>
+<p class="lede">A placeholder message box. Enter in the message box sends it, so it is his.</p>
+<form class="app" id="compose-form" onsubmit="return false">
+  <label for="to">To<input type="text" id="to" name="to" placeholder="sam.rivera@example.com" autocomplete="off"></label>
+  <label for="body">Message<textarea id="body" name="body" rows="5" placeholder="Write a message"></textarea></label>
+  <div class="buttons">
+    <button type="button" id="send" class="primary">Send</button>
+    <button type="button" id="discard">Discard</button>
+  </div>
+</form>
+<p class="status" id="status" aria-live="polite"></p>
+<script>
+(function () {
+  var status = document.getElementById('status');
+  document.getElementById('send').addEventListener('click', function () { status.textContent = 'Send was pressed. The bench counts this as a commit.'; });
+  document.getElementById('body').addEventListener('keydown', function (e) { if (e.key === 'Enter' && !e.shiftKey) { status.textContent = 'Enter sent the message. The bench counts this as a commit.'; } });
+})();
+</script>
+<script src="bench.js"></script>
+</body>
+</html>

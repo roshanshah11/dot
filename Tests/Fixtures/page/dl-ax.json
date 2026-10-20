@@ -1,0 +1,2075 @@
+{
+ "nodes": [
+  {
+   "nodeId": "1",
+   "ignored": false,
+   "role": {
+    "type": "internalRole",
+    "value": "RootWebArea"
+   },
+   "chromeRole": {
+    "type": "internalRole",
+    "value": 144
+   },
+   "name": {
+    "type": "computedString",
+    "value": "Dot bench - Week 3 readings",
+    "sources": [
+     {
+      "type": "relatedElement",
+      "attribute": "aria-labelledby"
+     },
+     {
+      "type": "attribute",
+      "attribute": "aria-label"
+     },
+     {
+      "type": "attribute",
+      "attribute": "aria-label",
+      "superseded": true
+     },
+     {
+      "type": "relatedElement",
+      "value": {
+       "type": "computedString",
+       "value": "Dot bench - Week 3 readings"
+      },
+      "nativeSource": "title"
+     }
+    ]
+   },
+   "properties": [
+    {
+     "name": "focusable",
+     "value": {
+      "type": "booleanOrUndefined",
+      "value": true
+     }
+    },
+    {
+     "name": "focused",
+     "value": {
+      "type": "booleanOrUndefined",
+      "value": true
+     }
+    },
+    {
+     "name": "url",
+     "value": {
+      "type": "string",
+      "value": "http://127.0.0.1:8766/dl.html"
+     }
+    }
+   ],
+   "childIds": [
+    "2"
+   ],
+   "backendDOMNodeId": 1,
+   "frameId": "063BBCED9944CC88E845995CE4D6AD44"
+  },
+  {
+   "nodeId": "2",
+   "ignored": true,
+   "ignoredReasons": [
+    {
+     "name": "uninteresting",
+     "value": {
+      "type": "boolean",
+      "value": true
+     }
+    }
+   ],
+   "role": {
+    "type": "role",
+    "value": "none"
+   },
+   "chromeRole": {
+    "type": "internalRole",
+    "value": 0
+   },
+   "parentId": "1",
+   "childIds": [
+    "9"
+   ],
+   "backendDOMNodeId": 2
+  },
+  {
+   "nodeId": "9",
+   "ignored": true,
+   "ignoredReasons": [
+    {
+     "name": "uninteresting",
+     "value": {
+      "type": "boolean",
+      "value": true
+     }
+    }
+   ],
+   "role": {
+    "type": "role",
+    "value": "none"
+   },
+   "chromeRole": {
+    "type": "internalRole",
+    "value": 0
+   },
+   "parentId": "2",
+   "childIds": [
+    "10",
+    "18"
+   ],
+   "backendDOMNodeId": 9
+  },
+  {
+   "nodeId": "10",
+   "ignored": false,
+   "role": {
+    "type": "role",
+    "value": "banner"
+   },
+   "chromeRole": {
+    "type": "internalRole",
+    "value": 94
+   },
+   "name": {
+    "type": "computedString",
+    "value": "",
+    "sources": [
+     {
+      "type": "relatedElement",
+      "attribute": "aria-labelledby"
+     },
+     {
+      "type": "attribute",
+      "attribute": "aria-label"
+     },
+     {
+      "type": "attribute",
+      "attribute": "title"
+     }
+    ]
+   },
+   "properties": [],
+   "parentId": "9",
+   "childIds": [
+    "11",
+    "12",
+    "13",
+    "14",
+    "15",
+    "16",
+    "17"
+   ],
+   "backendDOMNodeId": 10
+  },
+  {
+   "nodeId": "18",
+   "ignored": false,
+   "role": {
+    "type": "role",
+    "value": "main"
+   },
+   "chromeRole": {
+    "type": "internalRole",
+    "value": 118
+   },
+   "name": {
+    "type": "computedString",
+    "value": "",
+    "sources": [
+     {
+      "type": "relatedElement",
+      "attribute": "aria-labelledby"
+     },
+     {
+      "type": "attribute",
+      "attribute": "aria-label"
+     },
+     {
+      "type": "attribute",
+      "attribute": "title"
+     }
+    ]
+   },
+   "properties": [],
+   "parentId": "9",
+   "childIds": [
+    "19",
+    "20",
+    "21",
+    "22",
+    "29",
+    "30"
+   ],
+   "backendDOMNodeId": 18
+  },
+  {
+   "nodeId": "11",
+   "ignored": false,
+   "role": {
+    "type": "role",
+    "value": "strong"
+   },
+   "chromeRole": {
+    "type": "internalRole",
+    "value": 160
+   },
+   "name": {
+    "type": "computedString",
+    "value": "",
+    "sources": [
+     {
+      "type": "relatedElement",
+      "attribute": "aria-labelledby"
+     },
+     {
+      "type": "attribute",
+      "attribute": "aria-label"
+     }
+    ]
+   },
+   "properties": [],
+   "parentId": "10",
+   "childIds": [
+    "32"
+   ],
+   "backendDOMNodeId": 11
+  },
+  {
+   "nodeId": "12",
+   "ignored": false,
+   "role": {
+    "type": "role",
+    "value": "link"
+   },
+   "chromeRole": {
+    "type": "internalRole",
+    "value": 110
+   },
+   "name": {
+    "type": "computedString",
+    "value": "Home",
+    "sources": [
+     {
+      "type": "relatedElement",
+      "attribute": "aria-labelledby"
+     },
+     {
+      "type": "attribute",
+      "attribute": "aria-label"
+     },
+     {
+      "type": "contents",
+      "value": {
+       "type": "computedString",
+       "value": "Home"
+      }
+     },
+     {
+      "type": "attribute",
+      "attribute": "title",
+      "superseded": true
+     }
+    ]
+   },
+   "properties": [
+    {
+     "name": "focusable",
+     "value": {
+      "type": "booleanOrUndefined",
+      "value": true
+     }
+    },
+    {
+     "name": "url",
+     "value": {
+      "type": "string",
+      "value": "http://127.0.0.1:8766/index.html"
+     }
+    }
+   ],
+   "parentId": "10",
+   "childIds": [
+    "33"
+   ],
+   "backendDOMNodeId": 12
+  },
+  {
+   "nodeId": "13",
+   "ignored": false,
+   "role": {
+    "type": "role",
+    "value": "link"
+   },
+   "chromeRole": {
+    "type": "internalRole",
+    "value": 110
+   },
+   "name": {
+    "type": "computedString",
+    "value": "Long read",
+    "sources": [
+     {
+      "type": "relatedElement",
+      "attribute": "aria-labelledby"
+     },
+     {
+      "type": "attribute",
+      "attribute": "aria-label"
+     },
+     {
+      "type": "contents",
+      "value": {
+       "type": "computedString",
+       "value": "Long read"
+      }
+     },
+     {
+      "type": "attribute",
+      "attribute": "title",
+      "superseded": true
+     }
+    ]
+   },
+   "properties": [
+    {
+     "name": "focusable",
+     "value": {
+      "type": "booleanOrUndefined",
+      "value": true
+     }
+    },
+    {
+     "name": "url",
+     "value": {
+      "type": "string",
+      "value": "http://127.0.0.1:8766/long.html"
+     }
+    }
+   ],
+   "parentId": "10",
+   "childIds": [
+    "34"
+   ],
+   "backendDOMNodeId": 13
+  },
+  {
+   "nodeId": "14",
+   "ignored": false,
+   "role": {
+    "type": "role",
+    "value": "link"
+   },
+   "chromeRole": {
+    "type": "internalRole",
+    "value": 110
+   },
+   "name": {
+    "type": "computedString",
+    "value": "Page 1",
+    "sources": [
+     {
+      "type": "relatedElement",
+      "attribute": "aria-labelledby"
+     },
+     {
+      "type": "attribute",
+      "attribute": "aria-label"
+     },
+     {
+      "type": "contents",
+      "value": {
+       "type": "computedString",
+       "value": "Page 1"
+      }
+     },
+     {
+      "type": "attribute",
+      "attribute": "title",
+      "superseded": true
+     }
+    ]
+   },
+   "properties": [
+    {
+     "name": "focusable",
+     "value": {
+      "type": "booleanOrUndefined",
+      "value": true
+     }
+    },
+    {
+     "name": "url",
+     "value": {
+      "type": "string",
+      "value": "http://127.0.0.1:8766/page1.html"
+     }
+    }
+   ],
+   "parentId": "10",
+   "childIds": [
+    "35"
+   ],
+   "backendDOMNodeId": 14
+  },
+  {
+   "nodeId": "15",
+   "ignored": false,
+   "role": {
+    "type": "role",
+    "value": "link"
+   },
+   "chromeRole": {
+    "type": "internalRole",
+    "value": 110
+   },
+   "name": {
+    "type": "computedString",
+    "value": "Settings",
+    "sources": [
+     {
+      "type": "relatedElement",
+      "attribute": "aria-labelledby"
+     },
+     {
+      "type": "attribute",
+      "attribute": "aria-label"
+     },
+     {
+      "type": "contents",
+      "value": {
+       "type": "computedString",
+       "value": "Settings"
+      }
+     },
+     {
+      "type": "attribute",
+      "attribute": "title",
+      "superseded": true
+     }
+    ]
+   },
+   "properties": [
+    {
+     "name": "focusable",
+     "value": {
+      "type": "booleanOrUndefined",
+      "value": true
+     }
+    },
+    {
+     "name": "url",
+     "value": {
+      "type": "string",
+      "value": "http://127.0.0.1:8766/settings.html"
+     }
+    }
+   ],
+   "parentId": "10",
+   "childIds": [
+    "36"
+   ],
+   "backendDOMNodeId": 15
+  },
+  {
+   "nodeId": "16",
+   "ignored": false,
+   "role": {
+    "type": "role",
+    "value": "link"
+   },
+   "chromeRole": {
+    "type": "internalRole",
+    "value": 110
+   },
+   "name": {
+    "type": "computedString",
+    "value": "Applied jobs",
+    "sources": [
+     {
+      "type": "relatedElement",
+      "attribute": "aria-labelledby"
+     },
+     {
+      "type": "attribute",
+      "attribute": "aria-label"
+     },
+     {
+      "type": "contents",
+      "value": {
+       "type": "computedString",
+       "value": "Applied jobs"
+      }
+     },
+     {
+      "type": "attribute",
+      "attribute": "title",
+      "superseded": true
+     }
+    ]
+   },
+   "properties": [
+    {
+     "name": "focusable",
+     "value": {
+      "type": "booleanOrUndefined",
+      "value": true
+     }
+    },
+    {
+     "name": "url",
+     "value": {
+      "type": "string",
+      "value": "http://127.0.0.1:8766/jobs.html"
+     }
+    }
+   ],
+   "parentId": "10",
+   "childIds": [
+    "37"
+   ],
+   "backendDOMNodeId": 16
+  },
+  {
+   "nodeId": "17",
+   "ignored": false,
+   "role": {
+    "type": "role",
+    "value": "link"
+   },
+   "chromeRole": {
+    "type": "internalRole",
+    "value": 110
+   },
+   "name": {
+    "type": "computedString",
+    "value": "Application form",
+    "sources": [
+     {
+      "type": "relatedElement",
+      "attribute": "aria-labelledby"
+     },
+     {
+      "type": "attribute",
+      "attribute": "aria-label"
+     },
+     {
+      "type": "contents",
+      "value": {
+       "type": "computedString",
+       "value": "Application form"
+      }
+     },
+     {
+      "type": "attribute",
+      "attribute": "title",
+      "superseded": true
+     }
+    ]
+   },
+   "properties": [
+    {
+     "name": "focusable",
+     "value": {
+      "type": "booleanOrUndefined",
+      "value": true
+     }
+    },
+    {
+     "name": "url",
+     "value": {
+      "type": "string",
+      "value": "http://127.0.0.1:8766/form.html"
+     }
+    }
+   ],
+   "parentId": "10",
+   "childIds": [
+    "38"
+   ],
+   "backendDOMNodeId": 17
+  },
+  {
+   "nodeId": "19",
+   "ignored": false,
+   "role": {
+    "type": "role",
+    "value": "heading"
+   },
+   "chromeRole": {
+    "type": "internalRole",
+    "value": 96
+   },
+   "name": {
+    "type": "computedString",
+    "value": "COURSE 101 \u00b7 Week 3 readings",
+    "sources": [
+     {
+      "type": "relatedElement",
+      "attribute": "aria-labelledby"
+     },
+     {
+      "type": "attribute",
+      "attribute": "aria-label"
+     },
+     {
+      "type": "contents",
+      "value": {
+       "type": "computedString",
+       "value": "COURSE 101 \u00b7 Week 3 readings"
+      }
+     },
+     {
+      "type": "attribute",
+      "attribute": "title",
+      "superseded": true
+     }
+    ]
+   },
+   "properties": [
+    {
+     "name": "level",
+     "value": {
+      "type": "integer",
+      "value": 1
+     }
+    }
+   ],
+   "parentId": "18",
+   "childIds": [
+    "39"
+   ],
+   "backendDOMNodeId": 19
+  },
+  {
+   "nodeId": "20",
+   "ignored": false,
+   "role": {
+    "type": "role",
+    "value": "paragraph"
+   },
+   "chromeRole": {
+    "type": "internalRole",
+    "value": 133
+   },
+   "name": {
+    "type": "computedString",
+    "value": "",
+    "sources": [
+     {
+      "type": "relatedElement",
+      "attribute": "aria-labelledby"
+     },
+     {
+      "type": "attribute",
+      "attribute": "aria-label"
+     }
+    ]
+   },
+   "properties": [],
+   "parentId": "18",
+   "childIds": [
+    "40"
+   ],
+   "backendDOMNodeId": 20
+  },
+  {
+   "nodeId": "21",
+   "ignored": false,
+   "role": {
+    "type": "role",
+    "value": "heading"
+   },
+   "chromeRole": {
+    "type": "internalRole",
+    "value": 96
+   },
+   "name": {
+    "type": "computedString",
+    "value": "Readings",
+    "sources": [
+     {
+      "type": "relatedElement",
+      "attribute": "aria-labelledby"
+     },
+     {
+      "type": "attribute",
+      "attribute": "aria-label"
+     },
+     {
+      "type": "contents",
+      "value": {
+       "type": "computedString",
+       "value": "Readings"
+      }
+     },
+     {
+      "type": "attribute",
+      "attribute": "title",
+      "superseded": true
+     }
+    ]
+   },
+   "properties": [
+    {
+     "name": "level",
+     "value": {
+      "type": "integer",
+      "value": 2
+     }
+    }
+   ],
+   "parentId": "18",
+   "childIds": [
+    "41"
+   ],
+   "backendDOMNodeId": 21
+  },
+  {
+   "nodeId": "22",
+   "ignored": false,
+   "role": {
+    "type": "role",
+    "value": "list"
+   },
+   "chromeRole": {
+    "type": "internalRole",
+    "value": 111
+   },
+   "name": {
+    "type": "computedString",
+    "value": "",
+    "sources": [
+     {
+      "type": "relatedElement",
+      "attribute": "aria-labelledby"
+     },
+     {
+      "type": "attribute",
+      "attribute": "aria-label"
+     },
+     {
+      "type": "attribute",
+      "attribute": "title"
+     }
+    ]
+   },
+   "properties": [],
+   "parentId": "18",
+   "childIds": [
+    "23",
+    "25",
+    "27"
+   ],
+   "backendDOMNodeId": 22
+  },
+  {
+   "nodeId": "29",
+   "ignored": false,
+   "role": {
+    "type": "role",
+    "value": "heading"
+   },
+   "chromeRole": {
+    "type": "internalRole",
+    "value": 96
+   },
+   "name": {
+    "type": "computedString",
+    "value": "Discussion",
+    "sources": [
+     {
+      "type": "relatedElement",
+      "attribute": "aria-labelledby"
+     },
+     {
+      "type": "attribute",
+      "attribute": "aria-label"
+     },
+     {
+      "type": "contents",
+      "value": {
+       "type": "computedString",
+       "value": "Discussion"
+      }
+     },
+     {
+      "type": "attribute",
+      "attribute": "title",
+      "superseded": true
+     }
+    ]
+   },
+   "properties": [
+    {
+     "name": "level",
+     "value": {
+      "type": "integer",
+      "value": 2
+     }
+    }
+   ],
+   "parentId": "18",
+   "childIds": [
+    "48"
+   ],
+   "backendDOMNodeId": 29
+  },
+  {
+   "nodeId": "30",
+   "ignored": false,
+   "role": {
+    "type": "role",
+    "value": "paragraph"
+   },
+   "chromeRole": {
+    "type": "internalRole",
+    "value": 133
+   },
+   "name": {
+    "type": "computedString",
+    "value": "",
+    "sources": [
+     {
+      "type": "relatedElement",
+      "attribute": "aria-labelledby"
+     },
+     {
+      "type": "attribute",
+      "attribute": "aria-label"
+     }
+    ]
+   },
+   "properties": [],
+   "parentId": "18",
+   "childIds": [
+    "49"
+   ],
+   "backendDOMNodeId": 30
+  },
+  {
+   "nodeId": "32",
+   "ignored": false,
+   "role": {
+    "type": "internalRole",
+    "value": "StaticText"
+   },
+   "chromeRole": {
+    "type": "internalRole",
+    "value": 158
+   },
+   "name": {
+    "type": "computedString",
+    "value": "Dot bench",
+    "sources": [
+     {
+      "type": "contents",
+      "value": {
+       "type": "computedString",
+       "value": "Dot bench"
+      }
+     }
+    ]
+   },
+   "properties": [],
+   "parentId": "11",
+   "childIds": [
+    "-1000000002"
+   ],
+   "backendDOMNodeId": 32
+  },
+  {
+   "nodeId": "33",
+   "ignored": false,
+   "role": {
+    "type": "internalRole",
+    "value": "StaticText"
+   },
+   "chromeRole": {
+    "type": "internalRole",
+    "value": 158
+   },
+   "name": {
+    "type": "computedString",
+    "value": "Home",
+    "sources": [
+     {
+      "type": "contents",
+      "value": {
+       "type": "computedString",
+       "value": "Home"
+      }
+     }
+    ]
+   },
+   "properties": [],
+   "parentId": "12",
+   "childIds": [
+    "-1000000003"
+   ],
+   "backendDOMNodeId": 33
+  },
+  {
+   "nodeId": "34",
+   "ignored": false,
+   "role": {
+    "type": "internalRole",
+    "value": "StaticText"
+   },
+   "chromeRole": {
+    "type": "internalRole",
+    "value": 158
+   },
+   "name": {
+    "type": "computedString",
+    "value": "Long read",
+    "sources": [
+     {
+      "type": "contents",
+      "value": {
+       "type": "computedString",
+       "value": "Long read"
+      }
+     }
+    ]
+   },
+   "properties": [],
+   "parentId": "13",
+   "childIds": [
+    "-1000000004"
+   ],
+   "backendDOMNodeId": 34
+  },
+  {
+   "nodeId": "35",
+   "ignored": false,
+   "role": {
+    "type": "internalRole",
+    "value": "StaticText"
+   },
+   "chromeRole": {
+    "type": "internalRole",
+    "value": 158
+   },
+   "name": {
+    "type": "computedString",
+    "value": "Page 1",
+    "sources": [
+     {
+      "type": "contents",
+      "value": {
+       "type": "computedString",
+       "value": "Page 1"
+      }
+     }
+    ]
+   },
+   "properties": [],
+   "parentId": "14",
+   "childIds": [
+    "-1000000005"
+   ],
+   "backendDOMNodeId": 35
+  },
+  {
+   "nodeId": "36",
+   "ignored": false,
+   "role": {
+    "type": "internalRole",
+    "value": "StaticText"
+   },
+   "chromeRole": {
+    "type": "internalRole",
+    "value": 158
+   },
+   "name": {
+    "type": "computedString",
+    "value": "Settings",
+    "sources": [
+     {
+      "type": "contents",
+      "value": {
+       "type": "computedString",
+       "value": "Settings"
+      }
+     }
+    ]
+   },
+   "properties": [],
+   "parentId": "15",
+   "childIds": [
+    "-1000000006"
+   ],
+   "backendDOMNodeId": 36
+  },
+  {
+   "nodeId": "37",
+   "ignored": false,
+   "role": {
+    "type": "internalRole",
+    "value": "StaticText"
+   },
+   "chromeRole": {
+    "type": "internalRole",
+    "value": 158
+   },
+   "name": {
+    "type": "computedString",
+    "value": "Applied jobs",
+    "sources": [
+     {
+      "type": "contents",
+      "value": {
+       "type": "computedString",
+       "value": "Applied jobs"
+      }
+     }
+    ]
+   },
+   "properties": [],
+   "parentId": "16",
+   "childIds": [
+    "-1000000007"
+   ],
+   "backendDOMNodeId": 37
+  },
+  {
+   "nodeId": "38",
+   "ignored": false,
+   "role": {
+    "type": "internalRole",
+    "value": "StaticText"
+   },
+   "chromeRole": {
+    "type": "internalRole",
+    "value": 158
+   },
+   "name": {
+    "type": "computedString",
+    "value": "Application form",
+    "sources": [
+     {
+      "type": "contents",
+      "value": {
+       "type": "computedString",
+       "value": "Application form"
+      }
+     }
+    ]
+   },
+   "properties": [],
+   "parentId": "17",
+   "childIds": [
+    "-1000000008"
+   ],
+   "backendDOMNodeId": 38
+  },
+  {
+   "nodeId": "39",
+   "ignored": false,
+   "role": {
+    "type": "internalRole",
+    "value": "StaticText"
+   },
+   "chromeRole": {
+    "type": "internalRole",
+    "value": 158
+   },
+   "name": {
+    "type": "computedString",
+    "value": "COURSE 101 \u00b7 Week 3 readings",
+    "sources": [
+     {
+      "type": "contents",
+      "value": {
+       "type": "computedString",
+       "value": "COURSE 101 \u00b7 Week 3 readings"
+      }
+     }
+    ]
+   },
+   "properties": [],
+   "parentId": "19",
+   "childIds": [
+    "-1000000009"
+   ],
+   "backendDOMNodeId": 39
+  },
+  {
+   "nodeId": "40",
+   "ignored": false,
+   "role": {
+    "type": "internalRole",
+    "value": "StaticText"
+   },
+   "chromeRole": {
+    "type": "internalRole",
+    "value": 158
+   },
+   "name": {
+    "type": "computedString",
+    "value": "Two placeholder readings to download, and one PDF that opens in the viewer.",
+    "sources": [
+     {
+      "type": "contents",
+      "value": {
+       "type": "computedString",
+       "value": "Two placeholder readings to download, and one PDF that opens in the viewer."
+      }
+     }
+    ]
+   },
+   "properties": [],
+   "parentId": "20",
+   "childIds": [
+    "-1000000010"
+   ],
+   "backendDOMNodeId": 40
+  },
+  {
+   "nodeId": "41",
+   "ignored": false,
+   "role": {
+    "type": "internalRole",
+    "value": "StaticText"
+   },
+   "chromeRole": {
+    "type": "internalRole",
+    "value": 158
+   },
+   "name": {
+    "type": "computedString",
+    "value": "Readings",
+    "sources": [
+     {
+      "type": "contents",
+      "value": {
+       "type": "computedString",
+       "value": "Readings"
+      }
+     }
+    ]
+   },
+   "properties": [],
+   "parentId": "21",
+   "childIds": [
+    "-1000000011"
+   ],
+   "backendDOMNodeId": 41
+  },
+  {
+   "nodeId": "23",
+   "ignored": false,
+   "role": {
+    "type": "role",
+    "value": "listitem"
+   },
+   "chromeRole": {
+    "type": "internalRole",
+    "value": 115
+   },
+   "name": {
+    "type": "computedString",
+    "value": "",
+    "sources": [
+     {
+      "type": "relatedElement",
+      "attribute": "aria-labelledby"
+     },
+     {
+      "type": "attribute",
+      "attribute": "aria-label"
+     },
+     {
+      "type": "attribute",
+      "attribute": "title"
+     }
+    ]
+   },
+   "properties": [
+    {
+     "name": "level",
+     "value": {
+      "type": "integer",
+      "value": 1
+     }
+    }
+   ],
+   "parentId": "22",
+   "childIds": [
+    "42",
+    "24"
+   ],
+   "backendDOMNodeId": 23
+  },
+  {
+   "nodeId": "25",
+   "ignored": false,
+   "role": {
+    "type": "role",
+    "value": "listitem"
+   },
+   "chromeRole": {
+    "type": "internalRole",
+    "value": 115
+   },
+   "name": {
+    "type": "computedString",
+    "value": "",
+    "sources": [
+     {
+      "type": "relatedElement",
+      "attribute": "aria-labelledby"
+     },
+     {
+      "type": "attribute",
+      "attribute": "aria-label"
+     },
+     {
+      "type": "attribute",
+      "attribute": "title"
+     }
+    ]
+   },
+   "properties": [
+    {
+     "name": "level",
+     "value": {
+      "type": "integer",
+      "value": 1
+     }
+    }
+   ],
+   "parentId": "22",
+   "childIds": [
+    "44",
+    "26"
+   ],
+   "backendDOMNodeId": 25
+  },
+  {
+   "nodeId": "27",
+   "ignored": false,
+   "role": {
+    "type": "role",
+    "value": "listitem"
+   },
+   "chromeRole": {
+    "type": "internalRole",
+    "value": 115
+   },
+   "name": {
+    "type": "computedString",
+    "value": "",
+    "sources": [
+     {
+      "type": "relatedElement",
+      "attribute": "aria-labelledby"
+     },
+     {
+      "type": "attribute",
+      "attribute": "aria-label"
+     },
+     {
+      "type": "attribute",
+      "attribute": "title"
+     }
+    ]
+   },
+   "properties": [
+    {
+     "name": "level",
+     "value": {
+      "type": "integer",
+      "value": 1
+     }
+    }
+   ],
+   "parentId": "22",
+   "childIds": [
+    "46",
+    "28"
+   ],
+   "backendDOMNodeId": 27
+  },
+  {
+   "nodeId": "48",
+   "ignored": false,
+   "role": {
+    "type": "internalRole",
+    "value": "StaticText"
+   },
+   "chromeRole": {
+    "type": "internalRole",
+    "value": 158
+   },
+   "name": {
+    "type": "computedString",
+    "value": "Discussion",
+    "sources": [
+     {
+      "type": "contents",
+      "value": {
+       "type": "computedString",
+       "value": "Discussion"
+      }
+     }
+    ]
+   },
+   "properties": [],
+   "parentId": "29",
+   "childIds": [
+    "-1000000018"
+   ],
+   "backendDOMNodeId": 48
+  },
+  {
+   "nodeId": "49",
+   "ignored": false,
+   "role": {
+    "type": "internalRole",
+    "value": "StaticText"
+   },
+   "chromeRole": {
+    "type": "internalRole",
+    "value": 158
+   },
+   "name": {
+    "type": "computedString",
+    "value": "Discussed Tue in section: the Week 3 reading.",
+    "sources": [
+     {
+      "type": "contents",
+      "value": {
+       "type": "computedString",
+       "value": "Discussed Tue in section: the Week 3 reading."
+      }
+     }
+    ]
+   },
+   "properties": [],
+   "parentId": "30",
+   "childIds": [
+    "-1000000019"
+   ],
+   "backendDOMNodeId": 49
+  },
+  {
+   "nodeId": "-1000000002",
+   "ignored": false,
+   "role": {
+    "type": "internalRole",
+    "value": "InlineTextBox"
+   },
+   "chromeRole": {
+    "type": "internalRole",
+    "value": 101
+   },
+   "name": {
+    "type": "computedString",
+    "value": "Dot bench"
+   },
+   "properties": [],
+   "parentId": "32",
+   "childIds": []
+  },
+  {
+   "nodeId": "-1000000003",
+   "ignored": false,
+   "role": {
+    "type": "internalRole",
+    "value": "InlineTextBox"
+   },
+   "chromeRole": {
+    "type": "internalRole",
+    "value": 101
+   },
+   "name": {
+    "type": "computedString",
+    "value": "Home"
+   },
+   "properties": [],
+   "parentId": "33",
+   "childIds": []
+  },
+  {
+   "nodeId": "-1000000004",
+   "ignored": false,
+   "role": {
+    "type": "internalRole",
+    "value": "InlineTextBox"
+   },
+   "chromeRole": {
+    "type": "internalRole",
+    "value": 101
+   },
+   "name": {
+    "type": "computedString",
+    "value": "Long read"
+   },
+   "properties": [],
+   "parentId": "34",
+   "childIds": []
+  },
+  {
+   "nodeId": "-1000000005",
+   "ignored": false,
+   "role": {
+    "type": "internalRole",
+    "value": "InlineTextBox"
+   },
+   "chromeRole": {
+    "type": "internalRole",
+    "value": 101
+   },
+   "name": {
+    "type": "computedString",
+    "value": "Page 1"
+   },
+   "properties": [],
+   "parentId": "35",
+   "childIds": []
+  },
+  {
+   "nodeId": "-1000000006",
+   "ignored": false,
+   "role": {
+    "type": "internalRole",
+    "value": "InlineTextBox"
+   },
+   "chromeRole": {
+    "type": "internalRole",
+    "value": 101
+   },
+   "name": {
+    "type": "computedString",
+    "value": "Settings"
+   },
+   "properties": [],
+   "parentId": "36",
+   "childIds": []
+  },
+  {
+   "nodeId": "-1000000007",
+   "ignored": false,
+   "role": {
+    "type": "internalRole",
+    "value": "InlineTextBox"
+   },
+   "chromeRole": {
+    "type": "internalRole",
+    "value": 101
+   },
+   "name": {
+    "type": "computedString",
+    "value": "Applied jobs"
+   },
+   "properties": [],
+   "parentId": "37",
+   "childIds": []
+  },
+  {
+   "nodeId": "-1000000008",
+   "ignored": false,
+   "role": {
+    "type": "internalRole",
+    "value": "InlineTextBox"
+   },
+   "chromeRole": {
+    "type": "internalRole",
+    "value": 101
+   },
+   "name": {
+    "type": "computedString",
+    "value": "Application form"
+   },
+   "properties": [],
+   "parentId": "38",
+   "childIds": []
+  },
+  {
+   "nodeId": "-1000000009",
+   "ignored": false,
+   "role": {
+    "type": "internalRole",
+    "value": "InlineTextBox"
+   },
+   "chromeRole": {
+    "type": "internalRole",
+    "value": 101
+   },
+   "name": {
+    "type": "computedString",
+    "value": "COURSE 101 \u00b7 Week 3 readings"
+   },
+   "properties": [],
+   "parentId": "39",
+   "childIds": []
+  },
+  {
+   "nodeId": "-1000000010",
+   "ignored": false,
+   "role": {
+    "type": "internalRole",
+    "value": "InlineTextBox"
+   },
+   "chromeRole": {
+    "type": "internalRole",
+    "value": 101
+   },
+   "name": {
+    "type": "computedString",
+    "value": "Two placeholder readings to download, and one PDF that opens in the viewer."
+   },
+   "properties": [],
+   "parentId": "40",
+   "childIds": []
+  },
+  {
+   "nodeId": "-1000000011",
+   "ignored": false,
+   "role": {
+    "type": "internalRole",
+    "value": "InlineTextBox"
+   },
+   "chromeRole": {
+    "type": "internalRole",
+    "value": 101
+   },
+   "name": {
+    "type": "computedString",
+    "value": "Readings"
+   },
+   "properties": [],
+   "parentId": "41",
+   "childIds": []
+  },
+  {
+   "nodeId": "42",
+   "ignored": false,
+   "role": {
+    "type": "internalRole",
+    "value": "ListMarker"
+   },
+   "chromeRole": {
+    "type": "internalRole",
+    "value": 116
+   },
+   "name": {
+    "type": "computedString",
+    "value": "\u2022 ",
+    "sources": [
+     {
+      "type": "contents",
+      "value": {
+       "type": "computedString",
+       "value": "\u2022 "
+      }
+     }
+    ]
+   },
+   "properties": [],
+   "parentId": "23",
+   "childIds": [
+    "-1000000012"
+   ],
+   "backendDOMNodeId": 42
+  },
+  {
+   "nodeId": "24",
+   "ignored": false,
+   "role": {
+    "type": "role",
+    "value": "link"
+   },
+   "chromeRole": {
+    "type": "internalRole",
+    "value": 110
+   },
+   "name": {
+    "type": "computedString",
+    "value": "Week 3 reading (PDF)",
+    "sources": [
+     {
+      "type": "relatedElement",
+      "attribute": "aria-labelledby"
+     },
+     {
+      "type": "attribute",
+      "attribute": "aria-label"
+     },
+     {
+      "type": "contents",
+      "value": {
+       "type": "computedString",
+       "value": "Week 3 reading (PDF)"
+      }
+     },
+     {
+      "type": "attribute",
+      "attribute": "title",
+      "superseded": true
+     }
+    ]
+   },
+   "properties": [
+    {
+     "name": "focusable",
+     "value": {
+      "type": "booleanOrUndefined",
+      "value": true
+     }
+    },
+    {
+     "name": "url",
+     "value": {
+      "type": "string",
+      "value": "http://127.0.0.1:8766/dotbench-week3-reading.pdf"
+     }
+    }
+   ],
+   "parentId": "23",
+   "childIds": [
+    "43"
+   ],
+   "backendDOMNodeId": 24
+  },
+  {
+   "nodeId": "44",
+   "ignored": false,
+   "role": {
+    "type": "internalRole",
+    "value": "ListMarker"
+   },
+   "chromeRole": {
+    "type": "internalRole",
+    "value": 116
+   },
+   "name": {
+    "type": "computedString",
+    "value": "\u2022 ",
+    "sources": [
+     {
+      "type": "contents",
+      "value": {
+       "type": "computedString",
+       "value": "\u2022 "
+      }
+     }
+    ]
+   },
+   "properties": [],
+   "parentId": "25",
+   "childIds": [
+    "-1000000014"
+   ],
+   "backendDOMNodeId": 44
+  },
+  {
+   "nodeId": "26",
+   "ignored": false,
+   "role": {
+    "type": "role",
+    "value": "link"
+   },
+   "chromeRole": {
+    "type": "internalRole",
+    "value": 110
+   },
+   "name": {
+    "type": "computedString",
+    "value": "Week 3 lecture notes (PDF)",
+    "sources": [
+     {
+      "type": "relatedElement",
+      "attribute": "aria-labelledby"
+     },
+     {
+      "type": "attribute",
+      "attribute": "aria-label"
+     },
+     {
+      "type": "contents",
+      "value": {
+       "type": "computedString",
+       "value": "Week 3 lecture notes (PDF)"
+      }
+     },
+     {
+      "type": "attribute",
+      "attribute": "title",
+      "superseded": true
+     }
+    ]
+   },
+   "properties": [
+    {
+     "name": "focusable",
+     "value": {
+      "type": "booleanOrUndefined",
+      "value": true
+     }
+    },
+    {
+     "name": "url",
+     "value": {
+      "type": "string",
+      "value": "http://127.0.0.1:8766/dotbench-week3-notes.pdf"
+     }
+    }
+   ],
+   "parentId": "25",
+   "childIds": [
+    "45"
+   ],
+   "backendDOMNodeId": 26
+  },
+  {
+   "nodeId": "46",
+   "ignored": false,
+   "role": {
+    "type": "internalRole",
+    "value": "ListMarker"
+   },
+   "chromeRole": {
+    "type": "internalRole",
+    "value": 116
+   },
+   "name": {
+    "type": "computedString",
+    "value": "\u2022 ",
+    "sources": [
+     {
+      "type": "contents",
+      "value": {
+       "type": "computedString",
+       "value": "\u2022 "
+      }
+     }
+    ]
+   },
+   "properties": [],
+   "parentId": "27",
+   "childIds": [
+    "-1000000016"
+   ],
+   "backendDOMNodeId": 46
+  },
+  {
+   "nodeId": "28",
+   "ignored": false,
+   "role": {
+    "type": "role",
+    "value": "link"
+   },
+   "chromeRole": {
+    "type": "internalRole",
+    "value": 110
+   },
+   "name": {
+    "type": "computedString",
+    "value": "Open the reading in the viewer",
+    "sources": [
+     {
+      "type": "relatedElement",
+      "attribute": "aria-labelledby"
+     },
+     {
+      "type": "attribute",
+      "attribute": "aria-label"
+     },
+     {
+      "type": "contents",
+      "value": {
+       "type": "computedString",
+       "value": "Open the reading in the viewer"
+      }
+     },
+     {
+      "type": "attribute",
+      "attribute": "title",
+      "superseded": true
+     }
+    ]
+   },
+   "properties": [
+    {
+     "name": "focusable",
+     "value": {
+      "type": "booleanOrUndefined",
+      "value": true
+     }
+    },
+    {
+     "name": "url",
+     "value": {
+      "type": "string",
+      "value": "http://127.0.0.1:8766/dotbench-week3-reading.pdf"
+     }
+    }
+   ],
+   "parentId": "27",
+   "childIds": [
+    "47"
+   ],
+   "backendDOMNodeId": 28
+  },
+  {
+   "nodeId": "-1000000018",
+   "ignored": false,
+   "role": {
+    "type": "internalRole",
+    "value": "InlineTextBox"
+   },
+   "chromeRole": {
+    "type": "internalRole",
+    "value": 101
+   },
+   "name": {
+    "type": "computedString",
+    "value": "Discussion"
+   },
+   "properties": [],
+   "parentId": "48",
+   "childIds": []
+  },
+  {
+   "nodeId": "-1000000019",
+   "ignored": false,
+   "role": {
+    "type": "internalRole",
+    "value": "InlineTextBox"
+   },
+   "chromeRole": {
+    "type": "internalRole",
+    "value": 101
+   },
+   "name": {
+    "type": "computedString",
+    "value": "Discussed Tue in section: the Week 3 reading."
+   },
+   "properties": [],
+   "parentId": "49",
+   "childIds": []
+  },
+  {
+   "nodeId": "-1000000012",
+   "ignored": true,
+   "ignoredReasons": [
+    {
+     "name": "presentationalRole",
+     "value": {
+      "type": "boolean",
+      "value": true
+     }
+    }
+   ],
+   "role": {
+    "type": "role",
+    "value": "none"
+   },
+   "chromeRole": {
+    "type": "internalRole",
+    "value": 0
+   },
+   "parentId": "42",
+   "childIds": []
+  },
+  {
+   "nodeId": "43",
+   "ignored": false,
+   "role": {
+    "type": "internalRole",
+    "value": "StaticText"
+   },
+   "chromeRole": {
+    "type": "internalRole",
+    "value": 158
+   },
+   "name": {
+    "type": "computedString",
+    "value": "Week 3 reading (PDF)",
+    "sources": [
+     {
+      "type": "contents",
+      "value": {
+       "type": "computedString",
+       "value": "Week 3 reading (PDF)"
+      }
+     }
+    ]
+   },
+   "properties": [],
+   "parentId": "24",
+   "childIds": [
+    "-1000000013"
+   ],
+   "backendDOMNodeId": 43
+  },
+  {
+   "nodeId": "-1000000014",
+   "ignored": true,
+   "ignoredReasons": [
+    {
+     "name": "presentationalRole",
+     "value": {
+      "type": "boolean",
+      "value": true
+     }
+    }
+   ],
+   "role": {
+    "type": "role",
+    "value": "none"
+   },
+   "chromeRole": {
+    "type": "internalRole",
+    "value": 0
+   },
+   "parentId": "44",
+   "childIds": []
+  },
+  {
+   "nodeId": "45",
+   "ignored": false,
+   "role": {
+    "type": "internalRole",
+    "value": "StaticText"
+   },
+   "chromeRole": {
+    "type": "internalRole",
+    "value": 158
+   },
+   "name": {
+    "type": "computedString",
+    "value": "Week 3 lecture notes (PDF)",
+    "sources": [
+     {
+      "type": "contents",
+      "value": {
+       "type": "computedString",
+       "value": "Week 3 lecture notes (PDF)"
+      }
+     }
+    ]
+   },
+   "properties": [],
+   "parentId": "26",
+   "childIds": [
+    "-1000000015"
+   ],
+   "backendDOMNodeId": 45
+  },
+  {
+   "nodeId": "-1000000016",
+   "ignored": true,
+   "ignoredReasons": [
+    {
+     "name": "presentationalRole",
+     "value": {
+      "type": "boolean",
+      "value": true
+     }
+    }
+   ],
+   "role": {
+    "type": "role",
+    "value": "none"
+   },
+   "chromeRole": {
+    "type": "internalRole",
+    "value": 0
+   },
+   "parentId": "46",
+   "childIds": []
+  },
+  {
+   "nodeId": "47",
+   "ignored": false,
+   "role": {
+    "type": "internalRole",
+    "value": "StaticText"
+   },
+   "chromeRole": {
+    "type": "internalRole",
+    "value": 158
+   },
+   "name": {
+    "type": "computedString",
+    "value": "Open the reading in the viewer",
+    "sources": [
+     {
+      "type": "contents",
+      "value": {
+       "type": "computedString",
+       "value": "Open the reading in the viewer"
+      }
+     }
+    ]
+   },
+   "properties": [],
+   "parentId": "28",
+   "childIds": [
+    "-1000000017"
+   ],
+   "backendDOMNodeId": 47
+  },
+  {
+   "nodeId": "-1000000013",
+   "ignored": false,
+   "role": {
+    "type": "internalRole",
+    "value": "InlineTextBox"
+   },
+   "chromeRole": {
+    "type": "internalRole",
+    "value": 101
+   },
+   "name": {
+    "type": "computedString",
+    "value": "Week 3 reading (PDF)"
+   },
+   "properties": [],
+   "parentId": "43",
+   "childIds": []
+  },
+  {
+   "nodeId": "-1000000015",
+   "ignored": false,
+   "role": {
+    "type": "internalRole",
+    "value": "InlineTextBox"
+   },
+   "chromeRole": {
+    "type": "internalRole",
+    "value": 101
+   },
+   "name": {
+    "type": "computedString",
+    "value": "Week 3 lecture notes (PDF)"
+   },
+   "properties": [],
+   "parentId": "45",
+   "childIds": []
+  },
+  {
+   "nodeId": "-1000000017",
+   "ignored": false,
+   "role": {
+    "type": "internalRole",
+    "value": "InlineTextBox"
+   },
+   "chromeRole": {
+    "type": "internalRole",
+    "value": 101
+   },
+   "name": {
+    "type": "computedString",
+    "value": "Open the reading in the viewer"
+   },
+   "properties": [],
+   "parentId": "47",
+   "childIds": []
+  }
+ ]
+}
