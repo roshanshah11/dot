@@ -20,7 +20,8 @@ final class ClaudeSession {
         var strictMCP = true
         var permissionMode = "default"
         var permissionPromptOverStdio = true
-        var maxTurns = 8
+        /// nil: no `--max-turns` (jobs run with no step limit, 2026-10-20).
+        var maxTurns: Int? = 8
         var sessionId: String = UUID().uuidString
         var resume = false
         /// nil = Claude Code's default (user, project, local); "" = none, for a fast, hookless session.
@@ -294,7 +295,7 @@ final class ClaudeSession {
         lastActivity = Date()
         var event = incoming
         switch event {
-        case .systemInit(let id, _):
+        case .systemInit(let id, _, _):
             if !id.isEmpty { sessionId = id }
         case .result(let info):
             pendingResults = max(0, pendingResults - 1)
@@ -332,7 +333,9 @@ final class ClaudeSession {
         var args = ["-p", "--input-format", "stream-json", "--output-format", "stream-json", "--verbose"]
         if options.includePartialMessages { args.append("--include-partial-messages") }
         args += options.resume ? ["--resume", options.sessionId] : ["--session-id", options.sessionId]
-        args += ["--model", options.model, "--max-turns", String(options.maxTurns), "--permission-mode", options.permissionMode]
+        args += ["--model", options.model]
+        if let maxTurns = options.maxTurns { args += ["--max-turns", String(maxTurns)] }
+        args += ["--permission-mode", options.permissionMode]
         if options.permissionPromptOverStdio { args += ["--permission-prompt-tool", "stdio"] }
         if let systemPrompt = options.systemPrompt { args += ["--system-prompt", systemPrompt] }
         if let append = options.appendSystemPrompt { args += ["--append-system-prompt", append] }

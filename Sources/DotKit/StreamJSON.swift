@@ -2,7 +2,7 @@ import Foundation
 
 /// What a `claude -p --output-format stream-json` line means to Dot.
 public enum StreamEvent: Equatable {
-    case systemInit(sessionId: String, model: String?)
+    case systemInit(sessionId: String, model: String?, permissionMode: String?)
     case systemStatus
     case textDelta(String)
     case toolInputDelta
@@ -81,7 +81,8 @@ public enum StreamJSON {
         case "system":
             let subtype = object["subtype"] as? String ?? ""
             if subtype == "init" {
-                return .systemInit(sessionId: object["session_id"] as? String ?? "", model: object["model"] as? String)
+                return .systemInit(sessionId: object["session_id"] as? String ?? "", model: object["model"] as? String,
+                                   permissionMode: object["permissionMode"] as? String)
             }
             if subtype == "background_tasks_changed" {
                 // Ambient entries (watchers the runtime keeps on its own) are not work the agent is doing;

@@ -127,6 +127,23 @@ public enum AgentModeFilter {
     }
 }
 
+/// His words for an agent: "spawn an agent", "have an agent do it", "a background agent", "can an agent do this". With
+/// jobs on, nothing else starts one (2026-10-20: "assume everything can get done w the fast model ... if needed i will
+/// say spawn a background agent"). Asking about one, stopping one or saying not to use one is not a request.
+public enum AgentWords {
+    static let ask = try! NSRegularExpression(
+        pattern: #"\b(?:spawn|start|spin up|launch|fire up|kick off|get|have|put|send|use|make|create|run|need|want|with|via|through|hand (?:it|this|that)(?: off)? to|give (?:it|this|that) to|pass (?:it|this|that) to)\b[^.?!]{0,20}\b(?:an?|one|some)\s+(?:new |separate |different |background |full |real |proper )?agent\b|\bcan (?:an?|one|some) agent\b|^\W*(?:an?|one)\s+(?:new |separate |background |full )?agent\b(?:\s+(?:that|to|which|who|please)\b|\W*$)"#,
+        options: .caseInsensitive)
+    static let negated = try! NSRegularExpression(
+        pattern: #"\b(?:don'?t|do not|never|without|no need (?:for|to))\b[^.?!]{0,20}\bagent\b|\b(?:do|does|did) (?:i|you|we) have\b"#,
+        options: .caseInsensitive)
+
+    public static func asksForAgent(_ text: String) -> Bool {
+        let range = NSRange(location: 0, length: (text as NSString).length)
+        return ask.firstMatch(in: text, range: range) != nil && negated.firstMatch(in: text, range: range) == nil
+    }
+}
+
 /// The one retry a failed turn gets: only when the CLI dropped it on its own. A turn Dot cut off because he
 /// asked something new is never sent again (2026-10-18: the cut-off question came back and "I" was spoken).
 public enum TurnRetry {

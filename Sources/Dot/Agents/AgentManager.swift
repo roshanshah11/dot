@@ -446,7 +446,7 @@ final class AgentManager {
     private func handle(_ event: StreamEvent, run: Run) {
         let agent = run.agent
         switch event {
-        case .systemInit(let id, _):
+        case .systemInit(let id, _, _):
             if !id.isEmpty {
                 try? id.write(to: agent.folder.appendingPathComponent(".dot/session-id"), atomically: true, encoding: .utf8)
             }
