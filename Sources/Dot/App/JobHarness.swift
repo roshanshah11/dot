@@ -12,6 +12,8 @@ enum JobHarness {
         var url = "http://127.0.0.1:8766/index.html"
         var placementWord: String?
         var seconds: Double = 180
+        // --then pause-resume | pause-drop | stop: what "he" does after the job's first action (J7, J8, J9 headless)
+        var then: String?
         while let flag = rest.first, flag.hasPrefix("--") {
             rest.removeFirst()
             guard let value = rest.first else { break }
@@ -20,6 +22,7 @@ enum JobHarness {
             case "--url": url = value
             case "--placement": placementWord = value
             case "--seconds": seconds = Double(value) ?? seconds
+            case "--then": then = value
             default: break
             }
             rest.removeFirst()
@@ -83,10 +86,41 @@ enum JobHarness {
         }
         let deadline = Date().addingTimeInterval(seconds)
         var finished = false
+        var stage = 0
+        var pausedAt: Date?
         while Date() < deadline {
             RunLoop.main.run(until: Date().addingTimeInterval(0.2))
             let live = MainActor.assumeIsolated { jobs?.running.isEmpty == false }
             if !live { finished = true; break }
+            guard let then else { continue }
+            MainActor.assumeIsolated {
+                guard let manager = jobs, let job = manager.running.last else { return }
+                switch stage {
+                case 0 where job.steps.count >= 2:
+                    if then == "stop" {
+                        Log.info("harness: stop after step \(job.steps.count)")
+                        manager.stop(job, reason: "his stop")
+                        stage = 9
+                    } else {
+                        Log.info("harness: his click after step \(job.steps.count)")
+                        _ = manager.simulateInput(.click)
+                        stage = 1
+                    }
+                case 1 where job.phase == .paused:
+                    if pausedAt == nil { pausedAt = Date() }
+                    if Date().timeIntervalSince(pausedAt!) > 1.5 {
+                        if then == "pause-drop" {
+                            Log.info("harness: he moved on")
+                            manager.drop(job, reason: "he asked something else")
+                        } else {
+                            Log.info("harness: go on")
+                            manager.resume(job)
+                        }
+                        stage = 9
+                    }
+                default: break
+                }
+            }
         }
         MainActor.assumeIsolated {
             if !finished { jobs?.stopAll(reason: "harness timeout") }
