@@ -92,11 +92,11 @@ enum Snapshots {
             build(m)
             return m
         }
-        let agentRunning = AgentRow(id: "research-buddy", name: "Research Buddy", line: "reading bridgewater's last month of filings", state: .running,
-                                    steps: ["searched: bridgewater news october 2026", "read: reuters.com/markets/...", "writing the brief"], canStop: true, startedAt: Date().addingTimeInterval(-83))
+        let agentRunning = AgentRow(id: "research-buddy", name: "Research Buddy", line: "reading northwind bank's last month of filings", state: .running,
+                                    steps: ["searched: northwind bank news october 2026", "read: example.com/markets/...", "writing the brief"], canStop: true, startedAt: Date().addingTimeInterval(-83))
         let agentDone = AgentRow(id: "research-buddy", name: "Research Buddy", line: "done: a one-page brief, saved as a pdf", state: .done,
-                                 result: "Bridgewater's October: the Pure Alpha fund was reported up about 9% for the year through September; Nir Bar Dea said the firm is expanding its AI strategies; the brief has four dated items with sources.",
-                                 outputCount: 1, outputs: [URL(fileURLWithPath: "/Users/roshanshah/Dot/agents/research-buddy/output/bridgewater_news_brief.pdf")],
+                                 result: "Northwind Bank's October: placeholder numbers for the snapshot, about 9% for the year through September, and a new research desk.",
+                                 outputCount: 1, outputs: [URL(fileURLWithPath: "/Users/example/Dot/agents/research-buddy/output/northwind_news_brief.pdf")],
                                  nextActions: ["Add a section on their CEO", "Compare with Citadel's year", "Turn it into a one-pager"], startedAt: Date().addingTimeInterval(-176))
         return [
             ("idle", make { _ in }),
@@ -109,21 +109,21 @@ enum Snapshots {
                 m.caption = "it's in the mathematics section, right under the formula: the discount rate is the cost of capital, so a riskier project gets a higher one." }),
             ("typed-answer", make { m in m.answer = "the discount rate is the return you would need to be paid to wait: the cost of capital. it shows up as r in the denominator, so every future cash flow is divided by (1 plus r) to the power of the year.\n\nhigher r, smaller present value. a riskier project earns a higher r, which is why the same cash flows are worth less when they are less sure."
                 m.answerQuestion = "what's the discount rate for" }),
-            ("input", make { m in m.showInput = true; m.todayLine = "next: ugе interview in 42 min · 8 on the calendar today" }),
+            ("input", make { m in m.showInput = true; m.todayLine = "next: northwind interview in 42 min · 8 on the calendar today" }),
             ("notice-clipboard", make { m in m.notices = [NotchNotice(id: "murmur", icon: "doc.on.clipboard", title: "murmur put it on your clipboard", detail: "no field to type into; press command v where it should go", tone: .info, seconds: 0)] }),
             ("notice-muted", make { m in m.notices = [NotchNotice(id: "muted", icon: "speaker.slash.fill", title: "your sound is off, so the answer is here as text", tone: .warn, actionTitle: "turn sound on", action: {}, seconds: 0)] }),
-            ("notice-meeting", make { m in m.notices = [NotchNotice(id: "meeting", icon: "calendar", title: "call: alex morgan (blackrock) in 8 min", detail: "12:30 to 12:45, (555) 010-0199", tone: .info, actionTitle: "brief me", action: {}, secondaryTitle: "dismiss", secondary: {}, seconds: 0)] }),
+            ("notice-meeting", make { m in m.notices = [NotchNotice(id: "meeting", icon: "calendar", title: "call: alex example (northwind bank) in 8 min", detail: "12:30 to 12:45, (555) 010-0199", tone: .info, actionTitle: "brief me", action: {}, secondaryTitle: "dismiss", secondary: {}, seconds: 0)] }),
             ("notice-dictionary", make { m in m.notices = [NotchNotice(id: "dictionary", icon: "character.book.closed", title: "learned: jev", detail: "the recognizer writes it that way from now on", tone: .good, actionTitle: "undo", action: {}, seconds: 0)]; m.glow = true }),
             ("morning", make { m in m.morning = MorningCard(greeting: "morning. i can do 4 things for you today.", items: []) }),
             ("morning-open", make { m in m.morningExpanded = true; m.morning = MorningCard(greeting: "morning. i can do 4 things for you today.", items: [
                 MorningCard.Item(id: "a", text: "prep northwind bank sophomore showcase application, due today", brief: ""),
-                MorningCard.Item(id: "b", text: "a one-page brief on alex morgan (blackrock) before 12:30", brief: ""),
+                MorningCard.Item(id: "b", text: "a one-page brief on alex example (northwind bank) before 12:30", brief: ""),
                 MorningCard.Item(id: "c", text: "draft a reply to prof: re: seminar schedule", brief: ""),
-                MorningCard.Item(id: "d", text: "do: reply to emily parker (lmr partners) with availability", brief: "")]) }),
+                MorningCard.Item(id: "d", text: "do: reply to sam rivera (northwind capital) with availability", brief: "")]) }),
             ("agent-working", make { m in m.agents = [agentRunning] }),
             ("agent-done", make { m in m.agents = [agentDone]; m.glow = true }),
             ("agent-open", make { m in m.agents = [agentDone]; m.expanded = "research-buddy" }),
-            ("consent", make { m in m.consent = ConsentCard(agent: "mail buddy", title: "send an email to emily parker", detail: "outlook send: \"Re: Summer 2028 internship, availability\"", onAllow: {}, onDeny: {}) }),
+            ("consent", make { m in m.consent = ConsentCard(agent: "mail buddy", title: "send an email to sam rivera", detail: "outlook send: \"Re: Summer 2028 internship, availability\"", onAllow: {}, onDeny: {}) }),
             // Round seven: two more questions wait behind the one on show; the asking agents' rows say "needs you".
             ("consent-queued", make { m in
                 m.consent = ConsentCard(agentId: "email", agent: "Email", title: "use atlas: calendar delete", detail: "outward: delete the 4 pm hold on friday", guarded: true,
