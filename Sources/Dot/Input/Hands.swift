@@ -134,6 +134,7 @@ final class Hands {
     }
 
     private func openURL(_ text: String, newTab: Bool, context: ScreenContext) async -> Outcome {
+        if let url = URL(string: text), url.scheme == "spotify" { return await openSpotify(url) }
         guard let url = URL(string: text), let scheme = url.scheme, ["http", "https"].contains(scheme) else {
             return Outcome(ok: false, line: "that address doesn't look right.", detail: "bad url \(text)")
         }
@@ -158,6 +159,20 @@ final class Hands {
             NSWorkspace.shared.open(url)
         }
         return Outcome(ok: true, line: "opened \(host).", detail: "open url \(url.absoluteString) newTab=\(newTab)")
+    }
+
+    /// A spotify: URI (its search page) in Spotify itself, in front.
+    private func openSpotify(_ url: URL) async -> Outcome {
+        guard let app = NSWorkspace.shared.urlForApplication(withBundleIdentifier: "com.spotify.client") else {
+            return Outcome(ok: false, line: "spotify isn't on this mac.", detail: "no spotify for \(url.absoluteString)")
+        }
+        let config = NSWorkspace.OpenConfiguration()
+        config.activates = true
+        do { _ = try await NSWorkspace.shared.open([url], withApplicationAt: app, configuration: config) } catch {
+            return Outcome(ok: false, line: "spotify didn't open.", detail: "open failed: \(error.localizedDescription)")
+        }
+        let front = await waitFront("com.spotify.client", seconds: 2)
+        return Outcome(ok: true, line: ActionCommand.openURL(url.absoluteString, newTab: false).doneLine, detail: "spotify \(url.absoluteString) front=\(front)")
     }
 
     // MARK: Native scroll, keys, click, type
@@ -289,8 +304,15 @@ final class Hands {
     private func nativeInsert(label: String?, text: String, context: ScreenContext) -> Outcome {
         guard !text.isEmpty else { return Outcome(ok: false, line: "", detail: "nothing to type") }
         guard frontIs(context) else { return Outcome(ok: false, line: "the app in front changed, so i didn't type.", detail: "front app changed") }
-        if let label, let element = Self.bestElement(label, in: context.elements.filter { ["AXTextField", "AXSearchField", "AXTextArea", "AXComboBox"].contains($0.role) } ) ?? Self.bestElement(label, in: context.elements) {
-            _ = Self.focus(atAppKit: CGPoint(x: element.frame.midX, y: element.frame.midY))
+        if let label {
+            if let element = Self.bestElement(label, in: context.elements.filter { ["AXTextField", "AXSearchField", "AXTextArea", "AXComboBox"].contains($0.role) } ) ?? Self.bestElement(label, in: context.elements) {
+                _ = Self.focus(atAppKit: CGPoint(x: element.frame.midX, y: element.frame.midY))
+            } else if !TextInjection.hasTextFocus() {
+                // The field he meant isn't in the app in front and nothing there takes text: on 2026-10-19 09:57 Spotify's
+                // "What do you want to play?" was pasted into Finder, which was in front.
+                let app = NSWorkspace.shared.frontmostApplication?.localizedName?.lowercased() ?? "the app in front"
+                return Outcome(ok: false, line: "i don't see \(label.lowercased()) in \(app), so i didn't type.", detail: "no field \"\(Log.short(label, 40))\" and no text focus")
+            }
         }
         // A web page only hears typing that comes as input events: an accessibility write sets the value
         // silently (the bench's search box never filtered, 2026-10-19). In a browser, paste, then give his

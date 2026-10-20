@@ -40,13 +40,30 @@ def split_panels(text):
     return "".join(spoken).strip(), panels
 
 
+def first_said(text, marks):
+    """When the first word he would hear arrived: the first letter outside a [TAG] and outside a panel's <<< >>> block."""
+    in_tag = in_panel = False
+    for i, ch in enumerate(text):
+        if in_panel:
+            if text.startswith(">>>", i): in_panel = False
+            continue
+        if text.startswith("<<<", i): in_panel = True; continue
+        if ch == "[": in_tag = True; continue
+        if in_tag:
+            if ch == "]": in_tag = False
+            continue
+        if ch.isalpha():
+            return next((round(t, 1) for t, n in marks if n > i), None)
+    return None
+
+
 def run_turn(q, prompt, out, sessions, model):
     args = [CLAUDE, "-p", "--model", model, "--output-format", "stream-json", "--verbose", "--include-partial-messages",
             "--system-prompt", prompt, "--setting-sources", "", "--strict-mcp-config", "--permission-mode", "default",
             "--max-turns", "6", "--allowedTools", "Bash(python3:*),Bash(/opt/homebrew/bin/python3.13:*),WebSearch,WebFetch"]
     if q.get("resume") and sessions.get(q["resume"]): args += ["--resume", sessions[q["resume"]]]
     # the question goes in on stdin: --allowedTools takes every argument after it
-    t0 = time.time(); first_text = first_panel = None; text = ""; result = {}
+    t0 = time.time(); first_text = first_panel = None; text = ""; result = {}; marks = []
     proc = subprocess.Popen(args, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, cwd=str(out))
     proc.stdin.write(message(q)); proc.stdin.close()
     for line in proc.stdout:
@@ -57,6 +74,7 @@ def run_turn(q, prompt, out, sessions, model):
             if d.get("type") == "text_delta":
                 if first_text is None: first_text = time.time() - t0
                 text += d.get("text", "")
+                marks.append((time.time() - t0, len(text)))
                 if first_panel is None and "<<<" in text: first_panel = time.time() - t0
         elif ev.get("type") == "result":
             result = ev
@@ -67,7 +85,7 @@ def run_turn(q, prompt, out, sessions, model):
     said, panels = split_panels(final if "[PANEL" in final else text)
     rec = {"id": q["id"], "you": q["you"], "source": q.get("source", ""), "session": result.get("session_id"),
            "first_word_s": round(first_text, 1) if first_text else None, "panel_starts_s": round(first_panel, 1) if first_panel else None,
-           "total_s": round(time.time() - t0, 1), "cost_usd": round(result.get("total_cost_usd") or 0, 4),
+           "first_said_s": first_said(text, marks), "total_s": round(time.time() - t0, 1), "cost_usd": round(result.get("total_cost_usd") or 0, 4),
            "turns": result.get("num_turns"), "error": result.get("is_error") or (rec_err or None), "panels": len(panels), "said": said}
     (out / f"{q['id']}.said.txt").write_text(said + "\n")
     if panels:
@@ -114,7 +132,7 @@ def render(out, recs):
         img = img.crop((0, 0, 440, min(img.height, 1700)))
         cap = Image.new("RGB", (440, 64), "#2a2a2a"); d = ImageDraw.Draw(cap)
         d.text((10, 6), f"{r['id']}: {r['you'][:52]}", fill="#fff", font=font)
-        d.text((10, 30), f"first word {r['first_word_s']} s, panel {r['panel_starts_s']} s, done {r['total_s']} s, ${r['cost_usd']}", fill="#ffb68a", font=font)
+        d.text((10, 30), f"first word {r['first_word_s']} s, heard {r.get('first_said_s')} s, panel {r['panel_starts_s']} s, done {r['total_s']} s, ${r['cost_usd']}", fill="#ffb68a", font=font)
         tile = Image.new("RGB", (440, img.height + 64), "#111"); tile.paste(cap, (0, 0)); tile.paste(img, (0, 64)); tiles.append(tile)
     if tiles:
         cols = 5; rows = (len(tiles) + cols - 1) // cols

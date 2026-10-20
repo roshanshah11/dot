@@ -6,8 +6,8 @@
 
 Each fixture's first line may carry `<!-- expect: .sel .sel:N ; click: label ; slide: var=value ; vars: name ; tolerant -->`.
 Checks: no console or page error (a fixture marked tolerant may log handled ones), every expected selector present
-(at least N times), no script ran (window.__pwned), streaming the markup in 37-character chunks ends in the same text
-as loading it at once, a quiz answer and a chip tap post messages, `click:` presses that button and the named vars
+(at least N times), no script ran (window.__pwned), streaming the markup in 13-character chunks, a frame each, ends in the same text
+as loading it at once and throws nothing on the way, a quiz answer and a chip tap post messages, `click:` presses that button and the named vars
 change, `slide:` moves a slider and the text changes. Screenshots at the panel's default width (440) to --out.
 """
 import argparse, datetime, http.server, json, re, socket, sys, threading
@@ -108,17 +108,20 @@ def check(page, port, name, outdir):
         if text0 == text1: fails.append("moving the slider changed no text")
         if got is None or abs(float(got) - float(val)) > 1e-9: fails.append(f"slider did not set {var} (got {got})")
         shoot(page, outdir / f"{name}--after.png")
-    # streaming: 37-char chunks end in the same text
+    # streaming: 13-char chunks end in the same text, and no chunk throws (a half-streamed svg tag did, 2026-10-19)
+    seen = len(errors)
     page.goto(f"http://127.0.0.1:{port}/panel/panel.html")
     page.wait_for_function("document.getElementById('content') !== null && window.panel")
     page.evaluate("([n]) => panel.load('', {id: n, title: n})", [name])
-    for i in range(0, len(markup), 37):
-        page.evaluate("([c]) => panel.append(c)", [markup[i:i + 37]])
-        if i % 370 == 0: page.wait_for_timeout(20)
+    for i in range(0, len(markup), 13):
+        # one frame per chunk, as model deltas arrive: the panel renders mid-tag only then
+        page.evaluate("([c]) => new Promise(r => { panel.append(c); requestAnimationFrame(() => setTimeout(r, 0)); })", [markup[i:i + 13]])
     page.evaluate("() => panel.finish()"); page.wait_for_timeout(900)
     streamed = page.evaluate("() => document.getElementById('content').innerText")
     if streamed.strip() != once.strip():
         fails.append("streamed render differs from a one-shot render")
+    thrown = [e for e in errors[seen:] if "Error" in e]
+    if thrown: fails.append(f"streaming threw {len(thrown)}x: " + thrown[0][:160])
     return {"status": "fail" if fails else "pass", "failures": fails}
 
 

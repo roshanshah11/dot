@@ -64,7 +64,9 @@ public enum ActionCommand: Equatable, Sendable {
     public var doneLine: String {
         switch self {
         case .open(let name): return "opened \(name.lowercased())."
-        case .openURL(let url, _): return "opened \(URL(string: url)?.host ?? "it")."
+        case .openURL(let url, _):
+            if let query = SpotifySearch.query(fromURI: url) { return "searching spotify for \(query)." }
+            return "opened \(URL(string: url)?.host ?? "it")."
         case .openPath(let path): return "opened \((path as NSString).lastPathComponent.lowercased())."
         case .scroll(let s):
             switch s {
@@ -133,6 +135,7 @@ public enum ActionTags {
         guard !t.isEmpty else { return nil }
         let lower = t.lowercased()
         if lower.hasPrefix("http://") || lower.hasPrefix("https://") { return .openURL(t, newTab: newTab) }
+        if lower.hasPrefix("spotify:search:") { return SpotifySearch.command(String(t.dropFirst("spotify:search:".count))) }
         if t.hasPrefix("/") || t.hasPrefix("~") { return .openPath(t) }
         // "the folder /tmp/x", "file ~/notes.txt": the path is the target
         if let path = t.split(separator: " ").first(where: { $0.hasPrefix("/") || $0.hasPrefix("~/") }) { return .openPath(String(path)) }
@@ -162,6 +165,10 @@ public enum ActionPhrases {
     static let nextSong = re(lead + #"(?:next|skip(?: this)?) (?:song|track)"# + tail)
     static let previousSong = re(lead + #"(?:previous|last) (?:song|track)"# + tail)
     static let open = re(lead + #"(?:open(?: up)?|launch|switch to|bring up) (?:the |my |up )?(.{2,40}?)(?: app| application| folder)?"# + tail)
+    /// "play lofi on spotify", "find a piano playlist on spotify", "search spotify for taylor swift" (2026-10-19 09:57:
+    /// he asked for a piano playlist, Dot pasted into Finder, then only opened Spotify).
+    static let spotify = re(lead + #"(?:play|put on|find|search(?: for)?|look up|pull up|queue(?: up)?|get)(?: me)?(?: some| a| an| the| my)? (.{2,60}?) (?:on|in|from) spotify"# + tail)
+    static let spotifyFor = re(lead + #"search spotify for (.{2,60}?)"# + tail)
 
     /// The command for a fixed phrase, or nil when the words need the model. `open X` is returned
     /// unresolved: the caller acts on it only when X is an app, a folder or a site it can name.
@@ -183,6 +190,9 @@ public enum ActionPhrases {
         if nextSong.firstMatch(in: t, range: range) != nil { return .media(.next) }
         if previousSong.firstMatch(in: t, range: range) != nil { return .media(.previous) }
         if pause.firstMatch(in: t, range: range) != nil { return .media(.playPause) }
+        if let m = spotifyFor.firstMatch(in: t, range: range) ?? spotify.firstMatch(in: t, range: range) {
+            return SpotifySearch.command((t as NSString).substring(with: m.range(at: 1)))
+        }
         if let m = open.firstMatch(in: t, range: range) {
             let target = (t as NSString).substring(with: m.range(at: 1)).trimmingCharacters(in: .whitespaces)
             let lower = target.lowercased()
@@ -195,6 +205,30 @@ public enum ActionPhrases {
             return ActionTags.openCommand(target)
         }
         return nil
+    }
+}
+
+/// Spotify's own search page, opened by its URI: the app shows the results for the words with no clicking. Its
+/// window gives accessibility one element, so typing into its search box never worked.
+public enum SpotifySearch {
+    public static let prefix = "spotify:search:"
+
+    /// The open command for the words, or nil when nothing is left to search for.
+    public static func command(_ words: String) -> ActionCommand? {
+        let query = words.removingPercentEncoding ?? words
+        let clean = query.trimmingCharacters(in: CharacterSet.whitespacesAndNewlines.union(CharacterSet(charactersIn: "\"'.,!?")))
+        guard clean.contains(where: { $0.isLetter || $0.isNumber }) else { return nil }
+        // "play music on spotify" is play, not a search for the word music
+        if ["music", "something", "anything", "a song", "songs", "my music", "it"].contains(clean.lowercased()) { return .media(.playPause) }
+        guard let encoded = clean.addingPercentEncoding(withAllowedCharacters: .alphanumerics) else { return nil }
+        return .openURL(prefix + encoded, newTab: false)
+    }
+
+    /// The words of a search URI, for the spoken line; nil for anything else.
+    public static func query(fromURI uri: String) -> String? {
+        guard uri.lowercased().hasPrefix(prefix) else { return nil }
+        let rest = String(uri.dropFirst(prefix.count))
+        return rest.removingPercentEncoding ?? rest
     }
 }
 

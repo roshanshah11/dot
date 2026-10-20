@@ -284,8 +284,11 @@ final class ClaudeSession {
         }
     }
 
-    /// Claude Code reports the session's running total; Dot wants the turn's own cost.
-    private var lastTotalCost = 0.0
+    /// Claude Code reports the session's running total; Dot wants the turn's own cost. A resumed session's total
+    /// includes every earlier process (an agent's "say hi in one sentence" was ledgered at $10.34 on 2026-10-15, and
+    /// agent spend read $158 against about $52 by 10-19), so each session's total is kept in its folder.
+    private lazy var lastTotalCost: Double? = CostBaseline.load(Self.costFile(options.cwd), sessionId: sessionId) ?? (options.resume ? nil : 0)
+    private static func costFile(_ cwd: URL) -> URL { cwd.appendingPathComponent(".dot-cost.json") }
 
     private func dispatch(_ incoming: StreamEvent) {
         lastActivity = Date()
@@ -296,8 +299,10 @@ final class ClaudeSession {
         case .result(let info):
             pendingResults = max(0, pendingResults - 1)
             turnInFlight = pendingResults > 0
-            let turnCost = max(0, info.costUSD - lastTotalCost)
-            lastTotalCost = max(lastTotalCost, info.costUSD)
+            let (turnCost, total) = CostBaseline.turnCost(reported: info.costUSD, baseline: lastTotalCost)
+            if lastTotalCost == nil { Log.info("session[\(label)] resumed with no saved cost total; this turn's cost isn't counted") }
+            lastTotalCost = total
+            CostBaseline.save(Self.costFile(options.cwd), sessionId: sessionId, total: total)
             event = .result(ResultInfo(sessionId: info.sessionId, subtype: info.subtype, isError: info.isError, costUSD: turnCost,
                                        durationMs: info.durationMs, durationApiMs: info.durationApiMs, numTurns: info.numTurns,
                                        inputTokens: info.inputTokens, outputTokens: info.outputTokens, cacheReadTokens: info.cacheReadTokens,

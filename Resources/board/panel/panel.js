@@ -369,6 +369,8 @@
     function copyAttrs(from, to, cctx) {
       Array.from(from.attributes).forEach(function (at) {
         var n = at.name, v = at.value, lower = n.toLowerCase();
+        // a name setAttribute rejects ("c<" from a half-written tag) would throw and stop the whole figure
+        if (!/^[a-z_][\w:.-]*$/i.test(n)) return;
         if (/^on/.test(lower) || lower === "style" && /url\(|expression/i.test(v)) return;
         if ((lower === "href" || lower === "xlink:href") && !/^#/.test(v)) return;
         if (lower === "color" || lower === "arrow" || lower === "label") return;
@@ -692,8 +694,11 @@
       n.parentNode.replaceChild(frag, n);
     });
   }
-  function renderAll() {
-    var nodes = parseBlocks(panel.markup);
+  // A chunk can end inside a tag ("<ellipse c", "cy=\""): parsed as it stands, the tag's name or value swallows the
+  // closing </body> and setAttribute throws (214 warnings in dot.log, 2026-10-17 to 10-19). Mid-stream, wait for its ">".
+  function settled(markup) { return markup.replace(/<[^<>]*$/, ""); }
+  function renderAll(streaming) {
+    var nodes = parseBlocks(streaming ? settled(panel.markup) : panel.markup);
     var keep = [];
     nodes.forEach(function (n, i) {
       var key = blockKey(n), old = panel.blocks[i];
@@ -711,7 +716,7 @@
     if (panel.step !== null) setStep(panel.step, true);
   }
   var pending = 0;
-  function schedule() { if (pending) return; pending = requestAnimationFrame(function () { pending = 0; renderAll(); }); }
+  function schedule() { if (pending) return; pending = requestAnimationFrame(function () { pending = 0; renderAll(true); }); }
 
   function setStep(n, quiet) {
     panel.step = n;

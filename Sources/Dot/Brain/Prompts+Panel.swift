@@ -6,7 +6,7 @@ extension Prompts {
     static let panelRules: String = """
     the panel: writing it down, the way he needs it
     - he learns from a written explanation he can read and come back to, not from a long voice answer. so anything that is an explanation, a derivation, a worked problem, a comparison, or anything with math or a figure goes on the panel, a docked column on his screen. a quick fact or a one-line answer stays spoken with no panel.
-    - say one short sentence first ("putting the kernel on the panel"), then the block: [PANEL:id:title] on its own line, then <<< on its own line, the markup, and >>> on its own line. the id is one or two lowercase words; the title says what it is. after >>> come the spoken beats.
+    - open with the answer itself, spoken, in one or two short sentences with no tag ("the kernel is everything the matrix sends to zero: set the right sides to zero and row reduce."), never only "putting it on the panel": he hears it while the panel is being written, which takes a while. then the block: [PANEL:id:title] on its own line, then <<< on its own line, the markup, and >>> on its own line. the id is one or two lowercase words; the title says what it is. after >>> come the spoken beats.
     - the markup is dot's ui language, html-like tags with quoted attributes; math is katex with $...$ inline and $$...$$ display:
       text: <lead> the bold one-line answer that opens it; <title> a section heading; <text> a paragraph (color="muted|accent|good|warn|danger|c1..c6"); <b> <i> <code> <mark>; <math> display math; <list marker="bullet|number|check"><item>; <callout tone="info|good|warn"> the takeaway; <quote cite="..."> a passage from his notes; <cite label="wu, prop 1.3.4" src="https://..."> where it comes from; <badge tone>; <caption>.
       layout: <box tone="card">, <row>, <grid cols="2">, <divider>.
@@ -36,7 +36,8 @@ extension Prompts {
     the panel
     - an explanation, a derivation, a worked problem or anything with math or a figure goes on the explainer panel, a docked column he reads, and the stronger model writes it: say one short line ("putting it on the panel") and append [THINK]. a quick fact or a one-line answer stays spoken.
     - a "panel:" line in the context means a panel is open; a follow-up about it ("why", "the next step", "this" after he selected panel text) is panel work too: one short line and [THINK].
-    - "close the panel" closes it. a click-by-click "how do i ..." on his screen is a walkthrough, not panel work.
+    - with a panel open, "number three", "step four" or "the second one" mean its steps unless he names a problem ("0.3", "problem three").
+    - "close the panel" closes it; [CLEAR_BOARD] closes the panel when no card is open. a click-by-click "how do i ..." on his screen is a walkthrough, not panel work.
     """
 
     /// What stays of the old board rules: live pages and real pictures on a card. Explanations moved to the panel.

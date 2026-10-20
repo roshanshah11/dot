@@ -54,6 +54,8 @@ final class Talk {
     private var coursesInSession: [ObjectIdentifier: Set<String>] = [:]
     /// The question before this one, for "start another agent on that".
     private var previousAsked = ""
+    /// What talk and think each said lately, so a follow-up to one ("show it to me") reaches the other with its referent.
+    private var shared = SharedTurns()
     let board: BoardManager
     /// The explainer panel's talk side (round eight).
     let panels: PanelCoach
@@ -104,10 +106,16 @@ final class Talk {
     private var firstSentenceLogged = false
     private var turnModel = ""
     private var turnsInSession = 0
+    /// Think's turns in its conversation and its last one, for its recycle.
+    private var thinkTurns = 0
+    private var lastThinkAt = Date.distantPast
+    static let thinkMaxTurns = 16
     private var lastTurnAt = Date()
 
     // Beats: what the bubble shows follows the voice, not the text stream.
     private var speechStarted = false
+    /// The one "checking your calendar." a talk turn may say while a lookup runs.
+    private var toolLineSaid = false
     private var bubbleGroup = ""
     private var bubbleLabel: String?
     /// A quiet turn (tests, `Dot --ask --quiet`) paces its beats on a timer instead of the voice.
@@ -259,7 +267,18 @@ final class Talk {
             talkSession = makeSession(kind: .talk)
             return talkSession
         case .think:
-            if let thinkSession, thinkSession.isRunning { return thinkSession }
+            if let thinkSession, thinkSession.isRunning {
+                // It had no limit: one ran 14:03 to 21:44 on 2026-10-18, its input growing from 33k to 151k tokens a turn.
+                // A fresh one still gets the open panel and talk's last exchanges in its context.
+                let idle = Date().timeIntervalSince(lastThinkAt) > 45 * 60
+                if (idle || thinkTurns >= Self.thinkMaxTurns), !thinkSession.turnInFlight {
+                    Log.info("think: recycling the session after \(thinkTurns) turns\(idle ? " (idle)" : "")")
+                    thinkSession.stop()
+                } else {
+                    return thinkSession
+                }
+            }
+            thinkTurns = 0
             thinkSession = makeSession(kind: .think)
             return thinkSession
         }
@@ -879,7 +898,7 @@ final class Talk {
             drainCounts[key] = owed - 1
             Log.info("talk: dropped the cut-off turn (\(result.subtype), \(result.durationMs) ms)")
             Log.info("turn[\(session === thinkSession ? "think" : "talk")] done in \(result.durationMs) ms, $\(String(format: "%.4f", result.costUSD)), cut off")
-            ledger.record(kind: session === thinkSession ? "think" : "talk", agent: nil, model: turnModel, result: result, summary: "(cut off)")
+            if !benchMode { ledger.record(kind: session === thinkSession ? "think" : "talk", agent: nil, model: turnModel, result: result, summary: "(cut off)") }
         }
         return true
     }
@@ -897,6 +916,7 @@ final class Talk {
         goRun = nil
         lastAskWasTyped = typed
         lastAskWasLecture = false
+        retriedTurn = false   // each question gets its own retry, even after the last one's retry failed
         if !lastAsked.isEmpty { previousAsked = lastAsked }
         lastAsked = text
         if Gratitude.isThanks(text) { overlay.react(.thanks) }
@@ -1731,7 +1751,7 @@ final class Talk {
         // "close the panel" closes the panel; a bare "close it" closes the board, or the panel when it just opened
         // (later, "close this" is likely about his own tab or window)
         let saysClose = Self.closeWords.firstMatch(in: text, range: range) != nil
-        if panels.isOpen, PanelCoach.namesPanel(text), Self.closePanelWords.firstMatch(in: text, range: range) != nil { return .closePanel }
+        if panels.isOpen, PanelCoach.namesPanel(text) || PanelWords.namesPanelLoosely(text), Self.closePanelWords.firstMatch(in: text, range: range) != nil { return .closePanel }
         if saysClose, !board.isEmpty { return .closeBoard }
         if saysClose, panels.isOpen, panels.openedRecently { return .closePanel }
         if panels.available, PanelCoach.wantsReopen(text) { return .reopenPanel }
@@ -1887,7 +1907,8 @@ final class Talk {
                 return .followUp(reporter.slug)
             }
         }
-        if let element = answers["element"]?.choice, element.choice != "none", element.probability >= 0.5, element.confidence >= 0.5,
+        // 0.6: of 13 pre-points to 10-19 the one under it (0.51, "Voice Mode" for "no audio so show visually") was the one wrong
+        if let element = answers["element"]?.choice, element.choice != "none", element.probability >= 0.6, element.confidence >= 0.6,
            let index = Int(element.choice.dropFirst()), context.elements.indices.contains(index) {
             let hit = context.elements[index]
             Log.info("jev: pre-pointing at \(hit.role) \"\(hit.title)\" (\(String(format: "%.2f", element.probability)))")
@@ -1914,14 +1935,17 @@ final class Talk {
     }
 
     /// A quiz answer on the panel: the quick model grades it in one spoken sentence with no routing and no screenshot
-    /// (the plan: Sonnet grades and moves on); when the next step needs a new panel it hands over with [THINK].
+    /// (the plan: Sonnet grades and moves on); when the next step needs a new panel it hands over with [THINK]. It promises
+    /// nothing about the next step: on 2026-10-18 21:16 it said "on to the next step on the panel" and think, which wrote
+    /// the panel, answered "there isn't a next step".
     func panelEvent(_ line: String) {
         endBench()
         driveRequested = false
         guard let session = session(for: .talk) else { return }
         lastAsked = line
         lastAskWasTyped = false
-        let message = "[panel] \(line). grade it in one spoken sentence, saying why when it is wrong; then ask whether to go on, or if he was walking through steps, say one short line and append [THINK] so the next step goes on the panel.\n[context]\nnow: \(Self.nowLine())\n" + panels.contextLines().joined(separator: "\n") + "\n[/context]"
+        retriedTurn = false
+        let message = "[panel] \(line). grade it in one spoken sentence, saying why when it is wrong, and stop there; if he was walking through steps, append [THINK] so the stronger model decides what comes next. never say what comes next yourself (you can't see whether the panel has another step), and don't ask whether to go on.\n[context]\nnow: \(Self.nowLine())\n" + panels.contextLines().joined(separator: "\n") + "\n[/context]"
         sendTurn(message, images: [], to: session, kind: .talk)
     }
 
@@ -1943,6 +1967,7 @@ final class Talk {
         streamer = BeatStreamer(eagerFirst: config.eagerSpeech && !quietTurn)
         panels.beginTurn()
         speechStarted = false
+        toolLineSaid = false
         bubbleGroup = ""
         bubbleLabel = nil
         turnRevealsEnqueued = 0
@@ -1954,13 +1979,16 @@ final class Talk {
         turnStartedAt = Date()
         firstSentenceLogged = false
         lastTurnAt = Date()
-        if kind == .talk { turnsInSession += 1 }
+        if kind == .talk { turnsInSession += 1 } else { thinkTurns += 1; lastThinkAt = Date() }
         turnModel = kind == .talk ? config.talkModel : config.thinkModel
         phase = .thinking
         hud.model.deeper = kind == .think
         activeKind = kind
         hud.set(phase: .thinking)
         overlay.setPhase(.thinking)
+        // the retry resends what this session got: an escalated think turn used to get talk's message again (2026-10-18 21:05)
+        lastMessage = message
+        lastImages = images
         session.send(text: message, images: images)
         Log.info("turn[\(kind.rawValue)] sent \(images.count) image(s), \(message.count) chars: \(Log.short(hud.model.transcript))")
     }
@@ -2077,6 +2105,9 @@ final class Talk {
             lines.append("walkthrough: step \(step.step) was \"\(step.kind == .hover ? "rest on" : "click") \(step.label)\"; \(left) click-to-advance steps left" +
                          (step.history.isEmpty ? "" : "; so far: " + step.history.joined(separator: "; ")))
         }
+        // The other conversation's last exchanges, for "it" and "show me" (2026-10-19 08:58).
+        let unseen = shared.unseen(by: kind == .talk ? .talk : .think, now: Date())
+        if !unseen.isEmpty { lines.append(contentsOf: SharedTurns.lines(unseen)) }
         lines.append("[/context]")
         lines.append("")
         lines.append(transcript)
@@ -2148,6 +2179,11 @@ final class Talk {
         case .toolUse(_, let name, let input):
             Log.info("talk: tool \(name) \(Log.short(input.map { "\($0.key)=\($0.value.json)" }.joined(separator: " "), 120))")
             hud.flash(status: "checking \(Self.friendlyTool(name))")
+            // A talk turn with a lookup said nothing for 9.8 s (median, to 10-19) after the ack: one line while it looks.
+            if !toolLineSaid, !quietTurn, activeKind == .talk, streamer.spokenSoFar.isEmpty, let what = Self.spokenTool(name) {
+                toolLineSaid = true
+                speaker.speak("checking \(what).")
+            }
         case .result(let result):
             finishTurn(result)
         case .rateLimit(let status, _, let kind):
@@ -2352,7 +2388,9 @@ final class Talk {
                 panels.setStep(n)
                 label = label ?? "step \(n)"
             case .clearBoard:
-                clearBoard()
+                // "closing the panel." with [CLEAR_BOARD] and nothing on the board closed nothing (2026-10-19 09:55, twice)
+                // (never the panel this same answer just opened)
+                if board.isEmpty, panels.isOpen, !panels.openedThisTurn { panels.close() } else { clearBoard() }
             case .find(let phrase):
                 findOnScreen(phrase: phrase, label: label ?? Log.short(phrase, 24))
                 label = label ?? Log.short(phrase, 24)
@@ -2499,10 +2537,14 @@ final class Talk {
             hud.presentAnswer(question: lastAsked, text: spoken)
         }
         let kind = activeSession === thinkSession ? "think" : "talk"
-        ledger.record(kind: kind, agent: nil, model: turnModel, result: result, summary: hud.model.transcript)
-        // bench turns are tests, not his history
+        // bench turns are tests, not his history or his spend
+        if !benchMode { ledger.record(kind: kind, agent: nil, model: turnModel, result: result, summary: hud.model.transcript) }
         if !benchMode { TranscriptLog.append(kind: lastAskWasTyped ? .typed : (lastAskWasLecture ? .lecture : .talk), you: lastAsked, dot: spoken, app: context.appName,
                              extra: ["model": turnModel, "ms": String(result.durationMs)]) }
+        if !benchMode, !result.isError {
+            let handedOff = kind == "talk" && tags.contains { if case .think = $0 { return true }; return false }
+            shared.record(kind == "think" ? .think : .talk, asked: lastAsked, said: spoken, at: Date(), handedOff: handedOff)
+        }
         Log.info("turn[\(kind)] done in \(result.durationMs) ms, $\(String(format: "%.4f", result.costUSD)), \(tags.filter { $0.isVisual }.count) visual beat(s), tags \(tags.map { "\($0)" }.joined(separator: " | "))")
         Log.info("turn[\(kind)] said: \(Log.short(spoken, 240))")
         if !result.isError { retriedTurn = false }
@@ -3030,6 +3072,20 @@ final class Talk {
         quietWork.forEach { $0.cancel() }
         quietWork = []
         quietClock = Date()
+    }
+
+    /// What a lookup is, said aloud; nil for tools that need no line.
+    static func spokenTool(_ name: String) -> String? {
+        switch name.split(separator: "__").last.map(String.init) ?? name {
+        case "calendar", "free": return "your calendar"
+        case "mail", "thread", "unanswered": return "your mail"
+        case "messages": return "your messages"
+        case "search", "facts", "people", "commitments", "todo": return "your notes"
+        case "canvas_find", "canvas_read": return "canvas"
+        case "docs", "read_doc": return "your docs"
+        case "WebSearch", "WebFetch": return "the web"
+        default: return nil
+        }
     }
 
     static func friendlyTool(_ name: String) -> String {

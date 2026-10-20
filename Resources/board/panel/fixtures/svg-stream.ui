@@ -1,0 +1,21 @@
+<!-- expect: .svg-figure ellipse:3 -->
+<lead><b>The kernel is everything $T$ sends to $0$; the image is everything $T$ hits.</b></lead>
+<steps>
+<step n="1" title="the definitions">
+<math>\operatorname{Ker}T=\{\alpha\in V:\ T\alpha=0_W\}\subseteq V</math>
+<svg viewBox="0 0 360 220">
+<ellipse cx="90" cy="115" rx="70" ry="85" fill="none" stroke="muted"/>
+<ellipse cx="275" cy="115" rx="70" ry="85" fill="none" stroke="muted"/>
+<ellipse cx="275" cy="115" rx="40" ry="50" fill="none" stroke="c1" stroke-width="2"/>
+<line x1="55" y1="80" x2="125" y2="150" stroke="c5" stroke-width="2"/>
+<dot cx="275" cy="115" color="c5" label="0"/>
+<line x1="125" y1="150" x2="268" y2="118" stroke="c5" arrow="end"/>
+<line x1="70" y1="170" x2="262" y2="150" stroke="c1" arrow="end"/>
+<text x="20" y="25" font-size="12" fill="ink">V</text>
+<text x="335" y="25" font-size="12" fill="ink">W</text>
+<text x="30" y="72" font-size="12" fill="c5">Ker T</text>
+<text x="290" y="82" font-size="12" fill="c1">Im T</text>
+</svg>
+<caption>The red line (kernel) all goes to 0.</caption>
+</step>
+</steps>

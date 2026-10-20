@@ -86,17 +86,30 @@ enum AccessibilityContext {
         let windowFrame = frame(of: window).map { Coordinates.appKitRect(fromCG: $0, primaryHeight: primaryHeight) }
         context.windowFrame = windowFrame
         let deadline = Date().addingTimeInterval(timeBudget)
-        var queue: [(AXUIElement, Int)] = [(window, 0)]
+        // The page first. Breadth-first over the whole window spent the list on a browser's tabs, toolbar and
+        // bookmarks: 85% of Comet's elements in his turns to 10-19 were chrome, and on a chat page the walk returned
+        // 47 chrome and 0 page elements (the page starts at depth 8, and the walk stopped at 14). Inside a web area
+        // the walk goes 40 levels down and comes before the chrome, which keeps a quarter of the list in a browser or once
+        // a page is seen.
+        var chromeQueue: [(AXUIElement, Int)] = [(window, 0)]
+        var webQueue: [(AXUIElement, Int)] = []
         var visited = 0
         var elements: [AXElementInfo] = []
         var seenFrames: Set<String> = []
+        var chromeCount = 0
+        var sawPage = false
+        let chromeCap = max(12, maxElements / 4)
+        let browser = Hands.browsers.contains(app.bundleIdentifier ?? "")
 
-        while !queue.isEmpty, elements.count < maxElements, visited < 2_500, Date() < deadline {
-            let (element, depth) = queue.removeFirst()
+        while !chromeQueue.isEmpty || !webQueue.isEmpty, elements.count < maxElements, visited < 2_500, Date() < deadline {
+            let inPage = !webQueue.isEmpty
+            let (element, depth) = inPage ? webQueue.removeFirst() : chromeQueue.removeFirst()
             visited += 1
             let role = string(element, kAXRoleAttribute) ?? ""
+            let opensPage = role == "AXWebArea"
+            if opensPage { sawPage = true }
 
-            if role == "AXWebArea", context.url == nil, let url = string(element, "AXURL") { context.url = url }
+            if opensPage, context.url == nil, let url = string(element, "AXURL") { context.url = url }
 
             if interestingRoles.contains(role), let cgFrame = frame(of: element), cgFrame.width >= 4, cgFrame.height >= 4 {
                 let title = bestTitle(element, role: role)
@@ -104,20 +117,32 @@ enum AccessibilityContext {
                     let akFrame = Coordinates.appKitRect(fromCG: cgFrame, primaryHeight: primaryHeight)
                     let visible = windowFrame.map { $0.intersects(akFrame) } ?? true
                     let key = "\(Int(akFrame.minX)),\(Int(akFrame.minY)),\(Int(akFrame.width)),\(Int(akFrame.height))"
-                    if visible, !seenFrames.contains(key) {
+                    let chromeFull = !inPage && (sawPage || browser) && chromeCount >= chromeCap
+                    if visible, !chromeFull, !seenFrames.contains(key), !Self.repeatsLabel(role: role, title: title, frame: akFrame, in: elements) {
                         seenFrames.insert(key)
                         elements.append(AXElementInfo(role: role, title: String(title.prefix(60)), frame: akFrame))
+                        if !inPage { chromeCount += 1 }
                     }
                 }
             }
-            if depth < 14, containerRoles.contains(role) || interestingRoles.contains(role) {
+            let deeper = inPage || opensPage ? depth < 40 : depth < 14
+            if deeper, containerRoles.contains(role) || interestingRoles.contains(role) {
                 if let children = children(of: element) {
-                    for child in children.prefix(200) { queue.append((child, depth + 1)) }
+                    for child in children.prefix(200) {
+                        if inPage || opensPage { webQueue.append((child, inPage ? depth + 1 : 1)) } else { chromeQueue.append((child, depth + 1)) }
+                    }
                 }
             }
         }
         context.elements = elements
         return context
+    }
+
+    /// A page's heading or link also lists its own text as a static text in the same place: one entry is enough.
+    static func repeatsLabel(role: String, title: String, frame: CGRect, in elements: [AXElementInfo]) -> Bool {
+        guard role == "AXStaticText" else { return false }
+        let center = CGPoint(x: frame.midX, y: frame.midY)
+        return elements.contains { $0.title == String(title.prefix(60)) && $0.frame.insetBy(dx: -4, dy: -4).contains(center) }
     }
 
     /// The element whose frame contains the point, or the nearest labelled match within reach.
