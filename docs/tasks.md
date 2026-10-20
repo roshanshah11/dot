@@ -5,6 +5,17 @@ bottom with the date. "His ask" quotes the message that created the item.
 
 ## Now
 
+- [ ] 2026-10-20 The fast lane, overnight (plan set ~/Dot/plans/2026-10-20-dot-fast-lane, after two interview rounds), his asks ("its different when i need help on my screen vs for it to do things. its in ability to do long standing tasks irks me", and the rule: "dont limit the amount of steps at all ... assume everything can get done w the fast model multi steps and then if needed i will say spawn a background agent"):
+      1. [x] Jobs: every action with more than one small step runs as a job, its own Claude Code session (Sonnet; Opus for prose and decks under his name) with Dot's hands, Atlas, his skills and no step or time limit. Front (his tab or app) for open / go to / show me; behind (a Comet window of its own) for result-only asks and "in a separate tab". Behind the `jobsEnabled` flag; flag off is today's talk prompt byte for byte.
+      2. [x] Agents only when he says agent ("spawn / start / have an agent", "a background agent", shift held); Jev's agent route is gone and talk's own [AGENT] tags become jobs.
+      3. [x] The dot tools (Dot --hands-mcp): look, open, click, type, select, key, scroll, back, wait, download, upload, show, play. His rule is checked on the resolved element before every press; downloads go through Comet's own handling; behind windows never take focus.
+      4. [x] His click or key in the job's tab pauses it; "go on" picks it up; "stop", "stop everything", "show me"; Escape stops a front job only while its app is in front.
+      5. [x] Queued sends: a job's texts and emails wait in Atlas as proposals and show as a card with the exact words; his Allow sends that exact proposal.
+      6. [x] The stack at the top right for agents and behind jobs; the notch only while he talks (`notchTalkOnly`); watching is a routine with a time window; unfinished agents get Continue; the idle close is fixed.
+      7. [x] Spotify plays by name ([PLAY:playlist:words], "play X on spotify", "open spotify to a X playlist"), found in a logged-out headless browser.
+      8. [x] Site tools through Atlas: canvas_readings, mail_live, thread_draft, app_status, gdoc_read/export, rooms_free (more as they land).
+      9. [ ] the bench rows (J, G, S, M, N, D) on the installed build, and his voice check in the morning.
+
 - [ ] 2026-10-19 Usage review, his ask ("go through my dot usage/history. what is it doing well/ what does it need to work on. lets fine tune and fix edge cases"): five days of ~/Dot/transcripts, dot.log, the talk and agent sessions and his build-session messages. Fixed on this branch (not committed; 365 tests, panel-check 19/19):
       1. [x] think hears talk: each conversation's turn carries the other's last exchanges (SharedTurns), after "can you show it to me?" put Mock B 0.3 on the panel for a 0.1(a) answer (10-19 08:58) and "walk me through how to do it" came back as 0.1(a) after 0.2 (10-18 14:28).
       2. [x] "close the view" / "close gallry" close the panel with no model turn (PanelWords), and [CLEAR_BOARD] closes an open panel when no card is up; both said "closing the panel." and closed nothing (10-19 09:55).

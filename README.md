@@ -221,6 +221,33 @@ Dictation is left to [Murmur](https://github.com/roshanshah11/murmur).
 
 MIT. Built by Roshan Shah.
 
+## The fast lane: Dot does the work itself (2026-10-20)
+
+- **Jobs.** Anything he asks Dot to do that takes more than one small step is a job: its own Claude Code session
+  (Sonnet by default, Opus for decks and anything written under his name) with Dot's hands, Atlas, his skills and no
+  step or time limit. "Open / go to / show me" runs in his tab in front of him; result-only asks ("download", "check",
+  "find out") and "in a separate tab" run in a Comet window of its own behind his app. One small act on what's in front
+  ("click export") stays a talk tag. `jobsEnabled` in config.json turns it all off.
+- **Agents only when asked.** "Spawn an agent", "have an agent do it", "a background agent", or shift held. Nothing else
+  starts one, except a watch routine he asked for.
+- **The dot tools.** A job acts only through `Dot --hands-mcp` (13 tools: look, open, click, type, select, key, scroll,
+  back, wait, download, upload, show, play), which relays to the running Dot. Every press is checked on the element itself:
+  send, submit, buy, book, print, delete and the like are rung for his hand, never pressed. Downloads use Comet's own
+  handling (his Downloads, " (1)" names, never an overwrite).
+- **Pause and go on.** His click or key in the job's tab pauses it; "go on" picks it up after a fresh look; "stop",
+  "stop everything", "show me". Escape stops a front job only while its app is in front.
+- **Sends wait for his card.** A job's texts and emails queue in Atlas (an `ask-` session) and show as a card with the
+  exact recipients and words; Allow sends that exact proposal through Atlas's ledger (`scripts/dot-atlas-approve.py`).
+- **The stack.** Agents and behind jobs are chips at the top right: a card for 5 s, then an avatar; hover for the last
+  steps, stop, show me and a reply field. The notch shows only while he talks (`notchTalkOnly`).
+- **Spotify by name.** `[PLAY:playlist:piano study]` and "play X on spotify" find the top result on open.spotify.com in a
+  logged-out headless browser (`scripts/dot-spotify.sh`) and start it with Spotify's AppleScript.
+- **Watching.** "Keep an eye on X" becomes a routine every 2 hours from 9 am to midnight in watch mode, and speaks only
+  when something needs him.
+- **Testing.** `Dot --job-run --comet-port 9471 "<ask>"` runs one real bench job headless (its own socket and log);
+  `Dot --prompt job`; `Dot --job-test click|key`; `Dot --occlusion x,y`; `Dot --stack-selftest`; the bench rows in
+  `Tests/Fixtures/bench/requests.jobs.example.json` run through `scripts/dot-bench.py` against the throwaway Comet on 9471.
+
 ## What was added on 2026-10-15 (afternoon)
 
 - **Math, as his tutor.** Dot knows the course it is tutoring from `~/Dot/talk/context/*.md`
