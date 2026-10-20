@@ -228,7 +228,8 @@ final class JobManager {
         let started = Date()
         let dir = FileManager.default.temporaryDirectory.appendingPathComponent("dot-sandbox-\(ProcessInfo.processInfo.processIdentifier)", isDirectory: true)
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        let outside = (NSHomeDirectory() as NSString).appendingPathComponent(".dot-sandbox-probe")
+        // pid-scoped, so two Dots (his extra config dirs) never read each other's probe (review M1)
+        let outside = (NSHomeDirectory() as NSString).appendingPathComponent(".dot-sandbox-probe-\(ProcessInfo.processInfo.processIdentifier)")
         let inside = dir.appendingPathComponent("inside.txt").path
         try? FileManager.default.removeItem(atPath: outside)
         let sandbox = #"{"sandbox":{"enabled":true,"failIfUnavailable":true,"allowUnsandboxedCommands":false,"autoAllowBashIfSandboxed":false,"network":{"allowedDomains":[],"allowUnixSockets":[],"allowLocalBinding":false},"filesystem":{"allowWrite":["\#(dir.path)","/tmp","/private/tmp"]}}}"#

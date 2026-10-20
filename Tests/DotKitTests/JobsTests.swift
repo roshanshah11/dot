@@ -186,6 +186,18 @@ final class JobGateTests: XCTestCase {
 
     func denied(_ d: JobGateDecision) -> Bool { if case .deny = d { return true }; return false }
 
+    func testReviewFixes() {
+        // M2: an event with guests sends invitations
+        XCTAssertTrue(denied(decide("mcp__atlas__calendar_create", ["title": "x", "attendees": ["sam@example.com"]])))
+        XCTAssertEqual(decide("mcp__atlas__calendar_create", ["title": "study", "start": "2026-10-21T10:00"]), .allow)
+        // L2: spawning and in-process event posting
+        for code in ["from subprocess import run; run(['open','x'])", "import ctypes; ctypes.CDLL('x')", "import os; os.posix_spawn('/bin/sh', [], {})",
+                     "from os import system; system('x')", "import Quartz"] {
+            XCTAssertTrue(denied(bash("/opt/homebrew/bin/python3.13 -c \"\(code)\"")), code)
+        }
+        XCTAssertFalse(denied(bash("/opt/homebrew/bin/python3.13 -c \"import re, openpyxl; re.compile('x'); from os import path\"")), "plain scripts still run")
+    }
+
     func testDotAndSends() {
         XCTAssertEqual(decide("mcp__dot__click", ["ref": "e3"]), .allow)
         XCTAssertEqual(decide("mcp__atlas-send__imessage_send"), .allow)
@@ -519,5 +531,24 @@ final class J16PlacementTests: XCTestCase {
         XCTAssertEqual(JobModel.decide(text: "research what grid storage options exist and write me a one page summary"), "opus", "J15")
         XCTAssertEqual(JobModel.decide(text: "make me a 5 slide deck on the bench fixture"), "opus", "D1")
         XCTAssertEqual(JobModel.decide(text: "download the week 3 reading in a separate tab"), "sonnet")
+    }
+}
+
+final class ReviewFixWordTests: XCTestCase {
+    /// H1: these say agent and "do it"; the agent words must see every one, so the route never turns them into a job.
+    func testAgentWithDriveWords() {
+        for ask in ["have an agent do it", "put an agent on it and do it", "can you have an agent do it", "spawn an agent to drive this",
+                    "get an agent to do it for me", "have an agent take over"] {
+            XCTAssertTrue(AgentWords.asksForAgent(ask), ask)
+        }
+        XCTAssertFalse(AgentWords.asksForAgent("take over and do it yourself"))
+    }
+
+    func testSpacePressesFocusedControls() {
+        XCTAssertTrue(PageCommitRule.spacePresses(tag: "button", role: "", type: ""))
+        XCTAssertTrue(PageCommitRule.spacePresses(tag: "input", role: "", type: "submit"))
+        XCTAssertTrue(PageCommitRule.spacePresses(tag: "div", role: "button", type: ""))
+        XCTAssertFalse(PageCommitRule.spacePresses(tag: "input", role: "", type: "text"))
+        XCTAssertFalse(PageCommitRule.spacePresses(tag: "body", role: "", type: ""))
     }
 }

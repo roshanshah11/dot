@@ -644,6 +644,10 @@ final class PageDriver {
         let shift = parts.contains("shift")
         let key = Self.canonicalKey(base)
         let focus = await evaluate("(function(){const e=document.activeElement; return e ? {tag: e.tagName.toLowerCase(), role: e.getAttribute('role')||'', type: (e.getAttribute('type')||'').toLowerCase(), ph: (e.getAttribute('placeholder')||e.getAttribute('aria-label')||'')} : {};})()") as? [String: Any] ?? [:]
+        if key == " " || key.lowercased() == "space",
+           PageCommitRule.spacePresses(tag: focus["tag"] as? String ?? "", role: focus["role"] as? String ?? "", type: focus["type"] as? String ?? "") {
+            return .error("space would press the focused \(focus["tag"] as? String ?? "control"); click it instead, so dot checks it")
+        }
         let h = await host
         let v = PageCommitRule.keyVerdict(key: key, command: cmd, control: ctrl, option: opt, focusedTag: focus["tag"] as? String ?? "",
                                           focusedRole: focus["role"] as? String ?? "", focusedType: focus["type"] as? String ?? "",
@@ -756,8 +760,18 @@ final class PageDriver {
         }
         let name = URL(string: url)?.lastPathComponent.removingPercentEncoding ?? "download.pdf"
         try? FileManager.default.createDirectory(atPath: downloadDir, withIntermediateDirectories: true)
-        let path = DownloadWatch.uniquePath(in: downloadDir, name: name.isEmpty ? "download.pdf" : name)
-        guard FileManager.default.createFile(atPath: path, contents: data) else { return .error("couldn't save it") }
+        // An exclusive create, so a file that appears between the free-name check and the write is never overwritten (review M6).
+        var path = ""
+        for _ in 0..<5 {
+            let candidate = DownloadWatch.uniquePath(in: downloadDir, name: name.isEmpty ? "download.pdf" : name)
+            let fd = open(candidate, O_WRONLY | O_CREAT | O_EXCL, 0o644)
+            if fd < 0 { if errno == EEXIST { continue } else { break } }
+            let written = data.withUnsafeBytes { write(fd, $0.baseAddress, data.count) }
+            close(fd)
+            if written == data.count { path = candidate } else { unlink(candidate) }
+            break
+        }
+        guard !path.isEmpty else { return .error("couldn't save it") }
         downloaded.append(path)
         return Result(status: .ok, detail: "it opened in the viewer; saved a copy at \(path)", savedPath: path)
     }

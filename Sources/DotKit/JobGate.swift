@@ -146,6 +146,8 @@ public enum JobGate {
         }
         // 4. Only the list.
         guard JobAtlasTools.allowed.contains(name), !JobAtlasTools.never.contains(name) else { return .deny(hisThing) }
+        // An event made with guests sends invitations (review M2): talk's rule, so a future attendees field can't slip by.
+        if ConsentPolicy.isOutwardMCP(tool: name, input: input) { return .deny("that tells other people something (guests on an event); " + hisThing) }
         switch name {
         case "xlsx_write":
             guard case .string(let p)? = input["path"] else { return .deny("xlsx_write needs a path") }
@@ -234,6 +236,9 @@ public enum JobGate {
         "import subprocess", "subprocess.", "os.system(", "os.popen(", "os.exec", "pty.", "import socket", "smtplib",
         "urllib.request", "http.client", "requests.", "import atlas", "from atlas", "approve_from_app", "state.sqlite",
         "__import__(", "importlib", "exec(", "eval(",
+        // review L2: spawning and in-process event posting (CoreGraphics through ctypes) without subprocess
+        "from subprocess", "ctypes", "posix_spawn", "os.spawn", "from os import system", "from os import popen",
+        "from os import exec", "from os import spawn", "from os import posix_spawn", "marshal.", "FunctionType", "Quartz", "CoreGraphics",
     ].map { form in (form, Rx.make(#"(?<![A-Za-z0-9_])"# + NSRegularExpression.escapedPattern(for: form))) }
 
     static func deniedForm(in text: String) -> String? {

@@ -1944,7 +1944,9 @@ final class Talk {
         if inWalkthrough || board.hasHiddenSteps, Self.continueWords.firstMatch(in: text, range: range) != nil {
             return .continueWalkthrough
         }
-        if config.jobsEnabled, saysDrive(text) {
+        // "have an agent do it" is his agent words, not "do it" (review H1): the agent check below takes it.
+        let agentWords = config.jobsEnabled && AgentWords.asksForAgent(text)
+        if config.jobsEnabled, saysDrive(text), !agentWords {
             // "do it": Dot takes it over as a job, in a walkthrough or after one.
             if inWalkthrough { return .drive }
             let bare = Self.driveWords.stringByReplacingMatches(in: text, range: range, withTemplate: "")
@@ -1956,7 +1958,7 @@ final class Talk {
         }
         // The small things, with no model (the basics pass): "scroll down", "go back", "open spotify", "pause".
         // An "open X" Dot can't name goes on to the model, which asks one short question.
-        if !inWalkthrough, let command = ActionPhrases.match(text) {
+        if !inWalkthrough, !agentWords, let command = ActionPhrases.match(text) {
             if case .open(let name) = command, !hands.canResolve(name) {
                 Log.info("act: \"\(name)\" is no app, folder or bookmark; the model takes it")
             } else {

@@ -59,6 +59,14 @@ public enum PageCommitRule {
     /// A key in the page. Enter only in a search field; Enter in a message box or a textarea, Cmd or Ctrl+Enter,
     /// Enter anywhere on a Greenhouse form and Escape on Workday are his. Tab, Escape, arrows, page keys, Home, End,
     /// Space and Backspace pass.
+    /// Space on a focused button, link, checkbox or the like presses it, which the click check never saw (review L1).
+    public static func spacePresses(tag: String, role: String, type: String) -> Bool {
+        let t = tag.lowercased(), r = role.lowercased(), y = type.lowercased()
+        if ["button", "a", "summary", "select"].contains(t) { return true }
+        if t == "input", ["submit", "button", "checkbox", "radio", "reset", "image", "file"].contains(y) { return true }
+        return ["button", "link", "checkbox", "radio", "switch", "menuitem", "menuitemcheckbox", "menuitemradio", "tab", "option"].contains(r)
+    }
+
     public static func keyVerdict(key rawKey: String, command: Bool = false, control: Bool = false, option: Bool = false,
                                   focusedTag: String = "", focusedRole: String = "", focusedType: String = "", placeholder: String = "",
                                   host: String = "") -> PageVerdict {
