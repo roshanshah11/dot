@@ -2283,6 +2283,12 @@ final class Talk {
         if liveTools.contains("app_status") {
             lines.append("[applications] where an application stands: app_status first; say a rejection only when he asked about that firm, never unprompted.")
         }
+        if liveTools.contains("wyzant_threads") {
+            lines.append("[wyzant] wyzant: wyzant_threads; a drafted reply waits on his telegram or atlas card; dot doesn't send it.")
+        }
+        if liveTools.contains("amazon_search") {
+            lines.append("[shopping] shopping finds: amazon_search, then amazon_product for the top 2 or 3, then amazon_open on the pick; he buys.")
+        }
         if liveTools.contains("rooms_free") {
             lines.append("[rooms] library rooms: rooms_free first; booking is a job up to Submit my Booking, which is his; remind him to check in within 15 minutes.")
         }
@@ -3299,6 +3305,8 @@ final class Talk {
         case "docs", "read_doc", "gdoc_read", "gdoc_export": return "your docs"
         case "app_status": return "your applications"
         case "rooms_free": return "the library rooms"
+        case "wyzant_threads": return "wyzant"
+        case "amazon_search", "amazon_product", "amazon_open": return "amazon"
         case "WebSearch", "WebFetch": return "the web"
         default: return nil
         }

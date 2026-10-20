@@ -454,3 +454,22 @@ final class MessagesProbeTests: XCTestCase {
         XCTAssertFalse(MessagesProbe.liveReadable(path: db.path))
     }
 }
+
+final class FastLaneWiringTests: XCTestCase {
+    func testClickCanHandAControlToHim() throws {
+        let click = HandsMCPWire.tools.first { $0.0 == "click" }
+        XCTAssertNotNil(click)
+        let props = ((click?.2["properties"] as? [String: Any]) ?? [:])
+        XCTAssertNotNil(props["his"], "click takes his: true, which rings and never presses")
+    }
+
+    func testBenchAtlasNeverRefreshesCanvas() throws {
+        let agent = #"{"mcpServers":{"atlas":{"command":"python3","args":["-m","atlas.mcp"],"env":{"ATLAS_CHAT_SESSION":"dot-agent"}}}}"#.data(using: .utf8)!
+        let made = try XCTUnwrap(JobConfigFile.make(agentMCP: agent, dotExecutable: "/x/Dot", jobId: "j1", socket: "/tmp/s", bench: true, stamp: "202610201600"))
+        let env = (((try JSONSerialization.jsonObject(with: made) as? [String: Any])?["mcpServers"] as? [String: Any])?["atlas"] as? [String: Any])?["env"] as? [String: Any]
+        XCTAssertEqual(env?["ATLAS_CANVAS_NO_REFRESH"] as? String, "1")
+        let copy = try XCTUnwrap(MCPConfigEdit.benchCopy(agent))
+        let copyEnv = (((try JSONSerialization.jsonObject(with: copy) as? [String: Any])?["mcpServers"] as? [String: Any])?["atlas"] as? [String: Any])?["env"] as? [String: Any]
+        XCTAssertEqual(copyEnv?["ATLAS_CANVAS_NO_REFRESH"] as? String, "1")
+    }
+}

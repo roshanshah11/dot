@@ -317,6 +317,9 @@ final class JobManager {
         if placement == .front {
             first += "\nin front: app \(context.appName ?? "?"), window \"\(Log.short(context.windowTitle ?? "", 100))\"\(context.url.map { ", url \($0)" } ?? "")"
             if comet { first += " (dot is bound to this tab)" }
+        } else if context.appName != nil || context.url != nil {
+            // A behind job still needs to know what "this" or "the reading" was: what he had in front when he asked.
+            first += "\nhe was looking at: app \(context.appName ?? "?"), window \"\(Log.short(context.windowTitle ?? "", 100))\"\(context.url.map { ", url \($0) (open it in your window when the ask is about it)" } ?? "")"
         }
         first += "\nhe said: \"\(words)\""
         if goal != words { first += "\nwhat talk saw that matters: \(goal)" }
@@ -640,6 +643,10 @@ final class JobManager {
 
     private func perform(_ job: Job, tool: String, args: [String: Any]) async -> (String, Bool, String?) {
         let started = Date()
+        if tool == "click", args["his"] as? Bool == true, !job.isBrowserJob {
+            rang(job, label: str(args, "label") ?? str(args, "ref") ?? "that", point: nil)
+            return ("stopped: left for his press. stop here and tell him it's ready for his press.", false, nil)
+        }
         if !job.isBrowserJob { return await performNative(job, tool: tool, args: args) }
         var result: PageDriver.Result
         switch tool {
@@ -654,7 +661,11 @@ final class JobManager {
             result = await open(job, target: target, where: str(args, "where"))
         case "click":
             _ = await bindIfNeeded(job)
-            result = await job.page.click(ref: str(args, "ref"), label: str(args, "label"))
+            if args["his"] as? Bool == true {
+                result = await job.page.ring(ref: str(args, "ref"), label: str(args, "label"))
+            } else {
+                result = await job.page.click(ref: str(args, "ref"), label: str(args, "label"))
+            }
         case "type":
             _ = await bindIfNeeded(job)
             result = await job.page.type(ref: str(args, "ref"), label: str(args, "label"), text: args["text"] as? String ?? "",

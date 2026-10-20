@@ -188,8 +188,8 @@ struct DotConfig: Codable {
         "draft_email", "calendar_create", "calendar_update",
         // The fast lane's site tools (06, 08): one call for "download my readings", live mail.
         "canvas_readings", "canvas_download", "mail_live", "mail_read",
-        // 09, 10: where an application stands; which library rooms are free (both read-only).
-        "app_status", "rooms_free",
+        // 09, 10: where an application stands, library rooms, Wyzant threads, Amazon finds (reads; amazon_open opens a tab).
+        "app_status", "rooms_free", "wyzant_threads", "amazon_search", "amazon_product", "amazon_open",
     ]
     /// Taken out of talk by the basics pass; a saved config that still lists them does not bring them back.
     static let retiredTalkAtlasTools: Set<String> = [
@@ -199,7 +199,7 @@ struct DotConfig: Codable {
     ]
     /// Atlas tools that write (remember, draft, create): refused in a bench turn.
     static let talkWriteTools: Set<String> = ["todo", "remember", "deadline_add", "commit", "reminder", "draft_email", "calendar_create", "calendar_update",
-                                              "canvas_download"]
+                                              "canvas_download", "amazon_open"]
     static let defaultTalkTools = talkAtlasTools.map { "mcp__atlas__\($0)" }
 
     init() {}

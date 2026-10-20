@@ -559,6 +559,16 @@ final class PageDriver {
         return .ok("clicked \(name)", point: pt)
     }
 
+    /// The control he presses himself (click with his: true): found and ringed, never pressed.
+    func ring(ref: String?, label: String?) async -> Result {
+        guard sessionId != nil else { return .error("no page yet: open one first") }
+        guard let t = await resolve(ref: ref, label: label, fields: false) else {
+            return .error(ref != nil ? "no \(ref!) on the page now; look again" : "i don't see \(label ?? "that") on this page")
+        }
+        let name = (t.info["name"] as? String).flatMap { $0.isEmpty ? nil : $0 } ?? (label ?? "that button")
+        return .stopped("ready for his press: \(name)", his: name, point: await point(t.info))
+    }
+
     func type(ref: String?, label: String?, text: String, replace: Bool, enter: Bool) async -> Result {
         guard let s = sessionId else { return .error("no page yet: open one first") }
         guard let t = await resolve(ref: ref, label: label, fields: true) else { return .error("i don't see that field") }

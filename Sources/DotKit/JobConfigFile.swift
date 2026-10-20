@@ -31,6 +31,7 @@ public enum JobConfigFile {
                 env["ATLAS_MCP_TOOLS"] = (JobAtlasTools.reads + JobAtlasTools.siteReads + [JobAtlasTools.canvasReadings]).joined(separator: ",")
                 env["ATLAS_DOWNLOADS_DIR"] = "/tmp/dot-bench/downloads"
                 env["ATLAS_CANVAS_NO_VAULT"] = "1"
+                env["ATLAS_CANVAS_NO_REFRESH"] = "1"   // a signed-out canvas answers a sentence, never restarts `canvas`
             } else {
                 env["ATLAS_MCP_TOOLS"] = JobAtlasTools.ordered.joined(separator: ",")
             }
@@ -72,6 +73,7 @@ public enum MCPConfigEdit {
             var env = (atlas["env"] as? [String: Any]) ?? [:]
             env["ATLAS_DOWNLOADS_DIR"] = downloads
             env["ATLAS_CANVAS_NO_VAULT"] = "1"
+            env["ATLAS_CANVAS_NO_REFRESH"] = "1"
             env["ATLAS_CANVAS_DEFAULT_DEST"] = "downloads"
             atlas["env"] = env
             servers["atlas"] = atlas

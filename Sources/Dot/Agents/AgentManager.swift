@@ -934,7 +934,9 @@ final class AgentManager {
                          // the fast lane's site tools (06, 08): reads, Canvas files to Downloads or the vault, a draft in the thread
                          "canvas_readings", "canvas_download", "mail_live", "mail_read", "mail_triage", "thread_draft",
                          // 09, 10: application status, Google Docs read and export to Downloads, library rooms (reads)
-                         "app_status", "gdoc_read", "gdoc_export", "rooms_free"] {
+                         "app_status", "gdoc_read", "gdoc_export", "rooms_free", "wyzant_threads",
+                         // a query with "buy" in it would hit ConsentPolicy's commit words; these only read
+                         "amazon_search", "amazon_product"] {
                 allow.insert("mcp__atlas__\(name)")
             }
         }
