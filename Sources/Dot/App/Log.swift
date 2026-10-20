@@ -7,6 +7,8 @@ enum Log {
     private static let logger = Logger(subsystem: "com.roshan.dot", category: "dot")
     private static let queue = DispatchQueue(label: "com.roshan.dot.log")
     private static let fileURL: URL = {
+        // The headless job harness writes its own file, never his dot.log.
+        if let path = ProcessInfo.processInfo.environment["DOT_LOG_FILE"], !path.isEmpty { return URL(fileURLWithPath: path) }
         let dir = URL(fileURLWithPath: NSHomeDirectory()).appendingPathComponent("Library/Logs/Dot", isDirectory: true)
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         return dir.appendingPathComponent("dot.log")

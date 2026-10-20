@@ -11,6 +11,9 @@ case "--gate":
 case "--hands-mcp":
     // A job's `dot` tools (the fast lane): stdio MCP in, relayed to the running Dot over the control socket.
     HandsMCPServer.run(Array(arguments.dropFirst()))
+case "--job-run":
+    // One real bench job, headless, without the running Dot (its own socket and log; never port 9222).
+    JobHarness.run(Array(arguments.dropFirst()))
 case "--job-test":
     // The bench: his click or key for the newest bench job, through the pause rule. Refused outside the bench.
     let kind = arguments.dropFirst().first ?? "click"

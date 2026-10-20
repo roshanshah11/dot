@@ -81,6 +81,11 @@ final class CDPConnection {
         var body: [String: Any] = ["id": id, "method": method, "params": params]
         if let session { body["sessionId"] = session }
         guard let data = try? JSONSerialization.data(withJSONObject: body), let text = String(data: data, encoding: .utf8) else { return nil }
+        let started = Date()
+        defer {
+            let ms = Int(Date().timeIntervalSince(started) * 1000)
+            if ms > 1000 { Log.info("page: cdp \(method) took \(ms) ms") }
+        }
         return await withCheckedContinuation { (continuation: CheckedContinuation<[String: Any]?, Never>) in
             pending[id] = continuation
             task.send(.string(text)) { [weak self] error in
@@ -202,6 +207,8 @@ final class PageDriver {
 
     /// His tab in front: the tab whose url and title the window shows; several matches are settled by focus.
     func bindFront(windowTitle: String?, url: String?) async -> Bool {
+        let started = Date()
+        defer { log("page: bindFront \(Int(Date().timeIntervalSince(started) * 1000)) ms") }
         if let e = await connect() { log("page: \(e)"); return false }
         let tabs = await pageTabs()
         func norm(_ u: String) -> String { var s = u; if let h = s.firstIndex(of: "#") { s = String(s[..<h]) }; return s.hasSuffix("/") ? String(s.dropLast()) : s }
@@ -233,6 +240,9 @@ final class PageDriver {
         ownsWindow = true
         handBackFocus(to: front)
         let ok = await attach(id, enable: true)
+        handBackFocus(to: front)
+        // The first load in a new window is slow inside the browser (about 4 s): wait for it before the first look.
+        if ok { mainFrameLoading = true; await settle(limit: 10) }
         handBackFocus(to: front)
         return ok
     }
@@ -305,9 +315,9 @@ final class PageDriver {
 
     // MARK: Page helpers
 
-    func evaluate(_ expression: String, awaitPromise: Bool = false) async -> Any? {
+    func evaluate(_ expression: String, awaitPromise: Bool = false, timeout: Double = 5) async -> Any? {
         guard let s = sessionId else { return nil }
-        let r = await cdp.send("Runtime.evaluate", ["expression": expression, "returnByValue": true, "awaitPromise": awaitPromise], session: s)
+        let r = await cdp.send("Runtime.evaluate", ["expression": expression, "returnByValue": true, "awaitPromise": awaitPromise], session: s, timeout: timeout)
         return (r?["result"] as? [String: Any])?["value"]
     }
 
@@ -342,14 +352,16 @@ final class PageDriver {
         return true
     }
 
-    /// Up to `limit` seconds for the page to settle: loading done, then a quiet beat.
+    /// Up to `limit` seconds for the page to settle: loading done, then a quiet beat. A page still loading may not
+    /// answer at all, so each check waits a second at most.
     private func settle(limit: Double = 3) async {
         let deadline = Date().addingTimeInterval(limit)
         try? await Task.sleep(nanoseconds: 150_000_000)
         while Date() < deadline {
             if leaveDialog { return }
-            let state = await evaluate("document.readyState") as? String
+            let state = await evaluate("document.readyState", timeout: 1) as? String
             if !mainFrameLoading, state == "complete" { break }
+            if state == "complete" || state == "interactive", Date().addingTimeInterval(limit / 2) > deadline { break }
             try? await Task.sleep(nanoseconds: 100_000_000)
         }
         try? await Task.sleep(nanoseconds: 200_000_000)

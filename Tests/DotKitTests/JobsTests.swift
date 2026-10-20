@@ -364,3 +364,24 @@ final class JobInputTapTests: XCTestCase {
         XCTAssertFalse(OcclusionRule.decide(axPid: nil, cgTopPid: nil, frontPid: 100, ownPid: 5))
     }
 }
+
+final class MessageCardTests: XCTestCase {
+    func testTextCard() {
+        let card = ProposalCard(json: ["proposal": "p1", "digest": "d1", "operation": "imessage.send", "to": ["+15555550100"],
+                                       "name": "Alex Example", "text": "running late"])!
+        XCTAssertEqual(card.title, "text Alex Example (+15555550100)")
+        XCTAssertEqual(card.detail, "running late")
+        XCTAssertTrue(card.guarded)
+    }
+
+    func testEmailAndReplyCards() {
+        let mail = ProposalCard(json: ["proposal": "p2", "digest": "d2", "operation": "gmail.send", "to": ["sam.rivera@example.com"],
+                                       "names": [""], "subject": "Thursday", "text": "See you at 3.", "attachments": ["/x/output/Deck.pptx"]])!
+        XCTAssertEqual(mail.title, "email sam.rivera@example.com")
+        XCTAssertEqual(mail.detail, "subject: Thursday\nSee you at 3.\nwith Deck.pptx")
+        let reply = ProposalCard(json: ["proposal": "p3", "digest": "d3", "operation": "outlook.reply", "to": ["sam.rivera@example.com"],
+                                        "names": ["Sam Rivera"], "text": "Yes, 3 works."])!
+        XCTAssertEqual(reply.title, "reply to Sam Rivera (sam.rivera@example.com)")
+        XCTAssertNil(ProposalCard(json: ["operation": "imessage.send"]))
+    }
+}

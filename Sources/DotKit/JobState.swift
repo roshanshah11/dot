@@ -91,3 +91,45 @@ public enum OcclusionRule {
         return top != front
     }
 }
+
+/// A queued send (an Atlas proposal from a job's `ask-` session) as Dot's card: who it goes to and the exact words.
+public struct ProposalCard: Equatable, Sendable {
+    public let proposal: String
+    public let digest: String
+    public let operation: String
+    public let title: String
+    public let detail: String
+    public let guarded: Bool
+
+    /// One entry of `dot-atlas-approve.py list` (Atlas's ask_proposals plus the names Atlas knows for each handle).
+    public init?(json: [String: Any]) {
+        guard let proposal = json["proposal"] as? String, let digest = json["digest"] as? String,
+              let operation = json["operation"] as? String else { return nil }
+        let to = (json["to"] as? [String]) ?? []
+        var names = (json["names"] as? [String]) ?? []
+        if names.isEmpty, let name = json["name"] as? String { names = [name] }
+        func who(_ i: Int) -> String {
+            let handle = to[i]
+            let name = i < names.count ? names[i].trimmingCharacters(in: .whitespaces) : ""
+            return name.isEmpty ? handle : "\(name) (\(handle))"
+        }
+        let people = to.indices.map(who).joined(separator: ", ")
+        let text = (json["text"] as? String) ?? ""
+        let subject = (json["subject"] as? String).flatMap { $0.isEmpty ? nil : $0 }
+        let files = ((json["attachments"] as? [String]) ?? []).map { ($0 as NSString).lastPathComponent }
+        switch operation {
+        case "imessage.send": title = "text \(people.isEmpty ? "?" : people)"
+        case "gmail.reply", "outlook.reply": title = "reply to \(people.isEmpty ? "?" : people)"
+        default: title = "\(operation.hasSuffix(".send") ? "email" : operation) \(people.isEmpty ? "?" : people)"
+        }
+        var lines: [String] = []
+        if let subject { lines.append("subject: \(subject)") }
+        lines.append(text)
+        if !files.isEmpty { lines.append("with \(files.joined(separator: ", "))") }
+        detail = lines.joined(separator: "\n")
+        self.proposal = proposal
+        self.digest = digest
+        self.operation = operation
+        guarded = true
+    }
+}

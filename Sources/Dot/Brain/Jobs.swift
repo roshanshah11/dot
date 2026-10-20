@@ -53,9 +53,10 @@ final class JobManager {
     }
 
     private let config: DotConfig
-    private let overlay: OverlayManager
-    private let speaker: TTSProvider
-    private let ledger: Ledger
+    /// nil in the headless bench harness (`Dot --job-run`).
+    private let overlay: OverlayManager?
+    private let speaker: TTSProvider?
+    private let ledger: Ledger?
     var socketPath: String?
     private(set) var jobs: [Job] = []
     private var queue: [(goal: String, placement: JobPlacement, context: ScreenContext, askedAt: Date?, bench: Bool)] = []
@@ -72,10 +73,10 @@ final class JobManager {
     var onChange: (() -> Void)?
     /// A Routine: line at the end of a job (07's backstop): name, when, task.
     var onRoutine: ((String, String, String) -> Void)?
-    /// Proposal cards for queued sends (02 E): the job, the session, and the proposals' JSON lines.
-    var onProposals: ((Job, String) -> Void)?
+    /// Shows a consent card (the stack once 04 lands; the notch's consent path until then).
+    var presentCard: ((ConsentCard) -> Void)?
 
-    init(config: DotConfig, overlay: OverlayManager, speaker: TTSProvider, ledger: Ledger) {
+    init(config: DotConfig, overlay: OverlayManager?, speaker: TTSProvider?, ledger: Ledger?) {
         self.config = config
         self.overlay = overlay
         self.speaker = speaker
@@ -323,7 +324,7 @@ final class JobManager {
                 self.spawnSpare(bench: false)
             }
         }
-        if bench, benchSpare == nil {
+        if bench, config.jobSpare, benchSpare == nil {
             DispatchQueue.main.asyncAfter(deadline: .now() + 1) { [weak self] in
                 guard let self, self.benchSpare == nil else { return }
                 self.spawnSpare(bench: true)
@@ -372,7 +373,7 @@ final class JobManager {
             if !t.isEmpty { job.lastLine = t }
         case .toolResult(let content, _):
             if content.localizedCaseInsensitiveContains("queued for his approval") || content.localizedCaseInsensitiveContains("queued for approval") {
-                onProposals?(job, FileManager.default.homeDirectoryForCurrentUser.path)
+                showProposals(job)
             }
         case .result(let info):
             job.cost += info.costUSD
@@ -491,7 +492,7 @@ final class JobManager {
             Log.info("job[\(job.id)] done in \(ms) ms, \(job.steps.count) steps, $\(String(format: "%.4f", job.cost))")
             Log.info("act: go \(Log.short(job.goal, 80)) ok \(ms) ms")
         }
-        if let result, !job.bench { ledger.record(kind: "job", agent: nil, model: job.model, result: result, summary: Log.short(job.goal, 200)) }
+        if let result, !job.bench { ledger?.record(kind: "job", agent: nil, model: job.model, result: result, summary: Log.short(job.goal, 200)) }
         if !job.bench {
             TranscriptLog.append(kind: .job, you: job.hisWords, dot: line, app: job.appName,
                                  extra: ["model": job.model, "ms": String(ms), "steps": String(job.steps.count), "placement": job.placement.rawValue])
@@ -769,7 +770,7 @@ final class JobManager {
     private func pointAt(_ job: Job, _ point: CGPoint, label: String) {
         let primary = NSScreen.screens.first?.frame.height ?? 0
         Log.info("job[\(job.id)] point(x: \(Int(point.x)), y: \(Int(primary - point.y))) \(Log.short(label, 40))")
-        if !job.bench || job.placement == .front { overlay.point(at: point, label: Log.short(label, 24)) }
+        if !job.bench || job.placement == .front { overlay?.point(at: point, label: Log.short(label, 24)) }
     }
 
     private func rang(_ job: Job, label: String, point: CGPoint?) {
@@ -778,10 +779,80 @@ final class JobManager {
         let where_ = point.map { "target(x: \(Int($0.x)), y: \(Int(primary - $0.y)))" } ?? "target(none)"
         Log.info("job[\(job.id)] rang \(where_) \(Log.short(label, 40))")
         if job.placement == .front, let point {
-            overlay.target(at: point, radius: 24, label: label, hover: false)
+            overlay?.target(at: point, radius: 24, label: label, hover: false)
             say("that one's yours to press: \(label.lowercased()).", job: job, start: false)
         }
         onChange?()
+    }
+
+    // MARK: Queued sends become his cards (02 E)
+
+    private func approveScript() -> String? {
+        DotConfig.bundledScript("dot-atlas-approve.py", fallback: "~/Projects/dot-fast/scripts/dot-atlas-approve.py")
+    }
+
+    /// Runs the approve script off the main thread and hands back its JSON.
+    private func runApprove(_ args: [String], done: @escaping (Int32, Any?) -> Void) {
+        guard let script = approveScript() else { Log.warn("proposal: no dot-atlas-approve.py"); done(-1, nil); return }
+        let python = config.atlasPython
+        let root = DotConfig.expand(config.atlasRoot), harness = DotConfig.expand(config.atlasHarness)
+        DispatchQueue.global(qos: .userInitiated).async {
+            let p = Process()
+            p.executableURL = URL(fileURLWithPath: python)
+            p.arguments = [script] + args + ["--root", root, "--harness", harness]
+            let out = Pipe()
+            p.standardOutput = out
+            p.standardError = FileHandle.nullDevice
+            var code: Int32 = -1
+            var json: Any?
+            do {
+                try p.run()
+                let data = out.fileHandleForReading.readDataToEndOfFile()
+                p.waitUntilExit()
+                code = p.terminationStatus
+                let last = String(data: data, encoding: .utf8)?.split(separator: "\n").last.map(String.init) ?? ""
+                json = try? JSONSerialization.jsonObject(with: Data(last.utf8))
+            } catch {}
+            DispatchQueue.main.async { done(code, json) }
+        }
+    }
+
+    private func showProposals(_ job: Job) {
+        let session = JobConfigFile.sendSession(jobId: job.id, stamp: job.stamp)
+        runApprove(["list", "--session", session]) { [weak self, weak job] code, json in
+            guard let self, let job else { return }
+            guard code == 0, let list = json as? [[String: Any]] else { Log.warn("proposal: list failed (\(code))"); return }
+            for entry in list {
+                guard let card = ProposalCard(json: entry), !job.cardsShown.contains(card.proposal) else { continue }
+                job.cardsShown.insert(card.proposal)
+                self.present(card, job: job, session: session)
+            }
+        }
+    }
+
+    private func present(_ card: ProposalCard, job: Job, session: String) {
+        let pid8 = String(card.proposal.prefix(8))
+        var answered = false
+        let consent = ConsentCard(agentId: "job-\(job.id)", agent: "dot", title: card.title, detail: card.detail, guarded: card.guarded, onAllow: { [weak self, weak job] in
+            guard let self, !answered else { return }
+            answered = true
+            self.runApprove(["approve", "--session", session, "--proposal", card.proposal, "--digest", card.digest]) { code, json in
+                let status = ((json as? [String: Any])?["status"] as? String) ?? ((json as? [String: Any])?["error"] as? String) ?? "error \(code)"
+                Log.info("proposal: card \(pid8) \(card.operation) allowed \(status)")
+                let sent = code == 0 && status == "succeeded"
+                job?.session?.send(text: sent ? "[dot] he said yes; sent (\(card.title))." : "[dot] he said yes but it didn't go: \(status). say so in one line.")
+            }
+        }, onDeny: { [weak self, weak job] in
+            guard let self, !answered else { return }
+            answered = true
+            self.runApprove(["deny", "--session", session, "--proposal", card.proposal, "--digest", card.digest]) { code, json in
+                let status = ((json as? [String: Any])?["status"] as? String) ?? "error \(code)"
+                Log.info("proposal: card \(pid8) \(card.operation) denied \(status)")
+                job?.session?.send(text: "[dot] he said no; nothing was sent.")
+            }
+        })
+        Log.info("proposal: card \(pid8) \(card.operation) shown for job[\(job.id)]")
+        if let presentCard { presentCard(consent) } else { Log.warn("proposal: no card surface; \(pid8) waits in Atlas") }
     }
 
     // MARK: His input, pause and go on
@@ -888,7 +959,7 @@ final class JobManager {
             let r = await job.page.show()
             if let rung = job.rung, let point = rung.point {
                 try? await Task.sleep(nanoseconds: 300_000_000)
-                overlay.target(at: point, radius: 24, label: rung.label, hover: false)
+                overlay?.target(at: point, radius: 24, label: rung.label, hover: false)
             }
             return ("\(r.status.rawValue): \(r.detail)", r.status == .error, nil)
         }
@@ -950,12 +1021,12 @@ final class JobManager {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in self?.say(line, job: job, start: start, short: short, attempt: attempt + 1) }
             return
         }
-        overlay.greet(line, for: short ? 3 : 6)
+        overlay?.greet(line, for: short ? 3 : 6)
         if AudioDevices.outputIsSilent() {
             Log.info("speak: job (muted, text) \(Log.short(line, 60))")
             return
         }
         Log.info("speak: job \(Log.short(line, 60))")
-        speaker.speak(line)
+        speaker?.speak(line)
     }
 }

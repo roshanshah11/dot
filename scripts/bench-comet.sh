@@ -53,6 +53,19 @@ case "$cmd" in
     if lsof -nP -iTCP:"$PORT" -sTCP:LISTEN >/dev/null 2>&1; then
       die "port $PORT is already in use by another process; pick another PORT"
     fi
+    # Downloads take the real default path, into the bench's own folder (never his Downloads): no save prompt.
+    mkdir -p "$PROFILE/Default" /tmp/dot-bench/downloads
+    /usr/bin/python3 - "$PROFILE/Default/Preferences" <<'PY' || die "could not write the bench profile's download preferences"
+import json, sys
+path = sys.argv[1]
+try:
+    prefs = json.load(open(path))
+except Exception:
+    prefs = {}
+prefs.setdefault("download", {}).update({"default_directory": "/tmp/dot-bench/downloads", "prompt_for_download": False})
+prefs.setdefault("savefile", {}).update({"default_directory": "/tmp/dot-bench/downloads"})
+json.dump(prefs, open(path, "w"))
+PY
     args=(--user-data-dir="$PROFILE" --remote-debugging-port="$PORT" --no-first-run --no-default-browser-check
           --use-mock-keychain)
     if [[ "${HEADLESS:-0}" == 1 ]]; then
