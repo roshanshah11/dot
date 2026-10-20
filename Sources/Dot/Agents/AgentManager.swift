@@ -27,6 +27,10 @@ final class AgentManager {
         var idleWork: DispatchWorkItem?
         /// A scheduled run: quiet when it finishes, and its outcome goes back to the routine.
         var isRoutine = false
+        /// The routine's mode (07): a watch run shows no chip while it works and speaks up only when its result
+        /// says Notify: yes or asks him something.
+        var routineMode: RoutineMode?
+        var isWatchRun: Bool { isRoutine && routineMode == .watch }
         /// What he allowed for the rest of this task ("Allow for this task"), by allowanceKey; a new
         /// brief starts with none.
         var allowances: Set<String> = []
@@ -262,7 +266,7 @@ final class AgentManager {
     @discardableResult
     func handoff(brief: String, agentName: String?, context: ScreenContext?, shots: [ScreenShot]?,
                  extraImages: [(data: Data, mediaType: String)] = [], note: String? = nil, routine: Bool = false, agent known: Agent? = nil,
-                 fresh: Bool = false) -> Agent {
+                 fresh: Bool = false, routineMode: RoutineMode? = nil) -> Agent {
         let agent: Agent
         if let known {
             agent = known
@@ -274,6 +278,8 @@ final class AgentManager {
             agent = ensureAgent(named: agentName ?? "Dot")
         }
         if !routine { lastAddressed = agent.slug }
+        // 07: follow-ups the last turn folded in no longer make an idle agent look busy.
+        runs[agent.slug]?.session.settleFoldedMessages()
         let run: Run
         if let live = runs[agent.slug], live.session.isRunning, !live.isWorking {
             run = live
@@ -291,7 +297,7 @@ final class AgentManager {
             live.step(Log.short("he added: \(brief)", 90))
             live.turnsOwed += 1
             // A routine run by hand into a busy agent still reports back to its routine when the turn ends.
-            if routine { live.isRoutine = true }
+            if routine { live.isRoutine = true; live.routineMode = routineMode ?? .report }
             hud.upsertAgent(liveRow(live, live.lastLine))
             appendTranscript(agent, role: "user", text: brief)
             live.session.send(text: brief)
@@ -309,12 +315,14 @@ final class AgentManager {
         run.steps = []
         run.helpers = 0
         run.isRoutine = routine
+        run.routineMode = routine ? (routineMode ?? .report) : nil
         run.allowances = []
         run.turnsOwed = 1
         activities[agent.slug] = .thinking
         if !routine { Chimes.shared.play(.launch) }
         run.outputBaseline = TurnArtifacts.listing(of: agent.outputFolder)
-        hud.upsertAgent(run.row(Log.short(brief, 90)))
+        if run.isWatchRun { Log.info("agent[\(agent.slug)] watch run: no chip while it works") }
+        showRow(run.row(Log.short(brief, 90)), for: run)
 
         var text = brief
         var contextLines: [String] = []
@@ -485,7 +493,7 @@ final class AgentManager {
                 let said = run.finalText.isEmpty ? (result.resultText ?? "") : run.finalText
                 ledger.record(kind: "agent", agent: agent.slug, model: config.agentModel, result: result, summary: "(helpers still working) " + Log.short(said, 160))
                 run.lastLine = Log.short(Self.firstSentence(of: said), 90)
-                hud.upsertAgent(liveRow(run, run.lastLine))
+                showRow(liveRow(run, run.lastLine), for: run)
                 appendTranscript(agent, role: "progress", text: "helpers still working: \(Log.short(said, 300))")
                 Log.info("agent[\(agent.slug)] turn ended with \(run.session.backgroundTasks) background task(s) open; waiting for them")
                 run.deferredResult = result
@@ -507,7 +515,7 @@ final class AgentManager {
             let line = run.buffer.split(separator: "\n").last.map(String.init) ?? run.buffer
             if line.count > 12 {
                 run.lastLine = Log.short(line, 90)
-                hud.upsertAgent(liveRow(run, run.lastLine))
+                showRow(liveRow(run, run.lastLine), for: run)
             }
         case .assistantText(let text):
             if !text.isEmpty {
@@ -525,7 +533,7 @@ final class AgentManager {
             postActivity(agent.slug)
             run.lastLine = line
             run.step(Log.short(line, 90))
-            hud.upsertAgent(liveRow(run, line))
+            showRow(liveRow(run, line), for: run)
             appendTranscript(agent, role: "tool", text: line)
         case .toolResult(let content, let isError):
             // What the tool said back, trimmed: Home shows it under the step when he opens it.
@@ -545,6 +553,14 @@ final class AgentManager {
         let waiting = Set(hud.openConsents.map(\.agentId)).count
         NotificationCenter.default.post(name: .dotAgentActivity, object: nil,
                                         userInfo: AgentActivityReport(activity: activity, waiting: waiting, agent: slug).userInfo)
+    }
+
+    /// A running row, unless it is a watch run's (07: no chip while it works). A watch run's question for him
+    /// (a card) and its result still show, and once its chip is up it keeps updating.
+    private func showRow(_ row: AgentRow, for run: Run) {
+        // An earlier chip of the agent's ("!" from the last watch run, or a result) is left as it is.
+        if run.isWatchRun, row.state == .running, hud.model.agents.first(where: { $0.id == row.id })?.state != .waiting { return }
+        hud.upsertAgent(row)
     }
 
     /// The row for a working agent: "needs you" while one of its cards is open (a helper's step must
@@ -575,9 +591,12 @@ final class AgentManager {
         let quiet = run.isRoutine   // a scheduled run lands in the thread without a chime or a word (HeyClicky's routines do the same)
         let unprompted = run.turnsOwed == 0
         let onCall = config.quietOnCalls && CallPresence.isOnCall()
-        let report = AgentReport.decide(speakResults: config.speakAgentResults, routineMode: quiet ? .report : nil, notify: nil,
+        let report = AgentReport.decide(speakResults: config.speakAgentResults, routineMode: quiet ? (run.routineMode ?? .report) : nil, notify: parsed.notify,
                                         unprompted: unprompted, onCall: onCall, threadOpen: isThreadOpen?(agent.slug) == true,
                                         outputSilent: AudioDevices.outputIsSilent(), isQuestion: parsed.isQuestion)
+        // Its last line promises more that no turn will do (07): "unfinished", with Continue.
+        let unfinished = !failed && report.chip != .alert && AgentRecovery.promisesLater(text)
+        if unfinished { Log.info("agent[\(agent.slug)] its last line promises more work; marked unfinished") }
         let spoken = Self.spokenSummary(summary)
         let more = SpeechText.clean(text).count > spoken.count + 40 ? " the rest is on its card." : ""
         // The done title is the row's line (TC-01); the first sentence when the agent gave none. A text card shows the
@@ -586,7 +605,17 @@ final class AgentManager {
                            state: failed ? .failed : .done, result: text, outputCount: outputs.count, outputs: shown, nextActions: parsed.nextActions)
         if report.text { row.holdUntil = Date().addingTimeInterval(NotchSurface.readingTime(characters: (spoken + more).count)) }
         if report.chip == .alert, !failed { row.chip = .attention }
-        hud.upsertAgent(row)
+        if unfinished { row.chip = .unfinished; row.line = Log.short(summary, 160) }
+        if report.chip == .none {
+            // A watch run with nothing for him: the transcript and Home's unread dot only (07). A row it put up while
+            // it worked (a card it asked) goes; an earlier "!" he has not seen stays.
+            if let shown = hud.model.agents.first(where: { $0.id == agent.slug }), shown.state == .running || shown.state == .waiting {
+                hud.removeAgent(id: agent.slug)
+            }
+            Log.info("agent[\(agent.slug)] watch run: nothing needs him (Notify: \(parsed.notify.map { $0 ? "yes" : "no" } ?? "none")); no chip, no word")
+        } else {
+            hud.upsertAgent(row)
+        }
         appendTranscript(agent, role: "result", text: "\(result.subtype) in \(result.durationMs) ms, $\(String(format: "%.3f", result.costUSD))")
         // The turn's record keeps what HeyClicky's does (G1): its title, the next steps it offered and its files
         // (by name inside output/, by full path or URL outside it).
@@ -612,8 +641,11 @@ final class AgentManager {
         if report.chime { Chimes.shared.play(failed ? .failed : .done) }
         activities[agent.slug] = nil
         postActivity()
-        // The row's line rides along as the context for the quip that follows (docs/alive.md, round two).
-        NotificationCenter.default.post(name: .dotAgentFinished, object: nil, userInfo: ["failed": failed, "line": failed ? summary : (parsed.doneTitle ?? summary)])
+        // The row's line rides along as the context for the quip that follows (docs/alive.md, round two). A quiet watch
+        // run every two hours is no moment for the orb.
+        if report.chip != .none {
+            NotificationCenter.default.post(name: .dotAgentFinished, object: nil, userInfo: ["failed": failed, "line": failed ? summary : (parsed.doneTitle ?? summary)])
+        }
         // Not spoken when he is reading that agent's thread in Home (TC-03), nor into a muted Mac; under 200 characters when spoken.
         if report.voice, !summary.isEmpty {
             SpeakLog.as("agent (\(agent.name))") { speaker.speak("\(agent.name) here. \(spoken)\(more)") }
@@ -1089,6 +1121,8 @@ final class AgentManager {
             run.outputBaseline = TurnArtifacts.listing(of: agent.outputFolder)
             run.lastLine = "back after Dot restarted"
             if brief != nil || !info.pending.isEmpty { hud.upsertAgent(run.row(run.lastLine)) }
+            // 07: a finished session taken back from the host closes when idle like any other (it never did).
+            if brief == nil { scheduleIdleStop(run) }
             Log.info("agent[\(agent.slug)] taken back from the agent host (pid \(info.pid), \(info.alive ? "running" : "ended"), from seq \(from) of \(info.lastSeq), \(info.pending.count) waiting)")
         }
         let sessionIds = Set(agents.compactMap { agent -> String? in
@@ -1132,16 +1166,26 @@ final class AgentManager {
     /// One line for him on how an agent is doing (nil slug: every agent that is busy or waiting), from
     /// what Dot already knows: no turn for the agent, nothing spent (G2, "progress?").
     /// An idle session closes after `agentIdleMinutes`; a new brief cancels it.
-    private func scheduleIdleStop(_ run: Run) {
+    /// 07: the timer looks again instead of giving up when the agent is busy or waits on a card, and messages its last
+    /// turn folded in no longer count as work (AgentIdle). Before, no "idle, session closed" was logged after 10-17.
+    private func scheduleIdleStop(_ run: Run, after seconds: TimeInterval? = nil) {
         run.idleWork?.cancel()
         let work = DispatchWorkItem { [weak self, weak run] in
-            guard let self, let run, !run.isWorking, !self.hud.hasConsent(agent: run.agent.slug) else { return }
-            run.session.stop()
-            if self.runs[run.agent.slug] === run { self.runs[run.agent.slug] = nil }
-            Log.info("agent[\(run.agent.slug)] idle, session closed")
+            guard let self, let run, run.session.isRunning else { return }
+            run.session.settleFoldedMessages()
+            let card = self.hud.hasConsent(agent: run.agent.slug)
+            switch AgentIdle.verdict(working: run.isWorking, waitingOnCard: card, idleSince: run.session.lastActivity, now: Date(), idleMinutes: self.config.agentIdleMinutes) {
+            case .close:
+                run.session.stop()
+                if self.runs[run.agent.slug] === run { self.runs[run.agent.slug] = nil }
+                Log.info("agent[\(run.agent.slug)] idle, session closed")
+            case .wait(let later):
+                Log.info("agent[\(run.agent.slug)] not idle (\(run.isWorking ? "working" : card ? "a card is open" : "active lately")); checking again in \(Int(later)) s")
+                self.scheduleIdleStop(run, after: later)
+            }
         }
         run.idleWork = work
-        DispatchQueue.main.asyncAfter(deadline: .now() + Double(max(config.agentIdleMinutes, 1)) * 60, execute: work)
+        DispatchQueue.main.asyncAfter(deadline: .now() + (seconds ?? Double(max(config.agentIdleMinutes, 1)) * 60), execute: work)
     }
 
     /// The agent host's last line seen, kept on every result so a crash (no clean quit) loses no turn (AG-12).

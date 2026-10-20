@@ -252,6 +252,29 @@ public enum Quips {
         return next
     }
 
+    /// A try whose line never showed (07): a gate closed while it was written. The history goes back to how it was
+    /// before the try for this situation (the cooldown, the once-a-day stamp and the event's once), so the slot is
+    /// free again; Noticer's own one-write-a-minute throttle stays. Lines shown meanwhile and the morning's first
+    /// sight are kept from `current`.
+    public static func abandoned(_ situation: QuipSituation, before: QuipHistory, current: QuipHistory, event: String? = nil) -> QuipHistory {
+        var next = current
+        next.lastAt = before.lastAt
+        next.days[situation.rawValue] = before.days[situation.rawValue]
+        if let event { next.events[event] = before.events[event] }
+        return next
+    }
+
+    /// Which gate is shut, for the log's "quip: <situation> not shown (<gate>)"; nil when all are open.
+    public static func closedGate(cooldownOn: Bool, secondsSinceKey: TimeInterval, onCall: Bool, busy: Bool, reduceMotion: Bool, offerUp: Bool) -> String? {
+        if !cooldownOn { return "chattiness is 0" }
+        if secondsSinceKey < typingWindow { return "typing" }
+        if onCall { return "on a call" }
+        if busy { return "dot is busy" }
+        if reduceMotion { return "reduce motion" }
+        if offerUp { return "an offer is up" }
+        return nil
+    }
+
     public static func pick(_ situation: QuipSituation, now: Date, chattiness: Int, history: QuipHistory,
                             calendar: Calendar = .current) -> (line: String, history: QuipHistory)? {
         var generator = SystemRandomNumberGenerator()

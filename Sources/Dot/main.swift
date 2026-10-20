@@ -57,7 +57,7 @@ case "--help", "-h":
     exit(0)
 case "--check":
     let status = Permissions.status()
-    let config = DotConfig.load()
+    let config = DotConfig.peek()
     print("microphone:        \(status.microphone ? "granted" : "missing")")
     print("screen recording:  \(status.screenRecording ? "granted" : "missing")")
     print("accessibility:     \(status.accessibility ? "granted" : "missing")")
@@ -70,7 +70,7 @@ case "--check":
     print("tts:               \(config.resolvedTTSCommand()?.joined(separator: " ") ?? "apple speech")")
     exit(status.allGranted ? 0 : 1)
 case "--today":
-    let config = DotConfig.load()
+    let config = DotConfig.peek()
     guard let command = config.resolvedTodayCommand() else { print("atlas today helper not available"); exit(1) }
     let process = Process()
     process.executableURL = URL(fileURLWithPath: command[0])
@@ -104,13 +104,13 @@ case "--snapshot":
     exit(0)
 case "--prompt":
     // The talk or think system prompt exactly as a session gets it (round eight's panel dry runs read it).
-    let config = DotConfig.load()
+    let config = DotConfig.peek()
     let which = arguments.dropFirst().first ?? "think"
     print((which == "talk" ? Prompts.talk : Prompts.think) + Prompts.courseIndex(in: config.talkRootURL))
     exit(0)
 case "--quip-test":
     // Context lines (docs/alive.md, round two): the real writer on three made-up moments, outside the app.
-    let config = DotConfig.load()
+    let config = DotConfig.peek()
     let passed = MainActor.assumeIsolated { QuipWriter.selfTest(config: config) }
     exit(passed ? 0 : 1)
 case "--selftest":

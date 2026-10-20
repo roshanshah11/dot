@@ -13,13 +13,26 @@ public struct RoutineSchedule: Codable, Equatable, Sendable {
     public var weekday: Int?
     /// For `.hours`.
     public var everyHours: Int?
+    /// For `.hours` with a time window (07, "every 2 hours from 9 am to midnight"): the first run's hour and the last
+    /// hour a run may start, 24 being midnight. Runs fall on the window's grid (9, 11, ..., 23), then the next day's
+    /// start, and never outside it. An end before the start crosses midnight. Nil: around the clock, as before.
+    public var fromHour: Int?
+    public var untilHour: Int?
 
-    public init(kind: Kind, hour: Int = 9, minute: Int = 0, weekday: Int? = nil, everyHours: Int? = nil) {
+    public init(kind: Kind, hour: Int = 9, minute: Int = 0, weekday: Int? = nil, everyHours: Int? = nil, fromHour: Int? = nil, untilHour: Int? = nil) {
         self.kind = kind
         self.hour = hour
         self.minute = minute
         self.weekday = weekday
         self.everyHours = everyHours
+        self.fromHour = fromHour
+        self.untilHour = untilHour
+    }
+
+    /// Both ends of a window, when it has one.
+    public var window: (from: Int, until: Int)? {
+        guard kind == .hours, let fromHour, let untilHour, (0...23).contains(fromHour), (0...24).contains(untilHour), fromHour != untilHour % 24 || untilHour == 24 else { return nil }
+        return (fromHour, untilHour)
     }
 
     static let weekdayNames = ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"]
@@ -34,13 +47,19 @@ public struct RoutineSchedule: Codable, Equatable, Sendable {
         var s = text.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
         s = s.replacingOccurrences(of: #"[.,!]"#, with: "", options: .regularExpression)
         s = s.replacingOccurrences(of: "a.m", with: "am").replacingOccurrences(of: "p.m", with: "pm")
-        // Hours.
-        if s.range(of: #"^(hourly|every hour|each hour|once an hour)$"#, options: .regularExpression) != nil { return RoutineSchedule(kind: .hours, everyHours: 1) }
-        if let m = firstMatch(#"every (\w+) hours?"#, in: s) {
+        // Hours, with a time window when the words give one ("every 2 hours between 9 am and midnight", "every 2 h, 9-5").
+        var every: Int?
+        if s.range(of: #"^(hourly|every hour|each hour|once an hour)\b"#, options: .regularExpression) != nil {
+            every = 1
+        } else if let m = firstMatch(#"every (\d+)\s*(?:hours?|hrs?|h)\b"#, in: s) ?? firstMatch(#"every (\w+) (?:hours?|hrs?)\b"#, in: s) {
             let word = m[1]
-            if let n = Int(word) ?? numberWords[word], (1...24).contains(n) { return RoutineSchedule(kind: .hours, everyHours: n) }
-            if word == "few" || word == "couple" { return RoutineSchedule(kind: .hours, everyHours: 3) }
-            return nil
+            if let n = Int(word) ?? numberWords[word], (1...24).contains(n) { every = n }
+            else if word == "few" || word == "couple" { every = 3 }
+            else { return nil }
+        }
+        if let every {
+            let window = parseWindow(in: s)
+            return RoutineSchedule(kind: .hours, everyHours: every, fromHour: window?.from, untilHour: window?.until)
         }
         let time = parseTime(in: s)
         // A weekday name, singular or plural.
@@ -59,6 +78,33 @@ public struct RoutineSchedule: Codable, Equatable, Sendable {
         }
         if let t = time ?? periodTime(in: s), s.contains("at") || periodTime(in: s) != nil { return RoutineSchedule(kind: .daily, hour: t.0, minute: t.1) }
         return nil
+    }
+
+    /// One end of a window: "9", "9 am", "11:30 pm", "nine", "noon", "midnight".
+    static let windowTime = #"(\d{1,2}(?::\d{2})?(?:\s*(?:am|pm))?|noon|midnight|(?:one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve)(?:\s*(?:am|pm))?)"#
+
+    /// "between A and B", "from A to B", "A to B", "A-B"; midnight is 24 as the end and noon is 12. An end with no am or
+    /// pm that would come before the start is in the afternoon ("9-5" is 9 am to 5 pm).
+    static func parseWindow(in s: String) -> (from: Int, until: Int)? {
+        let t = windowTime
+        guard let m = firstMatch(#"\bbetween "# + t + #" and "# + t + #"\b"#, in: s)
+                ?? firstMatch(#"\b"# + t + #"\s*(?:to|until|till|through|-|–)\s*"# + t + #"(?![\d:])"#, in: s),
+              m.count >= 3, let start = windowHour(m[1], isEnd: false), var end = windowHour(m[2], isEnd: true) else { return nil }
+        if !end.suffixed, end.hour <= start.hour, end.hour + 12 <= 24 { end.hour += 12 }
+        guard (0...23).contains(start.hour), (1...24).contains(end.hour), start.hour != end.hour % 24 || end.hour == 24 else { return nil }
+        return (start.hour, end.hour)
+    }
+
+    static func windowHour(_ token: String, isEnd: Bool) -> (hour: Int, suffixed: Bool)? {
+        let token = token.trimmingCharacters(in: .whitespaces)
+        if token == "noon" { return (12, true) }
+        if token == "midnight" { return (isEnd ? 24 : 0, true) }
+        guard let m = firstMatch(#"^(\d{1,2}|\w+)(?::(\d{2}))?\s*(am|pm)?$"#, in: token), var hour = Int(m[1]) ?? numberWords[m[1]] else { return nil }
+        let suffix = m.count > 3 ? m[3] : ""
+        if suffix == "pm", hour < 12 { hour += 12 }
+        if suffix == "am", hour == 12 { hour = isEnd ? 24 : 0 }
+        guard (0...24).contains(hour) else { return nil }
+        return (hour, !suffix.isEmpty)
     }
 
     static func firstMatch(_ pattern: String, in text: String) -> [String]? {
@@ -102,6 +148,7 @@ public struct RoutineSchedule: Codable, Equatable, Sendable {
     public func next(after date: Date, calendar: Calendar = .current) -> Date {
         switch kind {
         case .hours:
+            if let window { return nextInWindow(after: date, window: window, calendar: calendar) }
             let step = TimeInterval(max(everyHours ?? 1, 1) * 3600)
             let next = date.addingTimeInterval(step).timeIntervalSinceReferenceDate
             return Date(timeIntervalSinceReferenceDate: floor(next / 60) * 60)
@@ -125,11 +172,42 @@ public struct RoutineSchedule: Codable, Equatable, Sendable {
         }
     }
 
+    /// The window's grid, in hours from the start of the day it begins (24 and up are the next day).
+    func windowSlots(_ window: (from: Int, until: Int)) -> [Int] {
+        let step = max(everyHours ?? 1, 1)
+        let end = window.until > window.from ? window.until : window.until + 24
+        return Array(stride(from: window.from, through: end, by: step))
+    }
+
+    func nextInWindow(after date: Date, window: (from: Int, until: Int), calendar: Calendar) -> Date {
+        let slots = windowSlots(window)
+        let today = calendar.startOfDay(for: date)
+        for offset in -1...2 {
+            guard let day = calendar.date(byAdding: .day, value: offset, to: today) else { continue }
+            for slot in slots {
+                guard let base = calendar.date(byAdding: .day, value: slot / 24, to: day),
+                      let candidate = calendar.date(bySettingHour: slot % 24, minute: 0, second: 0, of: base), candidate > date else { continue }
+                return candidate
+            }
+        }
+        return date.addingTimeInterval(TimeInterval(max(everyHours ?? 1, 1) * 3600))
+    }
+
+    static func hourWord(_ hour: Int) -> String {
+        switch hour % 24 {
+        case 0: return "midnight"
+        case 12: return "noon"
+        case let h: return "\(h % 12 == 0 ? 12 : h % 12) \(h < 12 ? "am" : "pm")"
+        }
+    }
+
     public var words: String {
         switch kind {
         case .hours:
             let n = everyHours ?? 1
-            return n == 1 ? "every hour" : "every \(n) hours"
+            let every = n == 1 ? "every hour" : "every \(n) hours"
+            guard let window else { return every }
+            return "\(every), \(Self.hourWord(window.from)) to \(Self.hourWord(window.until))"
         case .daily: return "every day at \(clock)"
         case .weekdays: return "weekdays at \(clock)"
         case .weekly:
@@ -162,11 +240,17 @@ public struct Routine: Codable, Identifiable, Equatable, Sendable {
     /// Failed runs in a row; three pause the routine.
     public var failures: Int
     public var lastNote: String?
+    /// report: say what changed; watch: check, and speak up only when something needs him (07). Nil in files from
+    /// before 07, which are report routines.
+    public var mode: RoutineMode?
+
+    /// The mode a run takes.
+    public var runMode: RoutineMode { mode ?? .report }
 
     /// A new routine runs once right away unless `runFirstNow` is false (round seven, G3: HeyClicky's
     /// first run happens at once, so he sees what the routine makes); after that it keeps its schedule.
     public init(id: String = UUID().uuidString.lowercased(), agent: String, agentName: String, brief: String, schedule: RoutineSchedule,
-                now: Date = Date(), runFirstNow: Bool = true, title: String? = nil) {
+                now: Date = Date(), runFirstNow: Bool = true, title: String? = nil, mode: RoutineMode = .report) {
         self.id = id
         self.agent = agent
         self.agentName = agentName
@@ -179,6 +263,7 @@ public struct Routine: Codable, Identifiable, Equatable, Sendable {
         self.nextRun = runFirstNow ? now : schedule.next(after: now)
         self.failures = 0
         self.lastNote = nil
+        self.mode = mode
     }
 
     public static let failuresBeforePause = 3

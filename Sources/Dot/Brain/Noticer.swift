@@ -155,8 +155,9 @@ final class Noticer {
     /// A switch with nothing to notice: an event about to start (once per event, past the cooldown),
     /// then the time of day, a deadline due today, or the fifth visit to one app in ten minutes.
     private func quipAtSwitch(repeated: Bool, screen: ScreenContext) {
-        let dueToday = !(atlas.brief?.deadlines(withinDays: 0).isEmpty ?? true)
+        // 07: a deadline still ahead today (an untimed one until 18:00; an untimed exam until the exam starts).
         let events = upcomingEvents()
+        let dueToday = Upcoming.dueToday(events, now: Date())
         quip(among: { history in
             let soon: [QuipSituation] = Upcoming.due(events, now: Date(), history: history) == nil ? [] : [.upcoming]
             return soon + Quips.atSwitch(now: Date(), history: history, dueToday: dueToday, repeated: repeated)
@@ -171,7 +172,8 @@ final class Noticer {
         let now = Date()
         quipHistory = Quips.sawBreak(at: now, history: quipHistory)
         let history = quipHistory
-        guard chat.quipCooldown != nil, !writer.isBusy, quipGatesOpen else { return false }
+        // An offer that is up closes the gate before the write too, not only after it (07).
+        guard chat.quipCooldown != nil, !writer.isBusy, quipGatesOpen, Self.pending == nil else { return false }
         let writes = config.contextQuips
         guard let situation = situations(history).first(where: { situation in
             Quips.allows(situation, now: now, chattiness: chat.level, history: history)
@@ -183,7 +185,9 @@ final class Noticer {
         // check can't start another run at every break.
         guard writes, lastWriteAt.map({ now.timeIntervalSince($0) >= 60 }) ?? true else { return showWritten(situation, event: event) }
         lastWriteAt = now
-        quipHistory = Quips.attempted(situation, now: now, history: quipHistory, event: event.map { Upcoming.key($0) })
+        let beforeTry = quipHistory
+        let eventKey = event.map { Upcoming.key($0) }
+        quipHistory = Quips.attempted(situation, now: now, history: quipHistory, event: eventKey)
         let screen = screen ?? AccessibilityContext.capture(maxElements: 0, timeBudget: 0.12)
         let context = QuipContext(situation: situation, now: now, app: screen.appName, windowTitle: screen.windowTitle,
                                   next: event ?? Upcoming.relevant(to: situation, in: events, now: now), agent: recentAgent(at: now))
@@ -191,7 +195,9 @@ final class Noticer {
             guard let self else { return }
             // Up to six seconds have passed: long enough to start typing, take a call or get an offer up.
             guard self.chat.quipCooldown != nil, self.quipGatesOpen, Self.pending == nil else {
-                Log.info("quip: \(situation.rawValue): a gate closed while the line was written")
+                // Not shown: say which gate, and give back the cooldown and the day's slot (07); the write throttle stays.
+                Log.info("quip: \(situation.rawValue) not shown (\(self.closedGate() ?? "a gate"))")
+                self.quipHistory = Quips.abandoned(situation, before: beforeTry, current: self.quipHistory, event: eventKey)
                 return
             }
             let model = self.config.quipModel
@@ -246,6 +252,16 @@ final class Noticer {
     }
 
     /// The mischief guard for quips (docs/alive.md, Phase 2 item 8), read from the system.
+    /// The gate that is shut, by name, for the log.
+    private func closedGate() -> String? {
+        Quips.closedGate(cooldownOn: chat.quipCooldown != nil,
+                         secondsSinceKey: CGEventSource.secondsSinceLastEventType(.hidSystemState, eventType: .keyDown),
+                         onCall: config.quietOnCalls && CallPresence.isOnCall(),
+                         busy: !(canSpeakUp?() ?? true),
+                         reduceMotion: NSWorkspace.shared.accessibilityDisplayShouldReduceMotion,
+                         offerUp: Self.pending != nil)
+    }
+
     private var quipGatesOpen: Bool {
         Quips.gatesOpen(secondsSinceKey: CGEventSource.secondsSinceLastEventType(.hidSystemState, eventType: .keyDown),
                         onCall: config.quietOnCalls && CallPresence.isOnCall(),

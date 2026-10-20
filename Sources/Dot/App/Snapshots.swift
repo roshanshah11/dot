@@ -15,7 +15,7 @@ enum Snapshots {
         try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         func wanted(_ name: String) -> Bool { group == nil || group == name }
         // Read the config without writing it back (DotConfig.load saves any new keys into his file).
-        let accent = ((try? Data(contentsOf: DotConfig.fileURL)).flatMap { try? JSONDecoder().decode(DotConfig.self, from: $0) } ?? DotConfig()).pointerColorHex
+        let accent = DotConfig.peek().pointerColorHex
         var sheet: [(String, NSImage)] = []
         func keep(_ name: String, _ image: NSImage?) {
             guard let image, let data = png(image) else { print("snapshot: \(name) failed"); return }
@@ -221,6 +221,10 @@ enum Snapshots {
         let jobPaused = chip("job-12", "Listing search", "you clicked in its tab", .paused, age: 2, kind: .job,
                              steps: ["opening example.com/jobs", "searching: Northwind Bank analyst"])
         let jobDone = chip("job-12", "Listing search", "the Northwind Bank listing at example.com is still open; it closes friday.", .done, age: 2, kind: .job)
+        // 07: an agent whose last line promised more, and a watch run that needs him.
+        let unfinished = chip("prep", "Call Prep", "two research passes on Northwind Bank are still running; the questions follow when they come back.", .unfinished, age: 3)
+        let unfinishedFolded = chip("prep", "Call Prep", "still running", .unfinished, age: 60)
+        let alert = chip("inbox", "Inbox Keeper", "Sam Rivera replied about the COURSE 101 study group and asked for a time.", .attention, age: 2)
         return [
             ("agent-running-card", make([running])),
             ("agent-folded-avatar", make([folded])),
@@ -237,6 +241,9 @@ enum Snapshots {
             ("job-folded", make([jobFolded])),
             ("job-paused", make([jobPaused])),
             ("job-done", make([jobDone])),
+            ("unfinished-card", make([unfinished])),
+            ("unfinished-held-avatar", make([unfinishedFolded] + Array(many.prefix(1)))),
+            ("watch-alert", make([alert])),
         ]
     }
 

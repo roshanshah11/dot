@@ -2604,9 +2604,13 @@ final class Talk {
                 } else {
                     Log.warn("stop tag for an unknown agent: \(name)")
                 }
-            case .routine(let agentName, let when, let brief):
-                if let scheduler {
-                    if let routine = scheduler.add(agentName: agentName, when: when, brief: brief) {
+            case .routine(let agentName, let when, let tagBrief):
+                // 07: a brief that starts "watch:" is a watch routine; a bench turn only says what it would add.
+                let (mode, brief) = RoutineMode.split(brief: tagBrief)
+                if benchMode {
+                    Log.info("bench: would add routine \(agentName) \(RoutineSchedule.parse(when)?.words ?? "unreadable: \(when)") \(mode.rawValue)")
+                } else if let scheduler {
+                    if let routine = scheduler.add(agentName: agentName, when: when, brief: brief, mode: mode) {
                         hud.notify(NotchNotice(id: "routine-\(routine.id)", icon: "clock.arrow.2.circlepath", title: "routine set: \(routine.schedule.words)",
                                                detail: "\(routine.agentName): \(Log.short(brief, 90))", tone: .good,
                                                actionTitle: "undo", action: { [weak scheduler] in scheduler?.remove(routine.id) }, seconds: 14))

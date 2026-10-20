@@ -273,6 +273,12 @@ struct DotConfig: Codable {
 
     static var fileURL: URL { directory.appendingPathComponent("config.json") }
 
+    /// The config as it is on disk, never written back (load() saves any keys a newer build added into his file):
+    /// for `Dot --prompt` and `Dot --snapshot`, which a dev build runs at night beside the installed app.
+    static func peek() -> DotConfig {
+        (try? Data(contentsOf: fileURL)).flatMap { try? JSONDecoder().decode(DotConfig.self, from: $0) } ?? DotConfig()
+    }
+
     static func load() -> DotConfig {
         let fm = FileManager.default
         if let data = try? Data(contentsOf: fileURL) {

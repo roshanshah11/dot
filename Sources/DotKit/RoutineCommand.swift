@@ -13,10 +13,12 @@ public struct RoutineCommand: Equatable, Sendable {
     public let when: String?
     /// The brief each run gets, self-contained; create needs it, update may change it.
     public let task: String?
+    /// report or watch (07); nil leaves a routine's mode as it is, and a new one reports.
+    public let mode: RoutineMode?
 
     /// Nil when the command could not be carried out: no title, a create without a schedule Dot can
     /// read or without a task, an update that changes nothing or names a schedule Dot cannot read.
-    public init?(action: Action, title: String, when: String? = nil, task: String? = nil) {
+    public init?(action: Action, title: String, when: String? = nil, task: String? = nil, mode: RoutineMode? = nil) {
         let title = RoutineCommand.clean(title)
         guard !title.isEmpty, title.count <= 80 else { return nil }
         let when = when.map(RoutineCommand.clean).flatMap { $0.isEmpty ? nil : $0 }
@@ -25,7 +27,7 @@ public struct RoutineCommand: Equatable, Sendable {
         case .create:
             guard let when, RoutineSchedule.parse(when) != nil, task != nil else { return nil }
         case .update:
-            guard when != nil || task != nil else { return nil }
+            guard when != nil || task != nil || mode != nil else { return nil }
             if let when, RoutineSchedule.parse(when) == nil { return nil }
         case .pause, .resume, .delete:
             break
@@ -34,6 +36,7 @@ public struct RoutineCommand: Equatable, Sendable {
         self.title = title
         self.when = action == .create || action == .update ? when : nil
         self.task = action == .create || action == .update ? task : nil
+        self.mode = action == .create || action == .update ? mode : nil
     }
 
     public var schedule: RoutineSchedule? { when.flatMap(RoutineSchedule.parse) }
@@ -46,11 +49,12 @@ public struct RoutineCommand: Equatable, Sendable {
               let actionWord = object["action"] as? String,
               let action = Action(rawValue: actionWord.trimmingCharacters(in: .whitespaces).lowercased()),
               let title = object["title"] as? String else { return nil }
-        return RoutineCommand(action: action, title: title, when: object["when"] as? String, task: object["task"] as? String)
+        let mode = (object["mode"] as? String).flatMap { RoutineMode(rawValue: $0.trimmingCharacters(in: .whitespaces).lowercased()) }
+        return RoutineCommand(action: action, title: title, when: object["when"] as? String, task: object["task"] as? String, mode: mode)
     }
 
     /// How an agent asks for one, for its brief's context lines.
-    public static let howTo = #"To make, change, pause, resume or delete one of your routines, end your reply with one line Routine: {"action":"create|update|pause|resume|delete","title":"<two to four words>","when":"<plain words, like every weekday at 8 am>","task":"<the whole brief for each run, without the schedule>"}; the other actions name a title from this list."#
+    public static let howTo = #"To make, change, pause, resume or delete one of your routines, end your reply with one line Routine: {"action":"create|update|pause|resume|delete","title":"<two to four words>","when":"<plain words, like every weekday at 8 am, or every 2 hours from 9 am to midnight>","task":"<the whole brief for each run, without the schedule>","mode":"report|watch"}; mode watch is for checking something over time and pinging him only when it needs him, report (the default) says what changed each run; the other actions name a title from this list."#
 
     /// One spelling for comparing titles: lowercased, single spaces, no wrapping quotes or end punctuation.
     static func key(_ title: String) -> String { clean(title).lowercased() }
@@ -122,11 +126,13 @@ extension RoutineBook {
         case .create, .update:
             guard let i = index else {
                 guard command.action == .create, let schedule = command.schedule, let task = command.task else { return .notFound(command.title) }
-                let routine = Routine(agent: slug, agentName: agentName, brief: task, schedule: schedule, now: now, runFirstNow: false, title: command.title)
+                let routine = Routine(agent: slug, agentName: agentName, brief: task, schedule: schedule, now: now, runFirstNow: false, title: command.title,
+                                      mode: command.mode ?? .report)
                 routines.append(routine)
                 return .created(routine)
             }
             if let task = command.task { routines[i].brief = task }
+            if let mode = command.mode { routines[i].mode = mode }
             if let schedule = command.schedule {
                 routines[i].schedule = schedule
                 routines[i].nextRun = schedule.next(after: now)
