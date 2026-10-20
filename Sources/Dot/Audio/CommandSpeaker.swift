@@ -102,8 +102,9 @@ final class CommandSpeaker: NSObject, TTSProvider, AVAudioPlayerDelegate {
             playNextIfIdle()
             return
         }
+        SpeakLog.spoke(text)
         guard process != nil, ready else {
-            fallback.speak(text, onStart: onStart)
+            SpeakLog.handOn { fallback.speak(text, onStart: onStart) }
             return
         }
         let item = Item(text: text, onStart: onStart)
@@ -226,7 +227,7 @@ final class CommandSpeaker: NSObject, TTSProvider, AVAudioPlayerDelegate {
             }
             guard let url = item.url else {
                 // The worker could not say this one; Apple speech says it, out of band.
-                fallback.speak(item.text, onStart: item.onStart)
+                SpeakLog.handOn { fallback.speak(item.text, onStart: item.onStart) }
                 continue
             }
             do {

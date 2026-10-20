@@ -7,7 +7,8 @@ import Foundation
 ///     Done: <two to five words naming the outcome>
 ///     Next: <an offer under 40 characters>           up to four; none when it asks him something
 ///     Files: <a path or URL it made>                  one per line, up to eight
-///     Routine: {"action":"create","title":"...","when":"...","task":"..."}
+///     Routine: {"action":"create","title":"...","when":"...","task":"...","mode":"watch"}
+///     Notify: yes|no                                  a watch run: whether something needs him (07)
 ///
 /// The lines close the message in any order, with blank lines between them allowed; the same words
 /// higher up are the body's own. Every line of the block leaves the body, and a value that does
@@ -26,6 +27,9 @@ public struct AgentResult: Equatable {
     /// (HeyClicky makes the SUMMARY the main question on such a turn, TC-05). Such a turn carries
     /// no next actions; any the agent wrote anyway are dropped.
     public let isQuestion: Bool
+    /// A watch run's verdict (07): yes when something needs him (a reply owed, a decision, a change he must act
+    /// on), no when not; nil when the line is missing or unreadable, which a watch run takes as no.
+    public let notify: Bool?
 
     /// The first next action, for callers from before there were four.
     public var nextAction: String? { nextActions.first }
@@ -38,20 +42,21 @@ public struct AgentResult: Equatable {
     public static let maxFiles = 8
 
     public init(body: String, doneTitle: String? = nil, nextActions: [String] = [], files: [String] = [],
-                routine: RoutineCommand? = nil, isQuestion: Bool = false) {
+                routine: RoutineCommand? = nil, isQuestion: Bool = false, notify: Bool? = nil) {
         self.body = body
         self.doneTitle = doneTitle
         self.nextActions = nextActions
         self.files = files
         self.routine = routine
         self.isQuestion = isQuestion
+        self.notify = notify
     }
 
-    enum Key { case next, done, files, routine }
+    enum Key { case next, done, files, routine, notify }
 
     /// A contract line: the key, optionally after a list marker and in bold ("- **Next:** ..."), a colon, the value.
     static let contractLine = try! NSRegularExpression(
-        pattern: #"^(?:[-*•]\s+)?\**\s*(next(?:\s+(?:step|action))?|done|files?|routine)\s*\**\s*:\s*\**\s*(.*?)\s*$"#,
+        pattern: #"^(?:[-*•]\s+)?\**\s*(next(?:\s+(?:step|action))?|done|files?|routine|notify)\s*\**\s*:\s*\**\s*(.*?)\s*$"#,
         options: [.caseInsensitive])
 
     static func contract(_ line: String) -> (Key, String)? {
@@ -59,7 +64,7 @@ public struct AgentResult: Equatable {
         guard let m = contractLine.firstMatch(in: line, range: NSRange(location: 0, length: ns.length)) else { return nil }
         let word = ns.substring(with: m.range(at: 1)).lowercased()
         let value = ns.substring(with: m.range(at: 2))
-        let key: Key = word.hasPrefix("next") ? .next : word == "done" ? .done : word.hasPrefix("file") ? .files : .routine
+        let key: Key = word.hasPrefix("next") ? .next : word == "done" ? .done : word.hasPrefix("file") ? .files : word == "notify" ? .notify : .routine
         return (key, value)
     }
 
@@ -81,6 +86,7 @@ public struct AgentResult: Equatable {
         var next: [String] = []
         var files: [String] = []
         var routine: RoutineCommand?
+        var notify: Bool?
         for (key, value) in block {
             switch key {
             case .done:
@@ -94,12 +100,25 @@ public struct AgentResult: Equatable {
                 if let path = filePath(value), files.count < maxFiles, !files.contains(path) { files.append(path) }
             case .routine:
                 if routine == nil { routine = RoutineCommand.parse(json: unwrapped(value)) }
+            case .notify:
+                if notify == nil { notify = notifyValue(value) }
             }
         }
         // A message that was only its Done line ("Done: it's on your desktop.") keeps it as the body.
         if body.isEmpty, let doneValue { body = doneValue.trimmingCharacters(in: .whitespaces) }
         let question = asks(body)
-        return AgentResult(body: body, doneTitle: title, nextActions: question ? [] : next, files: files, routine: routine, isQuestion: question)
+        return AgentResult(body: body, doneTitle: title, nextActions: question ? [] : next, files: files, routine: routine, isQuestion: question,
+                           notify: notify)
+    }
+
+    /// "yes", "Yes.", "**no**", "true": the first word decides; anything else is unreadable (nil).
+    static func notifyValue(_ value: String) -> Bool? {
+        let word = trimmingEnd(unwrapped(value), ".!,;:").lowercased().split(separator: " ").first.map(String.init) ?? ""
+        switch word {
+        case "yes", "y", "true": return true
+        case "no", "n", "false": return false
+        default: return nil
+        }
     }
 
     // MARK: Values

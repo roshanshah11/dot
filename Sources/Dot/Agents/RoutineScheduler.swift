@@ -54,13 +54,14 @@ final class RoutineScheduler {
     @discardableResult
     /// `runFirstNow: false` when the brief that founded it was just handed to the agent (a morning
     /// suggestion's "do it" is run one, MB-03), so the first scheduled run is the next one.
-    func add(agentName: String, when: String, brief: String, runFirstNow: Bool = true) -> Routine? {
+    /// `mode`: watch checks and speaks up only when something needs him (07); report says what changed.
+    func add(agentName: String, when: String, brief: String, runFirstNow: Bool = true, mode: RoutineMode = .report) -> Routine? {
         guard let schedule = RoutineSchedule.parse(when) else { return nil }
         let agent = agents.ensureAgent(named: agentName)
-        let routine = Routine(agent: agent.slug, agentName: agent.name, brief: brief, schedule: schedule, runFirstNow: runFirstNow)
+        let routine = Routine(agent: agent.slug, agentName: agent.name, brief: brief, schedule: schedule, runFirstNow: runFirstNow, mode: mode)
         book.routines.append(routine)
         save()
-        Log.info("routines: added \(routine.id) for \(agent.slug): \(schedule.words): \(Log.short(brief, 80))")
+        Log.info("routines: added \(routine.id) for \(agent.slug): \(schedule.words), \(mode.rawValue): \(Log.short(brief, 80))")
         return routine
     }
 
@@ -125,9 +126,11 @@ final class RoutineScheduler {
         inFlight[routine.agent] = routine.id
         let when = routine.lastRun.map { "the last run was \(Self.relative($0, now: now))" } ?? "this is the first run"
         let brief = "[routine] \(routine.brief)"
-        let note = "This is a scheduled run (\(routine.schedule.words); \(when)), not a fresh ask: do the task, report what changed since the last run, and say so plainly if nothing did. Keep the reply short; it lands in your thread for him to read later."
-        agents.handoff(brief: brief, agentName: routine.agentName, context: nil, shots: nil, note: note, routine: true)
-        Log.info("routines: ran \(routine.id) (\(routine.agent))\(byHand ? " by hand" : "")")
+        let mode = routine.runMode
+        var note = "This is a scheduled \(mode == .watch ? "watch" : "report") run (\(routine.schedule.words); \(when)), not a fresh ask: do the task, report what changed since the last run, and say so plainly if nothing did. Keep the reply short; it lands in your thread for him to read later."
+        if mode == .watch { note += " " + Self.watchNote }
+        agents.handoff(brief: brief, agentName: routine.agentName, context: nil, shots: nil, note: note, routine: true, routineMode: mode)
+        Log.info("routines: ran \(routine.id) (\(routine.agent), \(mode.rawValue))\(byHand ? " by hand" : "")")
         onChanged?()
     }
 
@@ -156,6 +159,9 @@ final class RoutineScheduler {
         do { try book.save(to: url) } catch { Log.error("routines: could not save: \(error)") }
         onChanged?()
     }
+
+    /// What a watch run is told on top of the run note (07).
+    static let watchNote = "End a watch run with 'Notify: yes' only when something needs him (a reply owed, a decision, a change he must act on); otherwise 'Notify: no' and one line."
 
     static func relative(_ date: Date, now: Date) -> String {
         let s = Int(now.timeIntervalSince(date))

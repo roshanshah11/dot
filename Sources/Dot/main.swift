@@ -59,7 +59,9 @@ case "--help", "-h":
       Dot --find <phrase>      search the app in front and highlight the match
       Dot --listen [title]     start the lecture ear       Dot --stop-listening  stop it and save the transcript
       Dot --dictionary "heard => correct"   add a term the recognizer should write your way
-      Dot --snapshot [folder]  render every notch state, mark and card to PNG (no screen turn)
+      Dot --snapshot [folder] [notch|stack|overlay|cards|panel]  render every notch state, stack chip, mark and card to PNG
+      Dot --stack-demo [--muted] [--job]   a fake agent (or job) through the running Dot's stack (no voice, no chime)
+      Dot --stack-selftest [--muted] [--job] [frames.json]   the same demo in this process, its window off screen, G7 to G9 checked
       Dot --panel file.ui      show a UI-language explanation in the explainer panel (Dot --panel close hides it)
       Dot --prompt talk|think  print a session's system prompt
       Dot --quip-test          three sample moments through the quip model (quipModel), each line and its check
@@ -77,7 +79,7 @@ case "--help", "-h":
     exit(0)
 case "--check":
     let status = Permissions.status()
-    let config = DotConfig.load()
+    let config = DotConfig.peek()
     print("microphone:        \(status.microphone ? "granted" : "missing")")
     print("screen recording:  \(status.screenRecording ? "granted" : "missing")")
     print("accessibility:     \(status.accessibility ? "granted" : "missing")")
@@ -90,7 +92,7 @@ case "--check":
     print("tts:               \(config.resolvedTTSCommand()?.joined(separator: " ") ?? "apple speech")")
     exit(status.allGranted ? 0 : 1)
 case "--today":
-    let config = DotConfig.load()
+    let config = DotConfig.peek()
     guard let command = config.resolvedTodayCommand() else { print("atlas today helper not available"); exit(1) }
     let process = Process()
     process.executableURL = URL(fileURLWithPath: command[0])
@@ -125,7 +127,7 @@ case "--snapshot":
 case "--prompt":
     // The talk, think or job system prompt exactly as a session gets it (round eight's panel dry runs read it).
     // `--prompt talk --jobs off|on` prints it with the jobs flag set either way; the config file is never rewritten.
-    let config = DotConfig.load(save: false)
+    let config = DotConfig.peek()
     let which = arguments.dropFirst().first ?? "think"
     let rest = Array(arguments.dropFirst(2))
     let jobsFlag = rest.firstIndex(of: "--jobs").flatMap { $0 + 1 < rest.count ? rest[$0 + 1] : nil }
@@ -138,7 +140,7 @@ case "--prompt":
     exit(0)
 case "--quip-test":
     // Context lines (docs/alive.md, round two): the real writer on three made-up moments, outside the app.
-    let config = DotConfig.load()
+    let config = DotConfig.peek()
     let passed = MainActor.assumeIsolated { QuipWriter.selfTest(config: config) }
     exit(passed ? 0 : 1)
 case "--selftest":
@@ -176,6 +178,23 @@ case "--ask", "--agent":
                                                                                             "bench": bench, "spoken": spoken, "shift": shift, "cometPort": cometPort], deliverImmediately: true)
     print("sent to Dot")
     exit(0)
+case "--stack-demo":
+    // A fake agent (or with --job a fake behind job) through the running Dot's stack, for G7 to G9 (04): no real agent,
+    // no chime, no voice, no volume change; --muted fakes a muted Mac.
+    let flags = Set(arguments.dropFirst())
+    DistributedNotificationCenter.default().postNotificationName(DotIPC.stackDemo, object: nil,
+                                                                 userInfo: ["muted": flags.contains("--muted"), "job": flags.contains("--job")], deliverImmediately: true)
+    print("asked the running Dot for the stack demo; stack-demo: lines land in dot.log")
+    exit(0)
+case "--stack-selftest":
+    // The stack demo in this process, its window off every display, with G7 to G9's window rules checked (04).
+    let flags = Array(arguments.dropFirst())
+    let stackApp = NSApplication.shared
+    stackApp.setActivationPolicy(.accessory)
+    stackApp.finishLaunching()
+    let file = flags.first { !$0.hasPrefix("--") }
+    let passed = MainActor.assumeIsolated { StackSelfTest.run(muted: flags.contains("--muted"), job: flags.contains("--job"), framesFile: file) }
+    exit(passed ? 0 : 1)
 case "--track-selftest":
     // Ask the running Dot to run the box-tracking check on the real screen (its grants, not the terminal's).
     DistributedNotificationCenter.default().postNotificationName(DotIPC.trackSelftest, object: nil, userInfo: nil, deliverImmediately: true)

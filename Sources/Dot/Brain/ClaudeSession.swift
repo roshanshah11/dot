@@ -242,6 +242,22 @@ final class ClaudeSession {
     /// Messages sent whose result has not come back. A message sent right after an interrupt waits behind the cut-off
     /// turn, whose result arrives first: the session is still busy after that one (the basics pass, 2026-10-18).
     private(set) var pendingResults = 0
+    /// When the last result came in.
+    private(set) var lastResultAt: Date?
+
+    /// Messages still counted as owed that the turn which just ended folded in (07): Claude Code hands a message sent
+    /// mid-turn to the running turn, and that turn's one result answers all of them, so the count stayed above zero
+    /// and the session read as working forever (readings-fetch, 10-19). Nothing after the result for
+    /// AgentIdle.foldSettle: the count goes to zero. Returns how many were folded.
+    @discardableResult
+    func settleFoldedMessages(now: Date = Date()) -> Int {
+        guard AgentIdle.folded(pendingResults: pendingResults, lastResultAt: lastResultAt, lastEventAt: lastActivity, now: now) else { return 0 }
+        let folded = pendingResults
+        pendingResults = 0
+        turnInFlight = false
+        Log.info("session[\(label)] \(folded) message(s) sent mid-turn were folded into the last turn; idle")
+        return folded
+    }
 
     func send(text: String, images: [(data: Data, mediaType: String)] = []) {
         pendingResults += 1
@@ -300,6 +316,13 @@ final class ClaudeSession {
         case .result(let info):
             pendingResults = max(0, pendingResults - 1)
             turnInFlight = pendingResults > 0
+            let resultAt = Date()
+            lastResultAt = resultAt
+            lastActivity = resultAt
+            if pendingResults > 0 {
+                // A queued message starts its own turn within seconds; if none has by then, it was folded into this one.
+                DispatchQueue.main.asyncAfter(deadline: .now() + AgentIdle.foldSettle + 1) { [weak self] in self?.settleFoldedMessages() }
+            }
             let (turnCost, total) = CostBaseline.turnCost(reported: info.costUSD, baseline: lastTotalCost)
             if lastTotalCost == nil { Log.info("session[\(label)] resumed with no saved cost total; this turn's cost isn't counted") }
             lastTotalCost = total

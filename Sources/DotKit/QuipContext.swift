@@ -47,10 +47,27 @@ public enum Upcoming {
         .min { $0.start < $1.start }
     }
 
+    /// After this hour an untimed deadline due today no longer counts as "next" or "due today" (07): an untimed
+    /// deadline counted as due at 23:59, which kept midterm quips coming all evening after the midterm.
+    public static let untimedCutoffHour = 18
+
+    /// Still ahead: a timed one that has not started, an untimed one before 18:00 of its day (and any untimed one on
+    /// a later day).
+    static func stillAhead(_ event: UpcomingEvent, now: Date, calendar: Calendar) -> Bool {
+        guard event.start > now else { return false }
+        if event.timed { return true }
+        return !calendar.isDate(event.start, inSameDayAs: now) || calendar.component(.hour, from: now) < untimedCutoffHour
+    }
+
+    /// Whether anything is due today that is still ahead (Noticer's deadlineToday quips), by the same rule as `relevant`.
+    public static func dueToday(_ events: [UpcomingEvent], now: Date, calendar: Calendar = .current) -> Bool {
+        events.contains { $0.isDeadline && calendar.isDate($0.start, inSameDayAs: now) && stillAhead($0, now: now, calendar: calendar) }
+    }
+
     /// The event a quip's context names: for a deadline due today, that deadline; otherwise the next
     /// event or deadline within 24 hours.
     public static func relevant(to situation: QuipSituation, in events: [UpcomingEvent], now: Date, calendar: Calendar = .current) -> UpcomingEvent? {
-        let ahead = events.filter { $0.start > now && $0.start.timeIntervalSince(now) <= horizon }.sorted { $0.start < $1.start }
+        let ahead = events.filter { stillAhead($0, now: now, calendar: calendar) && $0.start.timeIntervalSince(now) <= horizon }.sorted { $0.start < $1.start }
         if situation == .deadlineToday, let today = ahead.first(where: { $0.isDeadline && calendar.isDate($0.start, inSameDayAs: now) }) {
             return today
         }
@@ -81,11 +98,40 @@ public enum Upcoming {
             let text = String(line.dropFirst(11)).trimmingCharacters(in: .whitespaces)
             if let (h, mi) = clock(in: text), let start = calendar.date(bySettingHour: h, minute: mi, second: 0, of: day) {
                 out.append(UpcomingEvent(title: text, start: start, isDeadline: true))
+            } else if let exam = examStart(for: text, on: day, among: out, calendar: calendar) {
+                // An untimed exam, midterm, test or quiz takes the start of that day's calendar event for the same
+                // course, so it is past once the exam begins (07).
+                out.append(UpcomingEvent(title: text, start: exam, isDeadline: true))
             } else if let end = calendar.date(bySettingHour: 23, minute: 59, second: 0, of: day) {
                 out.append(UpcomingEvent(title: text, start: end, isDeadline: true, timed: false))
             }
         }
         return out
+    }
+
+    private static let examWords = try! NSRegularExpression(pattern: #"(?i)\b(?:exams?|midterms?|tests?|quiz(?:zes)?)\b"#)
+    private static let courseCode = try! NSRegularExpression(pattern: #"\b([A-Za-z]{2,8})\s?(\d{3,5})\b"#)
+
+    /// "COURSE 101", "course101": the course codes a title names, as "COURSE101".
+    static func courseCodes(in text: String) -> Set<String> {
+        let ns = text as NSString
+        return Set(courseCode.matches(in: text, range: NSRange(location: 0, length: ns.length)).map {
+            ns.substring(with: $0.range(at: 1)).uppercased() + ns.substring(with: $0.range(at: 2))
+        })
+    }
+
+    /// The start of the timed calendar event that day sharing a course code with an untimed exam deadline; one that
+    /// names an exam itself first, else the earliest.
+    static func examStart(for deadline: String, on day: Date, among events: [UpcomingEvent], calendar: Calendar) -> Date? {
+        let ns = deadline as NSString
+        guard examWords.firstMatch(in: deadline, range: NSRange(location: 0, length: ns.length)) != nil else { return nil }
+        let codes = courseCodes(in: deadline)
+        guard !codes.isEmpty else { return nil }
+        let matching = events.filter { event in
+            !event.isDeadline && event.timed && calendar.isDate(event.start, inSameDayAs: day) && !courseCodes(in: event.title).isDisjoint(with: codes)
+        }
+        func isExam(_ e: UpcomingEvent) -> Bool { examWords.firstMatch(in: e.title, range: NSRange(location: 0, length: (e.title as NSString).length)) != nil }
+        return (matching.filter(isExam).min { $0.start < $1.start } ?? matching.min { $0.start < $1.start })?.start
     }
 
     private static let calendarLine = try! NSRegularExpression(pattern: #"^\w{3} (\d{2})-(\d{2}) (\d{1,2}):(\d{2})[–-]\d{1,2}:\d{2} (.+)$"#)

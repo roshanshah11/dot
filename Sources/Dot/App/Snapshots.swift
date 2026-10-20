@@ -14,7 +14,8 @@ enum Snapshots {
     static func run(into folder: URL, only group: String? = nil) {
         try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         func wanted(_ name: String) -> Bool { group == nil || group == name }
-        let accent = DotConfig.load().pointerColorHex
+        // Read the config without writing it back (DotConfig.load saves any new keys into his file).
+        let accent = DotConfig.peek().pointerColorHex
         var sheet: [(String, NSImage)] = []
         func keep(_ name: String, _ image: NSImage?) {
             guard let image, let data = png(image) else { print("snapshot: \(name) failed"); return }
@@ -27,6 +28,24 @@ enum Snapshots {
         if wanted("notch") {
             for (name, model) in notchStates(accentHex: accent) {
                 keep("notch-\(name)", render(NotchHUDView(model: model, geometry: geometry, onClose: {}), width: NotchGeometry.panelWidth, height: NotchHUD.tallPanelHeight))
+            }
+        }
+        if wanted("notch") {
+            // 04: the notch only while talking (notchTalkOnly).
+            for (name, model, geometry) in talkOnlyNotchStates(accentHex: accent) {
+                if model.showsPanel {
+                    keep("notch-\(name)", render(NotchHUDView(model: model, geometry: geometry, onClose: {}), width: NotchGeometry.panelWidth, height: NotchHUD.tallPanelHeight))
+                } else {
+                    // The live window is ordered out: nothing at the top edge.
+                    keep("notch-\(name)", render(Text("no notch window (presence off; the ● is back in the menu bar)").font(.system(size: 12)).foregroundStyle(.gray)
+                        .padding(8), width: 420, height: 60))
+                }
+            }
+        }
+        if wanted("stack") {
+            // 04: the stack at the top right, on a dark page like the one HeyClicky's card sat on.
+            for (name, model) in stackStates(accentHex: accent) {
+                keep("stack-\(name)", render(AgentStackView(model: model), width: 420, height: 980, ground: NSColor(calibratedWhite: 0.17, alpha: 1)))
             }
         }
         if group == "alive" {
@@ -68,6 +87,7 @@ enum Snapshots {
         func make(_ build: (HUDModel) -> Void) -> HUDModel {
             let m = HUDModel()
             if let color = Color(hex: accentHex) { m.accent = color }
+            m.snapshot = true
             m.presence = true
             build(m)
             return m
@@ -120,6 +140,110 @@ enum Snapshots {
                 m.expanded = "dot"
             }),
             ("walkthrough", make { m in m.agents = [AgentRow(id: "walkthrough", name: "walkthrough", line: "step 3: click schedule", state: .running, kind: .walkthrough, steps: ["clicked displays", "clicked night shift"], canStop: true, startedAt: Date().addingTimeInterval(-40))] }),
+        ]
+    }
+
+    // MARK: The notch only while talking (04)
+
+    private static func talkOnlyNotchStates(accentHex: String) -> [(String, HUDModel, NotchGeometry)] {
+        func make(_ build: (HUDModel) -> Void) -> HUDModel {
+            let m = HUDModel()
+            if let color = Color(hex: accentHex) { m.accent = color }
+            m.snapshot = true
+            m.talkOnly = true
+            m.presence = true
+            build(m)
+            return m
+        }
+        let noNotch = NotchGeometry(centerX: NotchGeometry.panelWidth / 2, topY: NotchHUD.tallPanelHeight, notchWidth: 200, notchHeight: 0, hasNotch: false)
+        let running = AgentRow(id: "northwind", name: "Northwind Desk", line: "reading example.com/northwind-bank", state: .running, canStop: true)
+        return [
+            // Idle on a notched screen: the resting tab is the notch itself, black on black; an agent at work is in the stack, not here.
+            ("talkonly-idle-notch", make { m in m.agents = [running] }, geometry),
+            // Idle with no notch: presence is off, nothing at the top edge, and the ● is back in the menu bar.
+            ("talkonly-idle-nonotch", make { m in m.presence = NotchSurface.presence(configured: true, hasNotch: false, talkOnly: true) }, noNotch),
+            ("talkonly-listening", make { m in m.phase = .listening; m.level = 0.5; m.transcript = "what does COURSE 101 have due this week" }, geometry),
+            ("talkonly-speaking", make { m in m.phase = .speaking; m.transcript = "what does COURSE 101 have due this week"
+                m.caption = "two readings for COURSE 101 are due thursday, and the problem set is due friday at five." }, geometry),
+            ("talkonly-answer", make { m in m.answer = "two readings are due thursday: chapter 3 of the course reader and the example.com case study. the problem set is due friday at 5 pm."
+                m.answerQuestion = "what's due for COURSE 101"; m.answerShownAt = Date() }, geometry),
+        ]
+    }
+
+    // MARK: The stack at the top right (04)
+
+    /// Placeholder agents, steps and lines only (the repo is public): Sam Rivera, Alex Example, Northwind Bank, COURSE 101, example.com.
+    static func stackStates(accentHex: String) -> [(String, StackModel)] {
+        let now = Date()
+        func make(_ chips: [StackChip], _ build: (StackModel) -> Void = { _ in }) -> StackModel {
+            let m = StackModel()
+            if let color = Color(hex: accentHex) { m.accent = color }
+            m.now = now
+            m.snapshot = true
+            m.chips = chips
+            build(m)
+            return m
+        }
+        func chip(_ id: String, _ title: String, _ line: String, _ state: AgentChip.State, age: TimeInterval, kind: AgentChip.Kind = .agent,
+                  steps: [String] = [], created: TimeInterval? = nil) -> StackChip {
+            var c = StackChip(id: id, kind: kind, title: title, line: line, steps: steps, state: state, stateSince: now.addingTimeInterval(-age),
+                              startedAt: now.addingTimeInterval(-(created ?? age) - 40))
+            c.createdAt = now.addingTimeInterval(-(created ?? age))
+            return c
+        }
+        let steps = ["searching: Northwind Bank filings 2026", "reading: example.com/northwind-bank/10-q", "writing the one-page brief"]
+        let running = chip("northwind", "Northwind Desk", "reading example.com/northwind-bank/10-q", .running, age: 1, steps: steps)
+        let folded = chip("northwind", "Northwind Desk", "writing the one-page brief", .running, age: 20, steps: steps)
+        let names = ["Northwind Desk", "Course Desk", "Inbox Keeper", "Deck Shop", "Lab Notes", "Trip Planner", "Reading List", "Cable Hunt", "Sam's Brief"]
+        let many = names.enumerated().map { i, name in chip("a\(i)", name, "working", .running, age: 30, created: Double(100 - i)) }
+        var done = chip("course", "Course Desk", "COURSE 101 summary", .done, age: 2)
+        done.result = "The COURSE 101 week 3 summary is in output/course-101-week-3.md: two readings, one problem set, all due by friday."
+        var muted = chip("course", "Course Desk", "the COURSE 101 week 3 summary is in your output folder, with the two readings due thursday listed first.", .done, age: 9)
+        muted.holdUntil = now.addingTimeInterval(2)
+        let failed = chip("cable", "Cable Hunt", "failed: example.com would not load the product page", .failed, age: 3)
+        let consent = ConsentCard(agentId: "inbox", agent: "Inbox Keeper", title: "send an email to Alex Example", detail: "outlook send: \"Re: COURSE 101 study group\"",
+                                  guarded: true, onAllow: {}, onDeny: {}, onAlways: {})
+        var notice = StackChip(id: "notice-routine", kind: .notice, title: "routine set: every 2 hours, 9 am to midnight",
+                               line: "Inbox Keeper: watch: anything from Sam Rivera in outlook", state: .notice)
+        notice.icon = "clock.arrow.2.circlepath"
+        notice.tone = .good
+        notice.detail = notice.line
+        notice.actionTitle = "undo"
+        var morning = StackChip(id: "morning", kind: .notice, title: "morning", line: "", state: .notice)
+        morning.morning = MorningCard(greeting: "morning. i can do 3 things for you today.", items: [
+            MorningCard.Item(id: "a", text: "prep the Northwind Bank application, due today", brief: ""),
+            MorningCard.Item(id: "b", text: "a one-page brief on Alex Example before 12:30", brief: ""),
+            MorningCard.Item(id: "c", text: "draft a reply to Sam Rivera about the COURSE 101 study group", brief: "")])
+        var jobRunning = chip("job-12", "Listing search", "reading the third listing on example.com/jobs", .running, age: 1, kind: .job,
+                              steps: ["opening example.com/jobs", "searching: Northwind Bank analyst", "reading the third listing"])
+        jobRunning.costText = "$3.10"
+        let jobFolded = chip("job-12", "Listing search", "reading the third listing", .running, age: 30, kind: .job)
+        let jobPaused = chip("job-12", "Listing search", "you clicked in its tab", .paused, age: 2, kind: .job,
+                             steps: ["opening example.com/jobs", "searching: Northwind Bank analyst"])
+        let jobDone = chip("job-12", "Listing search", "the Northwind Bank listing at example.com is still open; it closes friday.", .done, age: 2, kind: .job)
+        // 07: an agent whose last line promised more, and a watch run that needs him.
+        let unfinished = chip("prep", "Call Prep", "two research passes on Northwind Bank are still running; the questions follow when they come back.", .unfinished, age: 3)
+        let unfinishedFolded = chip("prep", "Call Prep", "still running", .unfinished, age: 60)
+        let alert = chip("inbox", "Inbox Keeper", "Sam Rivera replied about the COURSE 101 study group and asked for a time.", .attention, age: 2)
+        return [
+            ("agent-running-card", make([running])),
+            ("agent-folded-avatar", make([folded])),
+            ("three-stacked", make(Array(many.prefix(3)))),
+            ("nine-stacked-eight-shown", make(many)),
+            ("hover-card-reply", make([folded] + Array(many.prefix(2))) { m in m.hovering = "northwind" }),
+            ("done", make([done])),
+            ("failed", make([failed])),
+            ("muted-done-text", make([muted])),
+            ("consent-card", make(Array(many.prefix(2))) { m in m.consent = consent; m.consentWaiting = 1; m.consentShownAt = now }),
+            ("notice-card", make([notice])),
+            ("morning-card", make([morning])),
+            ("job-running", make([jobRunning])),
+            ("job-folded", make([jobFolded])),
+            ("job-paused", make([jobPaused])),
+            ("job-done", make([jobDone])),
+            ("unfinished-card", make([unfinished])),
+            ("unfinished-held-avatar", make([unfinishedFolded] + Array(many.prefix(1)))),
+            ("watch-alert", make([alert])),
         ]
     }
 

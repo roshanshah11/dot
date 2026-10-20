@@ -168,6 +168,14 @@ struct DotConfig: Codable {
     /// "window": a behind job gets a Comet window of its own behind his app. "hidden" is a later item.
     var behindMode = "window"
 
+    // 04 of the 2026-10-20 fast-lane plan: the stack at the top right, the notch only while talking.
+    /// The notch shows only while he talks (key down through the answer, the typed field, a typed or muted answer for
+    /// its reading time). Agents, jobs, consent cards, notices with an action and the morning card are cards in the stack
+    /// at the top right; idle statuses and plain notices are the orb's bubble. Off: the notch as it was before 04.
+    var notchTalkOnly = true
+    /// A consent card opens the notch instead of showing as a card in the stack.
+    var consentInNotch = false
+
     /// Atlas tools a talk turn may call without asking: everything that reads, remembers or drafts.
     /// Sends, submits, posts and harness administration stay with agents and his yes.
     /// The basics pass (2026-10-18) cut the list from 56 to the 28 a talk turn has used or plainly needs: every schema
@@ -283,6 +291,9 @@ struct DotConfig: Codable {
         jobSpare = get(.jobSpare, d.jobSpare)
         jobsMax = min(max(get(.jobsMax, d.jobsMax), 1), 6)
         behindMode = get(.behindMode, d.behindMode)
+
+        notchTalkOnly = get(.notchTalkOnly, d.notchTalkOnly)
+        consentInNotch = get(.consentInNotch, d.consentInNotch)
     }
 
     static var directory: URL {
@@ -291,8 +302,13 @@ struct DotConfig: Codable {
 
     static var fileURL: URL { directory.appendingPathComponent("config.json") }
 
-    /// `save: false` reads without writing the file back (a build checked from the command line must not rewrite the
-    /// config of the Dot he is running).
+    /// The config as it is on disk, never written back (load() saves any keys a newer build added into his file):
+    /// for `Dot --prompt` and `Dot --snapshot`, which a dev build runs at night beside the installed app.
+    static func peek() -> DotConfig {
+        (try? Data(contentsOf: fileURL)).flatMap { try? JSONDecoder().decode(DotConfig.self, from: $0) } ?? DotConfig()
+    }
+
+    /// `save: false` reads without writing the file back (as peek()).
     static func load(save: Bool = true) -> DotConfig {
         let fm = FileManager.default
         if let data = try? Data(contentsOf: fileURL) {
