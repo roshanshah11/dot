@@ -344,3 +344,23 @@ final class JobConfigFileTests: XCTestCase {
         XCTAssertEqual(StreamJSON.parse(line: line), .systemInit(sessionId: "s1", model: "claude-sonnet", permissionMode: "default"))
     }
 }
+
+final class JobInputTapTests: XCTestCase {
+    func testOwnEscapeNeverStops() {
+        XCTAssertTrue(KeyTapRule.emitsEscape(keyCode: 53, held: false, own: false))
+        XCTAssertFalse(KeyTapRule.emitsEscape(keyCode: 53, held: false, own: true), "a job's own Escape never stops itself")
+        XCTAssertFalse(KeyTapRule.emitsEscape(keyCode: 53, held: true, own: false))
+        XCTAssertTrue(KeyTapRule.emitsInput(keyCode: 0, held: false))
+        XCTAssertFalse(KeyTapRule.emitsInput(keyCode: 53, held: false), "escape is not 'he typed'")
+        XCTAssertFalse(KeyTapRule.emitsInput(keyCode: 0, held: true), "keys while the talk key is held are his question")
+    }
+
+    func testCoveredCheck() {
+        // Cua Driver's invisible full-screen window: the window list says covered, the element under the point is the app's.
+        XCTAssertFalse(OcclusionRule.decide(axPid: 100, cgTopPid: 999, frontPid: 100, ownPid: 5))
+        XCTAssertFalse(OcclusionRule.decide(axPid: 5, cgTopPid: 5, frontPid: 100, ownPid: 5), "Dot's own notch")
+        XCTAssertTrue(OcclusionRule.decide(axPid: 200, cgTopPid: 200, frontPid: 100, ownPid: 5), "a real window on top")
+        XCTAssertTrue(OcclusionRule.decide(axPid: nil, cgTopPid: 200, frontPid: 100, ownPid: 5), "no element: the window list decides")
+        XCTAssertFalse(OcclusionRule.decide(axPid: nil, cgTopPid: nil, frontPid: 100, ownPid: 5))
+    }
+}

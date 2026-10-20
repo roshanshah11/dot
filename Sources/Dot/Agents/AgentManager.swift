@@ -363,7 +363,9 @@ final class AgentManager {
         // (inside the folders it may work in, ~/roshan among them), and a later relative rm would land there.
         options.environment["CLAUDE_BASH_MAINTAIN_PROJECT_WORKING_DIR"] = "1"
         // F4: a script runner is a shell with no gate, and an extension install changes the browser.
-        options.disallowedTools = Self.disallowedAgentTools
+        // Agents keep hb and their gate; a job's dot tools are never theirs. Here only: jobs reuse disallowedAgentTools,
+        // and a disallow beats an allow, so the shared list must not carry it.
+        options.disallowedTools = Self.disallowedAgentTools + ["mcp__dot"]
         options.permissionPromptOverStdio = true
         // AG-07: a PreToolUse hook sends every tool call through Dot first, the ones Claude Code would
         // approve on its own included (the stdio prompt never sees those), and web, shell and MCP

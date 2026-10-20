@@ -94,6 +94,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         quitCleanlyOnSignals()
         agents.recoverAfterLaunch()
         talk = Talk(config: config, hud: hud, overlay: overlay, speaker: speaker, transcriber: transcriber, agents: agents, ledger: ledger, atlas: atlas, jev: jev)
+        // The fast lane: a job's dot tools ask the running Dot here (`Dot --hands-mcp`).
+        control.register("hands") { [weak self] request, reply in
+            guard let self else { reply(["error": "dot is quitting"]); return }
+            self.talk.jobs.hands(request, reply)
+        }
+        if control.isRunning { talk.jobs.socketPath = control.path }
         noticer = Noticer(config: config, atlas: atlas, overlay: overlay, jev: jev)
         noticer.onSuggest = { [weak self] suggestion in Task { @MainActor in self?.talk.offerSuggestion(suggestion) } }
         // Quips and an offer's "ok, later." wait while Dot is busy, a lecture is heard or Murmur records.
@@ -114,6 +120,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return !(self.config.quietOnCalls && CallPresence.isOnCall())
         }
         talk.scheduler = routines
+        // A job that turned out to be watching ends with a Routine: line; the routine runs as an agent (07).
+        talk.jobs.onRoutine = { [weak self] name, when, task in
+            _ = self?.routines.add(agentName: name, when: when, brief: task)
+        }
         home.scheduler = routines
         // Agents edit their own routines by title (TC-06) and see the full list each turn (TC-07).
         agents.onRoutineCommand = { [weak self] slug, name, command in self?.routines.apply(command, agent: slug, agentName: name) }
@@ -311,6 +321,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         center.addObserver(forName: DotIPC.stop, object: nil, queue: .main) { [weak self] _ in
             Task { @MainActor in self?.talk.interrupt() }
         }
+        // `Dot --job-test click|key`: the bench's stand-in for his input in a bench job's tab.
+        center.addObserver(forName: DotIPC.jobTest, object: nil, queue: .main) { [weak self] note in
+            let kind = (note.userInfo?["kind"] as? String) == "key" ? JobInput.key : JobInput.click
+            Task { @MainActor in
+                guard let self else { return }
+                Log.info("job-test: \(self.talk.jobs.simulateInput(kind))")
+            }
+        }
+        // `Dot --occlusion x,y`: both covered-check verdicts, with Dot.app's own Accessibility grant.
+        center.addObserver(forName: DotIPC.occlusion, object: nil, queue: .main) { note in
+            guard let text = note.userInfo?["text"] as? String else { return }
+            let parts = text.split(separator: ",").compactMap { Double($0.trimmingCharacters(in: .whitespaces)) }
+            guard parts.count == 2 else { return }
+            Task { @MainActor in WindowOcclusion.logVerdicts(topLeft: CGPoint(x: parts[0], y: parts[1])) }
+        }
         center.addObserver(forName: DotIPC.refresh, object: nil, queue: .main) { [weak self] _ in
             Task { @MainActor in self?.atlas.refresh(reason: "cli") }
         }
@@ -367,6 +392,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationWillTerminate(_ notification: Notification) {
+        for job in talk?.jobs.running ?? [] { Log.info("job[\(job.id)] lost at quit") }
+        talk?.jobs.stopAll(reason: "quit")
         agents.prepareForQuit()
         control?.stop()
         Log.info("quit: agents ended")
@@ -409,6 +436,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if !Permissions.status().accessibility { Permissions.requestAccessibility() }
         startHotkeysWhenTrusted()
         talk.warmUp()
+        talk.jobs.warm()
         // This Mac's calendar (the basics pass): macOS asks him once; until he allows it, Atlas's copy is used.
         talk.localCalendar.requestAccess()
         let status = Permissions.status()
@@ -543,4 +571,6 @@ enum DotIPC {
     static let listen = Notification.Name("com.roshan.dot.listen")
     static let stopListening = Notification.Name("com.roshan.dot.stopListening")
     static let dictionary = Notification.Name("com.roshan.dot.dictionary")
+    static let jobTest = Notification.Name("com.roshan.dot.job-test")
+    static let occlusion = Notification.Name("com.roshan.dot.occlusion")
 }

@@ -1,5 +1,6 @@
 import AppKit
 import CoreGraphics
+import DotKit
 import Foundation
 
 /// System-wide push-to-talk on a listen-only CGEvent tap, after Clicky's
@@ -28,6 +29,8 @@ final class HotkeyMonitor {
         case dragPath([CGPoint])
         /// One finished stroke (he can draw several while the key stays held): its box and its points.
         case dragEnded(CGRect, points: [CGPoint])
+        /// A right click or any key but Escape, for a job's pause rule (no key codes, only the fact). AppKit coordinates.
+        case input(JobInput, CGPoint, own: Bool)
     }
 
     var onEvent: ((Event) -> Void)?
@@ -49,7 +52,7 @@ final class HotkeyMonitor {
     @discardableResult
     func start() -> Bool {
         guard tap == nil else { return true }
-        let types: [CGEventType] = [.flagsChanged, .keyDown, .keyUp, .leftMouseDown, .leftMouseDragged, .leftMouseUp]
+        let types: [CGEventType] = [.flagsChanged, .keyDown, .keyUp, .leftMouseDown, .leftMouseDragged, .leftMouseUp, .rightMouseDown]
         let mask = types.reduce(CGEventMask(0)) { $0 | (CGEventMask(1) << $1.rawValue) }
 
         let callback: CGEventTapCallBack = { _, type, event, userInfo in
@@ -133,9 +136,15 @@ final class HotkeyMonitor {
             }
         case .keyDown:
             let keyCode = UInt16(event.getIntegerValueField(.keyboardEventKeycode))
-            if keyCode == 53, !held { // escape
+            let own = Driver.isOwn(event)
+            // Dot's own Escape (a job's key, tagged by Navigator.chord) never stops anything.
+            if KeyTapRule.emitsEscape(keyCode: keyCode, held: held, own: own) {
                 emit(.escape)
+            } else if KeyTapRule.emitsInput(keyCode: keyCode, held: held) {
+                emit(.input(.key, Self.appKitPoint(event.location), own: own))
             }
+        case .rightMouseDown:
+            if !held { emit(.input(.click, Self.appKitPoint(event.location), own: Driver.isOwn(event))) }
         case .leftMouseDown:
             let point = Self.appKitPoint(event.location)
             if held {

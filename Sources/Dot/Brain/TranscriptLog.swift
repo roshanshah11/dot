@@ -6,7 +6,7 @@ import Foundation
 enum TranscriptLog {
     static let directory = URL(fileURLWithPath: NSHomeDirectory()).appendingPathComponent("Dot/transcripts", isDirectory: true)
 
-    enum Kind: String { case talk, typed, dictation, agent, lecture }
+    enum Kind: String { case talk, typed, dictation, agent, lecture, job }
 
     static func append(kind: Kind, you: String, dot: String?, app: String?, extra: [String: String] = [:]) {
         let now = Date()

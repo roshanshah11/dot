@@ -121,7 +121,7 @@ public struct AgentRules: Codable, Equatable, Sendable {
     static let outwardCommandWords = try! NSRegularExpression(pattern: #"(^|[\s;&|(])((git\s+push|gh\s+(pr\s+create|pr\s+merge|release\s+create|issue\s+create|repo\s+(create|delete))|npm\s+publish|vercel(\s+deploy|\s+--prod|\s*$)|imsg\s+send|gmail\s+send|outlook\s+send|sendmail)\b|rm\s+(-[a-zA-Z]+\s+)*(~|/|\$HOME))|curl\s[^\n]*(-X\s*(POST|PUT|DELETE|PATCH)|--data|-d\s)"#, options: [.caseInsensitive])
     static let outwardToolWords = try! NSRegularExpression(pattern: #"(^|_)(send|reply|forward|submit|apply|post|publish|pay|purchase|checkout|order|book|delete|trash|remove|cancel|transfer|unsubscribe|respond|share|invite)(_|$)"#, options: [.caseInsensitive])
     static let writeToolWords = try! NSRegularExpression(pattern: #"(^|_)(create|update|write|edit|draft|label|unlabel|add|set|upsert|move|rename|archive|mark|insert|append|copy|upload|star|snooze|schedule)(_|$)"#, options: [.caseInsensitive])
-    static let computerServers: Set<String> = ["cua-driver", "cua-computer-use", "computer-use", "cmux-cua"]
+    static let computerServers: Set<String> = ["cua-driver", "cua-computer-use", "computer-use", "cmux-cua", "dot"]
     /// Computer-use tools that change the Mac rather than drive an app: quitting an app (unsaved work),
     /// installing, running a script (a shell by another name), raising the driver's own powers (F4).
     static let computerSystemTools: Set<String> = ["kill_app", "install_extension", "install_ffmpeg", "run_script", "escalate_session", "set_config"]

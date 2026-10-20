@@ -71,3 +71,23 @@ public enum JobModel {
 
     public static func isProse(_ text: String) -> Bool { Rx.has(prose, text) }
 }
+
+/// Which keys the session tap reports. Escape interrupts Dot, but never Dot's own Escape (a job's key); every other key
+/// is only "he typed", for a job's pause rule.
+public enum KeyTapRule {
+    public static let escape: UInt16 = 53
+
+    public static func emitsEscape(keyCode: UInt16, held: Bool, own: Bool) -> Bool { keyCode == escape && !held && !own }
+
+    public static func emitsInput(keyCode: UInt16, held: Bool) -> Bool { keyCode != escape && !held }
+}
+
+/// Is a point covered? The accessibility element at the point decides when there is one: covered only when it belongs
+/// to neither the front app nor Dot. With no element, the topmost ordinary window decides, as before.
+public enum OcclusionRule {
+    public static func decide(axPid: Int32?, cgTopPid: Int32?, frontPid: Int32?, ownPid: Int32) -> Bool {
+        if let ax = axPid { return ax != frontPid && ax != ownPid }
+        guard let top = cgTopPid, let front = frontPid else { return false }
+        return top != front
+    }
+}

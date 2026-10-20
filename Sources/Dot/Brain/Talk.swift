@@ -24,6 +24,12 @@ final class Talk {
     private let driver = Driver()
     /// Dot's own hands for the small things: open, scroll, back, click, type, keys (the basics pass).
     private let hands: Hands
+    /// The fast lane (2026-10-20): every action with more than one small step is a job Dot runs itself.
+    let jobs: JobManager
+    /// When this ask arrived, for a job's first-action time.
+    private var askReceivedAt = Date()
+    /// The job he spoke to last, for a follow-up.
+    private var lastJobAddressed: String?
     /// This Mac's calendar (EventKit); Atlas's copy until he grants access.
     let localCalendar = LocalCalendar()
     /// `Dot --ask --bench`: write tools refused, agents logged and not started, actions only on the bench fixture.
@@ -141,6 +147,8 @@ final class Talk {
         var hoverSince: Date?
         /// Dot clicks the steps itself while he watches.
         var driving = false
+        /// What he asked that this walkthrough answers, for a "do it" handed to a job.
+        var ask = ""
     }
     private var walkthrough: Walkthrough?
     private var walkthroughTimeout: DispatchWorkItem?
@@ -161,6 +169,7 @@ final class Talk {
         self.atlas = atlas
         self.jev = jev
         self.hands = Hands(cometPort: config.cometDebugPort)
+        self.jobs = JobManager(config: config, overlay: overlay, speaker: speaker, ledger: ledger)
         self.board = BoardManager(accentHex: config.pointerColorHex)
         self.panels = PanelCoach(accentHex: config.pointerColorHex)
         self.lecture = LectureListener(transcriber: transcriber)
@@ -212,6 +221,7 @@ final class Talk {
             self.speaker.speak("okay, you've got it.")
             self.overlay.setBubble("okay, you've got it.", label: nil)
         }
+        jobs.talkIsIdle = { [weak self] in self.map { $0.phase == .idle && !$0.speaker.isSpeaking } ?? true }
         NSWorkspace.shared.notificationCenter.addObserver(forName: NSWorkspace.didActivateApplicationNotification, object: nil, queue: .main) { [weak self] note in
             guard let app = note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication else { return }
             Task { @MainActor in self?.appActivated(app) }
@@ -286,7 +296,7 @@ final class Talk {
 
     private func makeSession(kind: SessionKind) -> ClaudeSession? {
         var options = ClaudeSession.Options(cwd: config.talkRootURL, model: kind == .talk ? config.talkModel : config.thinkModel)
-        options.systemPrompt = (kind == .talk ? Prompts.talk : Prompts.think) + Prompts.courseIndex(in: config.talkRootURL)
+        options.systemPrompt = (kind == .talk ? Prompts.talk(jobs: config.jobsEnabled) : Prompts.think) + Prompts.courseIndex(in: config.talkRootURL)
         options.tools = ["Bash", "WebSearch", "WebFetch"]
         options.maxTurns = 6
         options.settingSources = ""
@@ -316,14 +326,16 @@ final class Talk {
         }
         var allowed = Set(config.talkAllowedTools + ["WebSearch", "WebFetch"])
         if bench { allowed.subtract(DotConfig.talkWriteTools.map { "mcp__atlas__\($0)" }) }
+        let handOff = config.jobsEnabled ? "dot can do it as a job: [GO:...]." : "hand it to an agent with [AGENT:...]."
+        let handThis = config.jobsEnabled ? "dot can do it as a job: [GO:...]." : "hand this to an agent with [AGENT:...]."
         session.permissionHandler = { request, completion in
             if Talk.guestTools.contains(request.toolName), ConsentPolicy.isOutwardMCP(tool: request.toolName, input: request.toolRequest.input) {
-                completion(false, "an event with guests sends them an invitation, which needs his yes on a card; hand it to an agent with [AGENT:...].")
+                completion(false, "an event with guests sends them an invitation, which needs his yes on a card; \(handOff)")
                 Log.warn("talk: refused \(request.toolName) with guests")
             } else if allowed.contains(request.toolName) || Talk.isComputation(request) {
                 completion(true, nil)
             } else {
-                completion(false, "dot's talk mode only reads, remembers and computes with python; hand this to an agent with [AGENT:...].")
+                completion(false, "dot's talk mode only reads, remembers and computes with python; \(handThis)")
                 Log.warn("talk: refused tool \(request.toolName)")
             }
         }
@@ -358,6 +370,9 @@ final class Talk {
             interrupt()
         case .mouseDown(let point, let own):
             clicked(at: point, own: own)
+            if config.jobsEnabled { jobs.userInput(kind: .click, point: point, own: own) }
+        case .input(let kind, let point, let own):
+            if config.jobsEnabled { jobs.userInput(kind: kind, point: point, own: own) }
         case .dragChanged(let rect):
             if rect.isNull { region = nil; overlay.setDrawRect(nil) } else { overlay.setDrawRect(rect) }
         case .dragPath(let points):
@@ -909,6 +924,7 @@ final class Talk {
 
     private func ask(_ text: String, typed: Bool) async {
         Log.info("ask: received bench=\(benchMode ? 1 : 0) \(typed ? "typed" : "spoken") text=\(Log.short(text, 120))")
+        askReceivedAt = Date()
         if !typed, !benchMode { dryRun = false }
         doIntent = false
         driveCap = nil
@@ -1133,7 +1149,55 @@ final class Talk {
             settle()
             return
         case .drive:
+            if config.jobsEnabled {
+                let ask = walkthrough?.ask ?? previousAsked
+                let steps = walkthrough?.history.joined(separator: "; ") ?? ""
+                endWalkthrough(reason: "handed to a job")
+                startJob(goal: steps.isEmpty ? ask : "\(ask) (steps done so far: \(steps))", placement: .front, words: ask)
+                return
+            }
             startDriving()
+            return
+        case .job(let placement, let goal, _):
+            startJob(goal: goal, placement: placement, words: text)
+            return
+        case .stopJob(let id):
+            if let job = jobs.job(id) { jobs.stop(job, reason: "he said stop") }
+            jobLine("stopped.")
+            return
+        case .stopAllJobs:
+            jobs.stopAll(reason: "he said stop everything")
+            jobLine("stopped everything.")
+            return
+        case .resumeJob(let id):
+            if let job = jobs.job(id) { jobs.resume(job); lastJobAddressed = id }
+            jobLine("going on.")
+            return
+        case .showJob(let id):
+            phase = .idle
+            settle()
+            if let job = jobs.job(id) { lastJobAddressed = id; Task { @MainActor in await self.jobs.show(job) } }
+            return
+        case .steerJob(let id, let instruction):
+            if let job = jobs.job(id) { jobs.steer(job, instruction: instruction); lastJobAddressed = id }
+            jobLine("changing course.")
+            return
+        case .followUpJob(let id):
+            if let job = jobs.job(id) { jobs.followUp(job, text: text); lastJobAddressed = id }
+            jobLine("got it.")
+            return
+        case .jobStatus:
+            jobLine(jobs.spokenStatus())
+            return
+        case .agentAsked:
+            phase = .idle
+            overlay.setPhase(.speaking)
+            speaker.speak("on it, an agent has it.")
+            overlay.setBubble("on it, an agent has it.")
+            hud.set(phase: .hidden)
+            startAgent(brief: text, name: nil, fresh: true)
+            region = nil
+            scheduleIdleCheck()
             return
         case .act(let command):
             await performAct(command, local: true)
@@ -1460,6 +1524,9 @@ final class Talk {
         /// Tonight's voice verbs (VO-01 to VO-13, MB-07).
         case openAgent(String), openArtifact(String, String), pauseAgent(String), steerAgent(String, String), retryAgent(String),
              resumeRoutine(String), askWhichCard(ConsentVoice.Answer), morning(Bool, String?), homeThread(String), setMode(ContextMode?)
+        /// The fast lane: a job Dot runs itself, and his words to a running one; an agent only on his words.
+        case job(JobPlacement, goal: String, why: String), stopJob(String), stopAllJobs, resumeJob(String), showJob(String),
+             steerJob(String, String), followUpJob(String), jobStatus, agentAsked
         var description: String {
             switch self {
             case .act(let command): return "act(\(command.verb) \(command.object))"
@@ -1501,6 +1568,15 @@ final class Talk {
             case .morning(let yes, let adjust): return "morning(\(yes ? "do it" : "skip")\(adjust.map { ", \($0)" } ?? ""))"
             case .homeThread(let slug): return "homeThread(\(slug))"
             case .setMode(let mode): return "setMode(\(mode?.rawValue ?? "auto"))"
+            case .job(let placement, let goal, let why): return "job(\(placement.rawValue)) model=\(JobModel.decide(text: goal)) (\(why))"
+            case .stopJob(let id): return "stopJob(\(id))"
+            case .stopAllJobs: return "stopAllJobs"
+            case .resumeJob(let id): return "resumeJob(\(id))"
+            case .showJob(let id): return "showJob(\(id))"
+            case .steerJob(let id, let to): return "steerJob(\(id), \(to))"
+            case .followUpJob(let id): return "followUpJob(\(id))"
+            case .jobStatus: return "jobStatus"
+            case .agentAsked: return "agentAsked"
             }
         }
     }
@@ -1559,6 +1635,12 @@ final class Talk {
             return
         }
         if case .go(let goal) = command {
+            if config.jobsEnabled {
+                // [GO] starts a job at once; talk already said its line.
+                startJob(goal: lastAsked + "\n" + goal, placement: JobPlacementRule.decide(text: lastAsked, frontApp: context.appName).placement,
+                         words: lastAsked, announce: local)
+                return
+            }
             if local { startGo(goal) } else { pendingGo = goal }
             return
         }
@@ -1604,6 +1686,35 @@ final class Talk {
         Log.info("act: go \(Log.short(goal, 80)) (driven walkthrough)")
         goRun = (goal, Date())
         sendTurn(message, images: images, to: session, kind: .talk)
+    }
+
+    /// He asked for an agent in this ask (his words, or shift held): talk's own agent tags start one only then.
+    private var explicitAgent: Bool {
+        AgentWords.asksForAgent(lastAsked) || AgentModeFilter.wantsFreshAgent(lastAsked) || mode == .agent
+    }
+
+    /// Start a job; Dot says its own start line unless talk already said one.
+    private func startJob(goal: String, placement: JobPlacement, words: String, announce: Bool = true) {
+        phase = .idle
+        hud.set(phase: .hidden)
+        overlay.setPhase(.idle)
+        let started = jobs.start(goal: goal, placement: placement, context: context, askedAt: askReceivedAt, bench: benchMode,
+                                 benchPort: hands.bench?.cometPort, hisWords: words, announce: announce)
+        if started == nil { jobLine("i couldn't start that job.") }
+        lastJobAddressed = jobs.newest?.id
+        region = nil
+        scheduleIdleCheck()
+    }
+
+    /// A short line about a job: spoken, or in the bench only logged (the bench runs in his room at night).
+    private func jobLine(_ line: String) {
+        if benchMode {
+            Log.info("speak: job (bench, silent) \(line)")
+            phase = .idle
+            settle()
+            return
+        }
+        sayLocal(line)
     }
 
     /// Every new agent goes through here: a bench turn logs it instead.
@@ -1748,6 +1859,20 @@ final class Talk {
         if AgentAddress.isProgressAsk(text), !agents.runningAgents().isEmpty || !hud.openConsents.isEmpty {
             return .agentStatus(nil)
         }
+        // The fast lane: his words to a running job (stop, go on after a pause, show me, change course).
+        if config.jobsEnabled, !jobs.jobs.isEmpty {
+            if let paused = jobs.pausedJob {
+                if JobWords.isResume(text) { return .resumeJob(paused.id) }
+                jobs.drop(paused, reason: "he moved on")
+            }
+            if JobWords.isStopAll(text), !jobs.running.isEmpty { return .stopAllJobs }
+            if JobWords.isStop(text), let job = jobs.frontJob ?? jobs.newest { return .stopJob(job.id) }
+            if JobWords.isShowMe(text), let job = jobs.newestBehind() { return .showJob(job.id) }
+            if let instruction = AgentVoice.steer(text), let job = jobs.running.first(where: { $0.id == lastJobAddressed }) ?? jobs.frontJob ?? jobs.newest {
+                return .steerJob(job.id, instruction)
+            }
+            if AgentAddress.isProgressAsk(text), !jobs.running.isEmpty { return .jobStatus }
+        }
         // "close the panel" closes the panel; a bare "close it" closes the board, or the panel when it just opened
         // (later, "close this" is likely about his own tab or window)
         let saysClose = Self.closeWords.firstMatch(in: text, range: range) != nil
@@ -1802,7 +1927,13 @@ final class Talk {
         if inWalkthrough || board.hasHiddenSteps, Self.continueWords.firstMatch(in: text, range: range) != nil {
             return .continueWalkthrough
         }
-        if config.driveEnabled, saysDrive(text) {
+        if config.jobsEnabled, saysDrive(text) {
+            // "do it": Dot takes it over as a job, in a walkthrough or after one.
+            if inWalkthrough { return .drive }
+            let bare = Self.driveWords.stringByReplacingMatches(in: text, range: range, withTemplate: "")
+                .trimmingCharacters(in: CharacterSet.alphanumerics.inverted)
+            return .job(.front, goal: bare.count < 4 && !previousAsked.isEmpty ? previousAsked : text, why: "do it")
+        } else if config.driveEnabled, saysDrive(text) {
             if inWalkthrough, walkthrough?.awaitingNextStep == false { return .drive }
             driveRequested = true   // the walkthrough about to start is his to watch, not to click
         }
@@ -1817,6 +1948,11 @@ final class Talk {
             }
         }
         if AgentModeFilter.wantsFreshAgent(text), !inWalkthrough { return .agentFresh }
+        if config.jobsEnabled, AgentWords.asksForAgent(text) {
+            // His words for an agent: nothing else starts one when jobs are on.
+            if inWalkthrough { endWalkthrough(reason: "he asked for an agent") }
+            return .agentAsked
+        }
         guard let jev else {
             if inWalkthrough { endWalkthrough(reason: "new question") }
             return .answer
@@ -1829,6 +1965,7 @@ final class Talk {
             "frontmost_app": context.appName ?? "",
             "window_title": String((context.windowTitle ?? "").prefix(120)),
             "agents_working": running.map { ["name": $0.name, "task": $0.task] },
+            "jobs_working": jobs.running.map { ["goal": Log.short($0.goal, 100), "placement": $0.placement.rawValue, "phase": $0.phase.rawValue, "last_step": $0.steps.last ?? ""] },
             "elements_on_screen": context.elements.prefix(40).map { "\($0.role.dropFirst(2)) \($0.title)" },
         ]
         if let selected = context.selectedText, !selected.isEmpty { state["selected_text"] = String(selected.prefix(200)) }
@@ -1842,6 +1979,11 @@ final class Talk {
             "agent": "real work in the background that takes minutes: researching across many sources, drafting or writing, making or changing files, going through mail, a long job in another app, anything that sends or submits",
             "think": "a hard reasoning question (a calculation, a tricky technical or finance judgment) that deserves a stronger model",
         ]
+        if config.jobsEnabled {
+            // The fast lane: doing is the companion's own, any number of steps; agents start only on his words.
+            routeCriteria["act"] = "anything for the companion to do rather than answer: open an app, a site, a file or a folder; go somewhere and do something there; click, type, search, scroll; download or save files; fill a form up to its submit button; check a site or an account; make a file or a deck; go through mail; research across sources and write it up; any number of steps, in front of him or in a window behind"
+            routeCriteria["agent"] = nil
+        }
         if !lastAskWasTyped, text.count >= 40 || lecture.isListening {
             // The held key in a lecture hall picks up the lecturer: statements, not a question to the companion.
             routeCriteria["lecture"] = "the microphone picked up someone else speaking (a lecturer, a video, a conversation): statements about a subject, not a question or request addressed to the companion"
@@ -1853,7 +1995,9 @@ final class Talk {
         var questions: [String: Jev.Question] = [
             "route": .choice(instructions: "How should a voice companion that can see the screen handle what the user just said? Pick one.", criteria: routeCriteria),
         ]
-        if !running.isEmpty {
+        if config.jobsEnabled, !jobs.running.isEmpty {
+            questions["followup"] = .yesNo(instructions: "Is this a follow-up, a steer or more detail for the job or agent that is already working (jobs_working, agents_working), rather than a new request?", yes: "it continues the work already running", no: "a new request or a question about the screen")
+        } else if !running.isEmpty {
             questions["followup"] = .yesNo(instructions: "Is this a follow-up, a steer or a question for the agent that is already working, rather than a new request?", yes: "it continues the agent's current task", no: "a new request or a question about the screen")
         } else if reporter != nil {
             questions["followup"] = .yesNo(instructions: "An agent just reported back (agent_just_reported). Is what the user said a reply to it or more work for that same agent (a correction, a next step, a 'now do this'), rather than a new request or a question about the screen?", yes: "it continues that agent's work", no: "a new request or a question about the screen")
@@ -1894,6 +2038,11 @@ final class Talk {
             hud.flash(status: "didn't catch a question", for: 2)
             return .dismiss
         }
+        if config.jobsEnabled, let follow = answers["followup"]?.probability, follow >= 0.7,
+           let job = jobs.running.first(where: { $0.id == lastJobAddressed }) ?? jobs.newest {
+            Log.info("jev: follow-up for job[\(job.id)] (\(String(format: "%.2f", follow)))")
+            return .followUpJob(job.id)
+        }
         if let follow = answers["followup"]?.probability, follow >= 0.7 {
             // The agent he last spoke to when it is still working, else the newest; with none working,
             // the one that just reported (G2), but never for a bare acknowledgment, which its offered
@@ -1915,6 +2064,16 @@ final class Talk {
             overlay.point(at: CGPoint(x: hit.frame.midX, y: hit.frame.midY), label: String(hit.title.prefix(24)))
         }
         if route.choice == "lecture", route.probability >= 0.6, route.confidence >= 0.5 { return .lecture }
+        if config.jobsEnabled, route.choice == "act", route.probability >= 0.5, route.confidence >= 0.5, !PanelCoach.wantsPanel(text), !Self.teachWords(text) {
+            if config.jobsSmallActsInTalk, JobWords.isSingleAct(text) {
+                // One small act on what is in front stays a talk tag, as fast as before.
+                Log.info("jev: one small act (\(String(format: "%.2f", route.probability))); talk writes the tag")
+                return .answer
+            }
+            let (placement, why) = JobPlacementRule.decide(text: text, frontApp: context.appName)
+            Log.info("route: job placement=\(placement.rawValue) (\(why))")
+            return .job(placement, goal: text, why: why)
+        }
         if route.choice == "act", route.probability >= 0.5, route.confidence >= 0.5, !PanelCoach.wantsPanel(text), !Self.teachWords(text) {
             // done, not explained: the talk model writes the action tags, and any rings it gives are pressed by Dot
             Log.info("jev: do it (\(String(format: "%.2f", route.probability)))")
@@ -1923,7 +2082,7 @@ final class Talk {
             goRun = (text, Date())
             return .answer
         }
-        if route.choice == "agent", route.probability >= config.jevRouteThreshold, route.confidence >= 0.6 {
+        if !config.jobsEnabled, route.choice == "agent", route.probability >= config.jevRouteThreshold, route.confidence >= 0.6 {
             // Agent work that names one of his agents goes to that agent (G2), not the default one.
             if let named = AgentAddress.mentioned(in: text, roster: addressBook) { return .tellAgent(named.slug) }
             return .agent
@@ -2086,6 +2245,10 @@ final class Talk {
                 else if !run.line.isEmpty { line += "; now: \(Log.short(run.line, 80))" }
                 return line
             }.joined(separator: " | "))
+        }
+        if config.jobsEnabled {
+            let jobsLine = jobs.statusLine()
+            if !jobsLine.isEmpty { lines.append(jobsLine) }
         }
         // Every agent he has, not only the last 45 minutes' (G2): an idle one is reached by name, not founded twice.
         let busy = Set(recent.map { $0.name.lowercased() })
@@ -2575,6 +2738,11 @@ final class Talk {
         for tag in tags {
             if dryRun, !tag.isVisual { continue }
             switch tag {
+            case .agent(let brief) where config.jobsEnabled && !explicitAgent && AgentAddress.leadingFor(brief, roster: addressBook) == nil,
+                 .newAgent(_, let brief) where config.jobsEnabled && !explicitAgent:
+                Log.info("job: talk's [AGENT] became a job (no agent words)")
+                startJob(goal: lastAsked + "\n" + brief, placement: JobPlacementRule.decide(text: lastAsked, frontApp: context.appName).placement,
+                         words: lastAsked, announce: false)
             case .agent(let brief):
                 // "for <name>: ..." was the prompt's way to reach a named agent before [TELL]; honour it.
                 if let named = AgentAddress.leadingFor(brief, roster: addressBook) {
@@ -2593,6 +2761,10 @@ final class Talk {
                     let names = fits.map { $0.name.lowercased() }
                     hud.flash(status: "which one: \(names.joined(separator: " or "))?", for: 6)
                     Log.warn("tell tag for \"\(name)\" fits \(names.joined(separator: ", ")); asked which")
+                } else if config.jobsEnabled, !explicitAgent {
+                    Log.info("job: talk's [TELL] to no agent became a job")
+                    startJob(goal: lastAsked + "\n" + message, placement: JobPlacementRule.decide(text: lastAsked, frontApp: context.appName).placement,
+                             words: lastAsked, announce: false)
                 } else {
                     // No agent by that name yet: the message founds one, the way NEW_AGENT does.
                     startAgent(brief: message, name: name)
@@ -2802,6 +2974,7 @@ final class Talk {
         }
         var next = Walkthrough(kind: hover ? .hover : .click, target: target, radius: screenRadius, label: label, step: step,
                                appBundle: context.bundleIdentifier)
+        next.ask = walkthrough?.ask ?? lastAsked
         if let previous = walkthrough {
             next.history = previous.history
             next.appBundle = previous.appBundle ?? context.bundleIdentifier
@@ -3047,6 +3220,7 @@ final class Talk {
 
     func interrupt() {
         ActionBarPanel.dismiss()
+        if config.jobsEnabled { jobs.escape() }
         let wasBusy = phase != .idle || speaker.isSpeaking || walkthrough != nil
         stopSpeaking()
         cutActiveTurn()

@@ -151,6 +151,22 @@ struct DotConfig: Codable {
     /// The Claude Code model alias that writes them, through a one-shot `claude -p` with no tools.
     var quipModel = "haiku"
 
+    // The fast lane (2026-10-20): Dot does the work itself, as jobs.
+    /// Every action he asks for runs as a job: its own session with Dot's hands, no step or time limit, in his tab
+    /// when he said open, go to or show me, else in a window behind him. Off: the act, GO and driven paths as before.
+    var jobsEnabled = true
+    /// One small act on what is in front ("click export", "scroll down") stays a talk tag, as fast as before.
+    var jobsSmallActsInTalk = true
+    var jobModel = "sonnet"
+    /// Decks and anything written under his name that he didn't dictate (his rule: prose under his name runs on Opus).
+    var jobProseModel = "opus"
+    var jobEffort: String? = "low"
+    /// A warm spare job session, so a job's first action lands in about 2 s instead of 4.
+    var jobSpare = true
+    var jobsMax = 3
+    /// "window": a behind job gets a Comet window of its own behind his app. "hidden" is a later item.
+    var behindMode = "window"
+
     /// Atlas tools a talk turn may call without asking: everything that reads, remembers or drafts.
     /// Sends, submits, posts and harness administration stay with agents and his yes.
     /// The basics pass (2026-10-18) cut the list from 56 to the 28 a talk turn has used or plainly needs: every schema
@@ -255,6 +271,14 @@ struct DotConfig: Codable {
         orbSize = min(max(get(.orbSize, d.orbSize), 16), 36)
         contextQuips = get(.contextQuips, d.contextQuips)
         quipModel = get(.quipModel, d.quipModel)
+        jobsEnabled = get(.jobsEnabled, d.jobsEnabled)
+        jobsSmallActsInTalk = get(.jobsSmallActsInTalk, d.jobsSmallActsInTalk)
+        jobModel = get(.jobModel, d.jobModel)
+        jobProseModel = get(.jobProseModel, d.jobProseModel)
+        jobEffort = c.contains(.jobEffort) ? (try? c.decodeIfPresent(String.self, forKey: .jobEffort)) : d.jobEffort
+        jobSpare = get(.jobSpare, d.jobSpare)
+        jobsMax = min(max(get(.jobsMax, d.jobsMax), 1), 6)
+        behindMode = get(.behindMode, d.behindMode)
     }
 
     static var directory: URL {
@@ -263,12 +287,14 @@ struct DotConfig: Codable {
 
     static var fileURL: URL { directory.appendingPathComponent("config.json") }
 
-    static func load() -> DotConfig {
+    /// `save: false` reads without writing the file back (a build checked from the command line must not rewrite the
+    /// config of the Dot he is running).
+    static func load(save: Bool = true) -> DotConfig {
         let fm = FileManager.default
         if let data = try? Data(contentsOf: fileURL) {
             do {
                 let config = try JSONDecoder().decode(DotConfig.self, from: data)
-                config.save()   // writes any keys this version added, with their defaults
+                if save { config.save() }   // writes any keys this version added, with their defaults
                 return config
             } catch {
                 Log.error("config.json could not be read, using defaults: \(error)")

@@ -8,6 +8,23 @@ switch arguments.first {
 case "--gate":
     // Claude Code's PreToolUse and PostToolUse hook for Dot's agents (AG-07): hook JSON in, decision out.
     Gate.run(Array(arguments.dropFirst()))
+case "--hands-mcp":
+    // A job's `dot` tools (the fast lane): stdio MCP in, relayed to the running Dot over the control socket.
+    HandsMCPServer.run(Array(arguments.dropFirst()))
+case "--job-test":
+    // The bench: his click or key for the newest bench job, through the pause rule. Refused outside the bench.
+    let kind = arguments.dropFirst().first ?? "click"
+    guard kind == "click" || kind == "key" else { print("usage: Dot --job-test click|key"); exit(2) }
+    DistributedNotificationCenter.default().postNotificationName(DotIPC.jobTest, object: nil, userInfo: ["kind": kind], deliverImmediately: true)
+    print("sent to Dot")
+    exit(0)
+case "--occlusion":
+    // The covered check, computed by the running Dot with its own Accessibility grant: logs both verdicts.
+    let point = arguments.dropFirst().first ?? ""
+    guard point.split(separator: ",").count == 2 else { print("usage: Dot --occlusion x,y   (screen points, top-left origin)"); exit(2) }
+    DistributedNotificationCenter.default().postNotificationName(DotIPC.occlusion, object: nil, userInfo: ["text": point], deliverImmediately: true)
+    print("sent to Dot; see dot.log for the occlusion line")
+    exit(0)
 case "--host":
     // The agent host (AG-12, LaunchAgent com.roshan.dot-host): it owns the agents' claude processes so
     // they outlive Dot. `--host list` prints what it runs (install-host.sh asks before a restart).
@@ -102,10 +119,18 @@ case "--snapshot":
     MainActor.assumeIsolated { Snapshots.run(into: folder, only: group) }
     exit(0)
 case "--prompt":
-    // The talk or think system prompt exactly as a session gets it (round eight's panel dry runs read it).
-    let config = DotConfig.load()
+    // The talk, think or job system prompt exactly as a session gets it (round eight's panel dry runs read it).
+    // `--prompt talk --jobs off|on` prints it with the jobs flag set either way; the config file is never rewritten.
+    let config = DotConfig.load(save: false)
     let which = arguments.dropFirst().first ?? "think"
-    print((which == "talk" ? Prompts.talk : Prompts.think) + Prompts.courseIndex(in: config.talkRootURL))
+    let rest = Array(arguments.dropFirst(2))
+    let jobsFlag = rest.firstIndex(of: "--jobs").flatMap { $0 + 1 < rest.count ? rest[$0 + 1] : nil }
+    let jobsOn = jobsFlag.map { $0 == "on" } ?? config.jobsEnabled
+    switch which {
+    case "talk": print(Prompts.talk(jobs: jobsOn) + Prompts.courseIndex(in: config.talkRootURL))
+    case "job": print(Prompts.job + Prompts.courseIndex(in: config.talkRootURL))
+    default: print(Prompts.think + Prompts.courseIndex(in: config.talkRootURL))
+    }
     exit(0)
 case "--quip-test":
     // Context lines (docs/alive.md, round two): the real writer on three made-up moments, outside the app.

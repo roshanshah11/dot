@@ -1,4 +1,6 @@
 import AppKit
+import DotKit
+import ApplicationServices
 import Foundation
 
 /// Which app's window is on top at a point on screen, so a ring is never drawn around a control
@@ -29,10 +31,35 @@ enum WindowOcclusion {
         return nil
     }
 
-    /// True when the point is covered by a window that is not the frontmost app's.
+    /// The pid that owns the accessibility element at the point (AppKit coordinates), or nil.
+    static func axOwner(at point: CGPoint) -> pid_t? {
+        let primaryHeight = NSScreen.screens.first?.frame.height ?? 0
+        var element: AXUIElement?
+        guard AXUIElementCopyElementAtPosition(AXUIElementCreateSystemWide(), Float(point.x), Float(primaryHeight - point.y), &element) == .success,
+              let element else { return nil }
+        var pid: pid_t = 0
+        return AXUIElementGetPid(element, &pid) == .success ? pid : nil
+    }
+
+    /// True when the point is covered by something that is neither the frontmost app nor Dot. The accessibility hit test
+    /// decides first: an invisible full-screen window (Cua Driver's) has no elements, so the app underneath answers and
+    /// presses aren't blocked; the window list is the fallback.
     static func isCovered(_ point: CGPoint) -> (covered: Bool, by: String) {
-        guard let owner = topWindowOwner(at: point) else { return (false, "") }
+        let owner = topWindowOwner(at: point)
         let front = NSWorkspace.shared.frontmostApplication?.processIdentifier
-        return (front != nil && owner.pid != front, owner.name)
+        let ax = axOwner(at: point)
+        let verdict = OcclusionRule.decide(axPid: ax, cgTopPid: owner?.pid, frontPid: front, ownPid: ProcessInfo.processInfo.processIdentifier)
+        let name = ax.flatMap { NSRunningApplication(processIdentifier: $0)?.localizedName } ?? owner?.name ?? ""
+        return (verdict, name)
+    }
+
+    /// `Dot --occlusion x,y` (top-left screen points): both verdicts, in the log.
+    static func logVerdicts(topLeft: CGPoint) {
+        let primaryHeight = NSScreen.screens.first?.frame.height ?? 0
+        let point = CGPoint(x: topLeft.x, y: primaryHeight - topLeft.y)
+        let ax = axOwner(at: point)
+        let cg = topWindowOwner(at: point)?.pid
+        let covered = isCovered(point).covered
+        Log.info("occlusion: \(Int(topLeft.x)),\(Int(topLeft.y)) ax=\(ax.map(String.init) ?? "none") cg=\(cg.map(String.init) ?? "none") covered=\(covered)")
     }
 }
