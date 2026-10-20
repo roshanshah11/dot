@@ -22,13 +22,15 @@ public enum JobAtlasTools {
         "mail_live", "mail_read", "mail_triage", "app_status", "rooms_free", "wyzant_threads", "amazon_search", "amazon_product",
         "gdoc_read",
     ]
-    public static let siteWrites: [String] = ["canvas_readings", "thread_draft", "gdoc_export"]
+    /// Saves files: in the bench its downloads go to /tmp/dot-bench (ATLAS_DOWNLOADS_DIR, no vault), so it is allowed there.
+    public static let canvasReadings = "canvas_readings"
+    public static let siteWrites: [String] = ["thread_draft", "gdoc_export"]
     /// Allowed, but only when his words named what to apply to (it fills and uploads, never submits).
     public static let handshakeApply = "handshake_apply"
 
-    public static var ordered: [String] { reads + ownWrites + siteReads + siteWrites + [handshakeApply] }
-    public static let allowed: Set<String> = Set(reads + ownWrites + siteReads + siteWrites + [handshakeApply])
-    public static let benchAllowed: Set<String> = Set(reads + siteReads)
+    public static var ordered: [String] { reads + ownWrites + siteReads + [canvasReadings] + siteWrites + [handshakeApply] }
+    public static let allowed: Set<String> = Set(reads + ownWrites + siteReads + [canvasReadings] + siteWrites + [handshakeApply])
+    public static let benchAllowed: Set<String> = Set(reads + siteReads + [canvasReadings])
 
     /// The send tools, which exist only on `atlas-send`.
     public static let sendTools: [String] = ["imessage_send", "send_email", "reply"]

@@ -35,6 +35,7 @@ final class Talk {
     /// `Dot --ask --bench`: write tools refused, agents logged and not started, actions only on the bench fixture.
     private var benchMode = false
     private var talkSessionIsBench = false
+    private var thinkSessionIsBench = false
     /// Results still owed by turns Dot cut off, by session: each is dropped with everything it streams, so a cut-off
     /// turn is never spoken, retried or acted on (2026-10-18: "I" was spoken and the old question asked again).
     private var drainCounts: [ObjectIdentifier: Int] = [:]
@@ -279,6 +280,10 @@ final class Talk {
             talkSession = makeSession(kind: .talk)
             return talkSession
         case .think:
+            if let thinkSession, thinkSession.isRunning, thinkSessionIsBench != benchMode, !thinkSession.turnInFlight {
+                Log.info("think: \(benchMode ? "bench" : "normal") session for this turn")
+                thinkSession.stop()
+            }
             if let thinkSession, thinkSession.isRunning {
                 // It had no limit: one ran 14:03 to 21:44 on 2026-10-18, its input growing from 33k to 151k tokens a turn.
                 // A fresh one still gets the open panel and talk's last exchanges in its context.
@@ -307,11 +312,21 @@ final class Talk {
         options.strictMCP = true
         // Events with guests go out to them (FX-08): those two tools are judged per call below, never pre-allowed.
         options.allowedTools = options.mcpConfigPath == nil ? [] : config.talkAllowedTools.filter { !Talk.guestTools.contains($0) }
-        let bench = kind == .talk && benchMode
+        // Every kind of session in a bench turn is a bench session: think used to run on the live config (06).
+        let bench = MCPConfigEdit.isBenchSession(kind: kind.rawValue, benchMode: benchMode)
         if bench {
             // a bench turn reads only: nothing remembered, drafted or put on his calendar
             let writes = Set(DotConfig.talkWriteTools.map { "mcp__atlas__\($0)" })
             options.allowedTools = options.allowedTools.filter { !writes.contains($0) }
+            // and its own copy of the MCP config: Atlas downloads to /tmp/dot-bench, never the vault
+            if let path = options.mcpConfigPath, let data = try? Data(contentsOf: URL(fileURLWithPath: path)), let copy = MCPConfigEdit.benchCopy(data) {
+                try? FileManager.default.createDirectory(atPath: "/tmp/dot-bench", withIntermediateDirectories: true)
+                let tmp = "/tmp/dot-bench/mcp-\(kind.rawValue)-bench.json"
+                if (try? copy.write(to: URL(fileURLWithPath: tmp))) != nil {
+                    options.mcpConfigPath = tmp
+                    Log.info("bench: \(kind.rawValue) session on a temp MCP config (downloads to /tmp/dot-bench, no vault)")
+                }
+            }
         }
         if kind == .talk {
             options.effort = config.talkEffort
@@ -341,7 +356,7 @@ final class Talk {
                 Log.warn("talk: refused tool \(request.toolName)")
             }
         }
-        if kind == .talk { talkSessionIsBench = bench }
+        if kind == .talk { talkSessionIsBench = bench } else { thinkSessionIsBench = bench }
         coursesInSession[ObjectIdentifier(session)] = []
         drainCounts[ObjectIdentifier(session)] = nil
         cutNoteOwed.remove(ObjectIdentifier(session))
@@ -2252,6 +2267,14 @@ final class Talk {
             let jobsLine = jobs.statusLine()
             if !jobsLine.isEmpty { lines.append(jobsLine) }
         }
+        // Site tools talk has only once they went live: the line rides in the context, so the system prompt stays the same.
+        let liveTools = config.atlasTools(config.talkMCPConfig)
+        if liveTools.contains("canvas_readings") {
+            lines.append("[canvas] for \"download my readings\" call canvas_readings (it saves to his Downloads); for one file, canvas_download with dest \"downloads\".")
+        }
+        if liveTools.contains("mail_live") {
+            lines.append("[mail] mail questions: mail_live first (live); mail is the box's history.")
+        }
         // Every agent he has, not only the last 45 minutes' (G2): an idle one is reached by name, not founded twice.
         let busy = Set(recent.map { $0.name.lowercased() })
         let idle = agents.roster().filter { $0.slug != "dot" && !busy.contains($0.name.lowercased()) }.map(\.name)
@@ -3254,10 +3277,10 @@ final class Talk {
     static func spokenTool(_ name: String) -> String? {
         switch name.split(separator: "__").last.map(String.init) ?? name {
         case "calendar", "free": return "your calendar"
-        case "mail", "thread", "unanswered": return "your mail"
+        case "mail", "thread", "unanswered", "mail_live", "mail_read", "mail_triage": return "your mail"
         case "messages": return "your messages"
         case "search", "facts", "people", "commitments", "todo": return "your notes"
-        case "canvas_find", "canvas_read": return "canvas"
+        case "canvas_find", "canvas_read", "canvas_readings", "canvas_download": return "canvas"
         case "docs", "read_doc": return "your docs"
         case "WebSearch", "WebFetch": return "the web"
         default: return nil

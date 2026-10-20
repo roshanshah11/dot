@@ -385,3 +385,25 @@ final class MessageCardTests: XCTestCase {
         XCTAssertNil(ProposalCard(json: ["operation": "imessage.send"]))
     }
 }
+
+final class MCPConfigEditTests: XCTestCase {
+    let talk = """
+    {"mcpServers":{"atlas":{"command":"/x/python3.13","args":["-m","atlas.mcp"],"env":{"ATLAS_CHAT_SESSION":"dot-talk","ATLAS_MCP_TOOLS":"now,search, canvas_readings"}}}}
+    """.data(using: .utf8)!
+
+    func testAtlasTools() {
+        XCTAssertEqual(MCPConfigEdit.atlasTools(talk), ["now", "search", "canvas_readings"])
+        XCTAssertEqual(MCPConfigEdit.atlasTools(Data("{}".utf8)), [])
+    }
+
+    func testBenchCopy() {
+        let copy = MCPConfigEdit.benchCopy(talk)!
+        let env = ((try! JSONSerialization.jsonObject(with: copy) as! [String: Any])["mcpServers"] as! [String: Any])["atlas"] as! [String: Any]
+        let e = env["env"] as! [String: String]
+        XCTAssertEqual(e["ATLAS_DOWNLOADS_DIR"], "/tmp/dot-bench/downloads")
+        XCTAssertEqual(e["ATLAS_CANVAS_NO_VAULT"], "1")
+        XCTAssertEqual(e["ATLAS_CHAT_SESSION"], "dot-talk", "the rest stays")
+        XCTAssertTrue(MCPConfigEdit.isBenchSession(kind: "think", benchMode: true))
+        XCTAssertFalse(MCPConfigEdit.isBenchSession(kind: "talk", benchMode: false))
+    }
+}

@@ -28,7 +28,7 @@ public enum JobConfigFile {
             env["ATLAS_CHAT_SESSION"] = "dot-job-\(jobId)-\(stamp)"
             env["ATLAS_CANVAS_DEFAULT_DEST"] = "downloads"
             if bench {
-                env["ATLAS_MCP_TOOLS"] = (JobAtlasTools.reads + JobAtlasTools.siteReads).joined(separator: ",")
+                env["ATLAS_MCP_TOOLS"] = (JobAtlasTools.reads + JobAtlasTools.siteReads + [JobAtlasTools.canvasReadings]).joined(separator: ",")
                 env["ATLAS_DOWNLOADS_DIR"] = "/tmp/dot-bench/downloads"
                 env["ATLAS_CANVAS_NO_VAULT"] = "1"
             } else {
@@ -52,4 +52,35 @@ public enum JobConfigFile {
 
     /// The `ask-` session a job's sends queue under; Dot lists its proposals for the cards.
     public static func sendSession(jobId: String, stamp: String) -> String { "ask-dot-job-\(jobId)-\(stamp)" }
+}
+
+/// Small edits to a Claude Code MCP config: the Atlas tools it exposes, and the bench's copy.
+public enum MCPConfigEdit {
+    /// The names in the atlas server's ATLAS_MCP_TOOLS (empty: every tool, or no atlas server).
+    public static func atlasTools(_ data: Data) -> Set<String> {
+        guard let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let atlas = (root["mcpServers"] as? [String: Any])?["atlas"] as? [String: Any],
+              let list = (atlas["env"] as? [String: Any])?["ATLAS_MCP_TOOLS"] as? String else { return [] }
+        return Set(list.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty })
+    }
+
+    /// A bench session's copy: Atlas downloads land in the bench folder and nothing writes the vault.
+    public static func benchCopy(_ data: Data, downloads: String = "/tmp/dot-bench/downloads") -> Data? {
+        guard var root = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              var servers = root["mcpServers"] as? [String: Any] else { return nil }
+        if var atlas = servers["atlas"] as? [String: Any] {
+            var env = (atlas["env"] as? [String: Any]) ?? [:]
+            env["ATLAS_DOWNLOADS_DIR"] = downloads
+            env["ATLAS_CANVAS_NO_VAULT"] = "1"
+            env["ATLAS_CANVAS_DEFAULT_DEST"] = "downloads"
+            atlas["env"] = env
+            servers["atlas"] = atlas
+        }
+        root["mcpServers"] = servers
+        return try? JSONSerialization.data(withJSONObject: root, options: [.sortedKeys])
+    }
+
+    /// Every session kind in a bench turn is a bench session (talk, think and job alike; think used to run on the
+    /// live config with write tools pre-allowed).
+    public static func isBenchSession(kind: String, benchMode: Bool) -> Bool { benchMode }
 }

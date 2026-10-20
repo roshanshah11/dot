@@ -880,7 +880,9 @@ final class AgentManager {
                          "journal", "harness_status", "now", "free", "thread", "unanswered", "attachments", "postings", "proposals", "status",
                          "docs", "read_doc", "view_note", "apple_note_read", "recent_files", "commitments", "vocabulary", "sec_lookup", "sec_facts",
                          "sec_batch", "sec_filings", "sec_section", "quote", "fin_calc", "web_text", "canvas_courses", "canvas_find", "canvas_read",
-                         "state", "preferences", "lesson", "deliverable", "project", "todo", "reminder", "remember", "deadline_add", "commit", "file"] {
+                         "state", "preferences", "lesson", "deliverable", "project", "todo", "reminder", "remember", "deadline_add", "commit", "file",
+                         // the fast lane's site tools (06, 08): reads, Canvas files to Downloads or the vault, a draft in the thread
+                         "canvas_readings", "canvas_download", "mail_live", "mail_read", "mail_triage", "thread_draft"] {
                 allow.insert("mcp__atlas__\(name)")
             }
         }

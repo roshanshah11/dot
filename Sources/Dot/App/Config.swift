@@ -1,3 +1,4 @@
+import DotKit
 import Foundation
 
 /// `~/.config/dot/config.json`. Every field has a default and a missing key decodes to it,
@@ -177,6 +178,8 @@ struct DotConfig: Codable {
         "sec_lookup", "sec_facts", "fin_calc",
         "remember", "deadline_add", "commit", "reminder",
         "draft_email", "calendar_create", "calendar_update",
+        // The fast lane's site tools (06, 08): one call for "download my readings", live mail.
+        "canvas_readings", "canvas_download", "mail_live", "mail_read",
     ]
     /// Taken out of talk by the basics pass; a saved config that still lists them does not bring them back.
     static let retiredTalkAtlasTools: Set<String> = [
@@ -185,7 +188,8 @@ struct DotConfig: Codable {
         "deadline_confirm", "commit_done", "commit_update", "contact_upsert", "journal", "write_note", "apple_note", "watch_add", "xlsx_write",
     ]
     /// Atlas tools that write (remember, draft, create): refused in a bench turn.
-    static let talkWriteTools: Set<String> = ["todo", "remember", "deadline_add", "commit", "reminder", "draft_email", "calendar_create", "calendar_update"]
+    static let talkWriteTools: Set<String> = ["todo", "remember", "deadline_add", "commit", "reminder", "draft_email", "calendar_create", "calendar_update",
+                                              "canvas_download"]
     static let defaultTalkTools = talkAtlasTools.map { "mcp__atlas__\($0)" }
 
     init() {}
@@ -365,6 +369,12 @@ struct DotConfig: Codable {
         guard let path else { return nil }
         let expanded = Self.expand(path)
         return FileManager.default.fileExists(atPath: expanded) ? expanded : nil
+    }
+
+    /// The Atlas tools a config's atlas server exposes (its ATLAS_MCP_TOOLS); empty when it lists none.
+    func atlasTools(_ path: String?) -> Set<String> {
+        guard let file = mcpConfigPath(path), let data = try? Data(contentsOf: URL(fileURLWithPath: file)) else { return [] }
+        return MCPConfigEdit.atlasTools(data)
     }
 
     func mcpToolNames(_ path: String?) -> [String] {

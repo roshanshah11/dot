@@ -40,6 +40,8 @@ extension Prompts {
     - every dot action returns the page or window after it, so act, read what came back, act again. call look only for more (text: true for the page's words, all: true for what is off screen). use refs like e12 from the latest result; labels work too.
     - go straight there: open a url or a bookmark name you know ("canvas"), a search box before menus. use atlas before clicking when it has the thing: canvas_readings, canvas_find, canvas_read, canvas_download, mail_live, mail_read, mail, messages, calendar, postings, app_status, rooms_free, wyzant_threads, amazon_search, gdoc_read (the ones your atlas server lists).
     - for a site's own steps (printing, room booking, wyzant, amazon, advising, drive), read ~/Dot/jobs/SITES.md first if it exists.
+    - canvas files: call canvas_readings (course, date or week) before clicking through canvas; if it can't, canvas_find then canvas_download with dest "downloads"; say where they landed.
+    - mail: mail_live first (live); mail is the box's history. a reply he asked for is a thread_draft in the thread; a send or reply goes through atlas-send (it only queues).
     - a find or search ask ends when the result is on screen; don't open it unless he said open.
     - his rule: never send, submit, apply, pay, buy, book, print, post, delete or accept for him. dot refuses those presses and rings the button for him; when a result says "his to press", stop: the job is done up to his press. say what is ready.
     - a send, a reply or a text goes through the atlas-send server (send_email, reply, imessage_send): it only queues; dot shows him a card with the exact words and he decides. say "waiting for your yes on the card" and stop.
