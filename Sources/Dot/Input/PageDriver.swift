@@ -221,7 +221,8 @@ final class PageDriver {
         if matches.count > 1 {
             var focused: [TabInfo] = []
             for tab in matches {
-                if await attach(tab.id, enable: false), await evaluate("document.hasFocus()") as? Bool == true { focused.append(tab) }
+                // 1 s: a tab held by a dialog never answers, and must not cost the job 5 s per candidate
+                if await attach(tab.id, enable: false), await evaluate("document.hasFocus()", timeout: 1) as? Bool == true { focused.append(tab) }
                 await detach()
             }
             matches = focused

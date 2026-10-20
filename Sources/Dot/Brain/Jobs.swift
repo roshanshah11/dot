@@ -21,6 +21,10 @@ final class JobManager {
         /// A front job in a native app (or Safari): its bundle; nil for a Comet job.
         var appBundle: String?
         var appName: String?
+        /// The tab he had in front when he asked (front jobs bind to it and to nothing else he switches to later).
+        var frontTitle: String?
+        var frontURL: String?
+        var bindTries = 0
         var phase: JobPhase = .starting
         let startedAt = Date()
         let askedAt: Date?
@@ -304,6 +308,8 @@ final class JobManager {
         if placement == .front, !comet, let b = context.bundleIdentifier, b != Bundle.main.bundleIdentifier {
             job.appBundle = b
             job.appName = context.appName
+            job.frontTitle = context.windowTitle
+            job.frontURL = context.url
         }
         jobs.append(job)
         job.phase = job.phase.next(.started) ?? .running
@@ -319,6 +325,7 @@ final class JobManager {
         if placement == .front, comet {
             // Pin his tab now, while the model writes its first step.
             Task { @MainActor in
+                job.bindTries += 1
                 if await page.bindFront(windowTitle: context.windowTitle, url: context.url) {
                     Log.info("job[\(job.id)] bound to his tab")
                 } else {
@@ -686,7 +693,7 @@ final class JobManager {
             return ("error: no tool \(tool)", true, nil)
         }
         let ms = Int(Date().timeIntervalSince(started) * 1000)
-        Log.info("act: \(tool) \(Log.short(str(args, "ref") ?? str(args, "label") ?? str(args, "target") ?? str(args, "to") ?? "", 60)) \(result.status == .ok ? "ok" : "fail") \(ms) ms (job \(job.id): \(Log.short(result.detail, 100)))")
+        Log.info("act: \(tool) \(Log.short(str(args, "ref") ?? str(args, "label") ?? str(args, "target") ?? str(args, "to") ?? str(args, "words") ?? "", 60)) \(result.status == .ok ? "ok" : "fail") \(ms) ms (job \(job.id): \(Log.short(result.detail, 100)))")
         if let his = result.his { rang(job, label: his, point: result.point) }
         else if let p = result.point, job.placement == .front { pointAt(job, p, label: str(args, "label") ?? str(args, "ref") ?? tool) }
         var text = "\(result.status.rawValue): \(result.detail)"
@@ -717,12 +724,13 @@ final class JobManager {
     }
 
     /// The first page call: a front job pins his tab if the start didn't; a behind job has no window until it opens one.
+    /// A front job binds to the tab he had in front when he asked, never to whatever is in front later (he may have
+    /// moved on to another tab). Two tries at most; after that its first open makes a tab of its own.
     private func bindIfNeeded(_ job: Job) async -> Bool {
         if job.page.isBound { return true }
-        guard job.placement == .front else { return false }
-        let context = AccessibilityContext.capture(maxElements: 5)
-        guard context.bundleIdentifier == Hands.cometBundle else { return false }
-        return await job.page.bindFront(windowTitle: context.windowTitle, url: context.url)
+        guard job.placement == .front, job.appBundle == nil, job.bindTries < 2 else { return false }
+        job.bindTries += 1
+        return await job.page.bindFront(windowTitle: job.frontTitle, url: job.frontURL)
     }
 
     private func open(_ job: Job, target: String, where place: String?) async -> PageDriver.Result {

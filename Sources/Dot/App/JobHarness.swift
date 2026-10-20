@@ -33,6 +33,29 @@ enum JobHarness {
         try? FileManager.default.createDirectory(atPath: "/tmp/dot-bench", withIntermediateDirectories: true)
         let logPath = "/tmp/dot-bench/job-run-\(stamp).log"
         setenv("DOT_LOG_FILE", logPath, 1)
+        // The bench Comet starts each run clean: earlier runs' fixture tabs closed (one held by a leave dialog answers
+        // nothing), and a front run's tab opened and brought forward, as his tab would be.
+        func endpoint(_ path: String, method: String = "GET") -> Data? {
+            guard let u = URL(string: "http://127.0.0.1:\(port)\(path)") else { return nil }
+            var request = URLRequest(url: u, timeoutInterval: 3)
+            request.httpMethod = method
+            let done = DispatchSemaphore(value: 0)
+            var out: Data?
+            URLSession.shared.dataTask(with: request) { data, _, _ in out = data; done.signal() }.resume()
+            _ = done.wait(timeout: .now() + 4)
+            return out
+        }
+        if let data = endpoint("/json/list"), let tabs = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]] {
+            for tab in tabs where (tab["type"] as? String) == "page" && ((tab["url"] as? String) ?? "").hasPrefix("http://127.0.0.1:") {
+                if let id = tab["id"] as? String { _ = endpoint("/json/close/\(id)") }
+            }
+        }
+        if placementWord != "behind", let encoded = url.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed),
+           let data = endpoint("/json/new?\(encoded)", method: "PUT"),
+           let tab = try? JSONSerialization.jsonObject(with: data) as? [String: Any], let id = tab["id"] as? String {
+            _ = endpoint("/json/activate/\(id)")
+            Thread.sleep(forTimeInterval: 1.0)
+        }
         let app = NSApplication.shared
         app.setActivationPolicy(.prohibited)
         let socket = "/tmp/dot-bench/control-\(ProcessInfo.processInfo.processIdentifier).sock"
