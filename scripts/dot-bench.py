@@ -907,8 +907,8 @@ def validate_rows(rows):
             if k not in ASSERTIONS and k not in EXPECT_OPTIONS:
                 problems.append('%s: unknown expect key %r' % (where, k))
         for step in r.get('then', []):
-            if not str(step.get('ask', '')).strip():
-                problems.append('%s: a then-step has no ask' % where)
+            if not any(str(step.get(k, '')).strip() for k in ('ask', 'cli', 'open_app', 'new_tab')):
+                problems.append('%s: a then-step has no ask, cli, open_app or new_tab' % where)
     return problems
 
 
@@ -1766,6 +1766,10 @@ def dry_plan(rows, args):
             if k:
                 out.append('  then (after %s%s):' % ('/%s/' % st['after'] if st.get('after') else 'the previous turn is done',
                                                     ', +%d ms' % st['delay_ms'] if st.get('delay_ms') else ''))
+            if not st.get('ask'):
+                kind = next(k for k in ('cli', 'open_app', 'new_tab') if st.get(k))
+                out.append('    $ %s' % ('%s %s' % (args.dot, st['cli']) if kind == 'cli' else 'open -a %s' % st['open_app'] if kind == 'open_app' else 'cdp /json/new %s' % st['new_tab']))
+                continue
             out.append('    $ %s' % ' '.join(json.dumps(a) if ' ' in a else a for a in dot_command(args.dot, st.get('flags', row.get('flags', [])), st['ask'], args.comet_port)))
         out.append('  wait: tail %s until done (timeout %d s, then %d s quiet)' % (args.dot_log, args.timeout, args.settle))
         exp = row.get('expect') or {}
