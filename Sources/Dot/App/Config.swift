@@ -151,6 +151,14 @@ struct DotConfig: Codable {
     /// The Claude Code model alias that writes them, through a one-shot `claude -p` with no tools.
     var quipModel = "haiku"
 
+    // 04 of the 2026-10-20 fast-lane plan: the stack at the top right, the notch only while talking.
+    /// The notch shows only while he talks (key down through the answer, the typed field, a typed or muted answer for
+    /// its reading time). Agents, jobs, consent cards, notices with an action and the morning card are cards in the stack
+    /// at the top right; idle statuses and plain notices are the orb's bubble. Off: the notch as it was before 04.
+    var notchTalkOnly = true
+    /// A consent card opens the notch instead of showing as a card in the stack.
+    var consentInNotch = false
+
     /// Atlas tools a talk turn may call without asking: everything that reads, remembers or drafts.
     /// Sends, submits, posts and harness administration stay with agents and his yes.
     /// The basics pass (2026-10-18) cut the list from 56 to the 28 a talk turn has used or plainly needs: every schema
@@ -255,6 +263,8 @@ struct DotConfig: Codable {
         orbSize = min(max(get(.orbSize, d.orbSize), 16), 36)
         contextQuips = get(.contextQuips, d.contextQuips)
         quipModel = get(.quipModel, d.quipModel)
+        notchTalkOnly = get(.notchTalkOnly, d.notchTalkOnly)
+        consentInNotch = get(.consentInNotch, d.consentInNotch)
     }
 
     static var directory: URL {

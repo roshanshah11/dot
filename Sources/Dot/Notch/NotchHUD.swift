@@ -3,10 +3,12 @@ import Combine
 import DotKit
 import SwiftUI
 
-/// One row of the task bar: an agent at work, a walkthrough in progress, a lesson on the board.
+/// One row of the task bar: an agent at work, a walkthrough in progress, a lesson on the board. Agents (and
+/// `.job`, which only the stack draws, never the notch) go to the stack at the top right when `notchTalkOnly` is on;
+/// walkthrough, lesson and board rows stay in the notch, a live exchange.
 struct AgentRow: Identifiable, Equatable {
     enum State: Equatable { case running, waiting, done, failed }
-    enum Kind: Equatable { case agent, walkthrough, lesson }
+    enum Kind: Equatable { case agent, walkthrough, lesson, job }
     let id: String
     var name: String
     var line: String
@@ -21,6 +23,39 @@ struct AgentRow: Identifiable, Equatable {
     var steps: [String] = []
     var canStop = false
     var startedAt = Date()
+    /// The stack chip's state when the row's own four do not say it (stopped, interrupted, paused, unfinished, attention).
+    var chip: AgentChip.State? = nil
+    /// A card held for reading time: the line he did not hear on a muted Mac.
+    var holdUntil: Date? = nil
+
+    /// A walkthrough, lesson or board row: a live exchange, drawn in the notch. The lecture ear's row goes to the stack.
+    var isLiveExchange: Bool { kind == .walkthrough || (kind == .lesson && id != "lecture") }
+    /// Drawn by the stack at the top right when the notch is for talking only.
+    var isStackBound: Bool { !isLiveExchange }
+
+    /// The stack's state for this row.
+    var chipState: AgentChip.State {
+        if let chip { return chip }
+        switch state {
+        case .running: return .running
+        case .waiting: return .waiting
+        case .done: return line.hasPrefix("paused") ? .paused : .done
+        case .failed:
+            if line.hasPrefix("interrupted") { return .interrupted }
+            return line == "stopped" ? .stopped : .failed
+        }
+    }
+
+    /// The row as a stack chip.
+    var stackChip: StackChip {
+        var chip = StackChip(id: id, kind: kind == .job ? .job : .agent, title: name, line: line, steps: steps, state: chipState,
+                             startedAt: startedAt, canStop: canStop, holdUntil: holdUntil)
+        chip.canOpen = id != "lecture"
+        chip.result = result
+        chip.outputs = outputs
+        chip.nextActions = nextActions
+        return chip
+    }
 }
 
 struct ConsentCard: Identifiable {
@@ -154,12 +189,40 @@ final class HUDModel: ObservableObject {
     /// Running tasks fold into pills on the idle tab after a while; a change or a hover unfolds them.
     @Published var collapsed = false { didSet { if oldValue != collapsed { onCollapseChanged?() } } }
     var onCollapseChanged: (() -> Void)?
+    /// The notch only while he talks (decided item 21, `notchTalkOnly`): agents, jobs, notices with an action and the
+    /// morning card live in the stack at the top right; idle statuses, errors and plain notices go to the orb.
+    @Published var talkOnly = false
+    /// A consent card opens the notch (off by default: the stack has it).
+    var consentInNotch = false
+    /// When the typed or muted answer on show landed, for its reading time.
+    var answerShownAt: Date?
+    /// Drawn by `Dot --snapshot`: ImageRenderer leaves a ScrollView's content blank, so the answer is plain text there.
+    var snapshot = false
 
     var hasContent: Bool {
-        phase != .hidden || (!agents.isEmpty && !collapsed) || consent != nil || showInput || status != nil || error != nil || answer != nil
+        if talkOnly {
+            return NotchSurface.showsPanel(phase: surfacePhase, showInput: showInput, answerShownAt: answer == nil ? nil : answerShownAt,
+                                           answerCharacters: answer?.count ?? 0, consentOpen: consent != nil, consentInNotch: consentInNotch,
+                                           liveExchange: agents.contains(where: \.isLiveExchange), now: Date())
+        }
+        return phase != .hidden || (!notchAgents.isEmpty && !collapsed) || consent != nil || showInput || status != nil || error != nil || answer != nil
             || !notices.isEmpty || morning != nil
     }
-    var foldedTasks: [AgentRow] { collapsed ? agents : [] }
+
+    var surfacePhase: NotchSurface.Phase {
+        switch phase {
+        case .hidden: return .hidden
+        case .listening: return .listening
+        case .transcribing: return .transcribing
+        case .thinking: return .thinking
+        case .speaking: return .speaking
+        case .done: return .done
+        }
+    }
+
+    /// The rows the notch itself draws.
+    var notchAgents: [AgentRow] { talkOnly ? agents.filter(\.isLiveExchange) : agents.filter { $0.kind != .job } }
+    var foldedTasks: [AgentRow] { collapsed && !talkOnly ? notchAgents : [] }
 
     var showsPanel: Bool { hasContent || presence }
 }
@@ -184,7 +247,15 @@ final class NotchHUD {
     /// Called when the notch starts or stops holding the menu (notch presence, a screen change).
     var onHoldsMenuChanged: (() -> Void)?
     /// Whether a right-click on the notch reaches the menu: the resting tab is up on a notched screen.
-    var holdsMenu: Bool { model.presence && currentGeometry().hasNotch }
+    var holdsMenu: Bool { model.presence && NotchSurface.holdsMenu(hasNotch: currentGeometry().hasNotch) }
+
+    /// The stack at the top right (04): agents, jobs, consent cards, notices with an action and the morning card go
+    /// there when the notch is for talking only. AppDelegate owns it.
+    private(set) var stack: AgentStack?
+    /// The orb's bubble (overlay.greet): idle statuses, errors and plain notices go there when the notch is for talking only.
+    var onGreet: ((String, TimeInterval) -> Void)?
+    /// The notch presence his config asks for; on a screen with no notch the talk-only notch has none (NotchSurface.presence).
+    private var configuredPresence = false
 
     init() {
         model.onCollapseChanged = { [weak self] in self?.refreshVisibility() }
@@ -193,13 +264,19 @@ final class NotchHUD {
 
     init(accentHex: String) {
         if let color = Color(hex: accentHex) { model.accent = color }
+        // Only init() wired this before 04, and AppDelegate uses this one: a fold left an empty "N tasks" panel up.
+        model.onCollapseChanged = { [weak self] in self?.refreshVisibility() }
         observeContentSize()
         watchMouse()
         watchRightClicks()
         NotificationCenter.default.addObserver(forName: NSApplication.didChangeScreenParametersNotification, object: nil, queue: .main) { [weak self] _ in
             Task { @MainActor in
-                self?.reposition()
-                self?.onHoldsMenuChanged?()
+                guard let self else { return }
+                self.reposition()
+                // A notch screen plugged in or out: the talk-only resting tab comes or goes with it.
+                if self.model.talkOnly { self.model.presence = NotchSurface.presence(configured: self.configuredPresence, hasNotch: self.currentGeometry().hasNotch, talkOnly: true) }
+                self.refreshVisibility()
+                self.onHoldsMenuChanged?()
             }
         }
         model.onOpenAgent = nil
@@ -219,6 +296,40 @@ final class NotchHUD {
     func setVisibleInRecordings(_ visible: Bool) {
         ensurePanel().sharingType = visible ? .readOnly : .none
     }
+
+    /// 04: the notch only while talking (`notchTalkOnly`), and where consent cards go (`consentInNotch`).
+    func configure(talkOnly: Bool, consentInNotch: Bool) {
+        model.talkOnly = talkOnly
+        model.consentInNotch = consentInNotch
+        model.presence = NotchSurface.presence(configured: configuredPresence, hasNotch: currentGeometry().hasNotch, talkOnly: talkOnly)
+        if talkOnly { model.collapsed = false; model.hovering = false }
+        syncConsent()
+        for row in model.agents where row.isStackBound && talkOnly { stack?.upsert(row.stackChip) }
+        refreshVisibility()
+        onHoldsMenuChanged?()
+    }
+
+    /// The stack takes the agent rows, the consent card, notices with an action and the morning card.
+    func attach(stack: AgentStack) {
+        self.stack = stack
+        stack.onGone = { [weak self] id in
+            // The policy cleared a finished chip: its row leaves too (results stay in Home).
+            guard let self, let row = self.model.agents.first(where: { $0.id == id }), row.isStackBound,
+                  row.state != .running, row.state != .waiting else { return }
+            self.removeAgent(id: id)
+        }
+        stack.onDismiss = { [weak self] id in
+            guard let self else { return }
+            if id == "morning" { self.model.onMorningDismiss?(); return }
+            if id.hasPrefix("notice-") { self.dismissNotice(id: String(id.dropFirst(7))); return }
+            if self.model.agents.contains(where: { $0.id == id }) { self.removeAgent(id: id) }
+        }
+        stack.model.onMorningDecision = { [weak self] item, yes in self?.model.onMorningDecision?(item, yes) }
+        stack.model.onMorningDismiss = { [weak self] in self?.model.onMorningDismiss?() }
+    }
+
+    /// Whether the notch's panel is up right now (talking, the typed field, an answer in its reading time).
+    var panelShowing: Bool { model.hasContent }
 
     /// A new accent from Settings, applied live.
     func setAccent(hex: String) {
@@ -245,22 +356,49 @@ final class NotchHUD {
         refreshVisibility()
     }
 
-    /// A typed question's answer stays in the notch until he closes it or asks again.
+    private var answerWork: DispatchWorkItem?
+
+    /// A typed or muted answer. With the notch for talking only it stays for its reading time (8 s, or 60 ms a
+    /// character), longer while the pointer is on it; before 04 it stayed until he closed it or asked again.
     func presentAnswer(question: String, text: String) {
         model.answerQuestion = question
         model.answer = text
+        model.answerShownAt = Date()
         model.caption = nil
         refreshVisibility()
+        answerWork?.cancel()
+        guard model.talkOnly else { return }
+        scheduleAnswerClose(after: NotchSurface.readingTime(characters: text.count))
+    }
+
+    private func scheduleAnswerClose(after seconds: TimeInterval) {
+        let work = DispatchWorkItem { [weak self] in
+            guard let self, self.model.answer != nil else { return }
+            if let panel = self.panel, panel.isVisible, panel.frame.contains(NSEvent.mouseLocation) {
+                self.scheduleAnswerClose(after: 1)   // he is reading it
+                return
+            }
+            self.dismissAnswer()
+        }
+        answerWork = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + seconds, execute: work)
     }
 
     func dismissAnswer() {
+        answerWork?.cancel()
         guard model.answer != nil else { return }
         model.answer = nil
         model.answerQuestion = ""
+        model.answerShownAt = nil
         refreshVisibility()
     }
 
     func flash(status: String, for seconds: TimeInterval = 2.5) {
+        // Talk-only notch, not talking: the orb's bubble says it, and the notch stays empty.
+        if model.talkOnly, !model.hasContent, let onGreet {
+            onGreet(status, max(seconds, 2.5))
+            return
+        }
         model.status = status
         refreshVisibility()
         statusWork?.cancel()
@@ -274,6 +412,10 @@ final class NotchHUD {
 
     func flash(error: String) {
         Log.error(error)
+        if model.talkOnly, !model.hasContent, let onGreet {
+            onGreet(error, 6)
+            return
+        }
         model.error = error
         refreshVisibility()
         DispatchQueue.main.asyncAfter(deadline: .now() + 6) { [weak self] in
@@ -283,8 +425,35 @@ final class NotchHUD {
 
     // MARK: Notices
 
-    /// Show a typed notice; one with the same id replaces the old one and restarts its clock.
+    /// Show a typed notice; one with the same id replaces the old one and restarts its clock. With the notch for
+    /// talking only, a notice with an action is a card in the stack, and a plain one shows in the notch while he
+    /// talks, else as the orb's bubble.
     func notify(_ notice: NotchNotice) {
+        if model.talkOnly, let stack {
+            if notice.actionTitle != nil || notice.secondaryTitle != nil {
+                var chip = StackChip(id: "notice-\(notice.id)", kind: .notice, title: notice.title, line: notice.detail ?? "", state: .notice)
+                chip.icon = notice.icon
+                chip.tone = notice.tone
+                chip.detail = notice.detail
+                chip.actionTitle = notice.actionTitle
+                chip.action = notice.action
+                chip.secondaryTitle = notice.secondaryTitle
+                chip.secondary = notice.secondary
+                stack.upsert(chip)
+                noticeWork[notice.id]?.cancel()
+                if notice.seconds > 0 {
+                    let work = DispatchWorkItem { [weak self] in self?.dismissNotice(id: notice.id) }
+                    noticeWork[notice.id] = work
+                    DispatchQueue.main.asyncAfter(deadline: .now() + notice.seconds, execute: work)
+                }
+                Log.info("notice: \(notice.id) to the stack: \(Log.short(notice.title, 80))")
+                return
+            }
+            if !model.hasContent, let onGreet {
+                onGreet(notice.detail.map { "\(notice.title). \($0)" } ?? notice.title, notice.seconds > 0 ? notice.seconds : 8)
+                return
+            }
+        }
         if let index = model.notices.firstIndex(where: { $0.id == notice.id }) {
             model.notices[index] = notice
         } else {
@@ -304,6 +473,7 @@ final class NotchHUD {
     func dismissNotice(id: String) {
         noticeWork[id]?.cancel()
         noticeWork[id] = nil
+        stack?.remove(id: "notice-\(id)")
         guard model.notices.contains(where: { $0.id == id }) else { return }
         withAnimation(.easeOut(duration: 0.2)) { model.notices.removeAll { $0.id == id } }
         refreshVisibility()
@@ -323,21 +493,35 @@ final class NotchHUD {
     func presentMorning(_ card: MorningCard) {
         model.morning = card
         model.morningExpanded = false
+        if model.talkOnly, let stack {
+            // A card in the stack (decided item 21): it never opens the notch.
+            stack.model.morningExpanded = false
+            stack.upsert(morningChip(card))
+            return
+        }
         pulseGlow()
         refreshVisibility()
+    }
+
+    private func morningChip(_ card: MorningCard) -> StackChip {
+        var chip = StackChip(id: "morning", kind: .notice, title: card.greeting, line: "", state: .notice)
+        chip.morning = card
+        return chip
     }
 
     func dismissMorning() {
         guard model.morning != nil else { return }
         model.morning = nil
         model.morningExpanded = false
+        stack?.remove(id: "morning")
         refreshVisibility()
     }
 
     /// Drop one item once he decided on it; the card goes when nothing is left.
     func morningDecided(_ item: MorningCard.Item) {
         model.morning?.items.removeAll { $0.id == item.id }
-        if model.morning?.items.isEmpty == true { dismissMorning() }
+        if model.morning?.items.isEmpty == true { dismissMorning(); return }
+        if model.talkOnly, let card = model.morning { stack?.upsert(morningChip(card)) }
     }
 
     private var inputTimeout: DispatchWorkItem?
@@ -376,8 +560,10 @@ final class NotchHUD {
         refreshVisibility()
     }
 
-    private var collapseWork: DispatchWorkItem?
-
+    /// An agent's row (and the walkthrough's, the lesson's, the lecture's). With the notch for talking only, agent
+    /// and job rows are chips in the stack, whose clock runs from each row's last state change (AgentChip.since): a
+    /// tool call or a streamed line never restarts it. The 20 s fold (scheduleCollapse) went in 04: it re-armed on
+    /// every tool call and every streamed line, so a working agent never folded.
     func upsertAgent(_ row: AgentRow) {
         var changed = true
         if let index = model.agents.firstIndex(where: { $0.id == row.id }) {
@@ -388,11 +574,13 @@ final class NotchHUD {
         } else {
             model.agents.append(row)
         }
-        // A new task or a finished one unfolds the panel; steady work folds back into pills.
-        if changed, row.state != .running || !model.agents.contains(where: { $0.id == row.id && $0.state == .running }) == false {
-            if row.state != .running || model.agents.count == 1 && !model.collapsed { model.collapsed = false }
+        // A job's row is the stack's whatever the notch does; an agent's too when the notch is for talking only.
+        if (model.talkOnly && row.isStackBound) || row.kind == .job, let stack {
+            stack.upsert(row.stackChip)
+            return
         }
-        scheduleCollapse()
+        // A new task or a finished one unfolds the panel.
+        if changed, row.state != .running { model.collapsed = false }
         refreshVisibility()
     }
 
@@ -400,25 +588,12 @@ final class NotchHUD {
         model.agents.removeAll { $0.id == id }
         if model.expanded == id { model.expanded = nil }
         if model.agents.isEmpty { model.collapsed = false }
+        stack?.remove(id: id)
         refreshVisibility()
-    }
-
-    /// Fold running tasks into the idle tab after 20 s of steady work; finished rows stay open.
-    private func scheduleCollapse() {
-        collapseWork?.cancel()
-        guard model.agents.contains(where: { $0.state == .running }),
-              !model.agents.contains(where: { $0.state == .done || $0.state == .failed || $0.state == .waiting }) else { return }
-        let work = DispatchWorkItem { [weak self] in
-            guard let self, !self.model.hovering, self.model.expanded == nil, self.model.phase == .hidden else { return }
-            self.model.collapsed = true
-        }
-        collapseWork = work
-        DispatchQueue.main.asyncAfter(deadline: .now() + 20, execute: work)
     }
 
     func unfoldTasks() {
         model.collapsed = false
-        scheduleCollapse()
     }
 
     // MARK: Consent: one card per request, oldest first (round seven, F1)
@@ -478,19 +653,26 @@ final class NotchHUD {
             model.consentShownAt = Date()
             onConsentShown?(shown)
         }
+        // Consent cards go to the stack unless consentInNotch (04, I F26).
+        if model.talkOnly, !model.consentInNotch { stack?.setConsent(shown, waiting: model.consentWaiting, shownAt: model.consentShownAt) }
+        else { stack?.setConsent(nil, waiting: 0, shownAt: .distantPast) }
         refreshVisibility()
     }
 
     /// When the card on show came on show.
     var consentShownAt: Date? { model.consent == nil ? nil : model.consentShownAt }
 
-    /// Escape, HeyClicky's way (1.0.50): the cards under the notch go away. A consent card stays,
-    /// since it needs a choice.
+    /// Escape, HeyClicky's way (1.0.50): the cards under the notch go away, and every card in the stack folds
+    /// into its avatar (a finished one goes). A consent card and a paused job stay, since they need a choice.
     func escapeDismiss() {
         for notice in model.notices { dismissNotice(id: notice.id) }
         if model.morning != nil { dismissMorning() }
         model.expanded = nil
-        if !model.agents.isEmpty, model.agents.allSatisfy({ $0.state != .waiting }) { model.collapsed = true }
+        if model.talkOnly {
+            stack?.foldAll()
+        } else if !model.agents.isEmpty, model.agents.allSatisfy({ $0.state != .waiting }) {
+            model.collapsed = true
+        }
         refreshVisibility()
     }
 
@@ -621,7 +803,8 @@ final class NotchHUD {
     }
 
     func setPresence(_ on: Bool) {
-        model.presence = on
+        configuredPresence = on
+        model.presence = NotchSurface.presence(configured: on, hasNotch: currentGeometry().hasNotch, talkOnly: model.talkOnly)
         refreshVisibility()
         onHoldsMenuChanged?()
     }
@@ -692,7 +875,13 @@ struct NotchHUDView: View {
 
     /// Nothing to show and not hovered: Dot is the notch itself.
     private var resting: Bool {
-        !model.hovering && model.foldedTasks.isEmpty && (model.recordingLine ?? model.listeningLine ?? model.meetingLine) == nil
+        !model.hovering && model.foldedTasks.isEmpty && idleLine == nil
+    }
+
+    /// The quiet line on the idle tab. With the notch for talking only, only Murmur's recording line is left: the
+    /// lecture ear is a chip in the stack and the meeting line went (decided item 21).
+    private var idleLine: String? {
+        model.talkOnly ? model.recordingLine : (model.recordingLine ?? model.listeningLine ?? model.meetingLine)
     }
 
     /// Dot's idle presence, after HeyClicky's resting notch (measured 2026-10-17): at rest exactly the notch,
@@ -713,7 +902,7 @@ struct NotchHUDView: View {
                         ForEach(model.foldedTasks.prefix(3)) { row in taskPill(row) }
                     }
                     .padding(.horizontal, 12).padding(.bottom, 6)
-                } else if let line = model.recordingLine ?? model.listeningLine ?? model.meetingLine {
+                } else if let line = idleLine {
                     // Murmur recording, the ear on, or a meeting close: a quiet line on the tab (one notch for both apps).
                     HStack(spacing: 6) {
                         if model.recordingLine != nil {
@@ -734,7 +923,8 @@ struct NotchHUDView: View {
             .overlay(shape.stroke(model.accent.opacity(model.glow ? 0.95 : 0), lineWidth: 2).blur(radius: 3)
                 .animation(.easeOut(duration: model.glow ? 0.2 : 0.9), value: model.glow).allowsHitTesting(false))
             .contentShape(shape)
-            .onHover { inside in withAnimation(.easeOut(duration: 0.15)) { model.hovering = inside } }
+            // No hover peek when the notch is for talking only.
+            .onHover { inside in if !model.talkOnly || !inside { withAnimation(.easeOut(duration: 0.15)) { model.hovering = inside && !model.talkOnly } } }
             .onTapGesture {
                 if !model.foldedTasks.isEmpty { model.collapsed = false } else { NotificationCenter.default.post(name: .dotShowInput, object: nil) }
             }
@@ -744,7 +934,7 @@ struct NotchHUDView: View {
     private var idleWidth: CGFloat {
         if model.hovering { return geometry.notchWidth }
         if !model.foldedTasks.isEmpty { return min(geometry.notchWidth + 80 + CGFloat(min(model.foldedTasks.count, 3)) * 150, 560) }
-        return (model.recordingLine ?? model.listeningLine ?? model.meetingLine) == nil ? geometry.compactSize.width : geometry.notchWidth + 120
+        return idleLine == nil ? geometry.compactSize.width : geometry.notchWidth + 120
     }
 
     /// The hover peek: one way in, to the Dot window. The day line, the agents' file tiles and the hints went
@@ -814,11 +1004,11 @@ struct NotchHUDView: View {
                     }
                 }
                 ForEach(model.notices.suffix(2)) { notice in NoticeCard(notice: notice, accent: model.accent) { NotificationCenter.default.post(name: .dotDismissNotice, object: notice.id) } }
-                if let morning = model.morning { MorningCardView(card: morning, expanded: $model.morningExpanded, accent: model.accent,
+                if let morning = model.morning, !model.talkOnly { MorningCardView(card: morning, expanded: $model.morningExpanded, accent: model.accent,
                                                                   decide: { item, yes in model.onMorningDecision?(item, yes) },
                                                                   dismiss: { model.onMorningDismiss?() }) }
-                if let card = model.consent { consent(card) }
-                ForEach(model.agents) { row in agentCard(row) }
+                if let card = model.consent, !model.talkOnly || model.consentInNotch { consent(card) }
+                ForEach(model.notchAgents) { row in agentCard(row) }
                 if let status = model.status, model.phase == .hidden || model.response.isEmpty {
                     Text(status).font(.system(size: 12)).foregroundStyle(text.opacity(0.6))
                 }
@@ -856,15 +1046,20 @@ struct NotchHUDView: View {
             if !model.answerQuestion.isEmpty {
                 Text(model.answerQuestion).font(.system(size: 12)).foregroundStyle(text.opacity(0.5)).lineLimit(2)
             }
-            ScrollView {
-                Text(answer)
-                    .font(.system(size: 13.5))
-                    .foregroundStyle(text.opacity(0.95))
-                    .lineSpacing(3)
-                    .textSelection(.enabled)
-                    .frame(maxWidth: .infinity, alignment: .leading)
+            if model.snapshot {
+                Text(answer).font(.system(size: 13.5)).foregroundStyle(text.opacity(0.95)).lineSpacing(3)
+                    .frame(maxWidth: .infinity, alignment: .leading).fixedSize(horizontal: false, vertical: true)
+            } else {
+                ScrollView {
+                    Text(answer)
+                        .font(.system(size: 13.5))
+                        .foregroundStyle(text.opacity(0.95))
+                        .lineSpacing(3)
+                        .textSelection(.enabled)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                .frame(maxHeight: 300)
             }
-            .frame(maxHeight: 300)
             HStack(spacing: 8) {
                 smallButton("copy") {
                     NSPasteboard.general.clearContents()
@@ -904,8 +1099,9 @@ struct NotchHUDView: View {
         switch model.phase {
         case .hidden:
             if model.answer != nil { return "dot" }
-            if model.morning != nil, model.agents.isEmpty, !model.showInput { return "this morning" }
-            return model.showInput ? "ask dot" : (model.agents.isEmpty ? (model.modeWord ?? "dot") : (model.agents.count == 1 ? "one task" : "\(model.agents.count) tasks"))
+            if model.morning != nil, !model.talkOnly, model.agents.isEmpty, !model.showInput { return "this morning" }
+            let rows = model.notchAgents
+            return model.showInput ? "ask dot" : (rows.isEmpty ? (model.modeWord ?? "dot") : (rows.count == 1 ? "one task" : "\(rows.count) tasks"))
         case .listening: return model.mode == .agent ? "listening, for an agent" : (model.mode == .dictate ? "dictating" : "listening")
         case .transcribing: return "hearing you"
         case .thinking: return model.deeper ? "thinking deeper" : "thinking"
@@ -1118,7 +1314,7 @@ struct NotchHUDView: View {
     private func taskPill(_ row: AgentRow) -> some View {
         HStack(spacing: 5) {
             switch row.kind {
-            case .agent: Circle().fill(model.accent).frame(width: 5, height: 5).shadow(color: model.accent.opacity(0.8), radius: 3)
+            case .agent, .job: Circle().fill(model.accent).frame(width: 5, height: 5).shadow(color: model.accent.opacity(0.8), radius: 3)
             case .walkthrough: Image(systemName: "cursorarrow.click.2").font(.system(size: 9)).foregroundStyle(model.accent)
             case .lesson: Image(systemName: "book.pages").font(.system(size: 9)).foregroundStyle(model.accent)
             }
@@ -1197,7 +1393,7 @@ struct AgentAvatar: View {
         ZStack {
             Circle().fill(fill).frame(width: 26, height: 26)
             switch row.kind {
-            case .agent:
+            case .agent, .job:
                 Text(String(row.name.prefix(1)).uppercased()).font(.system(size: 12, weight: .bold)).foregroundStyle(.black.opacity(0.8))
             case .walkthrough:
                 Image(systemName: "cursorarrow.click.2").font(.system(size: 11, weight: .semibold)).foregroundStyle(.black.opacity(0.8))
@@ -1373,7 +1569,7 @@ struct NotchContentSizeKey: PreferenceKey {
     }
 }
 
-final class KeyablePanel: NSPanel {
+class KeyablePanel: NSPanel {
     override var canBecomeKey: Bool { true }
     override var canBecomeMain: Bool { false }
 }

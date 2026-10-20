@@ -22,6 +22,37 @@ extension TTSProvider {
     func setRate(_ multiplier: Double) {}
 }
 
+/// Who is speaking, for the log (04, G8): every sentence Dot says is logged once as `speak: <source> <first 60
+/// characters>`, from the speaker that plays it. Talk is the default; an agent's result, a consent card, a job's end
+/// line or a notice says so with `SpeakLog.as("agent (Name)") { speaker.speak(...) }`. Speaking is on the main
+/// thread, so the source set around one call is the one that call logs.
+enum SpeakLog {
+    nonisolated(unsafe) static var source = "talk"
+    /// Set while a speaker hands a sentence to its fallback, which would log it a second time.
+    nonisolated(unsafe) static var handedOn = false
+
+    static func `as`<T>(_ source: String, _ body: () -> T) -> T {
+        let before = self.source
+        self.source = source
+        defer { self.source = before }
+        return body()
+    }
+
+    /// One line per spoken sentence; an empty sentence (a marker) says nothing and logs nothing.
+    static func spoke(_ text: String) {
+        guard !handedOn, !text.isEmpty else { return }
+        Log.info("speak: \(source) \(String(text.replacingOccurrences(of: "\n", with: " ").prefix(60)))")
+    }
+
+    /// A sentence passed on to another speaker, which must not log it again.
+    static func handOn(_ body: () -> Void) {
+        let before = handedOn
+        handedOn = true
+        defer { handedOn = before }
+        body()
+    }
+}
+
 /// Where Dot's face hears its own voice (docs/alive.md 1.2, 1.11): each sentence as it starts, with its
 /// length when known and whether nothing is queued after it, and the voice's level for the mouth. Kokoro's
 /// player can meter itself; Apple's synthesizer cannot, so it reports unmetered and the mouth falls back
@@ -71,6 +102,7 @@ final class AppleSpeaker: NSObject, TTSProvider, AVSpeechSynthesizerDelegate {
             }
             return
         }
+        SpeakLog.spoke(text)
         let utterance = AVSpeechUtterance(string: text)
         utterance.voice = voice
         utterance.rate = rate

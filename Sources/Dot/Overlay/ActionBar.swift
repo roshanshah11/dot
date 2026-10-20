@@ -9,6 +9,11 @@ final class ActionBarPanel: NSPanel {
 
     private var hideWork: DispatchWorkItem?
     private static var current: ActionBarPanel?
+    /// "Show in screen recordings" (AppDelegate.applyRecordingVisibility). Before 04 the bar never set its sharing
+    /// type, so the post-drag bar showed up in recordings with the setting off.
+    static var visibleInRecordings = true {
+        didSet { current?.sharingType = visibleInRecordings ? .readOnly : .none }
+    }
 
     static func show(near rect: CGRect, accent: Color, actions: [Action], onDismiss: @escaping () -> Void) {
         dismiss()
@@ -43,6 +48,7 @@ final class ActionBarPanel: NSPanel {
         collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         hidesOnDeactivate = false
         isReleasedWhenClosed = false
+        sharingType = Self.visibleInRecordings ? .readOnly : .none
         let view = ActionBarView(actions: actions, accent: accent) { [weak self] in
             ActionBarPanel.dismiss()
             _ = self

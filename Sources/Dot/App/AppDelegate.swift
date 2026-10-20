@@ -7,6 +7,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var statusItem: NSStatusItem?
     private var config = DotConfig.load()
     private var hud: NotchHUD!
+    /// The stack at the top right (04): agents, jobs, consent cards, notices with an action, the morning card.
+    private var stack: AgentStack!
     private var overlay: OverlayManager!
     private var speaker: TTSProvider!
     private var transcriber: Transcriber!
@@ -52,6 +54,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         Log.info("Dot \(Version.string) launching; config \(DotConfig.fileURL.path)")
         hud = NotchHUD(accentHex: config.pointerColorHex)
         overlay = OverlayManager(colorHex: config.pointerColorHex, presence: config.showCompanion, orbSize: CGFloat(config.orbSize))
+        stack = AgentStack(accentHex: config.pointerColorHex)
+        hud.attach(stack: stack)
+        hud.onGreet = { [weak self] text, seconds in self?.overlay.greet(text, for: seconds) }
+        hud.configure(talkOnly: config.notchTalkOnly, consentInNotch: config.consentInNotch)
+        Log.info("notch: \(config.notchTalkOnly ? "only while talking; agents, jobs and cards in the stack at the top right" : "as before 04")"
+                 + "; consent cards in the \(config.notchTalkOnly && !config.consentInNotch ? "stack" : "notch")")
         atlas = AtlasBridge(config: config)
         let apple = AppleSpeaker(voiceIdentifier: config.voiceIdentifier, rate: config.speechRate)
         if let command = config.resolvedTTSCommand() {
@@ -106,7 +114,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         hud.setPresence(config.notchPresence)
         applyRecordingVisibility()
         home = HomeWindowController(agents: agents, ledger: ledger, config: config, atlas: atlas)
-        home.speakSample = { [weak self] text in self?.speaker.speak(text) }
+        home.speakSample = { [weak self] text in SpeakLog.as("sample") { self?.speaker.speak(text) } }
         home.onSettingsChanged = { [weak self] changed in Task { @MainActor in self?.applySettings(changed) } }
         routines = RoutineScheduler(config: config, agents: agents, hud: hud)
         routines.canRun = { [weak self] in
@@ -150,6 +158,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 if id == "walkthrough" || id == "lesson" || id == "lecture" { self.talk.stopTask(id) } else { self.agents.stop(id) }
             }
         }
+        wireStack()
         atlas.onUpdate = { [weak self] brief in
             hudModel.todayLine = brief.hoverLine()
             self?.talk.todayArrived(brief)
@@ -224,6 +233,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if changed.pointerColorHex != before.pointerColorHex {
             overlay.setColor(hex: changed.pointerColorHex)
             hud.setAccent(hex: changed.pointerColorHex)
+            stack.setAccent(hex: changed.pointerColorHex)
+        }
+        if changed.notchTalkOnly != before.notchTalkOnly || changed.consentInNotch != before.consentInNotch {
+            hud.configure(talkOnly: changed.notchTalkOnly, consentInNotch: changed.consentInNotch)
         }
         if changed.notchPresence != before.notchPresence { hud.setPresence(changed.notchPresence) }
         if changed.menuBarIcon != before.menuBarIcon { placeStatusItem() }
@@ -266,13 +279,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                                detail: brief.today.first(where: { $0.contains(title) }).map { String($0.dropFirst(10)).trimmingCharacters(in: .whitespaces) },
                                tone: .info, actionTitle: "brief me", action: { [weak self] in
                                    guard let self else { return }
-                                   self.speaker.speak("on it, a brief in a minute.")
+                                   SpeakLog.as("notice") { self.speaker.speak("on it, a brief in a minute.") }
                                    self.agents.handoff(brief: "in \(startsIn) minutes roshan has: \(title). write a short brief fast: who or what it is, two talking points, two questions to ask. put it on the clipboard and in the output folder; keep it under a page.", agentName: nil, context: nil, shots: nil)
                                }, secondaryTitle: "dismiss", secondary: {}, seconds: 60))
         let onCall = config.quietOnCalls && CallPresence.isOnCall()
         if !onCall { overlay.greet(line, for: 12) }
         if talk.isIdle, config.speakMeetingNotice, !onCall {
-            speaker.speak("heads up, \(next.title.lowercased()) in \(next.startsIn) minutes.")
+            SpeakLog.as("notice") { speaker.speak("heads up, \(next.title.lowercased()) in \(next.startsIn) minutes.") }
         }
         Log.info("notice: \(line)")
     }
@@ -358,6 +371,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             guard let text = note.userInfo?["text"] as? String else { return }
             let parts = text.components(separatedBy: "=>").map { $0.trimmingCharacters(in: .whitespaces) }
             Task { @MainActor in self?.talk.addToDictionary(heard: parts.count == 2 ? parts[0] : nil, correct: parts.last ?? text) }
+        }
+        // `Dot --stack-demo [--muted] [--job]`: a fake agent (or behind job) through the stack, for G7 to G9 (04).
+        center.addObserver(forName: DotIPC.stackDemo, object: nil, queue: .main) { [weak self] note in
+            let muted = (note.userInfo?["muted"] as? Bool) ?? false
+            let job = (note.userInfo?["job"] as? Bool) ?? false
+            Task { @MainActor in
+                guard let self else { return }
+                StackDemo.run(stack: self.stack, config: self.config, muted: muted, job: job)
+            }
         }
         // `Dot --stt file.wav`: feed a WAV through the streaming recognizer and log what it hears.
         center.addObserver(forName: DotIPC.stt, object: nil, queue: .main) { [weak self] note in
@@ -505,7 +527,42 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func applyRecordingVisibility() {
         overlay.setVisibleInRecordings(config.showInRecordings)
         hud.setVisibleInRecordings(config.showInRecordings)
+        stack.setVisibleInRecordings(config.showInRecordings)
+        ActionBarPanel.visibleInRecordings = config.showInRecordings
         CardPanel.visibleInRecordings = config.showInRecordings
+    }
+
+    /// The stack's buttons (04). Agent chips reach AgentManager and Home; job chips are 02's, which wires them
+    /// after the merge (`JobManager`): until then each logs and does nothing.
+    private func wireStack() {
+        let hudModel = hud.model
+        stack.onStop = { [weak self] id in
+            guard let self else { return }
+            if id.hasPrefix("job-") { self.jobAction("stop", id); return }
+            hudModel.onStopAgent?(id)
+        }
+        stack.onOpenHome = { [weak self] id in self?.home.show(agent: id) }
+        stack.onReply = { [weak self] id, text in
+            guard let self else { return }
+            if id.hasPrefix("job-") { self.jobAction("reply", id); return }
+            self.agents.reply(to: id, text: text)
+        }
+        stack.onShow = { [weak self] id in self?.jobAction("show me", id) }
+        stack.onAllow = { [weak self] id in self?.jobAction("allow", id) }
+        stack.onDeny = { [weak self] id in self?.jobAction("deny", id) }
+        // 07: an unfinished agent's Continue.
+        stack.onContinue = { [weak self] id in
+            guard let self else { return }
+            if id.hasPrefix("job-") { self.jobAction("continue", id); return }
+            Log.info("agent[\(id)] continue from the stack")
+            self.agents.reply(to: id, text: AgentManager.continueLabel)
+        }
+        Log.info("stack: job feed not wired yet (02's JobManager feeds stack.upsert with job-<id> chips after the merge)")
+    }
+
+    /// A job chip's button before 02's JobManager is wired: logged, nothing else.
+    private func jobAction(_ what: String, _ id: String) {
+        Log.info("stack: \(what) on \(id): no job feed wired yet")
     }
     @objc private func openHome() { home.show() }
     @objc private func interrupt() { talk.interrupt() }
@@ -543,4 +600,5 @@ enum DotIPC {
     static let listen = Notification.Name("com.roshan.dot.listen")
     static let stopListening = Notification.Name("com.roshan.dot.stopListening")
     static let dictionary = Notification.Name("com.roshan.dot.dictionary")
+    static let stackDemo = Notification.Name("com.roshan.dot.stack-demo")
 }

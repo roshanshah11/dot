@@ -145,8 +145,12 @@ final class AgentManager {
             Task { @MainActor in self?.hud.bringConsentForward(agent: slug) }
         }
         hud.onConsentShown = { [weak self] card in
-            guard let self, self.config.speakAgentResults, !(self.config.quietOnCalls && CallPresence.isOnCall()) else { return }
-            self.speaker.speak("\(card.agent) wants to \(card.title).")
+            guard let self else { return }
+            // A muted Mac gets the card as text, never the spoken line (decided item 22).
+            let report = AgentReport.consentCard(speakResults: self.config.speakAgentResults, onCall: self.config.quietOnCalls && CallPresence.isOnCall(),
+                                                 outputSilent: AudioDevices.outputIsSilent())
+            guard report.voice else { return }
+            SpeakLog.as("consent (\(card.agent))") { self.speaker.speak("\(card.agent) wants to \(card.title).") }
         }
     }
 
@@ -159,7 +163,9 @@ final class AgentManager {
         run.session.stop()
         runs[slug] = nil
         postActivity()
-        hud.upsertAgent(run.row("stopped", state: .failed))
+        var row = run.row("stopped", state: .failed)
+        row.chip = .stopped
+        hud.upsertAgent(row)
         appendTranscript(run.agent, role: "result", text: "stopped from the task bar")
         Log.info("agent[\(slug)] stopped from the task bar")
     }
@@ -423,7 +429,9 @@ final class AgentManager {
                 self.postActivity()
             }
             if status != 0, self.hud.model.agents.first(where: { $0.id == run.agent.slug })?.state == .running {
-                self.hud.upsertAgent(run.row("stopped (exit \(status))", state: .failed))
+                var row = run.row("stopped (exit \(status))", state: .failed)
+                row.chip = .failed
+                self.hud.upsertAgent(row)
             }
         }
         if let seq {
@@ -460,7 +468,9 @@ final class AgentManager {
                 if run.isRoutine { run.isRoutine = false; routineOutcome?(agent.slug, false, nil) }
                 appendTranscript(agent, role: "progress", text: steer.isEmpty ? "paused by him" : "stopped there; he changed course")
                 if steer.isEmpty {
-                    hud.upsertAgent(run.row("paused; tell it what next", state: .done))
+                    var row = run.row("paused; tell it what next", state: .done)
+                    row.chip = .paused
+                    hud.upsertAgent(row)
                     postActivity()
                     scheduleIdleStop(run)
                     Log.info("agent[\(agent.slug)] paused by him; session kept")
@@ -560,9 +570,23 @@ final class AgentManager {
         let made = TurnArtifacts.changed(before: run.outputBaseline, after: TurnArtifacts.listing(of: agent.outputFolder))
         let files = TurnArtifacts.merge(stated: parsed.files, made: made.map { agent.outputFolder.appendingPathComponent($0) }, folder: agent.folder)
         let shown = files.isEmpty ? Array(outputs.prefix(4)) : files
-        // The done title is the row's line (TC-01); the first sentence when the agent gave none.
-        hud.upsertAgent(AgentRow(id: agent.slug, name: agent.name, line: failed ? "failed: \(summary)" : (parsed.doneTitle ?? summary), state: failed ? .failed : .done,
-                                 result: text, outputCount: outputs.count, outputs: shown, nextActions: parsed.nextActions))
+        // How it reports (decided item 22, DotKit AgentReport): a muted Mac or a call gets the line as text on a card
+        // held for reading time, never a voice; a question gets a "!" card that holds.
+        let quiet = run.isRoutine   // a scheduled run lands in the thread without a chime or a word (HeyClicky's routines do the same)
+        let unprompted = run.turnsOwed == 0
+        let onCall = config.quietOnCalls && CallPresence.isOnCall()
+        let report = AgentReport.decide(speakResults: config.speakAgentResults, routineMode: quiet ? .report : nil, notify: nil,
+                                        unprompted: unprompted, onCall: onCall, threadOpen: isThreadOpen?(agent.slug) == true,
+                                        outputSilent: AudioDevices.outputIsSilent(), isQuestion: parsed.isQuestion)
+        let spoken = Self.spokenSummary(summary)
+        let more = SpeechText.clean(text).count > spoken.count + 40 ? " the rest is on its card." : ""
+        // The done title is the row's line (TC-01); the first sentence when the agent gave none. A text card shows the
+        // sentence he would have heard.
+        var row = AgentRow(id: agent.slug, name: agent.name, line: failed ? "failed: \(summary)" : (report.text && !spoken.isEmpty ? spoken : (parsed.doneTitle ?? summary)),
+                           state: failed ? .failed : .done, result: text, outputCount: outputs.count, outputs: shown, nextActions: parsed.nextActions)
+        if report.text { row.holdUntil = Date().addingTimeInterval(NotchSurface.readingTime(characters: (spoken + more).count)) }
+        if report.chip == .alert, !failed { row.chip = .attention }
+        hud.upsertAgent(row)
         appendTranscript(agent, role: "result", text: "\(result.subtype) in \(result.durationMs) ms, $\(String(format: "%.3f", result.costUSD))")
         // The turn's record keeps what HeyClicky's does (G1): its title, the next steps it offered and its files
         // (by name inside output/, by full path or URL outside it).
@@ -579,37 +603,29 @@ final class AgentManager {
         }
         // A second result in the same brief (a message that came in during the last reply) names only its own files.
         run.outputBaseline = TurnArtifacts.listing(of: agent.outputFolder)
-        let quiet = run.isRoutine   // a scheduled run lands in the thread without a chime or a word (HeyClicky's routines do the same)
-        let unprompted = run.turnsOwed == 0
         run.turnsOwed = max(run.turnsOwed - 1, 0)
         if unprompted { Log.info("agent[\(agent.slug)] a result nobody asked for (a helper's notice or a folded-in message): row updated, no chime or word") }
-        if !quiet, !unprompted { reportedAt[agent.slug] = Date() }
+        if !quiet || report.chip == .alert, !unprompted { reportedAt[agent.slug] = Date() }
         run.isRoutine = false
         if quiet { routineOutcome?(agent.slug, failed, failed ? summary : nil) }
-        // On a call the result waits in the notch: no chime, no voice (FX-11).
-        let onCall = config.quietOnCalls && CallPresence.isOnCall()
-        let silent = quiet || unprompted || onCall
-        if !silent { Chimes.shared.play(failed ? .failed : .done) }
+        // On a call or a muted Mac the result waits in the stack: no chime, no voice (FX-11, decided item 22).
+        if report.chime { Chimes.shared.play(failed ? .failed : .done) }
         activities[agent.slug] = nil
         postActivity()
         // The row's line rides along as the context for the quip that follows (docs/alive.md, round two).
         NotificationCenter.default.post(name: .dotAgentFinished, object: nil, userInfo: ["failed": failed, "line": failed ? summary : (parsed.doneTitle ?? summary)])
-        // Not spoken when he is reading that agent's thread in Home (TC-03); under 200 characters when spoken.
-        if config.speakAgentResults, !summary.isEmpty, !silent, isThreadOpen?(agent.slug) != true {
-            let spoken = Self.spokenSummary(summary)
-            let more = SpeechText.clean(text).count > spoken.count + 40 ? " the rest is in the notch." : ""
-            speaker.speak("\(agent.name) here. \(spoken)\(more)")
+        // Not spoken when he is reading that agent's thread in Home (TC-03), nor into a muted Mac; under 200 characters when spoken.
+        if report.voice, !summary.isEmpty {
+            SpeakLog.as("agent (\(agent.name))") { speaker.speak("\(agent.name) here. \(spoken)\(more)") }
         }
+        Log.info("agent[\(agent.slug)] report: chime \(report.chime), voice \(report.voice), text \(report.text), chip \(report.chip.rawValue)")
         Log.info("agent[\(agent.slug)] finished \(result.subtype) in \(result.durationMs) ms, \(outputs.count) output file(s)")
         atlas?.refreshSoon()
         onRunFinished?(agent)
 
+        // The row clears by the stack's chip policy (done after 8 s, failed after 15 s, hover holds); the
+        // result stays in Home and lastResults. The 120 s removal went in 04.
         scheduleIdleStop(run)
-        // A finished row stays two minutes, or as long as he has it open to read.
-        DispatchQueue.main.asyncAfter(deadline: .now() + 120) { [weak self] in
-            guard let self, self.runs[agent.slug]?.isWorking != true, self.hud.model.expanded != agent.slug else { return }
-            if self.hud.model.agents.first(where: { $0.id == agent.slug })?.state == .done { self.hud.removeAgent(id: agent.slug) }
-        }
     }
 
     // MARK: The gate (AG-07)
@@ -1094,9 +1110,11 @@ final class AgentManager {
             // An old one is written down quietly; a recent one gets a row with the way back in.
             guard asked > dayAgo else { continue }
             keepInterruptedBrief(brief, for: agent)
-            hud.upsertAgent(AgentRow(id: agent.slug, name: agent.name, line: "interrupted when Dot closed", state: .failed,
-                                     result: "Dot closed while \(agent.name) was working on: \(Log.short(brief, 240))\n\nIts conversation is saved; continue picks it up where it stopped.",
-                                     nextActions: [Self.continueLabel]))
+            var row = AgentRow(id: agent.slug, name: agent.name, line: "interrupted when Dot closed", state: .failed,
+                               result: "Dot closed while \(agent.name) was working on: \(Log.short(brief, 240))\n\nIts conversation is saved; continue picks it up where it stopped.",
+                               nextActions: [Self.continueLabel])
+            row.chip = .interrupted
+            hud.upsertAgent(row)
         }
     }
 

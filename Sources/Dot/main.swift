@@ -38,7 +38,8 @@ case "--help", "-h":
       Dot --find <phrase>      search the app in front and highlight the match
       Dot --listen [title]     start the lecture ear       Dot --stop-listening  stop it and save the transcript
       Dot --dictionary "heard => correct"   add a term the recognizer should write your way
-      Dot --snapshot [folder]  render every notch state, mark and card to PNG (no screen turn)
+      Dot --snapshot [folder] [notch|stack|overlay|cards|panel]  render every notch state, stack chip, mark and card to PNG
+      Dot --stack-demo [--muted] [--job]   a fake agent (or job) through the running Dot's stack (no voice, no chime)
       Dot --panel file.ui      show a UI-language explanation in the explainer panel (Dot --panel close hides it)
       Dot --prompt talk|think  print a session's system prompt
       Dot --quip-test          three sample moments through the quip model (quipModel), each line and its check
@@ -146,6 +147,14 @@ case "--ask", "--agent":
     DistributedNotificationCenter.default().postNotificationName(name, object: nil, userInfo: ["text": text, "quiet": quiet, "drive": drive, "dry": dry,
                                                                                             "bench": bench, "spoken": spoken, "shift": shift, "cometPort": cometPort], deliverImmediately: true)
     print("sent to Dot")
+    exit(0)
+case "--stack-demo":
+    // A fake agent (or with --job a fake behind job) through the running Dot's stack, for G7 to G9 (04): no real agent,
+    // no chime, no voice, no volume change; --muted fakes a muted Mac.
+    let flags = Set(arguments.dropFirst())
+    DistributedNotificationCenter.default().postNotificationName(DotIPC.stackDemo, object: nil,
+                                                                 userInfo: ["muted": flags.contains("--muted"), "job": flags.contains("--job")], deliverImmediately: true)
+    print("asked the running Dot for the stack demo; stack-demo: lines land in dot.log")
     exit(0)
 case "--track-selftest":
     // Ask the running Dot to run the box-tracking check on the real screen (its grants, not the terminal's).
