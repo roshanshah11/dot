@@ -40,6 +40,7 @@ case "--help", "-h":
       Dot --dictionary "heard => correct"   add a term the recognizer should write your way
       Dot --snapshot [folder] [notch|stack|overlay|cards|panel]  render every notch state, stack chip, mark and card to PNG
       Dot --stack-demo [--muted] [--job]   a fake agent (or job) through the running Dot's stack (no voice, no chime)
+      Dot --stack-selftest [--muted] [--job] [frames.json]   the same demo in this process, its window off screen, G7 to G9 checked
       Dot --panel file.ui      show a UI-language explanation in the explainer panel (Dot --panel close hides it)
       Dot --prompt talk|think  print a session's system prompt
       Dot --quip-test          three sample moments through the quip model (quipModel), each line and its check
