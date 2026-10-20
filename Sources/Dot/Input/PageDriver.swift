@@ -183,6 +183,8 @@ final class PageDriver {
     }
 
     var isBound: Bool { sessionId != nil }
+    /// A beforeunload dialog is up: the page waits on him and answers nothing until he decides.
+    var asksToLeave: Bool { leaveDialog }
 
     // MARK: Connecting and binding
 
@@ -416,6 +418,11 @@ final class PageDriver {
         items = items.filter { !($0.top == -10_000 && !all) }
         var note: String?
         if leaveDialog { note = "(the page is asking to leave; that's his call)" }
+        // Cross-origin frames (a Greenhouse embed, a Canvas tool) aren't in this tree tonight.
+        if let frames = await evaluate("(function(){try{return Array.from(document.querySelectorAll('iframe')).filter(f=>{const r=f.getBoundingClientRect(); if(r.width<80||r.height<60) return false; try{return !f.contentDocument}catch(e){return true}}).length}catch(e){return 0}})()", timeout: 1) as? Int,
+           frames > 0 {
+            note = (note.map { $0 + "\n" } ?? "") + "(part of this page is in a frame dot can't read yet: \(frames) frame\(frames == 1 ? "" : "s"); say so if what he wants is in it)"
+        }
         let snap = PageSnapshot.format(url: url, title: title, items: items, viewportHeight: viewport, all: all, note: note)
         refs = snap.refs
         var out = snap.text
@@ -434,7 +441,10 @@ final class PageDriver {
     func navigate(_ url: String) async -> Result {
         guard let s = sessionId else { return .error("no tab bound") }
         if bench, !(url.hasPrefix("http://127.0.0.1:") || url.hasPrefix("http://localhost:")) { return .error("bench: url outside the fixture") }
-        guard await cdp.send("Page.navigate", ["url": url], session: s) != nil else { return .error("navigate failed: \(cdp.lastError ?? "?")") }
+        guard await cdp.send("Page.navigate", ["url": url], session: s) != nil else {
+            if leaveDialog { return .stopped("the page asks to leave; his call", his: "leave page") }
+            return .error("navigate failed: \(cdp.lastError ?? "?")")
+        }
         mainFrameLoading = true
         await settle(limit: 8)
         if leaveDialog { return .stopped("the page asks to leave; his call", his: "leave page") }
@@ -764,8 +774,41 @@ final class PageDriver {
         let pid = Self.cometPid(port: port)
         if let pid, let app = NSRunningApplication(processIdentifier: pid) { app.activate() }
         try? await Task.sleep(nanoseconds: 250_000_000)
+        // Comet in front with the job's window first among its windows; else raise that window by its bounds.
+        if let pid, let bounds = await windowBounds(), !Self.isFirstWindow(of: pid, bounds: bounds) {
+            Self.raiseWindow(of: pid, bounds: bounds)
+            try? await Task.sleep(nanoseconds: 150_000_000)
+        }
         let front = NSWorkspace.shared.frontmostApplication?.processIdentifier
         return front == pid ? .ok("it's in front of you") : .ok("asked comet to show it")
+    }
+
+    /// Whether the window with these bounds (screen points, top-left) is the first on-screen window of the app.
+    static func isFirstWindow(of pid: pid_t, bounds: CGRect) -> Bool {
+        guard let list = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]] else { return false }
+        for w in list where (w[kCGWindowLayer as String] as? Int) == 0 {
+            guard let owner = w[kCGWindowOwnerPID as String] as? pid_t, let b = w[kCGWindowBounds as String] as? [String: Any] else { continue }
+            let r = CGRect(x: b["X"] as? Double ?? 0, y: b["Y"] as? Double ?? 0, width: b["Width"] as? Double ?? 0, height: b["Height"] as? Double ?? 0)
+            return owner == pid && abs(r.minX - bounds.minX) < 4 && abs(r.minY - bounds.minY) < 4
+        }
+        return false
+    }
+
+    /// AXRaise the app's window whose frame matches the bounds (the fallback when activating the tab didn't raise it).
+    static func raiseWindow(of pid: pid_t, bounds: CGRect) {
+        let app = AXUIElementCreateApplication(pid)
+        var value: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(app, kAXWindowsAttribute as CFString, &value) == .success, let windows = value as? [AXUIElement] else { return }
+        for w in windows {
+            var p: CFTypeRef?
+            guard AXUIElementCopyAttributeValue(w, kAXPositionAttribute as CFString, &p) == .success, let p else { continue }
+            var point = CGPoint.zero
+            guard AXValueGetValue(unsafeBitCast(p, to: AXValue.self), .cgPoint, &point) else { continue }
+            if abs(point.x - bounds.minX) < 4, abs(point.y - bounds.minY) < 4 {
+                AXUIElementPerformAction(w, kAXRaiseAction as CFString)
+                return
+            }
+        }
     }
 
     /// The pid of the Comet listening on this DevTools port (the bench Comet shares Comet's bundle id).

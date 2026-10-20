@@ -36,6 +36,8 @@ final class JobManager {
         var endedAt: Date?
         var endLine = ""
         var nativeRefs: [String: String] = [:]
+        /// The last page whose text went through the injection check.
+        var checkedURL = ""
         var lastEventAt = Date()
         var pendingDone: DispatchWorkItem?
         var repeatNudged = false
@@ -75,6 +77,8 @@ final class JobManager {
     var onRoutine: ((String, String, String) -> Void)?
     /// Shows a consent card (the stack once 04 lands; the notch's consent path until then).
     var presentCard: ((ConsentCard) -> Void)?
+    /// Jev's injection check on page text (the agents' PostToolUse check isn't in a job's path).
+    var jev: Jev?
 
     init(config: DotConfig, overlay: OverlayManager?, speaker: TTSProvider?, ledger: Ledger?) {
         self.config = config
@@ -583,8 +587,10 @@ final class JobManager {
         switch tool {
         case "look":
             if !job.page.isBound, !(await bindIfNeeded(job)) { return ("(no page yet: open one first)", false, nil) }
+            if job.page.asksToLeave { return ("stopped: the page is asking to leave; that's his call, so stop here and say so", true, nil) }
             let l = await job.page.look(all: args["all"] as? Bool ?? false, text: args["text"] as? Bool ?? false, shot: args["shot"] as? Bool ?? false)
-            return (l.text, false, l.image)
+            Log.info("act: look ok \(Int(Date().timeIntervalSince(started) * 1000)) ms (job \(job.id): \(l.text.count) chars)")
+            return (await checked(job, l.text, force: args["text"] as? Bool ?? false), false, l.image)
         case "open":
             guard let target = str(args, "target") else { return ("error: open what?", true, nil) }
             result = await open(job, target: target, where: str(args, "where"))
@@ -634,11 +640,29 @@ final class JobManager {
         else if let p = result.point, job.placement == .front { pointAt(job, p, label: str(args, "label") ?? str(args, "ref") ?? tool) }
         var text = "\(result.status.rawValue): \(result.detail)"
         if result.his != nil { text += ". stop here and tell him it's ready for his press." }
-        if job.page.isBound, tool != "show" {
+        if job.page.asksToLeave {
+            text += "\n(the page is asking to leave; that's his call, so stop here and say so)"
+        } else if job.page.isBound, tool != "show" {
             let l = await job.page.look()
             text += "\n" + l.text
+            text = await checked(job, text, force: false)
         }
         return (text, result.status == .error, nil)
+    }
+
+    /// Page text reaches a session with skills and files, so it goes through Jev's injection check once per page (or
+    /// whenever the page's words are read): a flagged page gets the sentinel's note in front.
+    private func checked(_ job: Job, _ text: String, force: Bool) async -> String {
+        guard let jev else { return text }
+        let url = text.split(separator: "\n").first.map(String.init) ?? ""
+        guard force || url != job.checkedURL else { return text }
+        job.checkedURL = url
+        let note: String? = await withCheckedContinuation { continuation in
+            jev.injectionCheck(toolName: "mcp__dot-browser__look", output: String(text.prefix(6000))) { continuation.resume(returning: $0) }
+        }
+        guard let note else { return text }
+        Log.warn("job[\(job.id)] page text carries instructions; the sentinel's note goes in front")
+        return note + "\n" + text
     }
 
     /// The first page call: a front job pins his tab if the start didn't; a behind job has no window until it opens one.

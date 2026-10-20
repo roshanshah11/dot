@@ -223,6 +223,7 @@ final class Talk {
         }
         jobs.talkIsIdle = { [weak self] in self.map { $0.phase == .idle && !$0.speaker.isSpeaking } ?? true }
         jobs.presentCard = { [weak hud] card in hud?.present(card, chime: true) }
+        jobs.jev = jev
         NSWorkspace.shared.notificationCenter.addObserver(forName: NSWorkspace.didActivateApplicationNotification, object: nil, queue: .main) { [weak self] note in
             guard let app = note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication else { return }
             Task { @MainActor in self?.appActivated(app) }
