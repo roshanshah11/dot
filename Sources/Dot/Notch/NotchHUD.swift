@@ -312,13 +312,13 @@ final class NotchHUD {
     /// The stack takes the agent rows, the consent card, notices with an action and the morning card.
     func attach(stack: AgentStack) {
         self.stack = stack
-        stack.onGone = { [weak self] id in
+        stack.rowGone = { [weak self] id in
             // The policy cleared a finished chip: its row leaves too (results stay in Home).
             guard let self, let row = self.model.agents.first(where: { $0.id == id }), row.isStackBound,
                   row.state != .running, row.state != .waiting else { return }
             self.removeAgent(id: id)
         }
-        stack.onDismiss = { [weak self] id in
+        stack.rowDismissed = { [weak self] id in
             guard let self else { return }
             if id == "morning" { self.model.onMorningDismiss?(); return }
             if id.hasPrefix("notice-") { self.dismissNotice(id: String(id.dropFirst(7))); return }

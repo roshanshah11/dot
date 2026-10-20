@@ -168,6 +168,10 @@ final class AgentStack {
     var onContinue: ((String) -> Void)? { get { model.onContinue } set { model.onContinue = newValue } }
     var onDismiss: ((String) -> Void)?
     var onGone: ((String) -> Void)?
+    /// NotchHUD's own hooks (its agent rows, notices and the morning card leave with their chips), called before the
+    /// public ones above, which stay free for 02's jobs.
+    var rowDismissed: ((String) -> Void)?
+    var rowGone: ((String) -> Void)?
     /// Where the stack anchors instead of the notch screen's visible frame (`Dot --stack-selftest` puts it off every display).
     var anchorFrame: (() -> CGRect)?
     /// The window's frame while it is up, for the self-test.
@@ -177,6 +181,7 @@ final class AgentStack {
         if let color = Color(hex: accentHex) { model.accent = color }
         model.onDismiss = { [weak self] id in
             MainActor.assumeIsolated {
+                self?.rowDismissed?(id)
                 self?.onDismiss?(id)
                 self?.remove(id: id)
             }
@@ -267,6 +272,7 @@ final class AgentStack {
                 model.chips.removeAll { $0.id == chip.id }
                 model.folded.remove(chip.id)
                 logged[chip.id] = nil
+                rowGone?(chip.id)
                 onGone?(chip.id)
             }
         }
