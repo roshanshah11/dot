@@ -75,6 +75,103 @@ final class Hands {
             return nativeInsert(label: label, text: text, context: context)
         case .media(let move): return media(move)
         case .go: return Outcome(ok: true, line: "on it.", detail: "go: handed to a driven walkthrough")
+        case .play(let p): return await playSpotify(p)
+        }
+    }
+
+    // MARK: Spotify by name (05)
+
+    /// The script's output and exit code, run off the main thread with a deadline.
+    nonisolated static func spotifyScript(_ args: [String], env: [String: String], timeout: TimeInterval) async -> (code: Int32, out: String) {
+        guard let script = DotConfig.bundledScript("dot-spotify.sh", fallback: "~/Projects/dot-fast/scripts/dot-spotify.sh") else { return (-1, "no dot-spotify.sh") }
+        return await withCheckedContinuation { continuation in
+            DispatchQueue.global(qos: .userInitiated).async {
+                let p = Process()
+                p.executableURL = URL(fileURLWithPath: "/bin/bash")
+                p.arguments = [script] + args
+                var environment = ProcessInfo.processInfo.environment
+                environment.removeValue(forKey: "HB_INST")
+                for (k, v) in env { environment[k] = v }
+                environment["PATH"] = "\(NSHomeDirectory())/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
+                p.environment = environment
+                let out = Pipe()
+                p.standardOutput = out
+                p.standardError = FileHandle.nullDevice
+                do { try p.run() } catch { continuation.resume(returning: (-1, "")); return }
+                let deadline = Date().addingTimeInterval(timeout)
+                while p.isRunning, Date() < deadline { Thread.sleep(forTimeInterval: 0.05) }
+                if p.isRunning { p.terminate(); continuation.resume(returning: (-2, "timeout")); return }
+                let text = String(data: out.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
+                continuation.resume(returning: (p.terminationStatus, text))
+            }
+        }
+    }
+
+    /// Find the top result on open.spotify.com (a logged-out headless browser) and start it with Spotify's AppleScript.
+    /// The bench finds on the fixture and never plays.
+    private func playSpotify(_ p: SpotifyPlay) async -> Outcome {
+        let started = Date()
+        var env: [String: String] = [:]
+        if bench != nil {
+            env["DOT_SPOTIFY_BASE"] = "http://127.0.0.1:8766/spotify"
+            env["DOT_SPOTIFY_DRY"] = "1"
+        } else if NSWorkspace.shared.urlForApplication(withBundleIdentifier: "com.spotify.client") == nil {
+            return Outcome(ok: false, line: "spotify isn't on this mac.", detail: "no spotify app")
+        }
+        let words = p.words.split(separator: " ").map(String.init)
+        let find = await Self.spotifyScript(["find", p.kind.rawValue] + words, env: env, timeout: 8)
+        let findMs = Int(Date().timeIntervalSince(started) * 1000)
+        let hits = SpotifyPlay.hits(find.out)
+        guard let top = hits.first else {
+            let warming = find.out.contains("warming")
+            return Outcome(ok: false, line: warming ? "one sec, spotify's search is starting; ask me again in a moment." : "i couldn't find a \(p.kind.rawValue) for \(p.words.lowercased()) on spotify.",
+                           detail: "spotify find \(p.kind.rawValue) \(p.words): exit \(find.code) \(Log.short(find.out, 60))")
+        }
+        let title = Log.short(top.title.lowercased(), 40)
+        if bench != nil {
+            let dry = await Self.spotifyScript(["play", top.uri], env: env, timeout: 3)
+            Log.info("act: play \(top.uri) \"\(top.title)\" ok \(Int(Date().timeIntervalSince(started) * 1000)) ms (find \(findMs) ms, \(dry.out.trimmingCharacters(in: .whitespacesAndNewlines)))")
+            return Outcome(ok: true, line: "playing \(title).", detail: "bench dry play \(top.uri)")
+        }
+        let playStart = Date()
+        _ = await Self.spotifyScript(["play", top.uri], env: env, timeout: 5)
+        var state = await pollPlaying()
+        // A playlist URI that `play track` doesn't start: its first track, in the playlist's context.
+        if !state.hasPrefix("playing"), p.kind == .playlist {
+            let first = await Self.spotifyScript(["first-track", top.uri], env: env, timeout: 8)
+            let track = first.out.trimmingCharacters(in: .whitespacesAndNewlines)
+            if track.hasPrefix("spotify:track:") {
+                _ = await Self.spotifyScript(["play-in", track, top.uri], env: env, timeout: 5)
+                state = await pollPlaying()
+            }
+        }
+        let playMs = Int(Date().timeIntervalSince(playStart) * 1000)
+        let ok = state.hasPrefix("playing")
+        Log.info("act: play \(top.uri) \"\(top.title)\" \(ok ? "ok" : "fail") \(Int(Date().timeIntervalSince(started) * 1000)) ms (find \(findMs) ms, play \(playMs) ms, state \(state.split(separator: "|").first ?? "?"))")
+        if !ok {
+            if let url = URL(string: top.uri) { _ = await openSpotify(url) }
+            return Outcome(ok: false, line: "spotify didn't start it.", detail: "spotify state \(state)")
+        }
+        return Outcome(ok: true, line: "playing \(title).", detail: "spotify \(top.uri)")
+    }
+
+    private func pollPlaying() async -> String {
+        var state = ""
+        for _ in 0..<4 {
+            try? await Task.sleep(nanoseconds: 500_000_000)
+            state = await Self.spotifyScript(["state"], env: [:], timeout: 3).out.trimmingCharacters(in: .whitespacesAndNewlines)
+            if state.hasPrefix("playing") { break }
+        }
+        return state
+    }
+
+    /// At launch, once: the search instance comes up before his first ask (a cold start is about 36 s).
+    static func warmSpotify() {
+        guard NSWorkspace.shared.urlForApplication(withBundleIdentifier: "com.spotify.client") != nil else { return }
+        let started = Date()
+        Task.detached {
+            let r = await spotifyScript(["warm"], env: [:], timeout: 120)
+            Log.info("spotify: \(r.out.trimmingCharacters(in: .whitespacesAndNewlines)) in \(Int(Date().timeIntervalSince(started) * 1000)) ms")
         }
     }
 
@@ -600,6 +697,7 @@ final class Hands {
         case .openURL(let url, _):
             return url.hasPrefix("http://127.0.0.1:") || url.hasPrefix("http://localhost:") ? nil : "url outside the fixture"
         case .media: return "media keys reach his music"
+        case .play: return nil   // the bench finds on the fixture and never plays (playSpotify)
         default:
             if context.bundleIdentifier == Self.cometBundle, !fixtureFront { return "comet window is not the bench" }
             let allowedApps: Set<String> = ["com.apple.Safari", Self.cometBundle, "com.apple.TextEdit", "com.apple.finder"]

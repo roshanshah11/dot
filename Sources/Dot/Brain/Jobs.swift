@@ -627,10 +627,10 @@ final class JobManager {
         case "show":
             return await show(job)
         case "play":
-            let words = str(args, "words") ?? ""
-            let uri = "spotify:search:" + (words.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? words)
-            let outcome = await job.hands.perform(.openURL(uri, newTab: false), context: AccessibilityContext.capture(maxElements: 10))
-            result = outcome.ok ? .ok(outcome.detail) : .error(outcome.detail)
+            let kind = SpotifyPlay.Kind(rawValue: str(args, "kind") ?? "playlist") ?? .playlist
+            guard let play = SpotifyPlay.make(kind, str(args, "words") ?? "") else { return ("error: play what?", true, nil) }
+            let outcome = await job.hands.perform(.play(play), context: AccessibilityContext.capture(maxElements: 10))
+            result = outcome.ok ? .ok(outcome.line) : .error(outcome.line.isEmpty ? outcome.detail : outcome.line)
         default:
             return ("error: no tool \(tool)", true, nil)
         }

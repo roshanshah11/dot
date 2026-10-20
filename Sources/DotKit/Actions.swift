@@ -22,6 +22,8 @@ public enum ActionCommand: Equatable, Sendable {
     /// Several steps on what is in front ("go to my applied jobs and search northwind"): Dot drives a
     /// walkthrough itself, one step at a time, and stops at the result.
     case go(goal: String)
+    /// Music by name: Dot finds the top Spotify result for the words and starts it (05, 2026-10-20).
+    case play(SpotifyPlay)
 
     /// The verb in the log's `act:` lines.
     public var verb: String {
@@ -34,6 +36,7 @@ public enum ActionCommand: Equatable, Sendable {
         case .insert: return "insert"
         case .media(let m): return m.rawValue
         case .go: return "go"
+        case .play: return "play"
         }
     }
 
@@ -57,6 +60,7 @@ public enum ActionCommand: Equatable, Sendable {
         case .insert(let label, _): return label ?? "the field"
         case .media: return ""
         case .go(let goal): return goal
+        case .play(let p): return "\(p.kind.rawValue):\(p.words)"
         }
     }
 
@@ -89,6 +93,7 @@ public enum ActionCommand: Equatable, Sendable {
         case .insert: return "typed it in."
         case .media(let m): return m == .playPause ? "done." : (m == .next ? "next one." : "previous one.")
         case .go: return "on it."
+        case .play: return "playing it."
         }
     }
 }
@@ -124,6 +129,8 @@ public enum ActionTags {
             return .insert(label: text.isEmpty ? nil : text, text: "")
         case "GO":
             return text.count >= 3 ? .go(goal: text) : nil
+        case "PLAY":
+            return SpotifyPlay.command(text)
         default:
             return nil
         }
@@ -169,6 +176,13 @@ public enum ActionPhrases {
     /// he asked for a piano playlist, Dot pasted into Finder, then only opened Spotify).
     static let spotify = re(lead + #"(?:play|put on|find|search(?: for)?|look up|pull up|queue(?: up)?|get)(?: me)?(?: some| a| an| the| my)? (.{2,60}?) (?:on|in|from) spotify"# + tail)
     static let spotifyFor = re(lead + #"search spotify for (.{2,60}?)"# + tail)
+    /// His own ways of asking for music by name, which play it (05): "play lofi on spotify", "put on a jazz playlist",
+    /// "open spotify to a piano playlist for studying", "find piano playlist i would like need to study".
+    static let purpose = #"( (?:for|to) (?:study(?:ing)?|work(?:ing)?|focus(?:ing)?|sleep(?:ing)?|reading|running|the gym|chill(?:ing)?))?"#
+    static let playOnSpotify = re(lead + #"(?:play|put on|queue(?: up)?)(?: me)?(?: some| a| an| the| my)? (.{2,60}?) (?:on|in|from) spotify"# + tail)
+    static let playPlaylist = re(lead + #"(?:play|put on|queue(?: up)?)(?: me)?(?: some| a| an| the| my)? (.{2,50}?) playlist(?:s)?"# + purpose + tail)
+    static let openSpotifyTo = re(lead + #"(?:open|launch|start) spotify (?:to|and play|with|on|for) (?:some |a |an |the |my )?(.{2,60}?)"# + tail)
+    static let findPlaylist = re(lead + #"find (?:a |me a |me |some |me some )?(.{2,40}?) playlists?\b(.{0,50})$"#)
 
     /// The command for a fixed phrase, or nil when the words need the model. `open X` is returned
     /// unresolved: the caller acts on it only when X is an app, a folder or a site it can name.
@@ -190,7 +204,27 @@ public enum ActionPhrases {
         if nextSong.firstMatch(in: t, range: range) != nil { return .media(.next) }
         if previousSong.firstMatch(in: t, range: range) != nil { return .media(.previous) }
         if pause.firstMatch(in: t, range: range) != nil { return .media(.playPause) }
-        if let m = spotifyFor.firstMatch(in: t, range: range) ?? spotify.firstMatch(in: t, range: range) {
+        if let m = spotifyFor.firstMatch(in: t, range: range) {
+            return SpotifySearch.command((t as NSString).substring(with: m.range(at: 1)))
+        }
+        // Music by name plays (05); "search", "look up" and "pull up" on spotify stay the search page.
+        if let m = playOnSpotify.firstMatch(in: t, range: range) {
+            return SpotifyPlay.command((t as NSString).substring(with: m.range(at: 1)), defaultKind: .playlist)
+        }
+        if let m = playPlaylist.firstMatch(in: t, range: range) {
+            // the purpose stays in the words: "piano for studying" finds study playlists
+            let purposeRange = m.range(at: 2)
+            let words = (t as NSString).substring(with: m.range(at: 1)) + (purposeRange.location == NSNotFound ? "" : (t as NSString).substring(with: purposeRange))
+            return SpotifyPlay.make(.playlist, words).map { .play($0) }
+        }
+        if let m = openSpotifyTo.firstMatch(in: t, range: range) {
+            return SpotifyPlay.command((t as NSString).substring(with: m.range(at: 1)), defaultKind: .playlist)
+        }
+        if let m = findPlaylist.firstMatch(in: t, range: range) {
+            let words = (t as NSString).substring(with: m.range(at: 1))
+            return SpotifyPlay.make(.playlist, words).map { .play($0) }
+        }
+        if let m = spotify.firstMatch(in: t, range: range) {
             return SpotifySearch.command((t as NSString).substring(with: m.range(at: 1)))
         }
         if let m = open.firstMatch(in: t, range: range) {
@@ -205,6 +239,59 @@ public enum ActionPhrases {
             return ActionTags.openCommand(target)
         }
         return nil
+    }
+}
+
+/// Music by name (05): the kind and the words; Dot finds the top Spotify result on open.spotify.com in a logged-out
+/// headless browser and starts it through Spotify's own AppleScript. Spotify's AppleScript has no search, and its window
+/// gives accessibility one element, which is why the 10-19 ask pasted into Finder.
+public struct SpotifyPlay: Equatable, Sendable {
+    public enum Kind: String, Equatable, Sendable, CaseIterable { case playlist, track, album, artist }
+    public let kind: Kind
+    public let words: String
+
+    static let vague: Set<String> = ["music", "something", "anything", "a song", "songs", "my music", "it", "some music", "spotify"]
+
+    /// A trimmed kind and words; nil when nothing is left to look for.
+    public static func make(_ kind: Kind, _ raw: String) -> SpotifyPlay? {
+        let words = raw.trimmingCharacters(in: CharacterSet.whitespacesAndNewlines.union(CharacterSet(charactersIn: "\"'.,!?")))
+        guard words.contains(where: { $0.isLetter || $0.isNumber }), words.count <= 80 else { return nil }
+        return SpotifyPlay(kind: kind, words: words)
+    }
+
+    /// `[PLAY:kind:words]` or `[PLAY:words]`, or a phrase's words: "music" or "something" is play/pause, a song word
+    /// makes it a track.
+    public static func command(_ payload: String, defaultKind: Kind = .playlist) -> ActionCommand? {
+        var text = payload.trimmingCharacters(in: .whitespacesAndNewlines)
+        var kind = defaultKind
+        if let colon = text.firstIndex(of: ":"), let k = Kind(rawValue: text[..<colon].lowercased().trimmingCharacters(in: .whitespaces)) {
+            kind = k
+            text = String(text[text.index(after: colon)...])
+        } else {
+            let lower = text.lowercased()
+            if vague.contains(lower.trimmingCharacters(in: CharacterSet(charactersIn: " .!?"))) { return .media(.playPause) }
+            for (word, k) in [(" song", Kind.track), (" track", .track), (" album", .album), (" playlist", .playlist)] where lower.hasSuffix(word) {
+                kind = k
+                text = String(text.dropLast(word.count))
+            }
+        }
+        if vague.contains(text.lowercased().trimmingCharacters(in: CharacterSet(charactersIn: " .!?"))) { return .media(.playPause) }
+        return make(kind, text).map { .play($0) }
+    }
+
+    /// The hit lines `dot-spotify.sh find` prints: `spotify:<kind>:<22-char id><TAB><title>`; bad ids are dropped, and
+    /// duplicates collapse.
+    public static func hits(_ output: String) -> [(uri: String, title: String)] {
+        var seen = Set<String>()
+        var out: [(String, String)] = []
+        for line in output.split(separator: "\n") {
+            let parts = line.split(separator: "\t", maxSplits: 1).map(String.init)
+            guard let uri = parts.first, uri.range(of: #"^spotify:(playlist|track|album|artist):[A-Za-z0-9]{22}$"#, options: .regularExpression) != nil,
+                  !seen.contains(uri) else { continue }
+            seen.insert(uri)
+            out.append((uri, parts.count > 1 ? parts[1] : ""))
+        }
+        return out
     }
 }
 

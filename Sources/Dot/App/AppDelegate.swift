@@ -437,6 +437,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         startHotkeysWhenTrusted()
         talk.warmUp()
         talk.jobs.warm()
+        // Spotify's search instance, 60 s after launch, so the cold start never lands on his first ask (05).
+        DispatchQueue.main.asyncAfter(deadline: .now() + 60) { Hands.warmSpotify() }
         // This Mac's calendar (the basics pass): macOS asks him once; until he allows it, Atlas's copy is used.
         talk.localCalendar.requestAccess()
         let status = Permissions.status()

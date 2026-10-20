@@ -45,10 +45,11 @@ final class SharedTurnsTests: XCTestCase {
 
 final class SpotifySearchTests: XCTestCase {
     func testFixedPhrasesOpenSpotifysSearch() {
-        XCTAssertEqual(ActionPhrases.match("play lofi beats on spotify"), .openURL("spotify:search:lofi%20beats", newTab: false))
-        XCTAssertEqual(ActionPhrases.match("can you find me a piano playlist on spotify"), .openURL("spotify:search:piano%20playlist", newTab: false))
+        // 05 (2026-10-20): music by name plays it; "search spotify for" and "look up ... on spotify" stay the search page.
+        XCTAssertEqual(ActionPhrases.match("play lofi beats on spotify"), .play(SpotifyPlay(kind: .playlist, words: "lofi beats")))
+        XCTAssertEqual(ActionPhrases.match("can you find me a piano playlist on spotify"), .play(SpotifyPlay(kind: .playlist, words: "piano")))
         XCTAssertEqual(ActionPhrases.match("search spotify for Northwind Quartet."), .openURL("spotify:search:Northwind%20Quartet", newTab: false))
-        XCTAssertEqual(ActionPhrases.match("put on some jazz in spotify please"), .openURL("spotify:search:jazz", newTab: false))
+        XCTAssertEqual(ActionPhrases.match("put on some jazz in spotify please"), .play(SpotifyPlay(kind: .playlist, words: "jazz")))
         XCTAssertEqual(ActionPhrases.match("play music on spotify"), .media(.playPause), "the bare word music is play")
         XCTAssertEqual(ActionPhrases.match("open spotify"), .open("spotify"), "opening it is still just open")
         XCTAssertEqual(ActionPhrases.match("pause spotify"), .media(.playPause))

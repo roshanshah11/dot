@@ -18,11 +18,11 @@ Endpoints:
 Every log line has: ts (epoch seconds, float), time (local ISO with ms), kind ("get" or "event"),
 type ("get" for a GET, else the bench.js event type), url, client. Stdlib only.
 """
-import argparse, json, os, sys, threading, time
+import argparse, html, json, os, re, sys, threading, time
 from datetime import datetime
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from urllib.parse import parse_qs, urlsplit
+from urllib.parse import parse_qs, unquote, urlsplit
 
 HERE = Path(__file__).resolve().parent
 DEFAULT_ROOT = HERE.parent / 'Tests' / 'Fixtures' / 'bench'
@@ -118,6 +118,23 @@ def make_handler(root, log, quiet):
                 lines = log.since(since, (q.get('type') or [None])[0], (q.get('kind') or [None])[0])
                 body = ('\n'.join(lines) + ('\n' if lines else '')).encode()
                 return self._json(200, body, 'application/x-ndjson')
+            # Dot's Spotify search in the bench (05): /spotify/search/<q>/<kind>s, a page shaped like open.spotify.com's
+            # results, with three placeholder links. Nothing here is Spotify's.
+            m = re.match(r'^/spotify/search/([^/]+)/(playlist|track|album|artist)s/?$', parts.path)
+            if m:
+                q, kind = unquote(m.group(1)), m.group(2)
+                ids = ['AAAAAAAAAAAAAAAAAAAAAA', 'BBBBBBBBBBBBBBBBBBBBBB', 'CCCCCCCCCCCCCCCCCCCCCC']
+                names = ['Bench Focus', 'Bench Study', 'Bench Calm']
+                links = ''.join(f'<li><a href="/{kind}/{i}">{n} ({html.escape(q)})</a></li>' for i, n in zip(ids, names))
+                page = f'<!doctype html><html><head><meta charset="utf-8"><title>Bench Spotify search</title></head><body><ul>{links}</ul></body></html>'
+                self.send_response(200)
+                self.send_header('Content-Type', 'text/html; charset=utf-8')
+                self.send_header('Cache-Control', 'no-store')
+                body = page.encode()
+                self.send_header('Content-Length', str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+                return
             super().do_GET()
 
         def send_response(self, code, message=None):

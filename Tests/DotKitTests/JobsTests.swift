@@ -407,3 +407,37 @@ final class MCPConfigEditTests: XCTestCase {
         XCTAssertFalse(MCPConfigEdit.isBenchSession(kind: "talk", benchMode: false))
     }
 }
+
+final class SpotifyPlayTests: XCTestCase {
+    func play(_ kind: SpotifyPlay.Kind, _ words: String) -> ActionCommand { .play(SpotifyPlay(kind: kind, words: words)) }
+
+    func testTags() {
+        XCTAssertEqual(ActionTags.make(kind: "PLAY", payload: "playlist:piano study"), play(.playlist, "piano study"))
+        XCTAssertEqual(TagParser.parse("[PLAY:playlist:piano study] playing it.").tags, [.act(play(.playlist, "piano study"))])
+        XCTAssertEqual(TagParser.parse("[PLAY:playlist:piano study] playing it.").spoken, "playing it.")
+        XCTAssertEqual(ActionTags.make(kind: "PLAY", payload: "piano study"), play(.playlist, "piano study"))
+        XCTAssertNil(ActionTags.make(kind: "PLAY", payload: "track:"))
+        XCTAssertEqual(ActionTags.make(kind: "PLAY", payload: "music"), .media(.playPause))
+        XCTAssertEqual(ActionTags.make(kind: "PLAY", payload: "artist:Sam Rivera"), play(.artist, "Sam Rivera"))
+    }
+
+    func testHisPhrasings() {
+        XCTAssertEqual(ActionPhrases.match("play lofi on spotify"), play(.playlist, "lofi"))
+        XCTAssertEqual(ActionPhrases.match("play some lofi on spotify"), play(.playlist, "lofi"))
+        XCTAssertEqual(ActionPhrases.match("put on a jazz playlist"), play(.playlist, "jazz"))
+        XCTAssertEqual(ActionPhrases.match("play a piano playlist for studying"), play(.playlist, "piano for studying"))
+        if case .play(let p)? = ActionPhrases.match("open spotify to a piano playlist for studying") { XCTAssertEqual(p.kind, .playlist) } else { XCTFail("open spotify to") }
+        if case .play(let p)? = ActionPhrases.match("find piano playlist i would like need to study") { XCTAssertEqual(p.words, "piano") } else { XCTFail("find playlist") }
+        XCTAssertEqual(ActionPhrases.match("search spotify for Sam Rivera"), .openURL("spotify:search:Sam%20Rivera", newTab: false))
+        XCTAssertEqual(ActionPhrases.match("pause the music"), .media(.playPause))
+        XCTAssertEqual(ActionPhrases.match("play music on spotify"), .media(.playPause))
+        if case .openURL(let url, _)? = ActionPhrases.match("look up Sam Rivera on spotify") { XCTAssertTrue(url.hasPrefix("spotify:search:")) } else { XCTFail("look up stays a search") }
+    }
+
+    func testHitLines() {
+        let out = "spotify:playlist:37i9dQZF1DWZIOAPKUdaKS\tFocus Piano\nspotify:playlist:37i9dQZF1DWZIOAPKUdaKS\tFocus Piano\nspotify:playlist:short123\tBad\nspotify:playlist:../../etc/passwdxxxxxxxx\tBad\nspotify:track:4uAjKH707f6tvAp9NqPe5w\tA Song\n"
+        let hits = SpotifyPlay.hits(out)
+        XCTAssertEqual(hits.map(\.uri), ["spotify:playlist:37i9dQZF1DWZIOAPKUdaKS", "spotify:track:4uAjKH707f6tvAp9NqPe5w"])
+        XCTAssertEqual(hits.first?.title, "Focus Piano")
+    }
+}
