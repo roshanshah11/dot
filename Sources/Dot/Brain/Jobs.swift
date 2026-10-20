@@ -433,6 +433,13 @@ final class JobManager {
             line += "it's at \(copied.map { ConsentPolicy.shortPath($0) }.joined(separator: ", "))."
         }
         if line.isEmpty { line = failed ? "that didn't work." : "done." }
+        // A text he wants written for him, on a model that isn't the prose one: the same goal again on Opus (05).
+        if blocked, text.lowercased().contains("needs writing"), job.model != config.jobProseModel, !job.bench {
+            Log.info("job[\(job.id)] needs writing; restarting it on \(config.jobProseModel)")
+            finish(job, failed: true, line: "", stopReason: "needs writing")
+            restartOnProse(job)
+            return
+        }
         if info.isError { Log.warn("job[\(job.id)] error result: \(Log.short(info.resultText ?? info.subtype, 200))") }
         finish(job, failed: failed, line: line, stopReason: nil, result: info)
     }
@@ -517,6 +524,32 @@ final class JobManager {
         }
         // Keep the last 20 jobs in memory.
         if jobs.count > 20 { jobs.removeFirst(jobs.count - 20) }
+    }
+
+    private func restartOnProse(_ old: Job) {
+        var context = ScreenContext()
+        context.appName = old.appName
+        context.bundleIdentifier = old.appBundle
+        startForced(goal: old.goal, placement: old.placement, context: context, askedAt: nil, model: config.jobProseModel, words: old.hisWords)
+    }
+
+    /// A job on a given model (the prose restart), without the model rule.
+    private func startForced(goal: String, placement: JobPlacement, context: ScreenContext, askedAt: Date?, model: String, words: String) {
+        guard let made = makeSession(model: model, bench: false, benchPort: nil) else { return }
+        let page = PageDriver(port: config.cometDebugPort, bench: false)
+        let hands = Hands(cometPort: config.cometDebugPort)
+        let job = Job(id: made.id, goal: goal, hisWords: words, placement: placement, model: model, page: page, hands: hands,
+                      askedAt: askedAt, bench: false, folder: made.folder, stamp: made.stamp)
+        job.session = made.session
+        job.appBundle = context.bundleIdentifier == Hands.cometBundle ? nil : context.bundleIdentifier
+        job.appName = context.appName
+        page.log = { line in Log.info("job[\(job.id)] \(line)") }
+        jobs.append(job)
+        job.phase = .running
+        let first = "[job] id \(job.id), placement \(placement.rawValue), output folder \(job.folder.appendingPathComponent("output").path), now: \(Talk.nowLine())\nhe said: \"\(words)\""
+        Log.info("job[\(job.id)] started placement=\(placement.rawValue) warm=0 model=\(model) goal=\(Log.short(goal, 120))")
+        made.session.send(text: first)
+        onChange?()
     }
 
     private func sessionExited(id: String, code: Int32) {

@@ -441,3 +441,16 @@ final class SpotifyPlayTests: XCTestCase {
         XCTAssertEqual(hits.first?.title, "Focus Piano")
     }
 }
+
+final class MessagesProbeTests: XCTestCase {
+    func testHeaderOnly() throws {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("probe-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let db = dir.appendingPathComponent("chat.db")
+        try Data("SQLite format 3\u{0}rest".utf8).write(to: db)
+        XCTAssertTrue(MessagesProbe.liveReadable(path: db.path))
+        XCTAssertFalse(MessagesProbe.liveReadable(path: dir.appendingPathComponent("none.db").path))
+        try Data("not a database!!".utf8).write(to: db)
+        XCTAssertFalse(MessagesProbe.liveReadable(path: db.path))
+    }
+}

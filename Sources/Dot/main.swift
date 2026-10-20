@@ -37,6 +37,7 @@ case "--host":
         found.lines.forEach { print($0) }
         exit(0)
     }
+    FileHandle.standardError.write(Data("messages: live chat.db readable=\(MessagesProbe.liveReadable())\n".utf8))
     AgentHostCore.serve(path: socket)
 case "--version", "-v":
     print("Dot \(Version.string)")

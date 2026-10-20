@@ -133,3 +133,14 @@ public struct ProposalCard: Equatable, Sendable {
         guarded = true
     }
 }
+
+/// Can this process read the live Messages database? Opens chat.db read-only and reads its 16-byte header (no content).
+/// Full Disk Access decides it; tonight jobs read texts from Atlas's copy either way (05).
+public enum MessagesProbe {
+    public static func liveReadable(path: String = (NSHomeDirectory() as NSString).appendingPathComponent("Library/Messages/chat.db")) -> Bool {
+        guard let handle = FileHandle(forReadingAtPath: path) else { return false }
+        defer { try? handle.close() }
+        guard let head = try? handle.read(upToCount: 16), head.count == 16 else { return false }
+        return head.starts(with: Array("SQLite format 3".utf8))
+    }
+}
