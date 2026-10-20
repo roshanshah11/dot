@@ -678,5 +678,77 @@ class Fixture(unittest.TestCase):
         self.assertIn('slack water', long)
 
 
+
+JOB_RUN = '''
+2026-10-20 22:00:00.000 INFO ask: received bench=1 typed text=open page one, then page two, then go back
+2026-10-20 22:00:00.200 INFO route: job placement=front (front verb)
+2026-10-20 22:00:00.210 INFO job[ab12cd] started placement=front warm=1 model=sonnet goal=open page one, then page two, then go back
+2026-10-20 22:00:01.900 INFO job[ab12cd] step 1 mcp__dot__click ref e3
+2026-10-20 22:00:02.300 INFO act: click e3 ok 400 ms (job ab12cd: clicked Page 1)
+2026-10-20 22:00:02.300 INFO job[ab12cd] point(x: 317, y: 134) e3
+2026-10-20 22:00:03.100 INFO job[ab12cd] step 2 mcp__dot__click ref e7
+2026-10-20 22:00:03.500 INFO act: click e7 ok 369 ms (job ab12cd: clicked Continue to page 2)
+2026-10-20 22:00:04.000 INFO job[ab12cd] step 3 mcp__dot__back
+2026-10-20 22:00:04.400 INFO act: back  ok 375 ms (job ab12cd: went back)
+2026-10-20 22:00:06.000 INFO job[ab12cd] done in 5790 ms, 3 steps, $0.1267
+2026-10-20 22:00:06.000 INFO act: go open page one, then page two, then go back ok 5790 ms
+'''
+
+
+class JobRows(unittest.TestCase):
+    def ctx(self, lines):
+        return {'lines': lines, 'events_before': [], 'events_after': [], 'asks_sent': ['x']}
+
+    def test_job_assertion_and_spend(self):
+        lines = snippet(JOB_RUN)
+        ok, detail = db.a_job({'placement': 'front', 'end': 'done', 'min_steps': 3}, self.ctx(lines))
+        self.assertTrue(ok, detail)
+        ok, _ = db.a_job({'placement': 'behind'}, self.ctx(lines))
+        self.assertFalse(ok)
+        self.assertFalse(db.a_no_job(True, self.ctx(lines))[0])
+        self.assertAlmostEqual(db.log_spend(lines), 0.1267)
+
+    def test_a_running_job_keeps_the_row_open(self):
+        lines = snippet(JOB_RUN)
+        t = db.TurnTracker()
+        for l in lines[:6]:
+            t.feed(l)
+        self.assertTrue(t.busy(now=lines[5].ts + 3))
+        self.assertFalse(t.done(lines[5].ts + 10, settle=1.5), 'an act line alone does not end a job row')
+        for l in lines[6:]:
+            t.feed(l)
+        self.assertFalse(t.busy(now=lines[-1].ts + 3))
+        self.assertTrue(t.done(lines[-1].ts + 3, settle=1.5))
+
+    def test_paused_job_does_not_hold_the_row(self):
+        lines = snippet('''
+        2026-10-20 22:00:00.000 INFO ask: received bench=1 typed text=go to settings
+        2026-10-20 22:00:00.200 INFO job[zz9] started placement=front warm=1 model=sonnet goal=go to settings
+        2026-10-20 22:00:02.000 INFO act: click e2 ok 300 ms (job zz9: clicked Settings)
+        2026-10-20 22:00:02.500 INFO job[zz9] paused (he clicked)
+        ''')
+        t = db.TurnTracker()
+        for l in lines:
+            t.feed(l)
+        self.assertFalse(t.busy(now=lines[-1].ts + 1))
+
+    def test_no_act_after_and_stop_within(self):
+        lines = snippet('''
+        2026-10-20 22:00:00.000 INFO ask: received bench=1 typed text=go to settings, then notifications
+        2026-10-20 22:00:00.200 INFO job[q1] started placement=front warm=1 model=sonnet goal=go
+        2026-10-20 22:00:02.000 INFO act: click e2 ok 300 ms (job q1: clicked Settings)
+        2026-10-20 22:00:03.000 INFO ask: received bench=1 typed text=stop
+        2026-10-20 22:00:03.300 INFO job[q1] stopped (he said stop)
+        ''')
+        self.assertTrue(db.a_no_act_after(r'job\[.*\] stopped', self.ctx(lines))[0])
+        ok, detail = db.a_stop_within_ms(800, self.ctx(lines))
+        self.assertTrue(ok, detail)
+        self.assertFalse(db.a_stop_within_ms(100, self.ctx(lines))[0])
+
+    def test_dry_run_route_is_terminal(self):
+        self.assertTrue(db.is_terminal('dry-run: route job(behind) model=sonnet (result only) for "x"'))
+        self.assertTrue(db.is_terminal('job[ab] failed in 900 ms ($0.0100): blocked: no such page'))
+
+
 if __name__ == '__main__':
     unittest.main()

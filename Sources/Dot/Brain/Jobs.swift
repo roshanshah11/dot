@@ -483,10 +483,10 @@ final class JobManager {
         job.pendingDone?.cancel()
         let ms = Int(Date().timeIntervalSince(job.startedAt) * 1000)
         if let stopReason {
-            Log.info("job[\(job.id)] stopped (\(stopReason))")
+            Log.info("job[\(job.id)] stopped (\(stopReason)) after \(ms) ms, $\(String(format: "%.4f", job.cost))")
             Log.info("act: go \(Log.short(job.goal, 80)) fail stopped (\(stopReason))")
         } else if failed {
-            Log.info("job[\(job.id)] failed in \(ms) ms: \(Log.short(line, 160))")
+            Log.info("job[\(job.id)] failed in \(ms) ms ($\(String(format: "%.4f", job.cost))): \(Log.short(line, 160))")
             Log.info("act: go \(Log.short(job.goal, 80)) fail \(Log.short(line, 100))")
         } else {
             Log.info("job[\(job.id)] done in \(ms) ms, \(job.steps.count) steps, $\(String(format: "%.4f", job.cost))")

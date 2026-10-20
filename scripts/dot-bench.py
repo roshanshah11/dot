@@ -147,6 +147,14 @@ RE_BEAT = re.compile(r'^beat (\d+)\b')
 RE_NOTHING = re.compile(r'^jev: nothing asked')
 RE_AGENT = re.compile(r'^agent\[([^\]]+)\] (created|handoff:)')
 RE_TAG_POINT = re.compile(r'\b(point|target)\(x: (-?\d+), y: (-?\d+)')
+# The fast lane's jobs (2026-10-20).
+RE_JOB_START = re.compile(r'^job\[([^\]]+)\] started placement=(\w+) warm=(\d) model=(\S+) goal=(.*)$', re.S)
+RE_JOB_END = re.compile(r'^job\[([^\]]+)\] (done|failed|stopped|paused|dropped)\b(.*)$', re.S)
+RE_JOB_RESUMED = re.compile(r'^job\[([^\]]+)\] resumed')
+RE_JOB_STEP = re.compile(r'^job\[([^\]]+)\] step (\d+) ')
+RE_JOB_POINT = re.compile(r'^job\[([^\]]+)\] (point|rang target)\(x: (-?\d+), y: (-?\d+)\)')
+RE_JOB_COST = re.compile(r'^job\[[^\]]+\] (?:done|failed|stopped)\b.*?\$([0-9.]+)')
+RE_DRY = re.compile(r'^dry-run: ')
 
 
 def is_route_line(msg):
@@ -155,12 +163,27 @@ def is_route_line(msg):
 
 
 def is_terminal(msg):
-    """The spec's 'done' markers: a finished turn, an action, a bench line, or nothing asked."""
+    """The spec's 'done' markers: a finished turn, an action, a bench line, nothing asked, a job's end, a dry run."""
     return bool(msg.startswith('turn[talk] done') or msg.startswith('turn[think] done') or msg.startswith('act: ')
-                or msg.startswith('bench: ') or RE_NOTHING.match(msg))
+                or msg.startswith('bench: ') or RE_NOTHING.match(msg) or RE_JOB_END.match(msg) or RE_DRY.match(msg))
 
 
-RELEVANT = ('turn[', 'act: ', 'bench: ', 'beat ', 'talk: ', 'agent[', 'ask: ', 'jev[route]', 'jev: ', 'route')
+RELEVANT = ('turn[', 'act: ', 'bench: ', 'beat ', 'talk: ', 'agent[', 'ask: ', 'jev[route]', 'jev: ', 'route', 'job[', 'job:',
+            'dry-run', 'proposal:', 'speak:')
+
+
+def log_spend(lines):
+    """Dot's model spend in a window of log lines: talk and think turns and jobs (bench jobs write no ledger rows)."""
+    total = 0.0
+    for l in lines:
+        m = RE_DONE.match(l.msg)
+        if m and m.group(3):
+            total += float(m.group(3))
+            continue
+        m = RE_JOB_COST.match(l.msg)
+        if m:
+            total += float(m.group(1))
+    return round(total, 4)
 
 
 class TurnTracker:
@@ -181,9 +204,20 @@ class TurnTracker:
         self.terminal_at = None
         self.last_relevant = None
         self.ask_received = []     # (ts, bench, text)
+        self.jobs = {}             # job id -> start ts, for jobs that haven't ended or paused
+        self.job_timeout = 120.0
 
     def feed(self, line):
         msg = line.msg
+        m = RE_JOB_START.match(msg)
+        if m:
+            self.jobs[m.group(1)] = line.ts
+        m = RE_JOB_END.match(msg)
+        if m:
+            self.jobs.pop(m.group(1), None)
+        m = RE_JOB_RESUMED.match(msg)
+        if m:
+            self.jobs[m.group(1)] = line.ts
         if msg.startswith(RELEVANT):
             self.last_relevant = line.ts
         m = RE_ASK.match(msg)
@@ -220,6 +254,9 @@ class TurnTracker:
     def busy(self, now=None):
         now = time.time() if now is None else now
         if self.pending_think is not None and now - self.pending_think < self.THINK_GRACE:
+            return True
+        # a row isn't done while a job it started is still running (up to --job-timeout)
+        if any(now - t < self.job_timeout for t in self.jobs.values()):
             return True
         return any(not t['closed'] and not t['cut'] for t in self.turns)
 
@@ -631,6 +668,102 @@ def a_point_in_element(want, ctx):
     return False, '%s (%d,%d) / scale %.2f is outside %s %s' % (k, x, y, scale, elem, rect)
 
 
+def _jobs(lines):
+    """Each job in the window: id -> {placement, end, steps, points}."""
+    out = {}
+    for l in lines:
+        m = RE_JOB_START.match(l.msg)
+        if m:
+            out[m.group(1)] = {'placement': m.group(2), 'end': None, 'steps': 0, 'points': [], 'start': l.ts, 'ended': None}
+            continue
+        m = RE_JOB_STEP.match(l.msg)
+        if m and m.group(1) in out:
+            out[m.group(1)]['steps'] = max(out[m.group(1)]['steps'], int(m.group(2)))
+            continue
+        m = RE_JOB_POINT.match(l.msg)
+        if m and m.group(1) in out:
+            out[m.group(1)]['points'].append((m.group(2), int(m.group(3)), int(m.group(4))))
+            continue
+        m = RE_JOB_END.match(l.msg)
+        if m and m.group(1) in out and m.group(2) != 'paused':
+            out[m.group(1)]['end'] = m.group(2)
+            out[m.group(1)]['ended'] = l.ts
+    return out
+
+
+def a_job(want, ctx):
+    jobs = _jobs(ctx['lines'])
+    if not jobs:
+        return False, 'no job[...] started line'
+    want = want if isinstance(want, dict) else {}
+    for jid, j in jobs.items():
+        if want.get('placement') and j['placement'] != want['placement']:
+            continue
+        if want.get('end') and j['end'] != want['end']:
+            continue
+        if j['steps'] < int(want.get('min_steps', 0)):
+            continue
+        return True, 'job[%s] %s %s, %d steps' % (jid, j['placement'], j['end'], j['steps'])
+    j = next(iter(jobs.values()))
+    return False, 'no job matches %s (first: %s %s, %d steps)' % (want, j['placement'], j['end'], j['steps'])
+
+
+def a_no_job(want, ctx):
+    jobs = _jobs(ctx['lines'])
+    if not want:
+        return True, 'not checked'
+    return not jobs, ('no job' if not jobs else 'job[%s] started' % next(iter(jobs)))
+
+
+def a_no_act_after(want, ctx):
+    pat = re.compile(want, re.I)
+    seen = None
+    for i, l in enumerate(ctx['lines']):
+        if seen is None and pat.search(l.msg):
+            seen = i
+            continue
+        if seen is not None and RE_ACT_OK.match(l.msg):
+            return False, 'an act after /%s/: %s' % (want, l.msg[:100])
+    return (seen is not None), ('no act after /%s/' % want if seen is not None else 'never saw /%s/' % want)
+
+
+def a_stop_within_ms(want, ctx):
+    rec = [l for l in ctx['lines'] if RE_ASK.match(l.msg)]
+    stops = [l for l in ctx['lines'] if re.match(r'^job\[[^\]]+\] stopped', l.msg)]
+    if not rec or not stops:
+        return False, 'no stop ask or no job stopped line'
+    t_ask = rec[-1].ts
+    after = [s.ts for s in stops if s.ts >= t_ask]
+    if not after:
+        return False, 'the job stopped before the last ask'
+    ms = int((after[0] - t_ask) * 1000)
+    return ms <= int(want), 'stopped %d ms after the ask (limit %s)' % (ms, want)
+
+
+def a_job_point_in_element(want, ctx):
+    elem = want['id'] if isinstance(want, dict) else want
+    pad = want.get('pad', 12) if isinstance(want, dict) else 12
+    rect = element_rect(ctx['events_before'] + ctx['events_after'], elem)
+    if not rect:
+        return False, 'no rect for element %r in the server events' % elem
+    pts = [p for j in _jobs(ctx['lines']).values() for p in j['points']]
+    if not pts:
+        return False, 'no job point(...) line'
+    win = ctx.get('comet_window') or {'x': 0, 'y': 0, 'chrome': 0}
+    for kind, x, y in pts:
+        px, py = x - win['x'], y - win['y'] - win['chrome']
+        if rect['x'] - pad <= px <= rect['x'] + rect['w'] + pad and rect['y'] - pad <= py <= rect['y'] + rect['h'] + pad:
+            return True, '%s (%d,%d) inside %s' % (kind, x, y, elem)
+    return False, 'job points %s outside %s %s' % (pts[:3], elem, rect)
+
+
+def a_setup_tab_focused(want, ctx):
+    focused = ctx.get('setup_tab_focused')
+    if focused is None:
+        return False, 'setup tab focus unknown'
+    return focused == bool(want), 'setup tab focused=%s' % focused
+
+
 def a_new_tab(want, ctx):
     a, b = ctx.get('comet_tabs_before'), ctx.get('comet_tabs_after')
     if a is None or b is None:
@@ -658,6 +791,8 @@ ASSERTIONS = {
     'scroll_delta_min': a_scroll_delta_min, 'scroll_delta_max': a_scroll_delta_max, 'front_app': a_front_app,
     'log_has': a_log_has, 'log_lacks': a_log_lacks, 'log_count': a_log_count,
     'interrupt_within_ms': a_interrupt_within_ms, 'not_reasked': a_not_reasked, 'answered_last': a_answered_last,
+    'job': a_job, 'no_job': a_no_job, 'no_act_after': a_no_act_after, 'stop_within_ms': a_stop_within_ms,
+    'job_point_in_element': a_job_point_in_element, 'setup_tab_focused': a_setup_tab_focused,
     'point_in_element': a_point_in_element, 'new_tab': a_new_tab, 'ask_received': a_ask_received,
 }
 # Keys in expect that tune other checks rather than being checks themselves.
@@ -1037,6 +1172,27 @@ def comet_show(port, urls, base, log=print):
         cdp.call('Target.activateTarget', {'targetId': mine['targetId']})
         cdp.call('Page.bringToFront', {}, sid)
         return len([p for p in cdp.pages() if p.get('url', '').startswith(base)])
+    finally:
+        cdp.close()
+
+
+def setup_tab_focused(port, url):
+    """Whether the bench Comet's tab on the setup page still has focus (a behind job must not take it)."""
+    try:
+        cdp = CDP(port, timeout=3)
+    except Exception:
+        return None
+    try:
+        want = url.split('?')[0]
+        for p in cdp.pages():
+            if str(p.get('url', '')).split('?')[0] != want:
+                continue
+            a = cdp.call('Target.attachToTarget', {'targetId': p['targetId'], 'flatten': True})
+            r = cdp.call('Runtime.evaluate', {'expression': 'document.hasFocus()', 'returnByValue': True}, session=a['sessionId'])
+            return bool(((r or {}).get('result') or {}).get('value'))
+        return None
+    except Exception:
+        return None
     finally:
         cdp.close()
 
@@ -1422,6 +1578,7 @@ class Runner:
         t_start = time.time()
         front_before, mouse_before = front_app(), mouse_location()
         tracker, lines, notes, asks_sent = TurnTracker(), [], [], []
+        tracker.job_timeout = float(getattr(self.args, 'job_timeout', 120))
         steps = [{'ask': row['ask'], 'flags': row.get('flags', [])}] + list(row.get('then', []))
         ask_index = 0  # index in `lines` of the latest `ask: received`
         for k, step in enumerate(steps):
@@ -1431,6 +1588,11 @@ class Runner:
                 else:
                     notes.append(self.wait_done(tracker, lines, time.time()))
                 time.sleep(step.get('delay_ms', 0) / 1000.0)
+            if step.get('cli'):
+                # `--stop`, `--job-test click`: Dot's own commands, not an ask
+                r = subprocess.run([str(self.args.dot)] + str(step['cli']).split(), capture_output=True, text=True, timeout=15)
+                notes.append('cli %s: %s' % (step['cli'], (r.stdout + r.stderr).strip()[:80]))
+                continue
             n_before = len(asks(lines))
             sent_ok, out = self.send_ask(row, step['ask'], step.get('flags', row.get('flags', [])))
             asks_sent.append(step['ask'])
@@ -1461,13 +1623,14 @@ class Runner:
                'front_before': front_before, 'front_after': front_after, 'mouse_before': mouse_before,
                'mouse_after': mouse_after, 'latency_ms': lat, 'limit_ms': row.get('limit_ms'),
                'shot_scale': self.args.shot_scale, 'comet_tabs_before': tabs_before,
-               'comet_tabs_after': comet_tab_count(self.args.comet_port, self.base) if tabs_before is not None else None}
+               'comet_tabs_after': comet_tab_count(self.args.comet_port, self.base) if tabs_before is not None else None,
+               'setup_tab_focused': setup_tab_focused(self.args.comet_port, page_url) if page_url and page_url.startswith('http') else None}
         checks = evaluate(row.get('expect'), ctx)
         spend_after = ledger_total(self.args.ledger)
         res.update({
             'pass': all(c['ok'] for c in checks), 'latency_ms': lat, 'checks': checks,
             'reasons': [('%s: %s' % (c['name'], c['detail'])) for c in checks if not c['ok']],
-            'wait': notes, 'cost_usd': None if spend_before is None or spend_after is None else round(spend_after - spend_before, 4),
+            'wait': notes, 'cost_usd': log_spend(lines) + (0 if spend_before is None or spend_after is None else round(spend_after - spend_before, 4)),
             'front_before': front_before, 'front_after': front_after, 'mouse_before': mouse_before, 'mouse_after': mouse_after,
             'log': [l.text() for l in lines if l.msg.startswith(RELEVANT)][:120],
             'server_events': [{k: e.get(k) for k in ('time', 'type', 'url', 'text', 'label', 'value', 'checked', 'scrollY', 'in_view') if k in e}
@@ -1500,7 +1663,8 @@ class Runner:
             for row in rows:
                 if 'aggregate' in row:
                     continue
-                spent = (ledger_total(self.args.ledger) or 0) - (self.spend0 or 0)
+                # the ledger misses bench turns and jobs; the log lines' $ amounts carry them
+                spent = sum(r.get('cost_usd') or 0 for r in results if isinstance(r, dict) and 'aggregate' not in r)
                 if spent > self.args.max_spend:
                     stopped = 'spend cap: $%.2f > $%.2f' % (spent, self.args.max_spend)
                     break
@@ -1608,6 +1772,7 @@ def main(argv=None):
     ap.add_argument('--max-spend', type=float, default=10.0, help='stop when Dot spend since the start exceeds this (USD)')
     ap.add_argument('--out-dir', default=str(BENCH_DIR))
     ap.add_argument('--timeout', type=int, default=30, help='seconds to the first completion marker')
+    ap.add_argument('--job-timeout', type=int, default=120, help='a row stays open this long while a job it started runs')
     ap.add_argument('--settle', type=float, default=3.0, help='quiet seconds after completion')
     ap.add_argument('--think-timeout', type=int, default=90, help='hard cap per ask while a turn is still open')
     ap.add_argument('--require-idle', type=int, default=600, help='HIDIdleTime seconds needed at the start (0 = skip)')
