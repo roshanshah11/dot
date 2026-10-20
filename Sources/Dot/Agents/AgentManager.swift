@@ -869,7 +869,9 @@ final class AgentManager {
                 self?.appendTranscript(agent, role: "declined", text: "\(request.toolName): \(reason) (the task stopped)")
                 if run?.session.isRunning == true { answer(false, "The task was stopped.") } else { answered = true }
             }
-            hud.present(card, chime: !(config.quietOnCalls && CallPresence.isOnCall()))
+            // No chime into a call or a muted Mac (AgentReport.consentCard); the card itself is the text.
+            hud.present(card, chime: AgentReport.consentCard(speakResults: config.speakAgentResults, onCall: config.quietOnCalls && CallPresence.isOnCall(),
+                                                            outputSilent: AudioDevices.outputIsSilent()).chime)
             postActivity(agent.slug)
         }
     }

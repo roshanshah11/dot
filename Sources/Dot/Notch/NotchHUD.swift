@@ -325,6 +325,7 @@ final class NotchHUD {
             if self.model.agents.contains(where: { $0.id == id }) { self.removeAgent(id: id) }
         }
         stack.model.onMorningDecision = { [weak self] item, yes in self?.model.onMorningDecision?(item, yes) }
+        stack.model.onFocusConsent = { [weak self] id in MainActor.assumeIsolated { self?.bringConsentForward(agent: id) } }
         stack.model.onMorningDismiss = { [weak self] in self?.model.onMorningDismiss?() }
     }
 

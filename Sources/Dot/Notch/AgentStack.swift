@@ -112,6 +112,8 @@ final class StackModel: ObservableObject {
     var onDeny: ((String) -> Void)?
     var onContinue: ((String) -> Void)?
     var onDismiss: ((String) -> Void)?
+    /// A "needs you" chip was tapped: its question comes forward in the consent queue.
+    var onFocusConsent: ((String) -> Void)?
     var onMorningDecision: ((MorningCard.Item, Bool) -> Void)?
     var onMorningDismiss: (() -> Void)?
     var onWantsKey: (() -> Void)?
@@ -166,6 +168,10 @@ final class AgentStack {
     var onContinue: ((String) -> Void)? { get { model.onContinue } set { model.onContinue = newValue } }
     var onDismiss: ((String) -> Void)?
     var onGone: ((String) -> Void)?
+    /// Where the stack anchors instead of the notch screen's visible frame (`Dot --stack-selftest` puts it off every display).
+    var anchorFrame: (() -> CGRect)?
+    /// The window's frame while it is up, for the self-test.
+    var windowFrame: CGRect? { visible ? panel?.frame : nil }
 
     init(accentHex: String) {
         if let color = Color(hex: accentHex) { model.accent = color }
@@ -248,7 +254,7 @@ final class AgentStack {
 
     // MARK: The clock
 
-    /// Every half second while anything is up: the presentation moves on, and a chip the policy cleared leaves.
+    /// Four times a second while anything is up: the presentation moves on, and a chip the policy cleared leaves.
     private func refresh() {
         model.now = Date()
         for chip in model.chips {
@@ -269,7 +275,7 @@ final class AgentStack {
             tick?.invalidate()
             tick = nil
         } else if tick == nil {
-            tick = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in
+            tick = Timer.scheduledTimer(withTimeInterval: 0.25, repeats: true) { [weak self] _ in
                 MainActor.assumeIsolated { self?.refresh() }
             }
         }
@@ -308,7 +314,7 @@ final class AgentStack {
         CGRect(x: visibleFrame.maxX - 12 - size.width, y: visibleFrame.maxY - 8 - size.height, width: size.width, height: size.height)
     }
 
-    private var visibleFrame: CGRect { Self.anchorScreen()?.visibleFrame ?? CGRect(x: 0, y: 0, width: 1440, height: 875) }
+    private var visibleFrame: CGRect { anchorFrame?() ?? Self.anchorScreen()?.visibleFrame ?? CGRect(x: 0, y: 0, width: 1440, height: 875) }
 
     private func reposition() {
         guard let panel else { return }
@@ -375,8 +381,10 @@ final class AgentStack {
         guard let panel, panel.isVisible else { return }
         let mouse = NSEvent.mouseLocation
         let frame = panel.frame
-        // The view's coordinates run from the window's top left.
-        let point = CGPoint(x: mouse.x - frame.minX, y: frame.maxY - mouse.y)
+        // The drawing sits at the window's top right (the window is wider for a moment while it shrinks), and its
+        // coordinates run from the drawing's top left.
+        let width = model.contentSize.width > 0 ? min(model.contentSize.width, frame.width) : frame.width
+        let point = CGPoint(x: mouse.x - (frame.maxX - width), y: frame.maxY - mouse.y)
         let over = model.chipFrames.contains { $0.insetBy(dx: -2, dy: -2).contains(point) }
         let through = !over && model.expanded == nil
         if panel.ignoresMouseEvents != through { panel.ignoresMouseEvents = through }
@@ -558,6 +566,7 @@ struct StackChipView: View {
         .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(StackInk.edge, lineWidth: 1))
         .shadow(color: .black.opacity(0.35), radius: 10, y: 4)
         .onTapGesture {
+            if chip.state == .waiting { model.onFocusConsent?(chip.id); return }
             withAnimation(.easeOut(duration: 0.15)) { model.expanded = model.expanded == chip.id ? nil : chip.id }
         }
     }

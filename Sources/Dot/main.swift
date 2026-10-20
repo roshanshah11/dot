@@ -156,6 +156,15 @@ case "--stack-demo":
                                                                  userInfo: ["muted": flags.contains("--muted"), "job": flags.contains("--job")], deliverImmediately: true)
     print("asked the running Dot for the stack demo; stack-demo: lines land in dot.log")
     exit(0)
+case "--stack-selftest":
+    // The stack demo in this process, its window off every display, with G7 to G9's window rules checked (04).
+    let flags = Array(arguments.dropFirst())
+    let stackApp = NSApplication.shared
+    stackApp.setActivationPolicy(.accessory)
+    stackApp.finishLaunching()
+    let file = flags.first { !$0.hasPrefix("--") }
+    let passed = MainActor.assumeIsolated { StackSelfTest.run(muted: flags.contains("--muted"), job: flags.contains("--job"), framesFile: file) }
+    exit(passed ? 0 : 1)
 case "--track-selftest":
     // Ask the running Dot to run the box-tracking check on the real screen (its grants, not the terminal's).
     DistributedNotificationCenter.default().postNotificationName(DotIPC.trackSelftest, object: nil, userInfo: nil, deliverImmediately: true)

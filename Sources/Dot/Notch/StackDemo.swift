@@ -18,7 +18,12 @@ enum StackDemo {
     static let jobSteps = ["opening example.com/jobs", "searching: Northwind Bank analyst", "reading the third listing"]
     static let jobDoneLine = "the Northwind Bank listing at example.com is still open; it closes friday."
 
+    /// When the demo's clock started (its timers count from here) and when its chip went done, for the self-test.
+    static var zero: Date?
+    static var doneAt: Date?
+
     static func run(stack: AgentStack, config: DotConfig, muted: Bool, job: Bool) {
+        doneAt = nil
         Log.info("stack-demo: start\(job ? " job" : " agent")\(muted ? ", muted (outputIsSilent faked)" : "")")
         if job { runJob(stack: stack, config: config, muted: muted) } else { runAgent(stack: stack, config: config, muted: muted) }
     }
@@ -33,6 +38,7 @@ enum StackDemo {
             StackChip(id: agentID, kind: .agent, title: "demo", line: line, steps: steps, state: state, startedAt: started)
         }
         stack.upsert(chip("starting", []))
+        zero = Date()
         Log.info("stack-demo: demo running")
         for (index, step) in agentSteps.enumerated() {
             at(Double(index + 1) * 3) {
@@ -49,6 +55,7 @@ enum StackDemo {
             StackChip(id: jobID, kind: .job, title: "demo job", line: line, steps: steps, state: state, startedAt: started)
         }
         stack.upsert(chip("on it, behind your window.", [], .running))
+        zero = Date()
         Log.info("stack-demo: job running")
         at(2) { stack.upsert(chip(jobSteps[0], Array(jobSteps.prefix(1)), .running)) }
         at(4) {
@@ -72,6 +79,7 @@ enum StackDemo {
         var done = StackChip(id: id, kind: kind, title: title, line: line, state: .done, startedAt: started)
         if report.text { done.holdUntil = Date().addingTimeInterval(NotchSurface.readingTime(characters: line.count)) }
         stack.upsert(done)
+        doneAt = Date()
         Log.info("stack-demo: \(title) done (voice \(report.voice), text \(report.text), chip \(report.chip.rawValue)); "
                  + "gone in \(Int(report.text ? NotchSurface.readingTime(characters: line.count) : AgentChip.doneSeconds)) s")
         at(25) { Log.info("stack-demo: end (\(stack.chip(id: id) == nil ? "chip gone" : "chip still up"))") }
