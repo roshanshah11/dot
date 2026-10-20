@@ -100,7 +100,12 @@ final class StackModel: ObservableObject {
     @Published var contentSize: CGSize = .zero
     /// Drawn by `Dot --snapshot`, where AppKit-backed controls cannot render.
     var snapshot = false
-    static let cardWidth: CGFloat = 280
+    static let cardWidth: CGFloat = 270
+    /// Room around the chips for the glow, inside the window (a window can't draw outside its frame).
+    static let pad: CGFloat = 16
+    /// Where the drawn chip's top right corner sits, measured on HeyClicky's frames (04 review): 27 pt in from the
+    /// screen's right edge and 34 pt under the menu bar.
+    static let corner = CGSize(width: 27, height: 34)
     /// Each drawn chip's frame in the stack's own coordinates (top-left origin), for letting clicks through.
     var chipFrames: [CGRect] = []
 
@@ -315,16 +320,17 @@ final class AgentStack {
         NSScreen.screens.first(where: { $0.safeAreaInsets.top > 0 }) ?? NSScreen.main ?? NSScreen.screens.first
     }
 
-    /// Its top right corner: 8 pt under the menu bar, 12 pt in from the screen's right edge.
+    /// The window, placed so the drawn chip's corner lands where HeyClicky's does (StackModel.corner, less the padding).
     static func frame(fitting size: CGSize, in visibleFrame: CGRect) -> CGRect {
-        CGRect(x: visibleFrame.maxX - 12 - size.width, y: visibleFrame.maxY - 8 - size.height, width: size.width, height: size.height)
+        let inX = StackModel.corner.width - StackModel.pad, inY = StackModel.corner.height - StackModel.pad
+        return CGRect(x: visibleFrame.maxX - inX - size.width, y: visibleFrame.maxY - inY - size.height, width: size.width, height: size.height)
     }
 
     private var visibleFrame: CGRect { anchorFrame?() ?? Self.anchorScreen()?.visibleFrame ?? CGRect(x: 0, y: 0, width: 1440, height: 875) }
 
     private func reposition() {
         guard let panel else { return }
-        let size = model.contentSize == .zero ? CGSize(width: 48, height: 48) : model.contentSize
+        let size = model.contentSize == .zero ? CGSize(width: 72, height: 72) : model.contentSize
         panel.setFrame(Self.frame(fitting: size, in: visibleFrame), display: true)
     }
 
@@ -434,7 +440,7 @@ struct AgentStackView: View {
                 })
             }
         }
-        .padding(4)
+        .padding(StackModel.pad)
         .fixedSize()
         .coordinateSpace(name: "stack")
         .onPreferenceChange(StackChipFramesKey.self) { frames in model.chipFrames = frames }
@@ -447,8 +453,12 @@ struct AgentStackView: View {
 
 /// The stack's palette: the notch's ink on a slightly lifted card, the way HeyClicky's cards sit over the page.
 private enum StackInk {
-    static var card: Color { NotchInk.ground.opacity(0.96) }
+    /// HeyClicky's card: #1A1A1A, opaque.
+    static var card: Color { Color(red: 26 / 255, green: 26 / 255, blue: 26 / 255) }
     static var edge: Color { Color.white.opacity(0.09) }
+    /// The soft teal glow around a card and a working avatar.
+    static var glow: Color { Color(red: 127 / 255, green: 208 / 255, blue: 230 / 255) }
+    static let radius: CGFloat = 13
 }
 
 struct StackChipView: View {
@@ -470,8 +480,8 @@ struct StackChipView: View {
                                 decide: { item, yes in model.onMorningDecision?(item, yes) },
                                 dismiss: { model.onMorningDismiss?() })
                     .frame(width: StackModel.cardWidth)
-                    .background(StackInk.card, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-                    .shadow(color: .black.opacity(0.3), radius: 8, y: 3)
+                    .background(StackInk.card, in: RoundedRectangle(cornerRadius: StackInk.radius, style: .continuous))
+                    .shadow(color: StackInk.glow.opacity(0.3), radius: 12)
             } else if chip.kind == .notice {
                 noticeCard
             } else {
@@ -496,10 +506,18 @@ struct StackChipView: View {
         }
     }
 
+    /// The line without the state word it starts with ("failed: ..." under "failed").
+    private var shownLine: String {
+        let word = AgentChip.stateWord(chip.state, kind: chip.kind).lowercased()
+        let line = chip.line
+        guard !word.isEmpty, line.lowercased().hasPrefix(word + ":") else { return line }
+        return String(line.dropFirst(word.count + 1)).trimmingCharacters(in: .whitespaces)
+    }
+
     private var card: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(alignment: .top, spacing: 10) {
-                StackAvatar(chip: chip, accent: model.accent, size: 30)
+                StackAvatar(chip: chip, accent: model.accent, size: 40)
                 VStack(alignment: .leading, spacing: 2) {
                     Text(chip.title).font(.system(size: 13, weight: .semibold)).foregroundStyle(text).lineLimit(1)
                     HStack(spacing: 5) {
@@ -515,7 +533,7 @@ struct StackChipView: View {
                 }
                 Spacer(minLength: 8)
                 Button { model.onDismiss?(chip.id) } label: {
-                    Image(systemName: "xmark").font(.system(size: 9, weight: .bold)).frame(width: 18, height: 18)
+                    Image(systemName: "xmark").font(.system(size: 10, weight: .bold)).frame(width: 26, height: 26)
                         .background(Color.white.opacity(0.08), in: Circle())
                 }
                 .buttonStyle(.plain).foregroundStyle(text.opacity(0.55))
@@ -526,12 +544,12 @@ struct StackChipView: View {
                     Text(chip.line).font(.system(size: 12)).foregroundStyle(text.opacity(0.85)).lineLimit(6)
                         .fixedSize(horizontal: false, vertical: true)
                 } else {
-                    LiveLine(text: chip.line, pulsing: chip.state == .running, color: text.opacity(0.75))
+                    LiveLine(text: shownLine, pulsing: chip.state == .running, color: text, size: 13, weight: .semibold, dots: model.accent)
                 }
             }
             if open, !chip.steps.isEmpty, chip.state == .running || chip.state == .paused || chip.state == .waiting {
                 VStack(alignment: .leading, spacing: 2) {
-                    ForEach(Array(chip.steps.suffix(3).enumerated()), id: \.offset) { _, step in
+                    ForEach(Array(chip.steps.filter { $0 != chip.line && "working: \($0)" != chip.line }.suffix(3).enumerated()), id: \.offset) { _, step in
                         Text(step).font(.system(size: 11)).foregroundStyle(text.opacity(0.45)).lineLimit(1)
                     }
                 }
@@ -568,9 +586,9 @@ struct StackChipView: View {
         }
         .padding(12)
         .frame(width: StackModel.cardWidth, alignment: .leading)
-        .background(StackInk.card, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(StackInk.edge, lineWidth: 1))
-        .shadow(color: .black.opacity(0.35), radius: 10, y: 4)
+        .background(StackInk.card, in: RoundedRectangle(cornerRadius: StackInk.radius, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: StackInk.radius, style: .continuous).stroke(StackInk.edge, lineWidth: 1))
+        .shadow(color: StackInk.glow.opacity(0.3), radius: 12)
         .onTapGesture {
             if chip.state == .waiting { model.onFocusConsent?(chip.id); return }
             withAnimation(.easeOut(duration: 0.15)) { model.expanded = model.expanded == chip.id ? nil : chip.id }
@@ -580,20 +598,22 @@ struct StackChipView: View {
     @ViewBuilder private var buttons: some View {
         HStack(spacing: 8) {
             Spacer(minLength: 0)
+            // One primary per card (04 review): Continue or Allow when the card has one, else open or show me, even while it runs.
+            let other = chip.state == .unfinished || chip.state == .consent
             if chip.state == .unfinished {
-                GelButton(title: "Continue", accent: model.accent, primary: true) { model.onContinue?(chip.id) }
+                GelButton(title: "Continue", accent: model.accent, primary: true, gel: true) { model.onContinue?(chip.id) }
             }
             if chip.state == .consent {
-                GelButton(title: "Not now", accent: model.accent, primary: false) { model.onDeny?(chip.id) }
-                GelButton(title: "Allow", accent: model.accent, primary: true) { model.onAllow?(chip.id) }
+                GelButton(title: "Not now", accent: model.accent, primary: false, gel: true) { model.onDeny?(chip.id) }
+                GelButton(title: "Allow", accent: model.accent, primary: true, gel: true) { model.onAllow?(chip.id) }
             }
             if chip.canStop, chip.state == .running || chip.state == .paused {
-                GelButton(title: "Stop", accent: model.accent, primary: false) { model.onStop?(chip.id) }
+                GelButton(title: "Stop", accent: model.accent, primary: false, gel: true) { model.onStop?(chip.id) }
             }
             if chip.isJob, chip.state != .consent {
-                GelButton(title: "Show me", accent: model.accent, primary: chip.state != .running) { model.onShow?(chip.id) }
+                GelButton(title: "Show me", accent: model.accent, primary: !other, gel: true) { model.onShow?(chip.id) }
             } else if chip.kind == .agent, chip.canOpen {
-                GelButton(title: "Open", accent: model.accent, primary: chip.state != .running) { model.onOpenHome?(chip.id) }
+                GelButton(title: "Open", accent: model.accent, primary: !other, gel: true) { model.onOpenHome?(chip.id) }
             }
         }
     }
@@ -635,8 +655,8 @@ struct StackChipView: View {
                                        seconds: 0),
                    accent: model.accent) { model.onDismiss?(chip.id) }
             .frame(width: StackModel.cardWidth)
-            .background(StackInk.card, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-            .shadow(color: .black.opacity(0.3), radius: 8, y: 3)
+            .background(StackInk.card, in: RoundedRectangle(cornerRadius: StackInk.radius, style: .continuous))
+            .shadow(color: StackInk.glow.opacity(0.3), radius: 12)
     }
 }
 
@@ -654,7 +674,7 @@ struct StackConsentCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(alignment: .top, spacing: 10) {
-                StackAvatar(chip: StackChip(id: card.agentId, kind: .consent, title: card.agent, line: "", state: .consent), accent: model.accent, size: 30)
+                StackAvatar(chip: StackChip(id: card.agentId, kind: .consent, title: card.agent, line: "", state: .consent), accent: model.accent, size: 40)
                 VStack(alignment: .leading, spacing: 2) {
                     Text("\(card.agent) wants to \(card.title)").font(.system(size: 13, weight: .semibold)).foregroundStyle(NotchInk.text)
                         .fixedSize(horizontal: false, vertical: true)
@@ -676,16 +696,16 @@ struct StackConsentCard: View {
             }
             HStack(spacing: 8) {
                 Spacer(minLength: 0)
-                GelButton(title: "Not now", accent: model.accent, primary: false) { settled(card.onDeny) }
-                if let always = card.onAlways { GelButton(title: "For this task", accent: model.accent, primary: false) { settled(always) } }
-                GelButton(title: "Allow", accent: model.accent, primary: true) { settled(card.onAllow) }
+                GelButton(title: "Not now", accent: model.accent, primary: false, gel: true) { settled(card.onDeny) }
+                if let always = card.onAlways { GelButton(title: "For this task", accent: model.accent, primary: false, gel: true) { settled(always) } }
+                GelButton(title: "Allow", accent: model.accent, primary: true, gel: true) { settled(card.onAllow) }
             }
         }
         .padding(12)
         .frame(width: StackModel.cardWidth, alignment: .leading)
-        .background(StackInk.card, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(model.accent.opacity(0.6), lineWidth: 1))
-        .shadow(color: .black.opacity(0.35), radius: 10, y: 4)
+        .background(StackInk.card, in: RoundedRectangle(cornerRadius: StackInk.radius, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: StackInk.radius, style: .continuous).stroke(model.accent.opacity(0.6), lineWidth: 1))
+        .shadow(color: StackInk.glow.opacity(0.3), radius: 12)
     }
 }
 
@@ -699,11 +719,20 @@ struct StackAvatar: View {
     var body: some View {
         ZStack {
             if chip.state == .running {
-                Circle().stroke(fill.opacity(0.55), lineWidth: 2).frame(width: size, height: size).modifier(StackBreathe())
+                // HeyClicky's halo: a soft cool glow that breathes in brightness, not a ring that changes size.
+                // a radial gradient, not .blur: a blurred, forever-animating layer stalled the offscreen self-test for minutes
+                Circle().fill(RadialGradient(colors: [StackInk.glow.opacity(0.5), StackInk.glow.opacity(0)], center: .center,
+                                             startRadius: size * 0.42, endRadius: size * 0.5 + 14))
+                    .frame(width: size + 28, height: size + 28).allowsHitTesting(false).modifier(StackBreathe())
             }
-            Circle().fill(fill).frame(width: size * 0.86, height: size * 0.86)
-                .shadow(color: fill.opacity(0.6), radius: size * 0.12)
+            Circle().fill(fill).frame(width: size, height: size)
+                .overlay(Circle().strokeBorder(Color.white.opacity(0.45), lineWidth: size * 0.085))
             symbol
+            if chip.state == .running {
+                Circle().fill(Color(white: 0.55)).frame(width: size * 0.2, height: size * 0.2)
+                    .overlay(Circle().stroke(NotchInk.ground, lineWidth: 1.5))
+                    .offset(x: size * 0.36, y: -size * 0.36)
+            }
             if let badge {
                 ZStack {
                     Circle().fill(badge.color).frame(width: size * 0.36, height: size * 0.36)
@@ -722,7 +751,13 @@ struct StackAvatar: View {
         } else if chip.id == "lecture" {
             Image(systemName: "ear").font(.system(size: size * 0.36, weight: .semibold)).foregroundStyle(.black.opacity(0.78))
         } else {
-            Text(String(chip.title.prefix(1)).uppercased()).font(.system(size: size * 0.4, weight: .bold)).foregroundStyle(.black.opacity(0.8))
+            // Dot's own face at rest (two closed eyes), as HeyClicky's avatar is its mascot; the hue tells agents apart.
+            HStack(spacing: size * 0.16) {
+                ForEach(0..<2, id: \.self) { _ in
+                    Capsule().fill(Color.white.opacity(0.95)).frame(width: size * 0.17, height: size * 0.06)
+                }
+            }
+            .offset(y: -size * 0.02)
         }
     }
 
@@ -750,7 +785,7 @@ struct StackAvatar: View {
 private struct StackBreathe: ViewModifier {
     @State private var on = false
     func body(content: Content) -> some View {
-        content.scaleEffect(on ? 1.06 : 0.94).opacity(on ? 0.35 : 0.95)
+        content.opacity(on ? 1.0 : 0.55)
             .onAppear { withAnimation(.easeInOut(duration: 1.3).repeatForever(autoreverses: true)) { on = true } }
     }
 }

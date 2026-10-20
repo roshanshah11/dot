@@ -11,6 +11,9 @@ enum StackSelfTest {
     struct Sample { let t: Double; let frame: CGRect? }
 
     static func run(muted: Bool, job: Bool, framesFile: String?) -> Bool {
+        // An offscreen accessory process is App Nap's first pick: its timers stalled for minutes without this.
+        let activity = ProcessInfo.processInfo.beginActivity(options: [.userInitiated, .latencyCritical], reason: "stack selftest")
+        defer { ProcessInfo.processInfo.endActivity(activity) }
         let stack = AgentStack(accentHex: DotConfig.peek().pointerColorHex)
         stack.setVisibleInRecordings(false)
         // Top right of a pretend 1440 x 875 screen 30,000 points off the main display: drawn, never seen.
@@ -34,19 +37,20 @@ enum StackSelfTest {
         let up = samples.filter { $0.frame != nil }
         check(!up.isEmpty, "the stack window came up")
         if let first = up.first?.frame {
-            check(abs(first.maxX - (-30_000 + 1440 - 12)) < 0.5 && abs(first.maxY - (-30_000 + 875 - 8)) < 0.5,
-                  "anchored 12 pt in from the right and 8 pt under the menu bar (maxX \(first.maxX), maxY \(first.maxY))")
+            let inX = StackModel.corner.width - StackModel.pad, inY = StackModel.corner.height - StackModel.pad
+            check(abs(first.maxX - (-30_000 + 1440 - inX)) < 0.5 && abs(first.maxY - (-30_000 + 875 - inY)) < 0.5,
+                  "the chip's corner 27 pt in from the right and 34 pt under the menu bar (window maxX \(first.maxX), maxY \(first.maxY))")
         }
         if job {
             let paused = samples.filter { $0.t >= 4.6 && $0.t <= 6.9 }
-            check(!paused.isEmpty && paused.allSatisfy { ($0.frame?.width ?? 0) > 48 }, "paused: the card holds through the 3 s pause")
+            check(!paused.isEmpty && paused.allSatisfy { ($0.frame?.width ?? 0) > 72 }, "paused: the card holds through the 3 s pause")
             let folded = samples.filter { $0.t >= 12.6 && $0.t < doneAt - 0.2 }
-            check(!folded.isEmpty && folded.allSatisfy { ($0.frame?.width ?? 999) <= 48 }, "picked up again: back to the avatar 5 s later")
+            check(!folded.isEmpty && folded.allSatisfy { ($0.frame?.width ?? 999) <= 72 }, "picked up again: back to the avatar 5 s later")
             let gone = samples.first { $0.t > doneAt && $0.frame == nil }
             check(gone.map { $0.t - doneAt <= 9 } ?? false, "gone within 9 s of done (\(gone.map { String(format: "%.1f", $0.t - doneAt) } ?? "never") s)")
         } else {
-            let narrow = samples.first { ($0.frame?.width ?? 999) <= 48 }
-            check(narrow.map { $0.t <= 6 } ?? false, "48 pt wide or less within 6 s (\(narrow.map { String(format: "%.1f s, %.0f pt", $0.t, $0.frame!.width) } ?? "never"))")
+            let narrow = samples.first { ($0.frame?.width ?? 999) <= 72 }
+            check(narrow.map { $0.t <= 6 } ?? false, "72 pt wide or less (a 40 pt avatar in its glow) within 6 s (\(narrow.map { String(format: "%.1f s, %.0f pt", $0.t, $0.frame!.width) } ?? "never"))")
             let gone = samples.first { $0.t > doneAt && $0.frame == nil }
             let after = gone.map { $0.t - doneAt }
             if muted {

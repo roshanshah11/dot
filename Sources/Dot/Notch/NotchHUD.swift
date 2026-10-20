@@ -1430,16 +1430,30 @@ struct LiveLine: View {
     let text: String
     let pulsing: Bool
     let color: Color
+    var size: CGFloat = 12
+    var weight: Font.Weight = .regular
+    /// HeyClicky's working line: the text, then a row of three accent dots that breathe under it (the stack).
+    var dots: Color? = nil
 
     var body: some View {
-        if pulsing {
+        if let dots, pulsing {
+            VStack(alignment: .leading, spacing: 5) {
+                Text(text).font(.system(size: size, weight: weight)).foregroundStyle(color).lineLimit(2)
+                TimelineView(.periodic(from: .now, by: 0.4)) { context in
+                    let n = Int(context.date.timeIntervalSinceReferenceDate * 2.5) % 3
+                    HStack(spacing: 4) {
+                        ForEach(0..<3, id: \.self) { i in Circle().fill(dots.opacity(i == n ? 1 : 0.35)).frame(width: 5, height: 5) }
+                    }
+                }
+            }
+        } else if pulsing {
             TimelineView(.periodic(from: .now, by: 0.5)) { context in
                 let n = Int(context.date.timeIntervalSinceReferenceDate * 2) % 4
                 Text(text.trimmingCharacters(in: CharacterSet(charactersIn: ". ")) + String(repeating: ".", count: n))
-                    .font(.system(size: 12)).foregroundStyle(color).lineLimit(2)
+                    .font(.system(size: size, weight: weight)).foregroundStyle(color).lineLimit(2)
             }
         } else {
-            Text(text).font(.system(size: 12)).foregroundStyle(color).lineLimit(2)
+            Text(text).font(.system(size: size, weight: weight)).foregroundStyle(color).lineLimit(2)
         }
     }
 }
@@ -1449,14 +1463,34 @@ struct GelButton: View {
     let title: String
     let accent: Color
     let primary: Bool
+    /// The stack's cards (04 review): HeyClicky's 30 pt gel capsules, the primary one near white to light blue with a
+    /// dark outline, the others dark with a light rim.
+    var gel = false
     let action: () -> Void
+
+    init(title: String, accent: Color, primary: Bool, gel: Bool = false, action: @escaping () -> Void) {
+        self.title = title; self.accent = accent; self.primary = primary; self.gel = gel; self.action = action
+    }
 
     var body: some View {
         Button(action: action) {
-            Text(title).font(.system(size: 11.5, weight: .semibold)).padding(.horizontal, 12).padding(.vertical, 5)
-                .background(primary ? accent : Color.white.opacity(0.1), in: Capsule())
-                .foregroundStyle(primary ? .black : NotchInk.text)
-                .shadow(color: primary ? accent.opacity(0.35) : .clear, radius: 4, y: 1)
+            if gel {
+                Text(title).font(.system(size: 12, weight: .semibold)).padding(.horizontal, 14).frame(height: 30)
+                    .background(
+                        primary
+                            ? AnyShapeStyle(LinearGradient(colors: [Color(red: 239 / 255, green: 244 / 255, blue: 249 / 255),
+                                                                    Color(red: 152 / 255, green: 189 / 255, blue: 225 / 255)],
+                                                           startPoint: .top, endPoint: .bottom))
+                            : AnyShapeStyle(Color(red: 39 / 255, green: 41 / 255, blue: 45 / 255)),
+                        in: Capsule())
+                    .overlay(Capsule().stroke(primary ? Color(red: 60 / 255, green: 55 / 255, blue: 127 / 255) : Color(red: 55 / 255, green: 60 / 255, blue: 67 / 255), lineWidth: 1))
+                    .foregroundStyle(primary ? Color(red: 0.08, green: 0.08, blue: 0.12) : NotchInk.text)
+            } else {
+                Text(title).font(.system(size: 11.5, weight: .semibold)).padding(.horizontal, 12).padding(.vertical, 5)
+                    .background(primary ? accent : Color.white.opacity(0.1), in: Capsule())
+                    .foregroundStyle(primary ? .black : NotchInk.text)
+                    .shadow(color: primary ? accent.opacity(0.35) : .clear, radius: 4, y: 1)
+            }
         }.buttonStyle(.plain)
     }
 }

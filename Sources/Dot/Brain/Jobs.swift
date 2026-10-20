@@ -87,6 +87,9 @@ final class JobManager {
     var jev: Jev?
     /// The top-right stack (04): a behind job is a chip there; front jobs get none.
     weak var stack: AgentStack?
+    /// Held while any job runs, so App Nap never stretches its timers (an offscreen stack's 0.25 s tick stalled for
+    /// minutes in a self-test on 10-20).
+    private var activity: NSObjectProtocol?
 
     init(config: DotConfig, overlay: OverlayManager?, speaker: TTSProvider?, ledger: Ledger?) {
         self.config = config
@@ -1107,6 +1110,12 @@ final class JobManager {
     /// A behind job as a chip at the top right (04): its last steps, its state, stop, show me and a reply field.
     func publish(_ job: Job) {
         onChange?()
+        if running.isEmpty, let token = activity {
+            ProcessInfo.processInfo.endActivity(token)
+            activity = nil
+        } else if !running.isEmpty, activity == nil {
+            activity = ProcessInfo.processInfo.beginActivity(options: [.userInitiated, .latencyCritical], reason: "a job is running")
+        }
         guard job.placement == .behind, !job.bench, let stack else { return }
         let state: AgentChip.State
         var line = job.lastLine.isEmpty ? (job.steps.last.map { "working: \($0)" } ?? "starting") : job.lastLine
