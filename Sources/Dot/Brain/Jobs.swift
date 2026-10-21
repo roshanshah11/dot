@@ -725,6 +725,10 @@ final class JobManager {
             if result.status == .ok { Log.info("job[\(job.id)] upload \((path as NSString).lastPathComponent) -> \(await job.page.host)") }
         case "show":
             return await show(job)
+        case "setting":
+            guard let setting = MacSetting.parse(str(args, "to") ?? "") else { return ("error: which setting? (bluetooth on, wifi off, volume 30, mute)", true, nil) }
+            let outcome = await job.hands.perform(.setting(setting), context: AccessibilityContext.capture(maxElements: 10))
+            result = outcome.ok ? .ok(outcome.line) : .error(outcome.line.isEmpty ? outcome.detail : outcome.line)
         case "play":
             let kind = SpotifyPlay.Kind(rawValue: str(args, "kind") ?? "playlist") ?? .playlist
             guard let play = SpotifyPlay.make(kind, str(args, "words") ?? "") else { return ("error: play what?", true, nil) }
@@ -774,7 +778,25 @@ final class JobManager {
         return await job.page.bindFront(windowTitle: job.frontTitle, url: job.frontURL)
     }
 
+    /// A URL with a scheme some Mac app (not a browser) is registered for: spotify:, mailto:, x-apple.systempreferences:.
+    /// "example.com:8080" parses with the scheme "example.com", which no app handles, so it stays a web address.
+    static func appLink(_ target: String) -> URL? {
+        let t = target.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let url = URL(string: t), let scheme = url.scheme?.lowercased(), !["http", "https", "file", "about", "chrome", "spotify"].contains(scheme),   // spotify: keeps its own path below
+              t.lowercased().hasPrefix(scheme + ":"), t.dropFirst(scheme.count + 1).first?.isNumber != true,
+              let app = NSWorkspace.shared.urlForApplication(toOpen: url) else { return nil }
+        let browsers: Set<String> = ["Comet", "Safari", "Google Chrome", "Arc", "Firefox"]
+        return browsers.contains(app.deletingPathExtension().lastPathComponent) ? nil : url
+    }
+
     private func open(_ job: Job, target: String, where place: String?) async -> PageDriver.Result {
+        // A link a Mac app handles (System Settings' x-apple.systempreferences:, mailto:, zoommtg:) is not a page: macOS
+        // opens it. On 10-21 a Bluetooth job sent System Settings' link to Comet as https://x-apple.systempreferences:...
+        if !job.bench, let link = Self.appLink(target) {
+            let app = NSWorkspace.shared.urlForApplication(toOpen: link).map { $0.deletingPathExtension().lastPathComponent } ?? "its app"
+            NSWorkspace.shared.open(link)
+            return .ok("opened it in \(app) (a mac app's link, not a page)")
+        }
         var url = target
         if !(target.hasPrefix("http://") || target.hasPrefix("https://")) {
             if target.hasPrefix("spotify:") || target.hasPrefix("/") || target.hasPrefix("~") || !target.contains(".") || job.hands.resolve(target) != nil {

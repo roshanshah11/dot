@@ -59,6 +59,8 @@ public enum HandsMCPWire {
         ("show", "Bring your window in front of him (what \"show me\" does).", schema([:])),
         ("play", "Play music in Spotify: kind playlist, track, album or artist, and the words to find it. Start the words with \"my\" for one of his own playlists (\"my road trip\"); that never plays a public one.",
          schema(["kind": ["type": "string", "enum": ["playlist", "track", "album", "artist"]], "words": str], required: ["words"])),
+        ("setting", "Flip a Mac setting at once and read it back: \"bluetooth on\", \"wifi off\", \"dark mode on\", \"volume up\", \"volume 30\", \"mute\", \"unmute\".",
+         schema(["to": str], required: ["to"])),
     ]
 
     public static var toolNames: [String] { tools.map(\.0) }

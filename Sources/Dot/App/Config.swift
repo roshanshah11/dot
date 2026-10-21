@@ -197,6 +197,9 @@ struct DotConfig: Codable {
         "canvas_readings", "canvas_download", "mail_live", "mail_read",
         // 09, 10: where an application stands, library rooms, Wyzant threads, Amazon finds (reads; amazon_open opens a tab).
         "app_status", "rooms_free", "wyzant_threads", "amazon_search", "amazon_product", "amazon_open",
+        // 10-21, from his asks: "what emails do i need to reply to" checked live (unanswered can't see what he answered in
+        // Gmail), and Google Docs (his fourth site by visits) read and saved.
+        "mail_triage", "gdoc_read", "gdoc_export",
     ]
     /// Taken out of talk by the basics pass; a saved config that still lists them does not bring them back.
     static let retiredTalkAtlasTools: Set<String> = [
@@ -206,7 +209,7 @@ struct DotConfig: Codable {
     ]
     /// Atlas tools that write (remember, draft, create): refused in a bench turn.
     static let talkWriteTools: Set<String> = ["todo", "remember", "deadline_add", "commit", "reminder", "draft_email", "calendar_create", "calendar_update",
-                                              "canvas_download", "amazon_open"]
+                                              "canvas_download", "amazon_open", "gdoc_export"]
     static let defaultTalkTools = talkAtlasTools.map { "mcp__atlas__\($0)" }
 
     init() {}

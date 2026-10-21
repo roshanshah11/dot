@@ -78,6 +78,7 @@ final class Hands {
         case .media(let move): return media(move)
         case .go: return Outcome(ok: true, line: "on it.", detail: "go: handed to a driven walkthrough")
         case .play(let p): return await playSpotify(p)
+        case .setting(let s): return await setting(s)
         }
     }
 
@@ -733,6 +734,7 @@ final class Hands {
             return url.hasPrefix("http://127.0.0.1:") || url.hasPrefix("http://localhost:") ? nil : "url outside the fixture"
         case .media: return "media keys reach his music"
         case .play: return nil   // the bench finds on the fixture and never plays (playSpotify)
+        case .setting: return "a bench never changes his mac's settings"
         default:
             if context.bundleIdentifier == Self.cometBundle, !fixtureFront { return "comet window is not the bench" }
             let allowedApps: Set<String> = ["com.apple.Safari", Self.cometBundle, "com.apple.TextEdit", "com.apple.finder"]

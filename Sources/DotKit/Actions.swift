@@ -24,6 +24,8 @@ public enum ActionCommand: Equatable, Sendable {
     case go(goal: String)
     /// Music by name: Dot finds the top Spotify result for the words and starts it (05, 2026-10-20).
     case play(SpotifyPlay)
+    /// A Mac setting he names ("turn on my bluetooth", "mute", "dark mode on"): Dot flips it at once (10-21).
+    case setting(MacSetting)
 
     /// The verb in the log's `act:` lines.
     public var verb: String {
@@ -37,6 +39,7 @@ public enum ActionCommand: Equatable, Sendable {
         case .media(let m): return m.rawValue
         case .go: return "go"
         case .play: return "play"
+        case .setting: return "setting"
         }
     }
 
@@ -61,6 +64,7 @@ public enum ActionCommand: Equatable, Sendable {
         case .media: return ""
         case .go(let goal): return goal
         case .play(let p): return "\(p.kind.rawValue):\(p.mine ? "my " : "")\(p.words)"
+        case .setting(let s): return s.words
         }
     }
 
@@ -94,6 +98,7 @@ public enum ActionCommand: Equatable, Sendable {
         case .media(let m): return m == .playPause ? "done." : (m == .next ? "next one." : "previous one.")
         case .go: return "on it."
         case .play: return "playing it."
+        case .setting(let s): return s.doneLine
         }
     }
 }
@@ -131,6 +136,8 @@ public enum ActionTags {
             return text.count >= 3 ? .go(goal: text) : nil
         case "PLAY":
             return SpotifyPlay.command(text)
+        case "SETTING":
+            return MacSetting.parse(text).map { .setting($0) }
         default:
             return nil
         }
@@ -152,6 +159,65 @@ public enum ActionTags {
             return .openURL("https://" + t, newTab: newTab)
         }
         return .open(t)
+    }
+}
+
+/// A Mac setting Dot flips itself (2026-10-21: "turn on my bluetooth" became a job that failed after 22 s).
+public enum MacSetting: Equatable, Sendable {
+    case bluetooth(on: Bool), wifi(on: Bool), darkMode(on: Bool), volume(Volume)
+    public enum Volume: Equatable, Sendable { case up, down, mute, unmute, set(Int) }
+
+    /// The tag's words and the log's: "bluetooth on", "wifi off", "dark mode on", "volume up", "volume 30", "mute".
+    public var words: String {
+        switch self {
+        case .bluetooth(let on): return "bluetooth \(on ? "on" : "off")"
+        case .wifi(let on): return "wifi \(on ? "on" : "off")"
+        case .darkMode(let on): return "dark mode \(on ? "on" : "off")"
+        case .volume(let v):
+            switch v {
+            case .up: return "volume up"
+            case .down: return "volume down"
+            case .mute: return "mute"
+            case .unmute: return "unmute"
+            case .set(let n): return "volume \(n)"
+            }
+        }
+    }
+
+    public var doneLine: String {
+        switch self {
+        case .bluetooth(let on): return "bluetooth is \(on ? "on" : "off")."
+        case .wifi(let on): return "wi-fi is \(on ? "on" : "off")."
+        case .darkMode(let on): return on ? "dark mode." : "light mode."
+        case .volume(let v):
+            switch v {
+            case .mute: return "muted."
+            case .unmute: return "sound's back on."
+            case .set(let n): return "volume at \(n)."
+            case .up: return "turned it up."
+            case .down: return "turned it down."
+            }
+        }
+    }
+
+    /// "bluetooth on", "wi-fi off", "dark mode on", "light mode", "volume up", "volume 30", "mute", "unmute".
+    public static func parse(_ text: String) -> MacSetting? {
+        let t = text.lowercased().replacingOccurrences(of: "wi-fi", with: "wifi").trimmingCharacters(in: .whitespacesAndNewlines)
+        let words = t.split(whereSeparator: { $0 == " " || $0 == ":" }).map(String.init)
+        let on = words.contains("on") || words.contains("enable") || words.contains("enabled")
+        let off = words.contains("off") || words.contains("disable") || words.contains("disabled")
+        if t.contains("bluetooth"), on != off { return .bluetooth(on: on) }
+        if t.contains("wifi"), on != off { return .wifi(on: on) }
+        if t.contains("light mode") { return .darkMode(on: false) }
+        if t.contains("dark mode") { return .darkMode(on: !off) }
+        if t == "mute" || words.first == "mute" { return .volume(.mute) }
+        if t == "unmute" || words.first == "unmute" { return .volume(.unmute) }
+        if words.contains("volume") || words.contains("sound") {
+            if let n = words.compactMap({ Int($0.trimmingCharacters(in: CharacterSet(charactersIn: "%"))) }).first { return .volume(.set(max(0, min(100, n)))) }
+            if words.contains("up") || words.contains("louder") { return .volume(.up) }
+            if words.contains("down") || words.contains("quieter") { return .volume(.down) }
+        }
+        return nil
     }
 }
 
@@ -181,12 +247,24 @@ public enum ActionPhrases {
     static let purpose = #"( (?:for|to) (?:study(?:ing)?|work(?:ing)?|focus(?:ing)?|sleep(?:ing)?|reading|running|the gym|chill(?:ing)?))?"#
     /// "my" stays in the words (SpotifyPlay.make makes it `mine`): "play my road trip playlist" is his own playlist, and on
     /// 2026-10-21 dropping it here played a stranger's public one.
-    static let playOnSpotify = re(lead + #"(?:play|put on|queue(?: up)?)(?: me)?(?: some| a| an| the)? (.{2,60}?) (?:on|in|from) spotify"# + tail)
-    static let playPlaylist = re(lead + #"(?:play|put on|queue(?: up)?)(?: me)?(?: some| a| an| the)? (.{2,50}?) playlist(?:s)?"# + purpose + tail)
+    /// "open my spotify and uh put on my chill playlist" (2026-10-21 13:09: the sentence missed every phrase, became a
+    /// 33 s job and played a public mix): opening Spotify first is part of playing, so it may come before the play.
+    private static let spotifyLead = lead + #"(?:(?:open|launch|start|go to|pull up)(?: up)?(?: my| the)? spotify(?: app)?(?:,|\s+and|\s+then)?\s+(?:(?:and|then|uh+|um+|like|just)[,]?\s+)*)?"#
+    static let playOnSpotify = re(spotifyLead + #"(?:play|put on|queue(?: up)?)(?: me)?(?: some| a| an| the)? (.{2,60}?) (?:on|in|from) spotify"# + tail)
+    static let playPlaylist = re(spotifyLead + #"(?:play|put on|queue(?: up)?)(?: me)?(?: some| a| an| the)? (.{2,50}?) playlist(?:s)?"# + purpose + tail)
     static let openSpotifyTo = re(lead + #"(?:open|launch|start) spotify (?:to|and play|with|on|for) (?:some |a |an |the )?(.{2,60}?)"# + tail)
     /// "play my liked songs", "put on my saved songs on spotify": his Liked Songs.
-    static let playLiked = re(lead + #"(?:play|put on|shuffle|queue(?: up)?)(?: me)?(?: my| the)? (?:liked|saved|favou?rite) (?:songs|tracks|music)(?: (?:on|in|from) spotify)?"# + tail)
+    static let playLiked = re(spotifyLead + #"(?:play|put on|shuffle|queue(?: up)?)(?: me)?(?: my| the)? (?:liked|saved|favou?rite) (?:songs|tracks|music)(?: (?:on|in|from) spotify)?"# + tail)
     static let findPlaylist = re(lead + #"find (?:a |me a |me |some |me some )?(.{2,40}?) playlists?\b(.{0,50})$"#)
+    /// Mac settings by name (10-21): "turn on my bluetooth", "wifi off", "switch to dark mode", "turn the volume up",
+    /// "set the volume to 30", "mute", "unmute the sound".
+    private static let toggleName = #"(bluetooth|wi-?fi|dark mode|light mode)"#
+    static let settingToggle = re(lead + #"(?:(?:turn|switch|flip|put)\s+(on|off)\s+(?:the\s+|my\s+)?"# + toggleName
+        + #"|(?:turn|switch|flip|put)\s+(?:the\s+|my\s+)?"# + toggleName + #"\s+(on|off)"#
+        + #"|(enable|disable)\s+(?:the\s+|my\s+)?"# + toggleName
+        + #"|(?:switch|go|change)\s+(?:to|into)\s+"# + toggleName
+        + #"|"# + toggleName + #"\s+(on|off))"# + tail)
+    static let volume = re(lead + #"(?:(?:turn|put)\s+(?:the\s+|my\s+)?(?:volume|sound)\s+(up|down)|turn\s+(up|down)\s+(?:the\s+|my\s+)?(?:volume|sound)|(?:volume|sound)\s+(up|down)|(?:set|put|turn)\s+(?:the\s+|my\s+)?(?:volume|sound)\s+(?:to|at)\s+(\d{1,3})\s*(?:%|percent)?|(mute|unmute)(?:\s+(?:the\s+|my\s+)?(?:sound|volume|mac|computer|audio))?)"# + tail)
 
     /// The command for a fixed phrase, or nil when the words need the model. `open X` is returned
     /// unresolved: the caller acts on it only when X is an app, a folder or a site it can name.
@@ -208,6 +286,13 @@ public enum ActionPhrases {
         if nextSong.firstMatch(in: t, range: range) != nil { return .media(.next) }
         if previousSong.firstMatch(in: t, range: range) != nil { return .media(.previous) }
         if pause.firstMatch(in: t, range: range) != nil { return .media(.playPause) }
+        if let m = settingToggle.firstMatch(in: t, range: range) {
+            // the matched words, read the same way as a [SETTING:...] tag
+            if let setting = MacSetting.parse((t as NSString).substring(with: m.range)) { return .setting(setting) }
+        }
+        if let m = volume.firstMatch(in: t, range: range), let setting = MacSetting.parse((t as NSString).substring(with: m.range)) {
+            return .setting(setting)
+        }
         if let m = spotifyFor.firstMatch(in: t, range: range) {
             return SpotifySearch.command((t as NSString).substring(with: m.range(at: 1)))
         }

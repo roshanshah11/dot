@@ -198,6 +198,9 @@ case "--stack-selftest":
             : StackSelfTest.run(muted: flags.contains("--muted"), job: flags.contains("--job"), framesFile: file)
     }
     exit(passed ? 0 : 1)
+case "--bluetooth":
+    // Bluetooth power in a process of its own (MacSettings): `Dot --bluetooth on|off|state` prints on or off.
+    exit(BluetoothPower.run(arguments.dropFirst().first ?? "state"))
 case "--notch-selftest":
     // A typed answer through a real notch window off every display: every line must show (10-21).
     let notchApp = NSApplication.shared

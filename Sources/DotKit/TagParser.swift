@@ -120,11 +120,11 @@ public struct ParsedResponse: Equatable {
 }
 
 public enum TagParser {
-    static let tagNames = ["POINT", "HIGHLIGHT", "TARGET", "HOVER", "SHAPE", "CARD", "REVEAL", "STEP", "CLEAR_BOARD", "TYPE", "WEB", "FIND", "STOCK", "PLACE", "IMAGES", "AGENT", "NEW_AGENT", "TELL", "STOP_AGENT", "ROUTINE", "THINK", "OPEN", "SCROLL", "KEY", "CLICK", "INSERT", "GO", "PLAY"]
+    static let tagNames = ["POINT", "HIGHLIGHT", "TARGET", "HOVER", "SHAPE", "CARD", "REVEAL", "STEP", "CLEAR_BOARD", "TYPE", "WEB", "FIND", "STOCK", "PLACE", "IMAGES", "AGENT", "NEW_AGENT", "TELL", "STOP_AGENT", "ROUTINE", "THINK", "OPEN", "SCROLL", "KEY", "CLICK", "INSERT", "GO", "PLAY", "SETTING"]
 
     // swiftlint:disable:next force_try
     static let pattern = try! NSRegularExpression(
-        pattern: #"\[(POINT|HIGHLIGHT|TARGET|HOVER|SHAPE|CARD|REVEAL|STEP|CLEAR_BOARD|TYPE|WEB|FIND|STOCK|PLACE|IMAGES|AGENT|NEW_AGENT|TELL|STOP_AGENT|ROUTINE|THINK|OPEN|SCROLL|KEY|CLICK|INSERT|GO|PLAY)(?::([^\]]*))?\]"#,
+        pattern: #"\[(POINT|HIGHLIGHT|TARGET|HOVER|SHAPE|CARD|REVEAL|STEP|CLEAR_BOARD|TYPE|WEB|FIND|STOCK|PLACE|IMAGES|AGENT|NEW_AGENT|TELL|STOP_AGENT|ROUTINE|THINK|OPEN|SCROLL|KEY|CLICK|INSERT|GO|PLAY|SETTING)(?::([^\]]*))?\]"#,
         options: []
     )
 
@@ -179,7 +179,7 @@ public enum TagParser {
         switch kind {
         case "THINK":
             return .think
-        case "OPEN", "SCROLL", "KEY", "CLICK", "INSERT", "GO", "PLAY":
+        case "OPEN", "SCROLL", "KEY", "CLICK", "INSERT", "GO", "PLAY", "SETTING":
             return ActionTags.make(kind: kind, payload: payload).map { .act($0) }
         case "CLEAR_BOARD":
             return .clearBoard

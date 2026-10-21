@@ -2319,8 +2319,13 @@ final class Talk {
         if liveTools.contains("canvas_readings") {
             lines.append("[canvas] for \"download my readings\" call canvas_readings (it saves to his Downloads); for one file, canvas_download with dest \"downloads\".")
         }
-        if liveTools.contains("mail_live") {
+        if liveTools.contains("mail_triage") {
+            lines.append("[mail] \"what do i need to reply to\", \"what's waiting on me\": mail_triage (live: it drops what he already answered or has a draft for); one mail or the latest: mail_live; mail and unanswered are the box's history. when he says board, panel or put it up, the list goes on a card, one row per mail: who, the subject, what they need.")
+        } else if liveTools.contains("mail_live") {
             lines.append("[mail] mail questions: mail_live first (live); mail is the box's history.")
+        }
+        if liveTools.contains("gdoc_read") {
+            lines.append("[docs] a google doc in front or named: gdoc_read for its text and comments (summarize, find, answer from it); gdoc_export saves a copy to his downloads.")
         }
         if liveTools.contains("app_status") {
             lines.append("[applications] where an application stands: app_status first; say a rejection only when he asked about that firm, never unprompted.")
