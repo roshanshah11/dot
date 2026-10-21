@@ -193,7 +193,10 @@ case "--stack-selftest":
     stackApp.setActivationPolicy(.accessory)
     stackApp.finishLaunching()
     let file = flags.first { !$0.hasPrefix("--") }
-    let passed = MainActor.assumeIsolated { StackSelfTest.run(muted: flags.contains("--muted"), job: flags.contains("--job"), framesFile: file) }
+    let passed = MainActor.assumeIsolated {
+        flags.contains("--hover") ? StackSelfTest.runHover()
+            : StackSelfTest.run(muted: flags.contains("--muted"), job: flags.contains("--job"), framesFile: file)
+    }
     exit(passed ? 0 : 1)
 case "--track-selftest":
     // Ask the running Dot to run the box-tracking check on the real screen (its grants, not the terminal's).

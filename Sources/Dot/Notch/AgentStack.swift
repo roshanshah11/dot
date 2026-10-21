@@ -106,8 +106,9 @@ final class StackModel: ObservableObject {
     /// Where the drawn chip's top right corner sits, measured on HeyClicky's frames (04 review): 27 pt in from the
     /// screen's right edge and 34 pt under the menu bar.
     static let corner = CGSize(width: 27, height: 34)
-    /// Each drawn chip's frame in the stack's own coordinates (top-left origin), for letting clicks through.
-    var chipFrames: [CGRect] = []
+    /// Each drawn chip's frame in the stack's own coordinates (top-left origin), for letting clicks through and for
+    /// hover (StackHover).
+    var chipFrames: [StackChipFrame] = []
 
     var onStop: ((String) -> Void)?
     var onShow: ((String) -> Void)?
@@ -163,6 +164,13 @@ final class AgentStack {
     private var visibleInRecordings = true
     /// The last presentation logged per chip, so the log has one line per fold, not one per tick.
     private var logged: [String: AgentChip.Presentation] = [:]
+    /// Which chip his pointer holds open: the window's own pointer check, with an open and a close delay (StackHover).
+    private var hover = StackHover()
+    private var hoverCheck: DispatchWorkItem?
+    /// When the drawing last changed size: hover never closes a card while it is still growing or shrinking.
+    private var layoutChangedAt = Date.distantPast
+    /// The pointer, in AppKit screen coordinates (`Dot --stack-selftest` moves a pretend one).
+    var mouseLocation: () -> CGPoint = { NSEvent.mouseLocation }
 
     var onStop: ((String) -> Void)? { get { model.onStop } set { model.onStop = newValue } }
     var onShow: ((String) -> Void)? { get { model.onShow } set { model.onShow = newValue } }
@@ -227,6 +235,7 @@ final class AgentStack {
         model.chips.removeAll { $0.id == id }
         model.folded.remove(id)
         if model.expanded == id { model.expanded = nil; resignKey() }
+        hover.forget(id)
         if model.hovering == id { model.hovering = nil }
         logged[id] = nil
         refresh()
@@ -246,6 +255,7 @@ final class AgentStack {
     func foldAll() {
         model.folded = Set(model.chips.map(\.id))
         if model.expanded != nil { model.expanded = nil; resignKey() }
+        hover.clear()
         model.hovering = nil
         refresh()
     }
@@ -291,6 +301,7 @@ final class AgentStack {
             }
         }
         refreshVisibility(empty: empty)
+        if !empty { updateMousePassThrough() }   // a still pointer gets its hover decided too
     }
 
     // MARK: The window
@@ -338,6 +349,7 @@ final class AgentStack {
     /// moment later, so a card on its way out is not cut off.
     private func fit(to size: CGSize) {
         guard size.width > 0, size.height > 0, let panel else { return }
+        layoutChangedAt = Date()
         let target = Self.frame(fitting: size, in: visibleFrame)
         let current = panel.frame
         shrinkWork?.cancel()
@@ -391,16 +403,30 @@ final class AgentStack {
 
     private func updateMousePassThrough() {
         guard let panel, panel.isVisible else { return }
-        let mouse = NSEvent.mouseLocation
+        let mouse = mouseLocation()
         let frame = panel.frame
         // The drawing sits at the window's top right (the window is wider for a moment while it shrinks), and its
         // coordinates run from the drawing's top left.
         let width = model.contentSize.width > 0 ? min(model.contentSize.width, frame.width) : frame.width
         let point = CGPoint(x: mouse.x - (frame.maxX - width), y: frame.maxY - mouse.y)
-        let over = model.chipFrames.contains { $0.insetBy(dx: -2, dy: -2).contains(point) }
-        let through = !over && model.expanded == nil
+        let under = model.chipFrames.first { $0.rect.insetBy(dx: -2, dy: -2).contains(point) }?.id
+        let through = under == nil && model.expanded == nil
         if panel.ignoresMouseEvents != through { panel.ignoresMouseEvents = through }
-        if !over, model.hovering != nil, model.expanded == nil { model.hovering = nil }
+        decideHover(under: under)
+    }
+
+    /// One place decides hover (the 10-21 flicker was SwiftUI's onHover and this check disagreeing mid-resize).
+    private func decideHover(under: String?) {
+        // A card he clicked open or is typing in holds by itself; hover follows the pointer again once it closes.
+        guard model.expanded == nil else { return }
+        let settling = Date().timeIntervalSince(layoutChangedAt) < 0.35
+        let due = hover.update(under: under, now: Date(), layoutSettling: settling)
+        if model.hovering != hover.hovering { model.hovering = hover.hovering }
+        hoverCheck?.cancel()
+        guard let due else { return }
+        let work = DispatchWorkItem { [weak self] in MainActor.assumeIsolated { self?.updateMousePassThrough() } }
+        hoverCheck = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + due + 0.01, execute: work)
     }
 }
 
@@ -417,9 +443,15 @@ struct StackSizeKey: PreferenceKey {
     }
 }
 
+/// A drawn chip (or the consent card, StackModel.consentID) and its frame in the stack's coordinates.
+struct StackChipFrame: Equatable {
+    let id: String
+    let rect: CGRect
+}
+
 struct StackChipFramesKey: PreferenceKey {
-    static var defaultValue: [CGRect] = []
-    static func reduce(value: inout [CGRect], nextValue: () -> [CGRect]) { value.append(contentsOf: nextValue()) }
+    static var defaultValue: [StackChipFrame] = []
+    static func reduce(value: inout [StackChipFrame], nextValue: () -> [StackChipFrame]) { value.append(contentsOf: nextValue()) }
 }
 
 struct AgentStackView: View {
@@ -436,7 +468,8 @@ struct AgentStackView: View {
                     }
                 }
                 .background(GeometryReader { proxy in
-                    Color.clear.preference(key: StackChipFramesKey.self, value: [proxy.frame(in: .named("stack"))])
+                    Color.clear.preference(key: StackChipFramesKey.self,
+                                           value: [StackChipFrame(id: item.chip?.id ?? StackModel.consentID, rect: proxy.frame(in: .named("stack")))])
                 })
             }
         }
@@ -489,9 +522,6 @@ struct StackChipView: View {
             }
         }
         .contentShape(Rectangle())
-        .onHover { inside in
-            if inside { model.hovering = chip.id } else if model.hovering == chip.id { model.hovering = nil }
-        }
     }
 
     // MARK: The card

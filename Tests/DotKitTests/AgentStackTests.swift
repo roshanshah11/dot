@@ -207,3 +207,64 @@ final class AgentStackTests: XCTestCase {
         XCTAssertEqual(RoutineMode.split(brief: "watch the COURSE 101 page and summarize").mode, .report, "only the prefix counts")
     }
 }
+
+/// Hover over the stack (2026-10-21): one rule, an open delay and a close grace, never a close mid-resize.
+final class StackHoverTests: XCTestCase {
+    private let t0 = Date(timeIntervalSince1970: 1_000_000)
+
+    func testAQuickPassOpensNothing() {
+        var hover = StackHover()
+        XCTAssertNotNil(hover.update(under: "a", now: t0, layoutSettling: false))
+        hover.update(under: nil, now: t0.addingTimeInterval(0.04), layoutSettling: false)
+        XCTAssertNil(hover.hovering)
+        hover.update(under: nil, now: t0.addingTimeInterval(1), layoutSettling: false)
+        XCTAssertNil(hover.hovering)
+    }
+
+    func testRestingOpensAfterTheDelay() {
+        var hover = StackHover()
+        let due = hover.update(under: "a", now: t0, layoutSettling: false)
+        XCTAssertEqual(due ?? 0, StackHover.openDelay, accuracy: 0.001)
+        XCTAssertNil(hover.hovering)
+        XCTAssertNil(hover.update(under: "a", now: t0.addingTimeInterval(StackHover.openDelay), layoutSettling: false))
+        XCTAssertEqual(hover.hovering, "a")
+    }
+
+    /// The 10:22 flicker: the avatar grew into its card, and for a moment the pointer seemed to be on nothing.
+    func testAMomentOffWhileTheCardGrowsKeepsItOpen() {
+        var hover = StackHover(hovering: "a")
+        hover.update(under: nil, now: t0, layoutSettling: true)
+        hover.update(under: nil, now: t0.addingTimeInterval(0.5), layoutSettling: true)
+        XCTAssertEqual(hover.hovering, "a", "never closes while the stack is still laying out")
+        hover.update(under: nil, now: t0.addingTimeInterval(0.6), layoutSettling: false)
+        hover.update(under: nil, now: t0.addingTimeInterval(0.7), layoutSettling: false)
+        hover.update(under: "a", now: t0.addingTimeInterval(0.75), layoutSettling: false)
+        XCTAssertEqual(hover.hovering, "a", "back on it within the grace: still open, no flip")
+    }
+
+    func testLeavingClosesAfterTheGrace() {
+        var hover = StackHover(hovering: "a")
+        let due = hover.update(under: nil, now: t0, layoutSettling: false)
+        XCTAssertEqual(due ?? 0, StackHover.closeDelay, accuracy: 0.001)
+        hover.update(under: nil, now: t0.addingTimeInterval(StackHover.closeDelay - 0.05), layoutSettling: false)
+        XCTAssertEqual(hover.hovering, "a")
+        hover.update(under: nil, now: t0.addingTimeInterval(StackHover.closeDelay), layoutSettling: false)
+        XCTAssertNil(hover.hovering)
+    }
+
+    func testMovingToAnotherChipSwitchesAfterTheDelay() {
+        var hover = StackHover(hovering: "a")
+        hover.update(under: "b", now: t0, layoutSettling: false)
+        XCTAssertEqual(hover.hovering, "a")
+        hover.update(under: "b", now: t0.addingTimeInterval(StackHover.openDelay), layoutSettling: false)
+        XCTAssertEqual(hover.hovering, "b")
+    }
+
+    func testAChipThatLeavesIsForgotten() {
+        var hover = StackHover(hovering: "a")
+        hover.forget("b")
+        XCTAssertEqual(hover.hovering, "a")
+        hover.forget("a")
+        XCTAssertNil(hover.hovering)
+    }
+}
