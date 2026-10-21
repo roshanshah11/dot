@@ -196,10 +196,10 @@ final class Talk {
             default: break
             }
         }
-        hud.model.onSubmitInput = { [weak self] text in
+        hud.model.onSubmitInput = { [weak self] text, forAgent in
             Task { @MainActor in
                 guard let self else { return }
-                if self.pendingRegionAgent { self.pendingRegionAgent = false; self.handRegionToAgent(text) } else { self.askTyped(text, fromField: true) }
+                if self.pendingRegionAgent { self.pendingRegionAgent = false; self.handRegionToAgent(text) } else { self.askTyped(text, fromField: true, shift: forAgent) }
             }
         }
         panels.placement = { [weak self] in
@@ -470,7 +470,7 @@ final class Talk {
             recorder.cancel()
             phase = .idle
             overlay.setPhase(.idle)
-            hud.showInput()
+            hud.showInput(forAgent: mode == .agent)
             return
         }
 
@@ -686,6 +686,8 @@ final class Talk {
     }
     private var lastAskWasTyped = false
     private var lastAsked = ""
+    /// The ask in flight was made with shift held (agent mode); `mode` itself goes back to talk as the ask starts.
+    private var askedWithShift = false
 
     // MARK: Streaming transcription
 
@@ -896,11 +898,10 @@ final class Talk {
         overlay.hideBubble(after: 0)
         startCapture()
         overlay.setPhase(.thinking)
-        if shift { mode = .agent }
-        Task { @MainActor in
-            await ask(trimmed, typed: !spoken)
-            if shift { self.mode = .talk }
-        }
+        // This ask's own mode, never the last one's: a field opened from the notch after a stray shift press sent two
+        // typed asks to a running agent (2026-10-21 11:57 and 12:04).
+        mode = shift ? .agent : .talk
+        Task { @MainActor in await ask(trimmed, typed: !spoken) }
     }
 
     /// Interrupt the turn in flight and drop its result when it comes (the basics pass).
@@ -985,7 +986,10 @@ final class Talk {
         // Held shift but said "stop the email agent" or "is inbox keeper done": that is for Dot, not a
         // message to the agent (FX-02); it takes the ordinary route, which stops it or answers.
         let addressed = AgentAddress.find(in: text, roster: addressBook)
-        let agentMode = mode == .agent && (addressed.map { $0.intent == .tell } ?? true)
+        // Shift counts for this ask only; the next one starts in talk mode whatever happens to this one.
+        askedWithShift = mode == .agent
+        if mode == .agent { mode = .talk; hud.model.mode = .talk }
+        let agentMode = askedWithShift && (addressed.map { $0.intent == .tell } ?? true)
         // Shift held over a stray word or two ("Yeah.", "Sam like.") is not a job (2026-10-18 01:34 made two agents).
         if agentMode, addressed == nil, hud.currentConsent == nil, walkthrough == nil, AgentModeFilter.isStray(text) {
             Log.info("jev: nothing asked (shift): \(Log.short(text, 60))")
@@ -1707,7 +1711,7 @@ final class Talk {
 
     /// He asked for an agent in this ask (his words, or shift held): talk's own agent tags start one only then.
     private var explicitAgent: Bool {
-        AgentWords.asksForAgent(lastAsked) || AgentModeFilter.wantsFreshAgent(lastAsked) || mode == .agent
+        AgentWords.asksForAgent(lastAsked) || AgentModeFilter.wantsFreshAgent(lastAsked) || askedWithShift
     }
 
     /// Start a job; Dot says its own start line unless talk already said one.

@@ -143,6 +143,8 @@ final class HUDModel: ObservableObject {
     @Published var inputText = ""
     /// What the field asks for; cleared after a submit.
     @Published var inputPrompt: String?
+    /// The field on show sends to an agent: decided when it opened, never inherited from an earlier ask.
+    @Published var inputForAgent = false
     @Published var accent = Color(red: 1.0, green: 0.42, blue: 0.17)
     /// The agent whose result card is open to read.
     @Published var expanded: String?
@@ -175,7 +177,8 @@ final class HUDModel: ObservableObject {
     @Published var hovering = false
     /// What the view draws, measured; the window is sized to it.
     @Published var contentSize: CGSize = .zero
-    var onSubmitInput: ((String) -> Void)?
+    /// The typed text, and whether the field was opened for an agent (a shift tap or the region's "to an agent").
+    var onSubmitInput: ((String, Bool) -> Void)?
     var onOpenAgent: ((String) -> Void)?
     /// "open" on an agent card: its thread in the Dot window.
     var onOpenHome: ((String) -> Void)?
@@ -527,14 +530,17 @@ final class NotchHUD {
 
     private var inputTimeout: DispatchWorkItem?
 
-    func showInput() {
+    /// `forAgent`: a shift tap opened it, so what he types goes to an agent; any other opening asks Dot.
+    func showInput(forAgent: Bool = false) {
+        model.inputForAgent = forAgent
+        if forAgent, model.inputPrompt == nil { model.inputPrompt = "for an agent: what should it do?" }
         model.showInput = true
         model.phase = .hidden
         refreshVisibility()
         // A non-activating panel takes the keyboard without making Dot the frontmost app,
         // so the user's window keeps focus and the next screenshot still shows it active.
         panel?.makeKeyAndOrderFront(nil)
-        Log.info("input: field shown, panel key \(panel?.isKeyWindow == true)")
+        Log.info("input: field shown\(forAgent ? " for an agent" : ""), panel key \(panel?.isKeyWindow == true)")
         if panel?.isKeyWindow != true {
             // The panel was still ordering in (seen 2026-10-15 15:35, "panel key false" twice): one more try.
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.12) { [weak self] in
@@ -1131,7 +1137,9 @@ struct NotchHUDView: View {
                     model.inputText = ""
                     model.showInput = false
                     model.inputPrompt = nil
-                    model.onSubmitInput?(value)
+                    let forAgent = model.inputForAgent
+                    model.inputForAgent = false
+                    model.onSubmitInput?(value, forAgent)
                 }
             Text("return").font(.system(size: 10)).foregroundStyle(text.opacity(0.35))
         }
