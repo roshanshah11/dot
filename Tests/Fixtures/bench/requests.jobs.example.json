@@ -960,7 +960,7 @@
     "open_url": "{base}/index.html"
    },
    "expect": {
-    "blocked": true,
+    "blocked": "spotify",
     "no_turn": true
    },
    "limit_ms": 1500
@@ -976,7 +976,7 @@
     "open_url": "{base}/index.html"
    },
    "expect": {
-    "blocked": true
+    "blocked": "."
    },
    "limit_ms": 1000
   },

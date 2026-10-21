@@ -119,7 +119,10 @@ final class Hands {
             return Outcome(ok: false, line: "spotify isn't on this mac.", detail: "no spotify app")
         }
         let words = p.words.split(separator: " ").map(String.init)
-        let find = await Self.spotifyScript(["find", p.kind.rawValue] + words, env: env, timeout: 8)
+        // The search instance can be gone (a sleep, or an idle-instance sweep): find then warms it first, about 30 s.
+        let alive = await Self.spotifyScript(["alive"], env: env, timeout: 3).code == 0
+        if !alive { Log.info("spotify: search instance down; warming it inside this find") }
+        let find = await Self.spotifyScript(["find", p.kind.rawValue] + words, env: env, timeout: alive ? 8 : 60)
         let findMs = Int(Date().timeIntervalSince(started) * 1000)
         let hits = SpotifyPlay.hits(find.out)
         guard let top = hits.first else {

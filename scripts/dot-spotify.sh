@@ -7,6 +7,7 @@ export HB_INST=spotify
 #   dot-spotify.sh find <kind> <words...>       up to 5 lines "spotify:<kind>:<id><TAB><title>"; exit 3 when none
 #   dot-spotify.sh play <spotify:kind:id>       play it (DOT_SPOTIFY_DRY=1: print "dry play <uri>" and nothing else)
 #   dot-spotify.sh state                        "<state>|<track>|<artist>" or "not running"
+#   dot-spotify.sh alive                        "alive", or "dead" (exit 1) when the search instance is down
 #
 # HB_INST is exported on line 2 and never inherited, so no call here touches hb's default instance (port 9333, a copy
 # of his logins that agents use). The instance is a copy of his profile cleared to logged out after every start, so no
@@ -53,6 +54,9 @@ cmd="${1:-}"; [ $# -gt 0 ] && shift
 case "$cmd" in
   warm)
     warm
+    ;;
+  alive)
+    alive && echo alive || { echo dead; exit 1; }
     ;;
   find)
     kind="${1:-playlist}"; [ $# -gt 0 ] && shift
