@@ -120,10 +120,12 @@ final class JobManager {
         guard config.jobsEnabled else { return }
         DispatchQueue.main.asyncAfter(deadline: .now() + 10) { [weak self] in
             guard let self else { return }
-            self.verifySandbox { [weak self] in
+            let spare = { [weak self] in
                 guard let self, self.config.jobSpare else { return }
                 self.spawnSpare(bench: false)
             }
+            // Atlas's permissions run Bash with no sandbox, so there is nothing to verify first.
+            if self.config.permissionsMode == .atlas { spare() } else { self.verifySandbox(then: spare) }
         }
         Timer.scheduledTimer(withTimeInterval: 600, repeats: true) { [weak self] _ in
             Task { @MainActor in self?.recycleSpare() }
@@ -168,7 +170,9 @@ final class JobManager {
         options.appendSystemPrompt = Prompts.job + Prompts.courseIndex(in: config.talkRootURL)
         options.tools = nil
         var disallowed = ["Task", "Agent", "NotebookEdit", "AskUserQuestion", "EnterPlanMode", "ExitPlanMode", "Bash(security *)"] + AgentManager.disallowedAgentTools
-        let bashOn = !bench && sandboxVerified == true
+        // Atlas's permissions (his call 2026-10-21): Bash with no sandbox and Atlas's deny list; the bench as before.
+        let atlasWay = config.permissionsMode == .atlas && !bench
+        let bashOn = !bench && (atlasWay || sandboxVerified == true)
         if !bashOn { disallowed.append("Bash") }
         options.disallowedTools = disallowed
         let reads = DotConfig.talkAtlasTools.filter { !DotConfig.talkWriteTools.contains($0) }.map { "mcp__atlas__\($0)" }
@@ -184,7 +188,9 @@ final class JobManager {
         options.environment["CLAUDE_CODE_DISABLE_BACKGROUND_TASKS"] = "1"
         options.environment["CLAUDE_BASH_MAINTAIN_PROJECT_WORKING_DIR"] = "1"
         if let socketPath { options.environment["DOT_CONTROL_SOCKET"] = socketPath }
-        if bashOn {
+        if atlasWay {
+            options.settings = HookDecision.settingsJSON(executable: nil, deny: AtlasDeny.rules(home: NSHomeDirectory(), vault: DotConfig.expand(config.atlasRoot)))
+        } else if bashOn {
             let sandbox: [String: Any] = ["sandbox": [
                 "enabled": true, "failIfUnavailable": true, "allowUnsandboxedCommands": false, "autoAllowBashIfSandboxed": false,
                 "network": ["allowedDomains": [String](), "allowUnixSockets": [String](), "allowLocalBinding": false],
@@ -221,7 +227,7 @@ final class JobManager {
             Log.error("job: session failed to start: \(error)")
             return nil
         }
-        Log.info("job[\(id)] bash \(bashOn ? "sandbox on" : (bench ? "off (bench)" : "off (sandbox not verified)"))")
+        Log.info("job[\(id)] bash \(atlasWay ? "on (atlas permissions)" : bashOn ? "sandbox on" : (bench ? "off (bench)" : "off (sandbox not verified)"))")
         return (id, stamp, session, folder)
     }
 
@@ -617,7 +623,8 @@ final class JobManager {
                          "\(home)/.claude", "\(home)/.claude-1", "\(home)/.claude-2", "\(home)/.config", "\(home)/Library/Keychains",
                          "\(home)/Library/Application Support", "\(home)/Library/Preferences", "\(home)/Projects/browser-agent/.env"]
         let context = JobGateContext(bench: bench, jobFolder: folder.path, protectedRoots: protected, queuedSends: Self.queuedSends,
-                                     hisWords: job?.hisWords ?? "")
+                                     hisWords: job?.hisWords ?? "", home: home, permissions: config.permissionsMode,
+                                     vault: DotConfig.expand(config.atlasRoot))
         let decision = JobGate.decide(tool: request.toolName, input: request.input, context: context)
         switch decision {
         case .allow:

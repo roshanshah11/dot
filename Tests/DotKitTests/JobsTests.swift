@@ -168,12 +168,13 @@ final class JobGateTests: XCTestCase {
     var existing: Set<String> = ["/Users/example/Documents/x.docx", "/Users/example/Desktop/Model.xlsx", "/tmp/old.txt"]
     var files: [String: String] = [:]
 
-    func ctx(bench: Bool = false, words: String = "find the readings", queued: Set<String> = ["imessage_send", "send_email", "reply"]) -> JobGateContext {
+    func ctx(bench: Bool = false, words: String = "find the readings", queued: Set<String> = ["imessage_send", "send_email", "reply"],
+             permissions: PermissionsMode = .guarded) -> JobGateContext {
         let existing = self.existing
         let files = self.files
         return JobGateContext(bench: bench, jobFolder: bench ? "/tmp/dot-bench/jobs/j1" : folder,
                               protectedRoots: ["\(home)/.ssh", "\(home)/.claude", "\(home)/.config"], queuedSends: queued,
-                              hisWords: words, home: home,
+                              hisWords: words, home: home, permissions: permissions,
                               fileExists: { existing.contains($0) }, isDirectory: { $0.hasSuffix("/Downloads") || $0.hasSuffix("/output") },
                               readFile: { files[$0] })
     }
@@ -305,6 +306,72 @@ final class JobGateTests: XCTestCase {
         XCTAssertTrue(denied(JobGate.bash("python3 out.py", context: c)), "a script file is read and checked")
         XCTAssertTrue(denied(bash("python3 missing.py")), "an unreadable script is refused")
         XCTAssertTrue(denied(bash("cd /tmp && rm x")), "rm after cd needs a full path")
+    }
+
+    // Atlas's permissions (his call 2026-10-21, "fully Atlas, no Dot guards").
+
+    func testAtlasPermissionsRunBashWithNoSandboxAndNoLists() {
+        files["\(folder)/out.py"] = "import subprocess\nsubprocess.run(['ls'])\n"
+        let a = ctx(permissions: .atlas)
+        XCTAssertEqual(a.vault, "\(home)/roshan")
+        // a routine command, an unrecognised one and a python subprocess call, each allowed outright (a job has no card)
+        for cmd in ["rg -n Northwind ~/Downloads | head -20", "some-new-cli fetch --course COURSE-101", "curl -s https://example.com/a.pdf -o output/a.pdf",
+                    "python3 -c 'import subprocess; subprocess.run([\"ls\"])'", "python3 out.py", "python3 -m pip list", "node build.mjs", "git status",
+                    "atlasctl search Northwind", "open https://example.com", "rm ~/Desktop/old.txt"] {
+            XCTAssertEqual(bash(cmd, a), .allow, cmd)
+        }
+        // the same calls under the guarded gate, as before
+        XCTAssertTrue(denied(bash("python3 -c 'import subprocess; subprocess.run([\"ls\"])'")))
+        XCTAssertTrue(denied(bash("some-new-cli fetch --course COURSE-101")))
+        XCTAssertTrue(denied(bash("python3 out.py")))
+        XCTAssertEqual(decide("Bash", ["command": "ls", "dangerouslyDisableSandbox": true], a), .allow, "no sandbox to leave")
+        XCTAssertEqual(decide("Read", ["file_path": "~/.ssh/config"], a), .allow, "only Atlas's list fences reads")
+    }
+
+    func testAtlasPermissionsKeepAtlasDenyList() {
+        let a = ctx(permissions: .atlas)
+        for path in ["~/roshan/Atlas/private/keys.json", "\(home)/roshan/Atlas/private", "~/.atlas-browser/Default/Cookies"] {
+            XCTAssertTrue(denied(decide("Read", ["file_path": path], a)), path)
+        }
+        XCTAssertTrue(denied(decide("Grep", ["pattern": "x", "path": "~/roshan/Atlas/private"], a)))
+        XCTAssertTrue(denied(decide("Edit", ["file_path": "~/.atlas-browser/Local State"], a)))
+        for cmd in ["imsg send --to +15555550100 --text hi", "cd output && gmail send --to sam@example.com", "outlook reply AAMk1 --body ok",
+                    "osascript -e 'tell application \"Messages\" to quit'", "git push", "git commit -m x", "linkedin message alex-example hi",
+                    "echo $(imsg send x)", "bash -c 'gmail reply T1 hi'"] {
+            XCTAssertTrue(denied(bash(cmd, a)), cmd)
+        }
+        XCTAssertEqual(bash("gmail search Northwind", a), .allow, "only the sends are closed")
+    }
+
+    func testAtlasPermissionsKeepTheRingAndHisYes() {
+        let a = ctx(permissions: .atlas)
+        // pages and apps are driven with the dot tools, which ring Submit, Send and Buy for him
+        for cmd in ["~/bin/hb click @e5", "cd /tmp && cbg a click @e1", "bash -c \"rba run x\"", "cliclick c:1,1", "xargs -n 1 hb open",
+                    "agent-browser click @e2", "env A=1 cua-driver click 1 1"] {
+            XCTAssertTrue(denied(bash(cmd, a)), cmd)
+        }
+        // a job never approves a send it queued
+        for cmd in ["python3 scripts/dot-atlas-approve.py approve --id p1", "./atlasctl approve p1 d1", "atlasctl --root ~/roshan approve p1 d1"] {
+            XCTAssertTrue(denied(bash(cmd, a)), cmd)
+        }
+        XCTAssertEqual(decide("mcp__atlas-send__imessage_send", [:], a), .allow, "a queued send still goes to his card")
+        XCTAssertTrue(denied(decide("mcp__atlas-send__imessage_send", [:], ctx(queued: [], permissions: .atlas))))
+        XCTAssertEqual(decide("mcp__dot__click", ["ref": "e3"], a), .allow, "the hands check every press")
+        XCTAssertTrue(denied(decide("Task", [:], a)))
+        XCTAssertEqual(decide("Write", ["file_path": "~/Desktop/New.pptx"], a), .deny(JobGate.saveInOutput))
+    }
+
+    func testAtlasPermissionsLeaveTheBenchAsItWas() {
+        let calls: [(String, [String: Any])] = [
+            ("Bash", ["command": "ls"]), ("Bash", ["command": "python3 -c 'print(1)'"]), ("Bash", ["command": "curl https://example.com"]),
+            ("mcp__atlas__remember", ["text": "x"]), ("mcp__atlas__canvas_find", ["query": "x"]), ("mcp__atlas-send__send_email", [:]),
+            ("Write", ["file_path": "~/Documents/a.md"]), ("Write", ["file_path": "/tmp/dot-bench/jobs/j1/output/a.txt"]),
+            ("Read", ["file_path": "~/.ssh/id_ed25519"]), ("Read", ["file_path": "~/roshan/Atlas/private/x"]), ("mcp__dot__look", [:]),
+        ]
+        for (tool, input) in calls {
+            XCTAssertEqual(decide(tool, input, ctx(bench: true, permissions: .atlas)), decide(tool, input, ctx(bench: true)), "\(tool) \(input)")
+        }
+        XCTAssertTrue(denied(bash("ls", ctx(bench: true, permissions: .atlas))), "every bash is out in the bench")
     }
 }
 
