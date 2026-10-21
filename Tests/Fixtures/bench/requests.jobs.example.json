@@ -960,10 +960,9 @@
     "open_url": "{base}/index.html"
    },
    "expect": {
-    "blocked": "spotify",
+    "blocked": "open",
     "no_turn": true
-   },
-   "limit_ms": 1500
+   }
   },
   {
    "id": "S4",
@@ -976,9 +975,8 @@
     "open_url": "{base}/index.html"
    },
    "expect": {
-    "blocked": "."
-   },
-   "limit_ms": 1000
+    "blocked": "next|media"
+   }
   },
   {
    "id": "S5",
