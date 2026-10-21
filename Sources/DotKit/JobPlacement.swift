@@ -45,7 +45,8 @@ public enum JobWords {
 
     /// One action on what is in front: one of these verbs and nothing after a second clause.
     static let singleLead = JobPlacementRule.lead + #"(?:click(?: on)?|press|tap|scroll|open|type|go back|close)\b"#
-    static let secondClause = #"\b(?:and|then|after that|also|before|until)\b|[,;:]"#
+    /// Punctuation only as a clause break (followed by a space or the end): the colon in "127.0.0.1:8766" or "https:" isn't one.
+    static let secondClause = #"\b(?:and|then|after that|also|before|until)\b|[,;:](?=\s|$)"#
     static let neverSingle = #"\b(?:find|search|download|check|submit|send|fill|look up|research)\b"#
 
     static let stopRe = Rx.make(stop)

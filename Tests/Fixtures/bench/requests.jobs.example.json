@@ -446,11 +446,11 @@
     "open_url": "{base}/index.html"
    },
    "expect": {
-    "log_has": "dry-run: route job\\(front\\)"
+    "log_has": "dry-run: route (answer|job\\(front\\))"
    },
    "limit_ms": 1500,
    "latency_to": "^dry-run: route",
-   "note": "'open {host}/page2.html' may stay a fixed phrase (act open, no route line); then the row reads the act"
+   "note": "a single small act stays a talk tag (jobsSmallActsInTalk), so answer or a front job both pass"
   },
   {
    "id": "J16.2",

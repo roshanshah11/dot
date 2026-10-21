@@ -552,3 +552,13 @@ final class ReviewFixWordTests: XCTestCase {
         XCTAssertFalse(PageCommitRule.spacePresses(tag: "body", role: "", type: ""))
     }
 }
+
+final class SingleActURLTests: XCTestCase {
+    func testAColonInAURLIsNoClauseBreak() {
+        XCTAssertTrue(JobWords.isSingleAct("open 127.0.0.1:8766/page2.html in a new tab"))
+        XCTAssertTrue(JobWords.isSingleAct("open https://example.com/x"))
+        XCTAssertFalse(JobWords.isSingleAct("open page one, then page two"))
+        XCTAssertFalse(JobWords.isSingleAct("click export: then the save button"))
+        XCTAssertFalse(JobWords.isSingleAct("in a separate tab, open 127.0.0.1:8766/page1.html"))
+    }
+}
