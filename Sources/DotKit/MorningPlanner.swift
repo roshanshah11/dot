@@ -127,7 +127,7 @@ public enum MorningPlanner {
     }
 
     /// The card's header, short enough to never be cut, since the card lists the things right under it (10-21: "afternoon.
-    /// i can do 5 things today like prepping raine..." was all he could see, and it told him nothing).
+    /// i can do 5 things today like prepping ..." was all he could see, and it told him nothing).
     public static func header(count: Int, hour: Int) -> String {
         let opener = hour < 12 ? "this morning" : (hour < 17 ? "this afternoon" : "tonight")
         return "\(opener), i can do \(count == 1 ? "this" : "these \(count)") for you"

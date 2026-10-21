@@ -193,7 +193,7 @@ final class HUDModel: ObservableObject {
     @Published var collapsed = false { didSet { if oldValue != collapsed { onCollapseChanged?() } } }
     var onCollapseChanged: (() -> Void)?
     /// The notch only while he talks (decided item 21, `notchTalkOnly`): agents, jobs, notices with an action and the
-    /// morning card live in the stack at the top right; idle statuses, errors and plain notices go to the orb.
+    /// morning card live in the stack at the bottom right; idle statuses, errors and plain notices go to the orb.
     @Published var talkOnly = false
     /// A consent card opens the notch (off by default: the stack has it).
     var consentInNotch = false
