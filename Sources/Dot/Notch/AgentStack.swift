@@ -3,7 +3,8 @@ import Combine
 import DotKit
 import SwiftUI
 
-/// The stack at the top right of the notch's screen, under the menu bar (decided item 20, HeyClicky's way):
+/// The stack at the bottom right of the notch's screen, above the Dock (decided item 20 put it at the top right,
+/// HeyClicky's corner; on 2026-10-21 he moved it because it sat on Comet's assistant button):
 /// agents, jobs that run behind his window, consent cards, notices that have an action, the morning card.
 /// A new card shows for 5 s, then folds to a 40 pt round avatar with a breathing ring; hover opens it (the last
 /// 3 steps, the elapsed time, stop, open in Home or show me, a reply field); done is a check and one line for
@@ -103,9 +104,9 @@ final class StackModel: ObservableObject {
     static let cardWidth: CGFloat = 270
     /// Room around the chips for the glow, inside the window (a window can't draw outside its frame).
     static let pad: CGFloat = 16
-    /// Where the drawn chip's top right corner sits, measured on HeyClicky's frames (04 review): 27 pt in from the
-    /// screen's right edge and 34 pt under the menu bar.
-    static let corner = CGSize(width: 27, height: 34)
+    /// Where the drawn stack's bottom right corner sits: 20 pt in from the screen's right edge and 20 pt above the
+    /// bottom of its visible frame (above the Dock when it shows). The newest chip is nearest the corner; cards grow up.
+    static let corner = CGSize(width: 20, height: 20)
     /// Each drawn chip's frame in the stack's own coordinates (top-left origin), for letting clicks through and for
     /// hover (StackHover).
     var chipFrames: [StackChipFrame] = []
@@ -331,10 +332,10 @@ final class AgentStack {
         NSScreen.screens.first(where: { $0.safeAreaInsets.top > 0 }) ?? NSScreen.main ?? NSScreen.screens.first
     }
 
-    /// The window, placed so the drawn chip's corner lands where HeyClicky's does (StackModel.corner, less the padding).
+    /// The window, placed so the drawing's bottom right corner lands on StackModel.corner (less the padding).
     static func frame(fitting size: CGSize, in visibleFrame: CGRect) -> CGRect {
         let inX = StackModel.corner.width - StackModel.pad, inY = StackModel.corner.height - StackModel.pad
-        return CGRect(x: visibleFrame.maxX - inX - size.width, y: visibleFrame.maxY - inY - size.height, width: size.width, height: size.height)
+        return CGRect(x: visibleFrame.maxX - inX - size.width, y: visibleFrame.minY + inY, width: size.width, height: size.height)
     }
 
     private var visibleFrame: CGRect { anchorFrame?() ?? Self.anchorScreen()?.visibleFrame ?? CGRect(x: 0, y: 0, width: 1440, height: 875) }
@@ -405,10 +406,11 @@ final class AgentStack {
         guard let panel, panel.isVisible else { return }
         let mouse = mouseLocation()
         let frame = panel.frame
-        // The drawing sits at the window's top right (the window is wider for a moment while it shrinks), and its
-        // coordinates run from the drawing's top left.
+        // The drawing sits at the window's bottom right (the window is bigger for a moment while it shrinks), and its
+        // coordinates run down from the drawing's top left.
         let width = model.contentSize.width > 0 ? min(model.contentSize.width, frame.width) : frame.width
-        let point = CGPoint(x: mouse.x - (frame.maxX - width), y: frame.maxY - mouse.y)
+        let height = model.contentSize.height > 0 ? min(model.contentSize.height, frame.height) : frame.height
+        let point = CGPoint(x: mouse.x - (frame.maxX - width), y: frame.minY + height - mouse.y)
         let under = model.chipFrames.first { $0.rect.insetBy(dx: -2, dy: -2).contains(point) }?.id
         let through = under == nil && model.expanded == nil
         if panel.ignoresMouseEvents != through { panel.ignoresMouseEvents = through }
@@ -459,7 +461,8 @@ struct AgentStackView: View {
 
     var body: some View {
         VStack(alignment: .trailing, spacing: 8) {
-            ForEach(Array(model.shown.enumerated()), id: \.offset) { _, item in
+            // Bottom up: the consent card and the newest chip sit nearest the corner.
+            ForEach(Array(model.shown.reversed().enumerated()), id: \.offset) { _, item in
                 Group {
                     if let chip = item.chip {
                         StackChipView(model: model, chip: chip, presentation: item.presentation)
@@ -479,7 +482,7 @@ struct AgentStackView: View {
         .onPreferenceChange(StackChipFramesKey.self) { frames in model.chipFrames = frames }
         .background(GeometryReader { proxy in Color.clear.preference(key: StackSizeKey.self, value: proxy.size) })
         .onPreferenceChange(StackSizeKey.self) { size in model.contentSize = size }
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
         .animation(.easeOut(duration: 0.2), value: model.shown.map { "\($0.chip?.id ?? "consent")\($0.presentation.rawValue)" })
     }
 }

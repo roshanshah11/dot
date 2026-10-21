@@ -4,7 +4,7 @@ import Foundation
 // and 22 of the 2026-10-20 fast-lane plan). Pure rules over values the app already has; the app keeps the
 // windows, the timers and the calls.
 
-/// One chip in the stack at the top right: an agent at work, a job running behind his window, a consent
+/// One chip in the stack at the bottom right: an agent at work, a job running behind his window, a consent
 /// card, a notice that has an action, the morning card. HeyClicky's way: a new card shows for 5 s, then
 /// folds to a 40 pt round avatar with a breathing ring; hover opens it; done is a check and one line for
 /// 8 s; failed, stopped or interrupted is a red or amber mark and one line for 15 s; what needs him stays.

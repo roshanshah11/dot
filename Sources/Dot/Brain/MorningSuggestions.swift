@@ -71,8 +71,7 @@ final class MorningSuggestions {
         shownToday += 1
         lastShownAt = Date()
         offered = Dictionary(items.map { ($0.key, $0) }, uniquingKeysWith: { a, _ in a })
-        let titles = items.contains { $0.title != nil } ? items.map(MorningPlanner.greetingWords) : []
-        let card = MorningCard(greeting: MorningPlanner.greeting(count: items.count, hour: hour, titles: titles),
+        let card = MorningCard(greeting: MorningPlanner.header(count: items.count, hour: hour),
                                items: items.map { MorningCard.Item(id: $0.key, text: $0.text, brief: $0.brief) })
         hud.presentMorning(card)
         Log.info("morning: \(items.count) offer(s)\(scout != nil ? " from the scout" : ""): " + items.map { Log.short($0.text, 50) }.joined(separator: " | "))

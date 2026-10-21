@@ -126,6 +126,13 @@ public enum MorningPlanner {
         return Array(out.prefix(limit))
     }
 
+    /// The card's header, short enough to never be cut, since the card lists the things right under it (10-21: "afternoon.
+    /// i can do 5 things today like prepping raine..." was all he could see, and it told him nothing).
+    public static func header(count: Int, hour: Int) -> String {
+        let opener = hour < 12 ? "this morning" : (hour < 17 ? "this afternoon" : "tonight")
+        return "\(opener), i can do \(count == 1 ? "this" : "these \(count)") for you"
+    }
+
     /// "morning. i can do 5 things for you today." With the scout's titles it names the first two or
     /// three (MB-06): "morning. i can do 5 things today, like prepping Citizen and the week plan."
     public static func greeting(count: Int, hour: Int, titles: [String] = []) -> String {

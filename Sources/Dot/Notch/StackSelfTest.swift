@@ -38,8 +38,8 @@ enum StackSelfTest {
         check(!up.isEmpty, "the stack window came up")
         if let first = up.first?.frame {
             let inX = StackModel.corner.width - StackModel.pad, inY = StackModel.corner.height - StackModel.pad
-            check(abs(first.maxX - (-30_000 + 1440 - inX)) < 0.5 && abs(first.maxY - (-30_000 + 875 - inY)) < 0.5,
-                  "the chip's corner 27 pt in from the right and 34 pt under the menu bar (window maxX \(first.maxX), maxY \(first.maxY))")
+            check(abs(first.maxX - (-30_000 + 1440 - inX)) < 0.5 && abs(first.minY - (-30_000 + inY)) < 0.5,
+                  "the stack's corner 20 pt in from the right and 20 pt above the bottom (window maxX \(first.maxX), minY \(first.minY))")
         }
         if job {
             let paused = samples.filter { $0.t >= 4.6 && $0.t <= 6.9 }
@@ -87,9 +87,9 @@ enum StackSelfTest {
             return false
         }
         check(folded.width <= 72, "starts as the 40 pt avatar (window \(Int(folded.width)) pt wide)")
-        // The avatar's centre: the drawing's top right corner, in by the padding and half the avatar.
+        // The avatar's centre: the drawing's bottom right corner, in by the padding and half the avatar.
         let inset = StackModel.pad + AgentChip.avatarSize / 2
-        let avatar = CGPoint(x: folded.maxX - inset, y: folded.maxY - inset)
+        let avatar = CGPoint(x: folded.maxX - inset, y: folded.minY + inset)
 
         // A quick pass over it opens nothing.
         pointer = avatar

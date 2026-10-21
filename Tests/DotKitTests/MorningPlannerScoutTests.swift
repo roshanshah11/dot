@@ -79,3 +79,13 @@ final class MorningPlannerScoutTests: XCTestCase {
         XCTAssertEqual(template.handoffBrief, "[suggestion] " + template.brief)
     }
 }
+
+/// The card's header (10-21): short, and the things themselves are listed under it.
+final class MorningHeaderTests: XCTestCase {
+    func testTheHeaderFitsAndNamesTheCount() {
+        XCTAssertEqual(MorningPlanner.header(count: 5, hour: 14), "this afternoon, i can do these 5 for you")
+        XCTAssertEqual(MorningPlanner.header(count: 1, hour: 8), "this morning, i can do this for you")
+        XCTAssertEqual(MorningPlanner.header(count: 3, hour: 20), "tonight, i can do these 3 for you")
+        XCTAssertLessThanOrEqual(MorningPlanner.header(count: 12, hour: 14).count, 42)
+    }
+}

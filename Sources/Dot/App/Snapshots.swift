@@ -210,7 +210,7 @@ enum Snapshots {
         notice.detail = notice.line
         notice.actionTitle = "undo"
         var morning = StackChip(id: "morning", kind: .notice, title: "morning", line: "", state: .notice)
-        morning.morning = MorningCard(greeting: "morning. i can do 3 things for you today.", items: [
+        morning.morning = MorningCard(greeting: MorningPlanner.header(count: 3, hour: 14), items: [
             MorningCard.Item(id: "a", text: "prep the Northwind Bank application, due today", brief: ""),
             MorningCard.Item(id: "b", text: "a one-page brief on Alex Example before 12:30", brief: ""),
             MorningCard.Item(id: "c", text: "draft a reply to Sam Rivera about the COURSE 101 study group", brief: "")])
@@ -236,7 +236,7 @@ enum Snapshots {
             ("muted-done-text", make([muted])),
             ("consent-card", make(Array(many.prefix(2))) { m in m.consent = consent; m.consentWaiting = 1; m.consentShownAt = now }),
             ("notice-card", make([notice])),
-            ("morning-card", make([morning])),
+            ("morning-card", make([morning]) { m in m.morningExpanded = true }),
             ("job-running", make([jobRunning])),
             ("job-folded", make([jobFolded])),
             ("job-paused", make([jobPaused])),

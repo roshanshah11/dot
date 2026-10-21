@@ -168,10 +168,10 @@ struct DotConfig: Codable {
     /// "window": a behind job gets a Comet window of its own behind his app. "hidden" is a later item.
     var behindMode = "window"
 
-    // 04 of the 2026-10-20 fast-lane plan: the stack at the top right, the notch only while talking.
+    // 04 of the 2026-10-20 fast-lane plan: the stack (bottom right since 10-21), the notch only while talking.
     /// The notch shows only while he talks (key down through the answer, the typed field, a typed or muted answer for
     /// its reading time). Agents, jobs, consent cards, notices with an action and the morning card are cards in the stack
-    /// at the top right; idle statuses and plain notices are the orb's bubble. Off: the notch as it was before 04.
+    /// at the bottom right; idle statuses and plain notices are the orb's bubble. Off: the notch as it was before 04.
     var notchTalkOnly = true
     /// A consent card opens the notch instead of showing as a card in the stack.
     var consentInNotch = false

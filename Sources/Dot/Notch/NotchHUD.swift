@@ -496,10 +496,11 @@ final class NotchHUD {
 
     func presentMorning(_ card: MorningCard) {
         model.morning = card
-        model.morningExpanded = false
+        // The things themselves show from the start; a teaser behind "show me" told him nothing (10-21).
+        model.morningExpanded = true
         if model.talkOnly, let stack {
             // A card in the stack (decided item 21): it never opens the notch.
-            stack.model.morningExpanded = false
+            stack.model.morningExpanded = true
             stack.upsert(morningChip(card))
             return
         }
@@ -1563,23 +1564,29 @@ struct MorningCardView: View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 8) {
                 Image(systemName: "sun.max.fill").font(.system(size: 12, weight: .semibold)).foregroundStyle(accent)
-                Text(card.greeting).font(.system(size: 13, weight: .semibold)).foregroundStyle(NotchInk.text).lineLimit(2)
+                Text(card.greeting).font(.system(size: 13, weight: .semibold)).foregroundStyle(NotchInk.text)
+                    .fixedSize(horizontal: false, vertical: true)
                 Spacer(minLength: 4)
                 Button(action: dismiss) { Image(systemName: "xmark").font(.system(size: 9, weight: .bold)) }
                     .buttonStyle(.plain).foregroundStyle(NotchInk.text.opacity(0.4))
             }
             if expanded {
+                // Each thing whole on its own line, its buttons under it: beside the text they left it a word a line.
                 ForEach(card.items) { item in
-                    HStack(alignment: .top, spacing: 8) {
-                        Circle().fill(accent.opacity(0.7)).frame(width: 5, height: 5).padding(.top, 6)
-                        Text(item.text).font(.system(size: 12.5)).foregroundStyle(NotchInk.text.opacity(0.9)).lineLimit(2)
-                            .fixedSize(horizontal: false, vertical: true)
-                        Spacer(minLength: 6)
-                        GelButton(title: "do it", accent: accent, primary: true) { decide(item, true) }
-                        GelButton(title: "skip", accent: accent, primary: false) { decide(item, false) }
+                    VStack(alignment: .leading, spacing: 5) {
+                        HStack(alignment: .top, spacing: 8) {
+                            Circle().fill(accent.opacity(0.7)).frame(width: 5, height: 5).padding(.top, 6)
+                            Text(item.text).font(.system(size: 12.5)).foregroundStyle(NotchInk.text.opacity(0.9))
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                        HStack(spacing: 6) {
+                            Spacer()
+                            GelButton(title: "do it", accent: accent, primary: true) { decide(item, true) }
+                            GelButton(title: "skip", accent: accent, primary: false) { decide(item, false) }
+                        }
                     }
                 }
-                HStack { Spacer(); GelButton(title: "that's all", accent: accent, primary: false, action: dismiss) }
+                HStack { Spacer(); GelButton(title: "not today", accent: accent, primary: false, action: dismiss) }
             } else {
                 HStack(spacing: 8) {
                     GelButton(title: "show me", accent: accent, primary: true) { withAnimation(.easeOut(duration: 0.2)) { expanded = true } }
