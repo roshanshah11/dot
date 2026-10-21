@@ -1,0 +1,23 @@
+{
+ "version": 1,
+ "about": "Placeholder library in the shape of ~/Dot/spotify/library.json (scripts/dot-spotify-library.py). Nothing here is anyone's real Spotify: the ids are made up, and the bench serves this file at /spotify/library.json.",
+ "mtime": 1792540000.0,
+ "liked": "spotify:user:example:collection",
+ "playlists": [
+  {"uri": "spotify:playlist:Fixture000000000000001", "name": "Study Mix", "owner_is_him": true, "order": 0},
+  {"uri": "spotify:playlist:Fixture000000000000002", "name": "Road Trip 🚗", "owner_is_him": true, "order": 1},
+  {"uri": "spotify:playlist:Fixture000000000000003", "name": "Gym Playlist", "owner_is_him": true, "order": 2},
+  {"uri": "spotify:playlist:Fixture000000000000004", "name": "Rock & Roll Classics", "owner_is_him": false, "order": 3},
+  {"uri": "spotify:playlist:Fixture000000000000005", "name": "Café Jazz", "owner_is_him": true, "order": 4},
+  {"uri": "spotify:playlist:Fixture000000000000006", "name": "road trip", "owner_is_him": false, "order": 5},
+  {"uri": "spotify:playlist:Fixture000000000000007", "name": "Late Night Study", "owner_is_him": false, "order": 6},
+  {"uri": "spotify:playlist:Fixture000000000000008", "name": "Rainy Days", "owner_is_him": true, "order": 7},
+  {"uri": "spotify:playlist:Fixture000000000000009", "name": "Lo-Fi Beats", "owner_is_him": false, "order": 8},
+  {"uri": "spotify:playlist:Fixture000000000000010", "name": "Summer '24", "owner_is_him": true, "order": 9},
+  {"uri": "spotify:playlist:Fixture000000000000011", "name": "Sunday Morning", "owner_is_him": false, "order": 10},
+  {"uri": "spotify:playlist:Fixture000000000000012", "name": "My Running Mix", "owner_is_him": true, "order": 11},
+  {"uri": "spotify:playlist:Fixture000000000000013", "name": "Late Night Study Session", "owner_is_him": true, "order": 12},
+  {"uri": "spotify:playlist:not-a-real-id", "name": "Dropped: a bad uri", "owner_is_him": true, "order": 13},
+  {"uri": "spotify:playlist:Fixture000000000000014", "name": "", "owner_is_him": true, "order": 14}
+ ]
+}

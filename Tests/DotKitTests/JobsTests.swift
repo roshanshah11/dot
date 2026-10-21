@@ -446,6 +446,35 @@ final class SpotifyPlayTests: XCTestCase {
         if case .openURL(let url, _)? = ActionPhrases.match("look up Sam Rivera on spotify") { XCTAssertTrue(url.hasPrefix("spotify:search:")) } else { XCTFail("look up stays a search") }
     }
 
+    /// "my" survives the phrase as `mine` (2026-10-21: dropping it played a stranger's public playlist).
+    func testMyPlaylists() {
+        let mine = { (words: String) in ActionCommand.play(SpotifyPlay(kind: .playlist, words: words, mine: true)) }
+        XCTAssertEqual(ActionPhrases.match("play my road trip playlist on spotify"), mine("road trip"))
+        XCTAssertEqual(ActionPhrases.match("play my road trip playlist"), mine("road trip"))
+        XCTAssertEqual(ActionPhrases.match("can you put on my Study Mix on spotify"), mine("Study Mix"))
+        XCTAssertEqual(ActionPhrases.match("play my study mix on spotify please"), mine("study mix"))
+        XCTAssertEqual(ActionPhrases.match("open spotify to my road trip playlist"), mine("road trip"))
+        XCTAssertEqual(ActionPhrases.match("find my road trip playlist"), mine("road trip"))
+        XCTAssertEqual(ActionPhrases.match("play my liked songs"), mine("liked songs"))
+        XCTAssertEqual(ActionPhrases.match("play liked songs on spotify"), mine("liked songs"))
+        XCTAssertEqual(ActionPhrases.match("put on my saved songs"), mine("liked songs"))
+        XCTAssertEqual(ActionPhrases.match("play my liked songs on spotify"), mine("liked songs"))
+        // without "my": not his by the phrase (the library still plays his on an exact or every-word match)
+        XCTAssertEqual(ActionPhrases.match("play the road trip playlist"), play(.playlist, "road trip"))
+        XCTAssertEqual(ActionPhrases.match("play lofi on spotify"), play(.playlist, "lofi"))
+        // "my music" is still play/pause, and a song or an album keeps its kind
+        XCTAssertEqual(ActionPhrases.match("play my music"), .media(.playPause))
+        XCTAssertEqual(ActionPhrases.match("play my music on spotify"), .media(.playPause))
+        if case .play(let p)? = ActionPhrases.match("play my Blue Sky album on spotify") { XCTAssertEqual(p.kind, .album); XCTAssertEqual(p.words, "Blue Sky") } else { XCTFail("album") }
+        // the tag and the job tool carry it the same way
+        XCTAssertEqual(ActionTags.make(kind: "PLAY", payload: "playlist:my road trip"), mine("road trip"))
+        XCTAssertEqual(SpotifyPlay.make(.playlist, "My Study Mix"), SpotifyPlay(kind: .playlist, words: "Study Mix", mine: true))
+        XCTAssertEqual(SpotifyPlay.make(.playlist, "study mix"), SpotifyPlay(kind: .playlist, words: "study mix"))
+        XCTAssertNil(SpotifyPlay.make(.playlist, "my "))
+        XCTAssertEqual(mine("road trip").object, "playlist:my road trip")
+        XCTAssertEqual(play(.playlist, "road trip").object, "playlist:road trip")
+    }
+
     func testHitLines() {
         let out = "spotify:playlist:37i9dQZF1DWZIOAPKUdaKS\tFocus Piano\nspotify:playlist:37i9dQZF1DWZIOAPKUdaKS\tFocus Piano\nspotify:playlist:short123\tBad\nspotify:playlist:../../etc/passwdxxxxxxxx\tBad\nspotify:track:4uAjKH707f6tvAp9NqPe5w\tA Song\n"
         let hits = SpotifyPlay.hits(out)

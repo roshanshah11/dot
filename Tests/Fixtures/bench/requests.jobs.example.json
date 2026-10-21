@@ -1018,6 +1018,50 @@
    "limit_ms": 4000
   },
   {
+   "id": "S7",
+   "kind": "new",
+   "group": "jobs",
+   "ask": "play my study mix playlist",
+   "flags": [],
+   "setup": {
+    "front": "safari",
+    "open_url": "{base}/index.html"
+   },
+   "expect": {
+    "act": {
+     "verb": "play"
+    },
+    "log_has": "bench dry play spotify:playlist:Fixture000000000000001 from library",
+    "no_turn": true,
+    "no_job": true,
+    "no_agent": true
+   },
+   "limit_ms": 4000
+  },
+  {
+   "id": "S8",
+   "kind": "new",
+   "group": "jobs",
+   "ask": "play my ocean waves playlist",
+   "flags": [],
+   "setup": {
+    "front": "safari",
+    "open_url": "{base}/index.html"
+   },
+   "expect": {
+    "act": {
+     "verb": "play",
+     "ok": false
+    },
+    "log_has": "library: no ocean waves in \\d+",
+    "log_lacks": "dry play",
+    "no_turn": true,
+    "no_job": true,
+    "no_agent": true
+   },
+   "limit_ms": 4000
+  },
+  {
    "id": "M1",
    "kind": "new",
    "group": "jobs",

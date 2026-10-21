@@ -25,6 +25,8 @@ final class Hands {
         var commitLabel: String?
         /// The target could not be named ("open chain stream"): ask one short question.
         var unresolved = false
+        /// What the line offers to do instead ("want the public one?"): his yes runs it.
+        var offer: ActionCommand?
     }
 
     /// Bench mode (`Dot --ask --bench`): actions only on the bench fixture, Comet only on its own port.
@@ -107,16 +109,35 @@ final class Hands {
         }
     }
 
-    /// Find the top result on open.spotify.com (a logged-out headless browser) and start it with Spotify's AppleScript.
-    /// The bench finds on the fixture and never plays.
+    /// A playlist from his own library first (2026-10-21: "play my ... playlist" played a stranger's public one); else find
+    /// the top result on open.spotify.com (a logged-out headless browser). Either starts with Spotify's AppleScript. The
+    /// bench reads its fixture library, finds on the fixture and never plays.
     private func playSpotify(_ p: SpotifyPlay) async -> Outcome {
         let started = Date()
         var env: [String: String] = [:]
         if bench != nil {
             env["DOT_SPOTIFY_BASE"] = "http://127.0.0.1:8766/spotify"
+            env["DOT_SPOTIFY_LIBRARY"] = "http://127.0.0.1:8766/spotify/library.json"
             env["DOT_SPOTIFY_DRY"] = "1"
         } else if NSWorkspace.shared.urlForApplication(withBundleIdentifier: "com.spotify.client") == nil {
             return Outcome(ok: false, line: "spotify isn't on this mac.", detail: "no spotify app")
+        }
+        if p.kind == .playlist {
+            // About 50 ms from the index, a third of a second when Spotify wrote since the last read.
+            let library = await Self.spotifyScript(["library"], env: env, timeout: 20)
+            let entries = SpotifyLibrary.parse(library.out)
+            let libraryMs = Int(Date().timeIntervalSince(started) * 1000)
+            if let own = SpotifyLibrary.pick(p, in: entries) {
+                return await startSpotify(uri: own.uri, title: own.name, kind: p.kind, env: env, started: started, findMs: libraryMs, from: "library")
+            }
+            if p.mine {
+                // His own was asked for: nothing public plays unless he says yes to it.
+                let said = Log.short(p.words.lowercased(), 40)
+                let line = entries.isEmpty ? "i can't read your spotify library right now. want a public playlist for \(said)?"
+                    : "you don't have a playlist called \(said). want the public one?"
+                Log.info("spotify: none of his \(entries.count) library entries is \"\(Log.short(p.words, 60))\" (\(libraryMs) ms, exit \(library.code))")
+                return Outcome(ok: false, line: line, detail: "library: no \(p.words) in \(entries.count)", offer: .play(SpotifyPlay(kind: .playlist, words: p.words)))
+            }
         }
         let words = p.words.split(separator: " ").map(String.init)
         // The search instance can be gone (a sleep, or an idle-instance sweep): find then warms it first, about 30 s.
@@ -130,32 +151,37 @@ final class Hands {
             return Outcome(ok: false, line: warming ? "one sec, spotify's search is starting; ask me again in a moment." : "i couldn't find a \(p.kind.rawValue) for \(p.words.lowercased()) on spotify.",
                            detail: "spotify find \(p.kind.rawValue) \(p.words): exit \(find.code) \(Log.short(find.out, 60))")
         }
-        let title = Log.short(top.title.lowercased(), 40)
+        return await startSpotify(uri: top.uri, title: top.title, kind: p.kind, env: env, started: started, findMs: findMs, from: "search")
+    }
+
+    /// Start a found URI (his library's or the search's) and check it is playing; the bench only logs a dry play.
+    private func startSpotify(uri: String, title fullTitle: String, kind: SpotifyPlay.Kind, env: [String: String], started: Date, findMs: Int, from: String) async -> Outcome {
+        let title = Log.short(fullTitle.lowercased(), 40)
         if bench != nil {
-            let dry = await Self.spotifyScript(["play", top.uri], env: env, timeout: 3)
-            Log.info("act: play \(top.uri) \"\(top.title)\" ok \(Int(Date().timeIntervalSince(started) * 1000)) ms (find \(findMs) ms, \(dry.out.trimmingCharacters(in: .whitespacesAndNewlines)))")
-            return Outcome(ok: true, line: "playing \(title).", detail: "bench dry play \(top.uri)")
+            let dry = await Self.spotifyScript(["play", uri], env: env, timeout: 3)
+            Log.info("act: play \(uri) \"\(fullTitle)\" ok \(Int(Date().timeIntervalSince(started) * 1000)) ms (\(from) \(findMs) ms, \(dry.out.trimmingCharacters(in: .whitespacesAndNewlines)))")
+            return Outcome(ok: true, line: "playing \(title).", detail: "bench dry play \(uri) from \(from)")
         }
         let playStart = Date()
-        _ = await Self.spotifyScript(["play", top.uri], env: env, timeout: 5)
+        _ = await Self.spotifyScript(["play", uri], env: env, timeout: 5)
         var state = await pollPlaying()
         // A playlist URI that `play track` doesn't start: its first track, in the playlist's context.
-        if !state.hasPrefix("playing"), p.kind == .playlist {
-            let first = await Self.spotifyScript(["first-track", top.uri], env: env, timeout: 8)
+        if !state.hasPrefix("playing"), kind == .playlist, uri.hasPrefix("spotify:playlist:") {
+            let first = await Self.spotifyScript(["first-track", uri], env: env, timeout: 8)
             let track = first.out.trimmingCharacters(in: .whitespacesAndNewlines)
             if track.hasPrefix("spotify:track:") {
-                _ = await Self.spotifyScript(["play-in", track, top.uri], env: env, timeout: 5)
+                _ = await Self.spotifyScript(["play-in", track, uri], env: env, timeout: 5)
                 state = await pollPlaying()
             }
         }
         let playMs = Int(Date().timeIntervalSince(playStart) * 1000)
         let ok = state.hasPrefix("playing")
-        Log.info("act: play \(top.uri) \"\(top.title)\" \(ok ? "ok" : "fail") \(Int(Date().timeIntervalSince(started) * 1000)) ms (find \(findMs) ms, play \(playMs) ms, state \(state.split(separator: "|").first ?? "?"))")
+        Log.info("act: play \(uri) \"\(fullTitle)\" \(ok ? "ok" : "fail") \(Int(Date().timeIntervalSince(started) * 1000)) ms (\(from) \(findMs) ms, play \(playMs) ms, state \(state.split(separator: "|").first ?? "?"))")
         if !ok {
-            if let url = URL(string: top.uri) { _ = await openSpotify(url) }
+            if let url = URL(string: uri) { _ = await openSpotify(url) }
             return Outcome(ok: false, line: "spotify didn't start it.", detail: "spotify state \(state)")
         }
-        return Outcome(ok: true, line: "playing \(title).", detail: "spotify \(top.uri)")
+        return Outcome(ok: true, line: "playing \(title).", detail: "spotify \(uri) from \(from)")
     }
 
     private func pollPlaying() async -> String {
@@ -168,11 +194,14 @@ final class Hands {
         return state
     }
 
-    /// At launch, once: the search instance comes up before his first ask (a cold start is about 36 s).
+    /// At launch, once: his library's index is fresh and the search instance comes up before his first ask (a cold start
+    /// is about 36 s).
     static func warmSpotify() {
         guard NSWorkspace.shared.urlForApplication(withBundleIdentifier: "com.spotify.client") != nil else { return }
         let started = Date()
         Task.detached {
+            let library = await spotifyScript(["library"], env: [:], timeout: 60)
+            Log.info("spotify: library \(SpotifyLibrary.parse(library.out).count) entries, exit \(library.code), in \(Int(Date().timeIntervalSince(started) * 1000)) ms")
             let r = await spotifyScript(["warm"], env: [:], timeout: 120)
             Log.info("spotify: \(r.out.trimmingCharacters(in: .whitespacesAndNewlines)) in \(Int(Date().timeIntervalSince(started) * 1000)) ms")
         }

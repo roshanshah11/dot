@@ -13,6 +13,7 @@ Endpoints:
     POST /event                  a JSON object from bench.js; logged with the server's timestamp
     GET  /events?since=<ts>      NDJSON of logged lines with ts > since (optional &type=<type>, &kind=get|event)
     GET  /health                 {"ok": true, ...}
+    GET  /spotify/search/<q>/<kind>s, /spotify/library.json   Dot's Spotify find and his library, as placeholders
 /events and /health are not logged themselves (the runner polls them).
 
 Every log line has: ts (epoch seconds, float), time (local ISO with ms), kind ("get" or "event"),
@@ -135,6 +136,13 @@ def make_handler(root, log, quiet):
                 self.end_headers()
                 self.wfile.write(body)
                 return
+            # His own library in the bench (2026-10-21): placeholder playlists in the shape of ~/Dot/spotify/library.json
+            # (Tests/Fixtures/spotify/library.json), read for "play my <name> playlist" instead of Spotify's cache.
+            if parts.path == '/spotify/library.json':
+                try:
+                    return self._json(200, (root.parent / 'spotify' / 'library.json').read_bytes())
+                except OSError:
+                    return self._json(404, {'error': 'no spotify fixture library'})
             super().do_GET()
 
         def send_response(self, code, message=None):
