@@ -1158,7 +1158,7 @@ def comet_show(port, urls, base, log=print):
     """Show urls[-1] in exactly one fixture tab of the bench Comet (visiting urls in order builds
     history), close its other fixture and blank tabs, and activate that tab. Comet's own pages
     (sidecar, onboarding) are left alone. Returns the number of fixture tabs left (1)."""
-    cdp = CDP(port)
+    cdp = CDP(port, timeout=30.0)  # a just-started bench Comet's first tab can take 10 s or more (row 2 on 10-21)
     try:
         pages = cdp.pages()
         fixture = [p for p in pages if p.get('url', '').startswith(base)]

@@ -189,7 +189,8 @@
      "ask": "show me",
      "after": "job\\[[^\\]]+\\] (done|rang)"
     }
-   ]
+   ],
+   "latency_to": "job\\[[^\\]]+\\] shown"
   },
   {
    "id": "J7",

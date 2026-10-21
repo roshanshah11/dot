@@ -235,19 +235,25 @@ final class PageDriver {
     func createBehind(url: String) async -> Bool {
         if let e = await connect() { log("page: \(e)"); return false }
         let front = NSWorkspace.shared.frontmostApplication
-        let params: [String: Any] = ["url": url, "newWindow": true, "background": false, "focus": false, "width": 1280, "height": 900]
+        // The window opens on about:blank, so attaching and enabling the domains doesn't wait on the first page load
+        // (Runtime.enable on a loading new window took 5 s, and the open 11.5 s, bench J3 on 10-21); then it navigates.
+        let params: [String: Any] = ["url": "about:blank", "newWindow": true, "background": false, "focus": false, "width": 1280, "height": 900]
         guard let r = await cdp.send("Target.createTarget", params), let id = r["targetId"] as? String else {
             log("page: createTarget failed: \(cdp.lastError ?? "?")")
             return false
         }
         ownsWindow = true
         handBackFocus(to: front)
+        let started = Date()
         let ok = await attach(id, enable: true)
         handBackFocus(to: front)
-        // The first load in a new window is slow inside the browser (about 4 s): wait for it before the first look.
-        if ok { mainFrameLoading = true; await settle(limit: 10) }
+        guard ok, let s = sessionId else { return false }
+        log("page: behind window ready in \(Int(Date().timeIntervalSince(started) * 1000)) ms")
+        mainFrameLoading = true
+        _ = await cdp.send("Page.navigate", ["url": url], session: s)
+        await settle(limit: 10)
         handBackFocus(to: front)
-        return ok
+        return true
     }
 
     private func handBackFocus(to front: NSRunningApplication?) {
