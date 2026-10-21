@@ -57,7 +57,7 @@ public enum HandsMCPWire {
         ("upload", "Put a file into a file input by ref: only a file he named, one you made in your output folder, or one you downloaded in this job.",
          schema(["ref": str, "path": str], required: ["ref", "path"])),
         ("show", "Bring your window in front of him (what \"show me\" does).", schema([:])),
-        ("play", "Play music in Spotify: kind playlist, track, album or artist, and the words to find it.",
+        ("play", "Play music in Spotify: kind playlist, track, album or artist, and the words to find it. Start the words with \"my\" for one of his own playlists (\"my road trip\"); that never plays a public one.",
          schema(["kind": ["type": "string", "enum": ["playlist", "track", "album", "artist"]], "words": str], required: ["words"])),
     ]
 

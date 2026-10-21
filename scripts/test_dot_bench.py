@@ -626,6 +626,14 @@ class BenchServer(unittest.TestCase):
         self.assertTrue(any(e['type'] == 'bad_event' for e in evs))
         self.assertTrue(any(e['type'] == 'get' and e['status'] == 404 for e in evs))
 
+    def test_spotify_library(self):
+        # "play my <name> playlist" in the bench reads this placeholder library, never his Spotify cache
+        with urllib.request.urlopen(self.base + '/spotify/library.json', timeout=3) as r:
+            self.assertEqual(r.status, 200)
+            doc = json.loads(r.read())
+        self.assertEqual(doc['liked'], 'spotify:user:example:collection')
+        self.assertTrue(any(p['name'] == 'Study Mix' and p['owner_is_him'] for p in doc['playlists']))
+
     def test_reset_only(self):
         with tempfile.TemporaryDirectory() as d:
             p = Path(d) / 'sub' / 'log.jsonl'

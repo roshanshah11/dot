@@ -5,7 +5,10 @@ export HB_INST=spotify
 #
 #   dot-spotify.sh warm                         start the `spotify` headless instance, logged out; prints "warm <port>"
 #   dot-spotify.sh find <kind> <words...>       up to 5 lines "spotify:<kind>:<id><TAB><title>"; exit 3 when none
-#   dot-spotify.sh play <spotify:kind:id>       play it (DOT_SPOTIFY_DRY=1: print "dry play <uri>" and nothing else)
+#   dot-spotify.sh library                      his own playlists and Liked Songs as JSON lines (dot-spotify-library.py)
+#   dot-spotify.sh mine <words...>              his own playlists that match, up to 5 lines "<uri><TAB><name>"; exit 3 when none
+#   dot-spotify.sh play <spotify:kind:id>       play it (DOT_SPOTIFY_DRY=1: print "dry play <uri>" and nothing else); Liked
+#                                               Songs is spotify:user:<id>:collection
 #   dot-spotify.sh state                        "<state>|<track>|<artist>" or "not running"
 #   dot-spotify.sh alive                        "alive", or "dead" (exit 1) when the search instance is down
 #
@@ -58,6 +61,13 @@ case "$cmd" in
   alive)
     alive && echo alive || { echo dead; exit 1; }
     ;;
+  library)
+    exec /usr/bin/python3 "$(dirname "$0")/dot-spotify-library.py"
+    ;;
+  mine)
+    [ $# -gt 0 ] || { echo "usage: mine <words>"; exit 2; }
+    exec /usr/bin/python3 "$(dirname "$0")/dot-spotify-library.py" match "$@"
+    ;;
   find)
     kind="${1:-playlist}"; [ $# -gt 0 ] && shift
     case "$kind" in playlist|track|album|artist) ;; *) echo "usage: find <playlist|track|album|artist> <words>"; exit 2 ;; esac
@@ -91,7 +101,7 @@ PY
     ;;
   play)
     uri="${1:-}"
-    [[ "$uri" =~ ^spotify:(playlist|track|album|artist):[A-Za-z0-9]{22}$ ]] || { echo "bad uri"; exit 2; }
+    [[ "$uri" =~ ^spotify:(playlist|track|album|artist):[A-Za-z0-9]{22}$ || "$uri" =~ ^spotify:user:[A-Za-z0-9._-]+:collection$ ]] || { echo "bad uri"; exit 2; }
     if [ "${DOT_SPOTIFY_DRY:-0}" = 1 ]; then echo "dry play $uri"; exit 0; fi
     osascript -e "tell application \"Spotify\" to play track \"$uri\"" >/dev/null 2>&1 || { echo "play-failed"; exit 5; }
     "$0" state
@@ -122,7 +132,7 @@ else
 end if' 2>/dev/null || echo "not running"
     ;;
   *)
-    echo "usage: dot-spotify.sh warm | find <kind> <words> | play <uri> | play-in <track> <context> | first-track <playlist uri> | state"
+    echo "usage: dot-spotify.sh warm | find <kind> <words> | library | mine <words> | play <uri> | play-in <track> <context> | first-track <playlist uri> | state"
     exit 2
     ;;
 esac

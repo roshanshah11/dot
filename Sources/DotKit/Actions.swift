@@ -60,7 +60,7 @@ public enum ActionCommand: Equatable, Sendable {
         case .insert(let label, _): return label ?? "the field"
         case .media: return ""
         case .go(let goal): return goal
-        case .play(let p): return "\(p.kind.rawValue):\(p.words)"
+        case .play(let p): return "\(p.kind.rawValue):\(p.mine ? "my " : "")\(p.words)"
         }
     }
 
@@ -179,9 +179,13 @@ public enum ActionPhrases {
     /// His own ways of asking for music by name, which play it (05): "play lofi on spotify", "put on a jazz playlist",
     /// "open spotify to a piano playlist for studying", "find piano playlist i would like need to study".
     static let purpose = #"( (?:for|to) (?:study(?:ing)?|work(?:ing)?|focus(?:ing)?|sleep(?:ing)?|reading|running|the gym|chill(?:ing)?))?"#
-    static let playOnSpotify = re(lead + #"(?:play|put on|queue(?: up)?)(?: me)?(?: some| a| an| the| my)? (.{2,60}?) (?:on|in|from) spotify"# + tail)
-    static let playPlaylist = re(lead + #"(?:play|put on|queue(?: up)?)(?: me)?(?: some| a| an| the| my)? (.{2,50}?) playlist(?:s)?"# + purpose + tail)
-    static let openSpotifyTo = re(lead + #"(?:open|launch|start) spotify (?:to|and play|with|on|for) (?:some |a |an |the |my )?(.{2,60}?)"# + tail)
+    /// "my" stays in the words (SpotifyPlay.make makes it `mine`): "play my road trip playlist" is his own playlist, and on
+    /// 2026-10-21 dropping it here played a stranger's public one.
+    static let playOnSpotify = re(lead + #"(?:play|put on|queue(?: up)?)(?: me)?(?: some| a| an| the)? (.{2,60}?) (?:on|in|from) spotify"# + tail)
+    static let playPlaylist = re(lead + #"(?:play|put on|queue(?: up)?)(?: me)?(?: some| a| an| the)? (.{2,50}?) playlist(?:s)?"# + purpose + tail)
+    static let openSpotifyTo = re(lead + #"(?:open|launch|start) spotify (?:to|and play|with|on|for) (?:some |a |an |the )?(.{2,60}?)"# + tail)
+    /// "play my liked songs", "put on my saved songs on spotify": his Liked Songs.
+    static let playLiked = re(lead + #"(?:play|put on|shuffle|queue(?: up)?)(?: me)?(?: my| the)? (?:liked|saved|favou?rite) (?:songs|tracks|music)(?: (?:on|in|from) spotify)?"# + tail)
     static let findPlaylist = re(lead + #"find (?:a |me a |me |some |me some )?(.{2,40}?) playlists?\b(.{0,50})$"#)
 
     /// The command for a fixed phrase, or nil when the words need the model. `open X` is returned
@@ -206,6 +210,9 @@ public enum ActionPhrases {
         if pause.firstMatch(in: t, range: range) != nil { return .media(.playPause) }
         if let m = spotifyFor.firstMatch(in: t, range: range) {
             return SpotifySearch.command((t as NSString).substring(with: m.range(at: 1)))
+        }
+        if playLiked.firstMatch(in: t, range: range) != nil {
+            return .play(SpotifyPlay(kind: .playlist, words: "liked songs", mine: true))
         }
         // Music by name plays (05); "search", "look up" and "pull up" on spotify stay the search page.
         if let m = playOnSpotify.firstMatch(in: t, range: range) {
@@ -244,19 +251,33 @@ public enum ActionPhrases {
 
 /// Music by name (05): the kind and the words; Dot finds the top Spotify result on open.spotify.com in a logged-out
 /// headless browser and starts it through Spotify's own AppleScript. Spotify's AppleScript has no search, and its window
-/// gives accessibility one element, which is why the 10-19 ask pasted into Finder.
+/// gives accessibility one element, which is why the 10-19 ask pasted into Finder. A playlist is looked for in his own
+/// library first (SpotifyLibrary); "my" (`mine`) looks only there (2026-10-21).
 public struct SpotifyPlay: Equatable, Sendable {
     public enum Kind: String, Equatable, Sendable, CaseIterable { case playlist, track, album, artist }
     public let kind: Kind
     public let words: String
+    /// He said "my": one of his own playlists, never a stranger's public one.
+    public let mine: Bool
+
+    public init(kind: Kind, words: String, mine: Bool = false) {
+        self.kind = kind
+        self.words = words
+        self.mine = mine
+    }
 
     static let vague: Set<String> = ["music", "something", "anything", "a song", "songs", "my music", "it", "some music", "spotify"]
 
-    /// A trimmed kind and words; nil when nothing is left to look for.
+    /// A trimmed kind and words; nil when nothing is left to look for. A leading "my" is his library ("my road trip").
     public static func make(_ kind: Kind, _ raw: String) -> SpotifyPlay? {
-        let words = raw.trimmingCharacters(in: CharacterSet.whitespacesAndNewlines.union(CharacterSet(charactersIn: "\"'.,!?")))
+        var words = raw.trimmingCharacters(in: CharacterSet.whitespacesAndNewlines.union(CharacterSet(charactersIn: "\"'.,!?")))
+        var mine = false
+        if words.lowercased() == "my" || words.lowercased().hasPrefix("my ") {
+            mine = true
+            words = String(words.dropFirst(2)).trimmingCharacters(in: .whitespaces)
+        }
         guard words.contains(where: { $0.isLetter || $0.isNumber }), words.count <= 80 else { return nil }
-        return SpotifyPlay(kind: kind, words: words)
+        return SpotifyPlay(kind: kind, words: words, mine: mine)
     }
 
     /// `[PLAY:kind:words]` or `[PLAY:words]`, or a phrase's words: "music" or "something" is play/pause, a song word

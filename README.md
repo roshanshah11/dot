@@ -242,6 +242,10 @@ MIT. Built by Roshan Shah.
   steps, stop, show me and a reply field. The notch shows only while he talks (`notchTalkOnly`).
 - **Spotify by name.** `[PLAY:playlist:piano study]` and "play X on spotify" find the top result on open.spotify.com in a
   logged-out headless browser (`scripts/dot-spotify.sh`) and start it with Spotify's AppleScript.
+- **His own playlists first.** "Play my X playlist" plays only his own: the playlists in his sidebar and Liked Songs, read
+  from a copy of Spotify's cache (`scripts/dot-spotify-library.py`, indexed at `~/Dot/spotify/library.json`, rebuilt when
+  the cache changes, about 0.4 s; 30 ms otherwise). No match: "you don't have a playlist called X. want the public one?"
+  and his yes plays the public one. Without "my", an exact or every-word match in his library wins over the search.
 - **Watching.** "Keep an eye on X" becomes a routine every 2 hours from 9 am to midnight in watch mode, and speaks only
   when something needs him.
 - **Testing.** `Dot --job-run --comet-port 9471 "<ask>"` runs one real bench job headless (its own socket and log);

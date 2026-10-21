@@ -1700,6 +1700,11 @@ final class Talk {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) { [weak self] in self?.findOnScreen(phrase: phrase, label: Log.short(phrase, 24)) }
         }
         if outcome.unresolved { askedHimAt = Date() }
+        if let offer = outcome.offer {
+            // "you don't have a playlist called x. want the public one?": his yes runs it
+            pendingOffer = (offer, Date().addingTimeInterval(BackOff.replyWindow))
+            askedHimAt = Date()
+        }
         if local {
             if outcome.line.isEmpty { phase = .idle; settle() } else { sayLocal(outcome.line) }
         } else if !outcome.ok, !outcome.line.isEmpty {
@@ -1781,6 +1786,9 @@ final class Talk {
             }
         }
     }
+
+    /// An act Dot offered after one that couldn't be done as asked ("want the public one?"), until when.
+    private var pendingOffer: (ActionCommand, Date)?
 
     // MARK: Suggestions in context (from the noticer: "want the gist of this? say yes.")
     private var pendingSuggestion: (Noticer.Suggestion, Date)?
@@ -1936,6 +1944,16 @@ final class Talk {
         if let match = Self.findWords.firstMatch(in: text, range: range), DocumentReader.key(for: context) != nil {
             let query = (text as NSString).substring(with: match.range(at: 1))
             if !query.lowercased().contains("explain") { return .find(query) }
+        }
+        if let (offer, until) = pendingOffer {
+            pendingOffer = nil
+            if Date() < until {
+                if Self.yesWords.firstMatch(in: text, range: range) != nil {
+                    Log.info("route: his yes to the offer \(offer.verb) \(Log.short(offer.object, 60))")
+                    return .act(offer)
+                }
+                if Self.noWords.firstMatch(in: text, range: range) != nil { return .dismiss }
+            }
         }
         if let (suggestion, until) = pendingSuggestion {
             pendingSuggestion = nil
