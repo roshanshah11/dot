@@ -1,4 +1,5 @@
 import AppKit
+import Carbon
 import DotKit
 import SwiftUI
 
@@ -24,6 +25,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var morning: MorningSuggestions!
     private var routines: RoutineScheduler!
     private let hotkeys = HotkeyMonitor()
+    /// Control+Command+T: today's transcript (10-21).
+    private var transcriptShortcut: GlobalShortcut?
     private var permissionTimer: Timer?
     private var hoverTimer: Timer?
     private var presenceItem: NSMenuItem?
@@ -457,6 +460,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if !Permissions.status().screenRecording { Permissions.requestScreenRecording() }
         if !Permissions.status().accessibility { Permissions.requestAccessibility() }
         startHotkeysWhenTrusted()
+        transcriptShortcut = GlobalShortcut(keyCode: kVK_ANSI_T, modifiers: controlKey | cmdKey, id: 1) {
+            MarkdownViewer.showTranscript(toggle: true)
+        }
         talk.warmUp()
         talk.jobs.warm()
         Log.info("messages: live chat.db readable=\(MessagesProbe.liveReadable())")
@@ -500,6 +506,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         menu.addItem(withTitle: "Ask by typing", action: #selector(askByTyping), keyEquivalent: "")
         menu.addItem(withTitle: "Listen to the lecture", action: #selector(toggleLecture), keyEquivalent: "")
         menu.addItem(withTitle: "Open Dot", action: #selector(openHome), keyEquivalent: "")
+        let transcript = NSMenuItem(title: "Show the transcript", action: #selector(showTranscript), keyEquivalent: "t")
+        transcript.keyEquivalentModifierMask = [.control, .command]
+        menu.addItem(transcript)
         let presence = NSMenuItem(title: "Dot beside the cursor", action: #selector(togglePresence), keyEquivalent: "")
         presence.state = config.showCompanion ? .on : .off
         menu.addItem(presence)
@@ -539,6 +548,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @objc private func askByTyping() { hud.showInput() }
+    @objc private func showTranscript() { MarkdownViewer.showTranscript() }
     /// Sit Dot where it is (it stops following; it can still be petted), or let it follow again. A long press on
     /// Dot does the same.
     @objc private func toggleSit() { overlay.setSitting(!overlay.isSitting) }

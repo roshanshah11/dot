@@ -40,6 +40,23 @@ enum MarkdownViewer {
         present(key: "file:\(file.path)", text: text, fallbackTitle: file.lastPathComponent, baseURL: file.deletingLastPathComponent(), file: file)
     }
 
+    /// Today's conversation with Dot (TranscriptLog's day file), newest at the bottom (10-21: Control+Command+T, Dot's
+    /// menu, or "show the transcript"). `toggle`: the shortcut closes it again when it is the window in front.
+    static func showTranscript(toggle: Bool = false) {
+        let file = TranscriptLog.today.standardizedFileURL
+        let key = "file:\(file.path)"
+        if toggle, let window = windows[key], window.isVisible, window.isKeyWindow {
+            window.performClose(nil)
+            return
+        }
+        guard FileManager.default.fileExists(atPath: file.path) else {
+            show(text: "# Today with Dot\n\nnothing said to Dot yet today.", title: "Today with Dot", baseURL: nil)
+            return
+        }
+        show(file: file)
+        windows[key]?.scrollToEnd()
+    }
+
     static func isMarkdown(_ url: URL) -> Bool {
         ["md", "markdown", "mdown", "mkd"].contains(url.pathExtension.lowercased())
     }
@@ -252,6 +269,20 @@ private final class MarkdownWindow: NSWindow, WKNavigationDelegate {
 
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
         loaded = true
+        if endOnLoad { endOnLoad = false; scrollToEnd() }
+    }
+
+    /// The newest part in view (the transcript): now if the page is up, else once it loads. A re-render queued before
+    /// this runs first, so the scroll lands on the new text.
+    private var endOnLoad = false
+    func scrollToEnd() {
+        guard loaded else { endOnLoad = true; return }
+        web.evaluateJavaScript("window.scrollTo(0, document.documentElement.scrollHeight)") { _, _ in }
+    }
+
+    /// Escape closes the reader, as it closes Dot's other surfaces.
+    override func cancelOperation(_ sender: Any?) {
+        performClose(nil)
     }
 
     /// The reader never navigates away from the document: web links go to the browser,

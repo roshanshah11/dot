@@ -8,6 +8,12 @@ enum TranscriptLog {
 
     enum Kind: String { case talk, typed, dictation, agent, lecture, job }
 
+    /// Today's Markdown file (it may not exist yet).
+    static var today: URL {
+        let day = DateFormatter(); day.dateFormat = "yyyy-MM-dd"; day.locale = Locale(identifier: "en_US_POSIX")
+        return directory.appendingPathComponent("\(day.string(from: Date())).md")
+    }
+
     static func append(kind: Kind, you: String, dot: String?, app: String?, extra: [String: String] = [:]) {
         let now = Date()
         let day = DateFormatter(); day.dateFormat = "yyyy-MM-dd"; day.locale = Locale(identifier: "en_US_POSIX")

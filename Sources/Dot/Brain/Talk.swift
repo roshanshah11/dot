@@ -1142,6 +1142,12 @@ final class Talk {
         case .find(let query):
             await findInDocument(query)
             return
+        case .showTranscript:
+            phase = .idle
+            hud.set(phase: .hidden)
+            MarkdownViewer.showTranscript()
+            settle()
+            return
         case .listen:
             await startLecture(title: context.windowTitle.map { String($0.prefix(60)) } ?? "")
             return
@@ -1542,7 +1548,7 @@ final class Talk {
     private enum Route: CustomStringConvertible {
         /// The basics pass: a small thing Dot does itself; a job for a new agent, never the running one.
         case act(ActionCommand), agentFresh
-        case answer, agent, think, explain, reopenPanel, closePanel, followUp(String), continueWalkthrough, drive, closeBoard, lessonNext, lessonBack, lessonAgain, lecture, suggestion(String), dismiss, find(String), listen, stopListening, recapLecture, dictionary(heard: String?, correct: String), place(what: String, whereWord: String?), images(String)
+        case answer, agent, think, explain, reopenPanel, closePanel, showTranscript, followUp(String), continueWalkthrough, drive, closeBoard, lessonNext, lessonBack, lessonAgain, lecture, suggestion(String), dismiss, find(String), listen, stopListening, recapLecture, dictionary(heard: String?, correct: String), place(what: String, whereWord: String?), images(String)
         /// Round seven (G2): his spoken answer to the card on show; a named agent told, stopped or asked after.
         case consentAnswer(ConsentVoice.Answer), tellAgent(String), stopAgent(String), agentStatus(String?)
         /// Tonight's voice verbs (VO-01 to VO-13, MB-07).
@@ -1560,6 +1566,7 @@ final class Talk {
             case .think: return "think"
             case .explain: return "explain"
             case .reopenPanel: return "reopenPanel"
+            case .showTranscript: return "showTranscript"
             case .closePanel: return "closePanel"
             case .followUp(let slug): return "followUp(\(slug))"
             case .continueWalkthrough: return "continueWalkthrough"
@@ -1632,6 +1639,8 @@ final class Talk {
     /// the document itself and scrolls there, no model needed when the words are plainly in it.
     private static let findWords = try! NSRegularExpression(pattern: #"^(?:(?:can you |could you |please )?(?:find|go to|jump to|scroll to|take me to|show me|navigate to) (?:the |that |a )?(?:part|section|bit|page|place|paragraph|passage|spot|where it talks?|where it says)(?: of (?:the|this) (?:paper|pdf|document|reading|chapter))?(?: (?:about|on|that talks about|that says|where it says|about the|on the))?|where (?:does|do|is) (?:it|this|the (?:paper|pdf|document|reading|chapter|text)) (?:talk about|explain|mention|discuss|say|cover|define|introduce|go over)|which page (?:is|has|talks about|covers)) (.+?)\W*$"#, options: .caseInsensitive)
     private static let listenWords = try! NSRegularExpression(pattern: #"^(?:(?:dot,? )?(?:start )?listen(?:ing)? (?:to )?(?:the |this )?(?:lecture|class|talk|lecturer|meeting)|(?:start|begin) (?:the )?lecture(?: mode)?|lecture mode(?: on)?)\W*$"#, options: .caseInsensitive)
+    /// "show the transcript", "open my transcript", "pull up the conversation" (10-21; Control+Command+T does the same).
+    private static let transcriptWords = try! NSRegularExpression(pattern: #"^(?:dot,? )?(?:show|open|pull up|bring up)(?: me)? (?:the |my |our |today's )?(?:whole |full )?(?:transcript|conversation)(?: so far)?\W*$"#, options: .caseInsensitive)
     private static let stopListenWords = try! NSRegularExpression(pattern: #"^(?:(?:dot,? )?stop listening|(?:the )?lecture(?:'s| is)? (?:over|done|finished)|end (?:the )?lecture|lecture mode off|stop the lecture)\W*$"#, options: .caseInsensitive)
     private static let recapWords = try! NSRegularExpression(pattern: #"^(?:(?:can you |could you |please )?(?:recap|summarize|summarise|sum up|review|go over) (?:the |this |today's )?(?:lecture|class|talk)|what did i miss(?: in (?:the )?lecture)?|what (?:was|is) (?:the |this )?lecture about)\W*$"#, options: .caseInsensitive)
 
@@ -1905,6 +1914,7 @@ final class Talk {
         if saysClose, panels.isOpen, panels.openedRecently { return .closePanel }
         if panels.available, PanelCoach.wantsReopen(text) { return .reopenPanel }
         if Self.listenWords.firstMatch(in: text, range: range) != nil { return .listen }
+        if Self.transcriptWords.firstMatch(in: text, range: range) != nil { return .showTranscript }
         // "desk mode", "study mode", "back to normal" (VI-03): his word beats the detector until he changes it.
         if let override = ContextMode.parseOverride(text) {
             if case .force(let forced) = override { return .setMode(forced) }
