@@ -296,6 +296,21 @@ final class NotchHUD {
     }
 
     /// Whether the notch shows up in recordings and screen shares.
+    /// The window's frame while it is up, for `Dot --notch-selftest`.
+    var windowFrame: CGRect? { panel?.isVisible == true ? panel?.frame : nil }
+
+    /// How much of a scroll view's content is out of sight, the biggest in the window (0: all of it shows).
+    var hiddenScrolledHeight: CGFloat {
+        func walk(_ view: NSView) -> CGFloat {
+            var hidden: CGFloat = 0
+            if let scroll = view as? NSScrollView, let doc = scroll.documentView {
+                hidden = max(0, doc.frame.height - scroll.contentView.bounds.height)
+            }
+            return view.subviews.reduce(hidden) { max($0, walk($1)) }
+        }
+        return panel?.contentView.map(walk) ?? 0
+    }
+
     func setVisibleInRecordings(_ visible: Bool) {
         ensurePanel().sharingType = visible ? .readOnly : .none
     }
@@ -709,7 +724,11 @@ final class NotchHUD {
         return panel
     }
 
+    /// Where the notch is instead of the real screen's (`Dot --notch-selftest` puts it off every display).
+    var geometryOverride: (() -> NotchGeometry)?
+
     private func currentGeometry() -> NotchGeometry {
+        if let geometryOverride { return geometryOverride() }
         let notched = NSScreen.screens.first(where: { $0.safeAreaInsets.top > 0 })
         let screen = notched ?? NSScreen.main ?? NSScreen.screens.first
         guard let screen else {
@@ -859,6 +878,9 @@ struct NotchHUDView: View {
     let geometry: NotchGeometry
     let onClose: () -> Void
     @FocusState private var inputFocused: Bool
+    /// The answer's own height, measured inside its scroll view: the scroll area takes exactly that (up to 300 pt), so
+    /// the window grows to show it. Left to fill what was left over, it showed one line of three (10-21 10:20).
+    @State private var answerTextHeight: CGFloat = 0
 
     private let ground = NotchInk.ground
     private let text = NotchInk.text
@@ -1064,9 +1086,12 @@ struct NotchHUDView: View {
                         .foregroundStyle(text.opacity(0.95))
                         .lineSpacing(3)
                         .textSelection(.enabled)
+                        .fixedSize(horizontal: false, vertical: true)
                         .frame(maxWidth: .infinity, alignment: .leading)
+                        .background(GeometryReader { proxy in Color.clear.preference(key: AnswerHeightKey.self, value: proxy.size.height) })
                 }
-                .frame(maxHeight: 300)
+                .frame(height: min(max(answerTextHeight, 18), 300))
+                .onPreferenceChange(AnswerHeightKey.self) { answerTextHeight = $0 }
             }
             HStack(spacing: 8) {
                 smallButton("copy") {
@@ -1598,6 +1623,12 @@ struct MorningCardView: View {
         .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(accent.opacity(0.4), lineWidth: 1))
     }
+}
+
+/// The typed answer's natural height inside its scroll view.
+struct AnswerHeightKey: PreferenceKey {
+    static var defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = max(value, nextValue()) }
 }
 
 extension Notification.Name {

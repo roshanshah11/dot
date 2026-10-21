@@ -198,6 +198,13 @@ case "--stack-selftest":
             : StackSelfTest.run(muted: flags.contains("--muted"), job: flags.contains("--job"), framesFile: file)
     }
     exit(passed ? 0 : 1)
+case "--notch-selftest":
+    // A typed answer through a real notch window off every display: every line must show (10-21).
+    let notchApp = NSApplication.shared
+    notchApp.setActivationPolicy(.accessory)
+    notchApp.finishLaunching()
+    let notchPassed = MainActor.assumeIsolated { NotchSelfTest.run() }
+    exit(notchPassed ? 0 : 1)
 case "--track-selftest":
     // Ask the running Dot to run the box-tracking check on the real screen (its grants, not the terminal's).
     DistributedNotificationCenter.default().postNotificationName(DotIPC.trackSelftest, object: nil, userInfo: nil, deliverImmediately: true)
