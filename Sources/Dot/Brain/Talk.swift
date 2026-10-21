@@ -129,6 +129,9 @@ final class Talk {
     private var quietTurn = false
     private var quietWork: [DispatchWorkItem] = []
     private var quietClock = Date()
+    /// A muted or typed answer goes beside Dot one piece at a time at reading pace (10-21); these wait their turn.
+    private var bubbleQueue: [String] = []
+    private var bubbleWork: DispatchWorkItem?
     private var beatsFired = 0
 
     /// A step-by-step walkthrough: the ringed control Dot waits for him to click (or rest on).
@@ -2166,6 +2169,7 @@ final class Talk {
         quietWork.forEach { $0.cancel() }
         quietWork = []
         quietClock = Date()
+        clearBubbles()
         actGeneration += 1
         turnStartedAt = Date()
         firstSentenceLogged = false
@@ -2382,8 +2386,10 @@ final class Talk {
         case .textDelta(let delta):
             for beat in streamer.feed(panels.filter(delta)) { enqueue(beat) }
             runNewActs()
-            if textSurface {
-                // A typed question: the words appear in the notch as they are written.
+            if textSurface, speechBubble {
+                hud.set(phase: .thinking)   // the words come beside Dot, a sentence at a time (beatStarted)
+            } else if textSurface {
+                // A typed question with Dot hidden: the words appear in the notch as they are written.
                 let ahead = (streamer.spokenSoFar + " " + streamer.partial).trimmingCharacters(in: .whitespaces)
                 if !ahead.isEmpty { hud.model.response = ahead; hud.set(phase: .thinking) }
             } else if config.hudShowsResponse {
@@ -2518,7 +2524,7 @@ final class Talk {
             let work = DispatchWorkItem { [weak self] in self?.beatStarted(beat) }
             quietWork.append(work)
             DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: work)
-            quietClock = Date(timeIntervalSinceNow: delay + (beat.text.isEmpty ? 0.3 : max(0.9, Double(beat.text.count) * 0.045)))
+            quietClock = Date(timeIntervalSinceNow: delay + (beat.text.isEmpty ? 0.3 : BubbleLines.readingTime(of: beat.text)))
             return
         }
         speaker.speak(beat.text) { [weak self] in self?.beatStarted(beat) }
@@ -2630,7 +2636,10 @@ final class Talk {
         // The words are in the voice. The notch shows the line being said; the page stays clear
         // (his verdict on the bubble, 2026-10-15: "this looks bad"). A typed answer is already
         // streaming into the notch as text, so no caption on top of it.
-        if textSurface { return }
+        if textSurface {
+            if speechBubble { queueBubble(beat.text) }
+            return
+        }
         if config.cursorBubble {
             if let id = lessonCard, board.isStage(id) { overlay.hideBubble(after: 0); return }
             if beat.hasVisual { bubbleLabel = label.map { String($0.prefix(32)) } }
@@ -2720,6 +2729,35 @@ final class Talk {
         scheduleIdleCheck()
     }
 
+    /// A muted or typed answer shows beside Dot, unless Dot is hidden (then the notch holds it, as before).
+    private var speechBubble: Bool { overlay.isPresent }
+
+    /// One sentence into the bubble queue, split at its clauses (BubbleLines); the queue shows each piece for its
+    /// reading time and never drops one, so a fast answer still reads at his pace.
+    private func queueBubble(_ sentence: String) {
+        bubbleQueue += BubbleLines.chunks(sentence)
+        if bubbleWork == nil { showNextBubble() }
+    }
+
+    private func showNextBubble() {
+        guard !bubbleQueue.isEmpty else {
+            bubbleWork = nil
+            overlay.hideBubble(after: 0.6)
+            return
+        }
+        let piece = bubbleQueue.removeFirst()
+        overlay.setBubble(piece)
+        let work = DispatchWorkItem { [weak self] in self?.showNextBubble() }
+        bubbleWork = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + BubbleLines.readingTime(piece), execute: work)
+    }
+
+    private func clearBubbles() {
+        bubbleWork?.cancel()
+        bubbleWork = nil
+        bubbleQueue = []
+    }
+
     /// The bubble holds one spoken sentence, cut at a word when it runs long.
     static func bubbleLine(_ text: String, limit: Int = 110) -> String {
         let line = text.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -2747,7 +2785,7 @@ final class Talk {
         let spoken = streamer.spokenSoFar
         if spoken.trimmingCharacters(in: .whitespacesAndNewlines).hasSuffix("?") { askedHimAt = Date() }
         if config.hudShowsResponse { hud.model.response = spoken }
-        if textSurface, !spoken.isEmpty {
+        if textSurface, !spoken.isEmpty, !speechBubble {
             hud.model.response = ""
             hud.presentAnswer(question: lastAsked, text: spoken)
         }
@@ -2892,7 +2930,7 @@ final class Talk {
             Task { @MainActor in
                 guard let self else { timer.invalidate(); return }
                 if self.phase == .listening || self.phase == .transcribing { timer.invalidate(); return }
-                if self.activeSession?.turnInFlight == true || self.speaker.isSpeaking || self.quietPending { return }
+                if self.activeSession?.turnInFlight == true || self.speaker.isSpeaking || self.quietPending || self.bubbleWork != nil { return }
                 timer.invalidate()
                 self.phase = .idle
                 self.overlay.setPhase(.idle)
@@ -3302,6 +3340,7 @@ final class Talk {
         quietWork.forEach { $0.cancel() }
         quietWork = []
         quietClock = Date()
+        clearBubbles()
     }
 
     /// What a lookup is, said aloud; nil for tools that need no line.

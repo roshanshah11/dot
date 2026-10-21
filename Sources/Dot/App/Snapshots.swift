@@ -273,6 +273,9 @@ enum Snapshots {
             ("circle", make { m in m.motion = .parked; m.position = CGPoint(x: 430, y: 240); var mark = ShapeMark(kind: .circle, points: [CGPoint(x: 300, y: 200), CGPoint(x: 370, y: 200)], label: "this term"); mark.progress = 1; m.shapes = [mark] }),
             ("strokes", make { m in m.strokes = [[CGPoint(x: 150, y: 150), CGPoint(x: 260, y: 140), CGPoint(x: 330, y: 170), CGPoint(x: 310, y: 240), CGPoint(x: 200, y: 250), CGPoint(x: 145, y: 200), CGPoint(x: 152, y: 152)]]; m.stroke = [CGPoint(x: 400, y: 160), CGPoint(x: 500, y: 165), CGPoint(x: 560, y: 160)] }),
             ("bubble", make { m in m.bubbleVisible = true; m.bubbleText = "morning. 9 deadlines this week, first u-ship by tonight. 48 mail waiting." }),
+            // A muted or typed answer's longest piece (BubbleLines.maxCharacters): whole, three lines, no "…".
+            ("bubble-answer-piece", make { m in m.bubbleVisible = true
+                m.bubbleText = BubbleLines.chunks("this morning is light: the COURSE 101 email to Sam Rivera by five, the Alex Example text, the Northwind Bank sign-up by five, and the resume book upload by four.")[0] }),
         ]
     }
 

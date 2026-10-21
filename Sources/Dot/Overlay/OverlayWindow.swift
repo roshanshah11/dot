@@ -260,9 +260,9 @@ struct CompanionView: View {
         let roomLeft = model.position.x - 20 * k - width - 28 >= 12
         let flip = model.bubbleFlip.map { $0 ? roomLeft : !roomRight } ?? !roomRight
         let below = model.position.y + 180 < model.screenSize.height
-        // A quiet note beside Dot (a greeting, an offer, a short line): light paper, two lines at
-        // most, nothing that reads as a panel over his page. Spoken answers do not come here; their
-        // words are in the voice and the current line sits in the notch.
+        // A note beside Dot (a greeting, an offer, a short line), and since 10-21 a muted or typed answer a piece at a
+        // time (Talk.queueBubble, at most BubbleLines.maxCharacters): solid light paper, never cut with "…", nothing
+        // that reads as a panel over his page. A spoken answer's words are in the voice and its line sits in the notch.
         return VStack(alignment: .leading, spacing: 2) {
             if let label = model.bubbleLabel, !label.isEmpty {
                 Text(label)
@@ -274,14 +274,13 @@ struct CompanionView: View {
                 .font(.system(size: 12.5, weight: .regular))
                 .foregroundStyle(ink)
                 .lineSpacing(2)
-                .lineLimit(2)
-                .truncationMode(.tail)
+                .fixedSize(horizontal: false, vertical: true)
         }
             .frame(width: width, alignment: .leading)
             .fixedSize(horizontal: false, vertical: true)
             .padding(.horizontal, 10)
             .padding(.vertical, 6)
-            .background(paper.opacity(0.97), in: RoundedRectangle(cornerRadius: 9, style: .continuous))
+            .background(paper, in: RoundedRectangle(cornerRadius: 9, style: .continuous))
             .overlay(RoundedRectangle(cornerRadius: 9, style: .continuous).stroke(ink.opacity(0.1), lineWidth: 1))
             .shadow(color: .black.opacity(0.18), radius: 8, x: 0, y: 3)
             .alignmentGuide(.leading) { d in flip ? d[.trailing] - (model.position.x - 20 * k) : -(model.position.x + 22 * k) }
