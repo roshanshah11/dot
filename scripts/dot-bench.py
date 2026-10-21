@@ -1155,9 +1155,9 @@ def comet_show(port, urls, base, log=print):
         pages = cdp.pages()
         fixture = [p for p in pages if p.get('url', '').startswith(base)]
         blank = [p for p in pages if p.get('url', '') in BLANK_TABS]
-        mine = (fixture or blank or [None])[0]
-        if mine is None:
-            mine = {'targetId': cdp.call('Target.createTarget', {'url': 'about:blank'})['targetId']}
+        # A fresh tab every row: an earlier row can leave its tab on a leave-page dialog (J19, an edited
+        # apply.html), where Page.navigate never answers.
+        mine = {'targetId': cdp.call('Target.createTarget', {'url': 'about:blank'})['targetId']}
         closing = {p['targetId'] for p in fixture + blank if p['targetId'] != mine['targetId']}
         for tid in closing:
             cdp.call('Target.closeTarget', {'targetId': tid})
@@ -1168,7 +1168,14 @@ def comet_show(port, urls, base, log=print):
         cdp.call('Page.enable', {}, sid)
         for u in urls:
             mark = len(cdp.events)
-            cdp.call('Page.navigate', {'url': u}, sid)
+            try:
+                cdp.call('Page.navigate', {'url': u}, sid)
+            except (TimeoutError, OSError):
+                # a dialog holds the page: accept it, then go on
+                try:
+                    cdp.call('Page.handleJavaScriptDialog', {'accept': True}, sid)
+                except Exception:
+                    pass
             cdp.wait_event('Page.loadEventFired', sid, timeout=10, since=mark)
         cdp.call('Target.activateTarget', {'targetId': mine['targetId']})
         cdp.call('Page.bringToFront', {}, sid)
@@ -1699,7 +1706,11 @@ class Runner:
                     break
                 self.check_idle()
                 self.say('bench: row %s: %s' % (row['id'], row.get('ask')))
-                r = self.run_row(row)
+                try:
+                    r = self.run_row(row)
+                except Exception as e:  # one row's runner error is that row's failure, never the whole bench's
+                    r = {'id': str(row['id']), 'kind': row.get('kind'), 'ask': row.get('ask'), 'group': row.get('group'), 'pass': False,
+                         'reasons': ['runner error: %s: %s' % (type(e).__name__, str(e)[:160])], 'checks': [], 'latency_ms': None}
                 results.append(r)
                 self.say('bench: row %s %s %s' % (r['id'], 'PASS' if r['pass'] else 'FAIL', '; '.join(r.get('reasons', []))[:200]))
                 if r.get('abort'):

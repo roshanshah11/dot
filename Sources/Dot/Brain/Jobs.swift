@@ -40,6 +40,8 @@ final class JobManager {
         var endedAt: Date?
         var endLine = ""
         var nativeRefs: [String: String] = [:]
+        /// Each native ref's frame (AppKit points), so a ref names one element: a label and its switch share a title.
+        var nativeFrames: [String: CGRect] = [:]
         /// The last page whose text went through the injection check.
         var checkedURL = ""
         var lastEventAt = Date()
@@ -648,7 +650,9 @@ final class JobManager {
     private func perform(_ job: Job, tool: String, args: [String: Any]) async -> (String, Bool, String?) {
         let started = Date()
         if tool == "click", args["his"] as? Bool == true, !job.isBrowserJob {
-            rang(job, label: str(args, "label") ?? str(args, "ref") ?? "that", point: nil)
+            let ref = str(args, "ref")
+            let frame = ref.flatMap { job.nativeFrames[$0] }
+            rang(job, label: str(args, "label") ?? ref.flatMap { job.nativeRefs[$0] } ?? ref ?? "that", point: frame.map { CGPoint(x: $0.midX, y: $0.midY) })
             return ("stopped: left for his press. stop here and tell him it's ready for his press.", false, nil)
         }
         if !job.isBrowserJob { return await performNative(job, tool: tool, args: args) }
@@ -814,11 +818,13 @@ final class JobManager {
         func lookText(_ c: ScreenContext) -> String {
             var lines = ["app: \(c.appName ?? "?"), window \"\(Log.short(c.windowTitle ?? "", 100))\"\(c.url.map { " \($0)" } ?? "")"]
             job.nativeRefs = [:]
+            job.nativeFrames = [:]
             var n = 0
             for e in c.elements where !e.title.isEmpty {
                 n += 1
                 if n > 60 { lines.append("...more"); break }
                 job.nativeRefs["e\(n)"] = e.title
+                job.nativeFrames["e\(n)"] = e.frame
                 var line = "e\(n) \(e.role.replacingOccurrences(of: "AX", with: "").lowercased()) \"\(Log.short(e.title, 80))\""
                 if CommitGuard.isCommit(e.title) { line += " [his]" }
                 lines.append(line)
@@ -835,6 +841,35 @@ final class JobManager {
         }
         guard let c = capture() else { return ("error: \(job.appName ?? "the app") isn't in front now, so dot didn't act", true, nil) }
         let label = str(args, "ref").flatMap { job.nativeRefs[$0] } ?? str(args, "label")
+        // A click by ref presses that element (by its frame), not the first one with its title: on 10-20 a label and its
+        // switch were both "Email alerts", and the label took every click (bench row 10).
+        if tool == "click", let ref = str(args, "ref"), let frame = job.nativeFrames[ref] {
+            if job.bench, !(c.url ?? "").hasPrefix("http://127.0.0.1:") { return ("error: bench: outside the fixture", true, nil) }
+            let center = CGPoint(x: frame.midX, y: frame.midY)
+            let title = job.nativeRefs[ref] ?? ref
+            let started = Date()
+            func done(_ text: String, _ failed: Bool) async -> (String, Bool, String?) {
+                try? await Task.sleep(nanoseconds: 300_000_000)
+                return (text + (capture().map { "\n" + lookText($0) } ?? ""), failed, nil)
+            }
+            if CommitGuard.isCommit(title) {
+                rang(job, label: title, point: center)
+                return await done("stopped: his to press: \(title). stop here and tell him it's ready for his press.", false)
+            }
+            switch Hands.press(atAppKit: center, frontPid: NSWorkspace.shared.frontmostApplication?.processIdentifier) {
+            case .pressed:
+                Log.info("act: click \(Log.short(title, 60)) ok \(Int(Date().timeIntervalSince(started) * 1000)) ms (job \(job.id): axpress at \(ref))")
+                pointAt(job, center, label: title)
+                return await done("ok: clicked \(title)", false)
+            case .commit(let his):
+                rang(job, label: his, point: center)
+                return await done("stopped: his to press: \(his). stop here and tell him it's ready for his press.", false)
+            case .otherApp:
+                return await done("error: something else is on top of \(title); close it first", true)
+            case .failed:
+                Log.info("act: click \(Log.short(title, 60)) fail \(Int(Date().timeIntervalSince(started) * 1000)) ms (job \(job.id): axpress at \(ref) failed; trying by name)")
+            }
+        }
         let command: ActionCommand
         switch tool {
         case "open": command = ActionTags.openCommand(str(args, "target") ?? "") ?? .open(str(args, "target") ?? "")

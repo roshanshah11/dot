@@ -715,11 +715,15 @@ final class Hands {
     static func bestElement(_ label: String, in elements: [AXElementInfo]) -> AXElementInfo? {
         let want = label.lowercased().trimmingCharacters(in: .whitespaces)
         guard !want.isEmpty else { return nil }
+        // A control beats text with the same name: a label and its switch are both "Email alerts" (bench row 10, 10-20).
+        let controls: Set<String> = ["AXCheckBox", "AXRadioButton", "AXButton", "AXLink", "AXPopUpButton", "AXMenuButton", "AXTextField",
+                                     "AXTextArea", "AXComboBox", "AXMenuItem", "AXSlider", "AXIncrementor", "AXDisclosureTriangle", "AXTab"]
         let scored = elements.compactMap { e -> (AXElementInfo, Int)? in
             let t = e.title.lowercased()
-            if t == want { return (e, 3) }
-            if t.hasPrefix(want) { return (e, 2) }
-            if t.contains(want) || (want.contains(t) && t.count >= 3) { return (e, 1) }
+            let control = controls.contains(e.role) ? 1 : 0
+            if t == want { return (e, 6 + control) }
+            if t.hasPrefix(want) { return (e, 4 + control) }
+            if t.contains(want) || (want.contains(t) && t.count >= 3) { return (e, 2 + control) }
             return nil
         }
         return scored.max { $0.1 < $1.1 }?.0
