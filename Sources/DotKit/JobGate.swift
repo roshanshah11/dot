@@ -62,12 +62,16 @@ public struct JobGateContext {
     /// His words for this job, for the handshake_apply rule.
     public var hisWords: String
     public var home: String
+    /// Atlas's (the default in config) or the guarded gate as it was. The bench is fenced the same either way.
+    public var permissions: PermissionsMode
+    /// The vault Atlas's deny list resolves `./` against (~/roshan).
+    public var vault: String
     public var fileExists: (String) -> Bool
     public var isDirectory: (String) -> Bool
     public var readFile: (String) -> String?
 
     public init(bench: Bool, jobFolder: String, protectedRoots: [String], queuedSends: Set<String>, hisWords: String,
-                home: String = NSHomeDirectory(),
+                home: String = NSHomeDirectory(), permissions: PermissionsMode = .guarded, vault: String? = nil,
                 fileExists: @escaping (String) -> Bool = { FileManager.default.fileExists(atPath: $0) },
                 isDirectory: @escaping (String) -> Bool = { path in
                     var dir: ObjCBool = false
@@ -80,6 +84,8 @@ public struct JobGateContext {
         self.queuedSends = queuedSends
         self.hisWords = hisWords
         self.home = home
+        self.permissions = permissions
+        self.vault = vault ?? home + "/roshan"
         self.fileExists = fileExists
         self.isDirectory = isDirectory
         self.readFile = readFile
@@ -90,6 +96,10 @@ public struct JobGateContext {
 /// allowed below is denied with a reason the job can act on. His rule (nothing goes out without his yes) holds because
 /// screen actions go through the dot tools, which check each button, sends only queue, and Bash is fenced twice: a
 /// per-segment allow list here and Claude Code's sandbox around it.
+///
+/// Under Atlas's permissions (his call 2026-10-21) Atlas's deny list comes first, Bash runs with no sandbox and no
+/// command or Python lists, and Read answers to the deny list alone; what stays is what keeps his two standing rules
+/// (`atlasBash`). The bench is fenced as before.
 public enum JobGate {
     public static let hisThing = "that one goes out or changes his things, so it's his: get everything ready, stop, and say what is ready for him."
     public static let benchOnly = "bench: reads only"
@@ -102,6 +112,8 @@ public enum JobGate {
     ]
 
     public static func decide(tool: String, input: [String: AnyCodableValue], context c: JobGateContext) -> JobGateDecision {
+        let atlasWay = c.permissions == .atlas && !c.bench
+        if atlasWay, let why = AtlasDeny.refusal(tool: tool, input: input, home: c.home, vault: c.vault, cwd: c.jobFolder) { return .deny(why) }
         // 1. The hands check every press themselves.
         if tool.hasPrefix("mcp__dot__") { return .allow }
         // 2. Sends queue on atlas-send, and only the proven ones.
@@ -123,12 +135,17 @@ public enum JobGate {
             return inside(p, root) ? .allow : .deny("edit only files in your own folder; " + saveInOutput)
         case "Bash":
             if c.bench { return .deny(benchOnly) }
+            if atlasWay {
+                guard case .string(let command)? = input["command"] else { return .deny("no command") }
+                return atlasBash(command)
+            }
             if case .bool(true)? = input["dangerouslyDisableSandbox"] { return .deny("bash runs in the sandbox in a job") }
             guard case .string(let command)? = input["command"] else { return .deny("no command") }
             return bash(command, context: c)
         case "Task", "Agent": return .deny("no helpers in a job: do it yourself")
         case "AskUserQuestion", "EnterPlanMode", "ExitPlanMode": return .deny("a job can't ask him mid-way: decide, or end with blocked:")
         case "Read":
+            if atlasWay { return .allow }   // the deny list above is the only fence
             if let p = path(input).map(resolve(c)), secretRoots(c).contains(where: { inside(p, $0) }) { return .deny("that file is private") }
             return .allow
         default:
@@ -219,6 +236,50 @@ public enum JobGate {
     }
 
     // MARK: Bash
+
+    /// Commands that drive his pages and apps outside the dot tools, which ring Submit, Send and Buy for him and never
+    /// press them (his standing rule, kept under Atlas's permissions).
+    static let screenDrivers: Set<String> = ["hb", "cb", "cbg", "rba", "agent-browser", "cliclick", "cua-driver"]
+
+    /// Bash under Atlas's permissions, after Atlas's deny list: anything, except a screen driver (the ring) and a job
+    /// approving a send it queued (his yes on Dot's card).
+    public static func atlasBash(_ command: String) -> JobGateDecision {
+        if command.contains("dot-atlas-approve.py") { return .deny("a queued send waits for his yes on dot's card") }
+        let (parts, subs) = split(command)
+        for sub in subs {
+            if case .deny(let why) = atlasBash(sub) { return .deny(why) }
+        }
+        for segment in parts {
+            var words = ShellSegment.words(segment)
+            // Wrappers, as checkSegment unwraps them: env, nohup, time, command, exec, VAR=x, xargs and its flags.
+            while let first = words.first {
+                let w = (first as NSString).lastPathComponent
+                if ["env", "nohup", "time", "command", "builtin", "exec"].contains(w) || (first.contains("=") && !first.hasPrefix("-") && !first.hasPrefix("=")) {
+                    words.removeFirst(); continue
+                }
+                if w == "xargs" {
+                    words.removeFirst()
+                    while let f = words.first, f.hasPrefix("-") {
+                        words.removeFirst()
+                        if ["-n", "-I", "-L", "-P", "-s", "-E", "-d", "-J", "-R"].contains(f), !words.isEmpty { words.removeFirst() }
+                    }
+                    continue
+                }
+                break
+            }
+            guard let first = words.first else { continue }
+            let word = (first as NSString).lastPathComponent
+            if ["bash", "zsh", "sh"].contains(word), words.count >= 3, words[1] == "-c", case .deny(let why) = atlasBash(words[2]) { return .deny(why) }
+            if screenDrivers.contains(word) { return .deny("\(word) isn't in a job: drive pages and apps with the dot tools, which ring submit, send and buy for him") }
+            if word == "atlasctl" || word == "atlas" {
+                // its subcommand: the first word that is no flag and no --root value
+                var rest = Array(words.dropFirst())
+                while let f = rest.first, f.hasPrefix("-") { rest.removeFirst(); if f == "--root", !rest.isEmpty { rest.removeFirst() } }
+                if rest.first == "approve" { return .deny("a queued send waits for his yes on dot's card") }
+            }
+        }
+        return .allow
+    }
 
     static let allowedCommands: Set<String> = [
         "python3", "python3.13", "ls", "cat", "head", "tail", "wc", "grep", "rg", "find", "mkdir", "cp", "mv", "touch", "file",

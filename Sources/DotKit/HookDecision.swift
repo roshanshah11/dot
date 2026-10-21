@@ -233,17 +233,23 @@ public enum HookDecision: Equatable {
     /// web, shell and MCP results through it again after they run. Shell form, the form the probe
     /// ran: the executable and every argument single-quoted.
     /// `deny` and `defaultMode` go in as `permissions` (Atlas chats run with bypassPermissions and a deny list).
-    public static func settingsJSON(executable: String, arguments: [String] = ["--gate"],
-                                    timeout: Int = gateTimeout, postMatcher: String? = HookDecision.postMatcher,
+    /// `gate: false` leaves PreToolUse out (Atlas's permissions: Claude Code's deny list decides, results still come
+    /// back for the injection check); no executable, no hooks at all.
+    public static func settingsJSON(executable: String?, arguments: [String] = ["--gate"],
+                                    timeout: Int = gateTimeout, postMatcher: String? = HookDecision.postMatcher, gate: Bool = true,
                                     deny: [String] = [], defaultMode: String? = nil) -> String {
-        let command = ([executable] + arguments).map(shellQuoted).joined(separator: " ")
-        var hooks: [String: Any] = [
-            "PreToolUse": [["matcher": "*", "hooks": [["type": "command", "command": command, "timeout": timeout]]]],
-        ]
-        if let postMatcher {
-            hooks["PostToolUse"] = [["matcher": postMatcher, "hooks": [["type": "command", "command": command, "timeout": postTimeout]]]]
+        var hooks: [String: Any] = [:]
+        if let executable {
+            let command = ([executable] + arguments).map(shellQuoted).joined(separator: " ")
+            if gate {
+                hooks["PreToolUse"] = [["matcher": "*", "hooks": [["type": "command", "command": command, "timeout": timeout]]]]
+            }
+            if let postMatcher {
+                hooks["PostToolUse"] = [["matcher": postMatcher, "hooks": [["type": "command", "command": command, "timeout": postTimeout]]]]
+            }
         }
-        var settings: [String: Any] = ["hooks": hooks]
+        var settings: [String: Any] = [:]
+        if !hooks.isEmpty { settings["hooks"] = hooks }
         var permissions: [String: Any] = [:]
         if !deny.isEmpty { permissions["deny"] = deny }
         if let defaultMode { permissions["defaultMode"] = defaultMode }

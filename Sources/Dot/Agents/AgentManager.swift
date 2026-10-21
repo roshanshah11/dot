@@ -348,13 +348,10 @@ final class AgentManager {
         return agent
     }
 
-    /// Atlas's private folder and the browser profile's cookies, closed to every agent (Atlas chats deny the same).
+    /// Atlas's private folder and the browser profile's cookies, closed to every agent (Atlas chats deny the same):
+    /// the guarded gate's list. Atlas's permissions take the whole of Atlas's list (AtlasDeny.rules).
     static func privateDeny(atlasRoot: String) -> [String] {
-        let home = NSHomeDirectory()
-        return ["\(atlasRoot)/Atlas/private/**", "\(home)/.atlas-browser/**"].flatMap { path -> [String] in
-            let abs = "/" + path   // Claude Code reads //absolute as an absolute path
-            return ["Read(\(abs))", "Edit(\(abs))"]
-        }
+        AtlasDeny.rules(home: NSHomeDirectory(), vault: atlasRoot).filter { !$0.hasPrefix("Bash(") }
     }
 
     /// `attachFrom`: the agent host already runs this agent's process (a relaunch, AG-12); the run
@@ -381,10 +378,20 @@ final class AgentManager {
         // and a disallow beats an allow, so the shared list must not carry it.
         options.disallowedTools = Self.disallowedAgentTools + ["mcp__dot"]
         options.permissionPromptOverStdio = true
-        // AG-07: a PreToolUse hook sends every tool call through Dot first, the ones Claude Code would
-        // approve on its own included (the stdio prompt never sees those), and web, shell and MCP
-        // results come back for the injection check. With no socket the agent runs as before.
-        if let socket = controlSocket {
+        if config.permissionsMode == .atlas {
+            // Atlas's permissions (his call 2026-10-21, "fully Atlas, no Dot guards"): bypassPermissions and Atlas's deny
+            // list, which Claude Code enforces, as an Atlas ask runs. No PreToolUse gate, so no card, no Jev consent call
+            // and no allowances; web, shell and MCP results still come back for the injection check, which only adds a
+            // line that the output is data. With no socket, the deny list alone.
+            options.permissionMode = "bypassPermissions"
+            let deny = AtlasDeny.rules(home: NSHomeDirectory(), vault: DotConfig.expand(config.atlasRoot))
+            options.settings = HookDecision.settingsJSON(executable: controlSocket == nil ? nil : Gate.executablePath, arguments: ["--gate", "--agent", agent.slug],
+                                                         gate: false, deny: deny, defaultMode: "bypassPermissions")
+            if let socket = controlSocket { options.environment[ControlServer.pathVariable] = socket }
+        } else if let socket = controlSocket {
+            // AG-07: a PreToolUse hook sends every tool call through Dot first, the ones Claude Code would
+            // approve on its own included (the stdio prompt never sees those), and web, shell and MCP
+            // results come back for the injection check. With no socket the agent runs as before.
             // Atlas's way (his call 2026-10-17, "bypass permissions typical to atlas"): bypassPermissions, never auto
             // mode, his private Atlas folder and the browser's cookies denied; every call still goes through the gate,
             // so sends, submits and deletes outside the agent's folder ask on a card as before.
@@ -705,6 +712,18 @@ final class AgentManager {
     // MARK: Consent
 
     private func permission(_ request: PermissionRequest, run: Run, completion: @escaping (Bool, String?) -> Void) {
+        // Atlas's permissions (his call 2026-10-21): a prompt Claude Code still sends, or a call from a session started
+        // guarded, is answered at once; only Atlas's deny list refuses. No card, no Jev, no allowances.
+        if config.permissionsMode == .atlas {
+            if let why = AtlasDeny.refusal(tool: request.toolName, input: request.toolRequest.input, home: NSHomeDirectory(),
+                                           vault: DotConfig.expand(config.atlasRoot), cwd: run.agent.folder.path) {
+                appendTranscript(run.agent, role: "denied", text: "\(request.toolName): \(why)")
+                completion(false, why)
+            } else {
+                completion(true, nil)
+            }
+            return
+        }
         let policy = consentPolicy(for: run.agent)
         // His rules first (dots' custom rules): the class of the action decides whether it runs, asks or stays his.
         // A delete inside the agent's own folder or a temp folder is the agent tidying up, not a delete of his;

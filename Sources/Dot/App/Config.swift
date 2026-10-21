@@ -130,7 +130,14 @@ struct DotConfig: Codable {
     /// rules; "acceptEdits" (round six) let Claude Code approve edits and deletes inside the agent's
     /// folder and ~/roshan by itself, so Dot never saw them (F3, replayed 2026-10-16).
     /// Atlas's mode (his call 2026-10-17): bypassPermissions behind Dot's gate; falls back to default with no gate.
+    /// Read only under `permissions` "guarded"; Atlas's permissions always run bypassPermissions.
     var agentPermissionMode = "bypassPermissions"
+    /// What agents and jobs may do (his call 2026-10-21, "fully Atlas, no Dot guards"). "atlas": Atlas's permissions,
+    /// bypassPermissions and Atlas's deny list (DotKit AtlasDeny) and nothing of Dot's on top: no card, no Jev consent
+    /// call, no sentinel card, no allowances; jobs get Bash with no sandbox and no Python list, and still ring Submit,
+    /// Send and Buy for him; a queued send still waits on his card; the bench is fenced as before. "guarded": the gate
+    /// as it was, for rollback.
+    var permissions = "atlas"
 
     // B2b.
     /// Agents run in Dot's agent host (`Dot --host`, LaunchAgent com.roshan.dot-host) and keep going
@@ -280,6 +287,7 @@ struct DotConfig: Codable {
         routinesFile = get(.routinesFile, d.routinesFile)
         agentHelpers = get(.agentHelpers, d.agentHelpers)
         agentPermissionMode = get(.agentPermissionMode, d.agentPermissionMode)
+        permissions = get(.permissions, d.permissions)
         agentsOutliveDot = get(.agentsOutliveDot, d.agentsOutliveDot)
         chattiness = min(max(get(.chattiness, d.chattiness), 0), 3)
         orbSize = min(max(get(.orbSize, d.orbSize), 16), 36)
@@ -375,6 +383,8 @@ struct DotConfig: Codable {
         let candidates = [Bundle.main.resourceURL?.appendingPathComponent(name).path, Self.expand(fallback)].compactMap { $0 }
         return candidates.first { FileManager.default.fileExists(atPath: $0) }
     }
+
+    var permissionsMode: PermissionsMode { PermissionsMode(setting: permissions) }
 
     var agentsRootURL: URL { URL(fileURLWithPath: Self.expand(agentsRoot), isDirectory: true) }
     var talkRootURL: URL { URL(fileURLWithPath: Self.expand(talkRoot), isDirectory: true) }
