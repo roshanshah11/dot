@@ -331,18 +331,33 @@ final class JobManager {
         if goal != words { first += "\nwhat talk saw that matters: \(goal)" }
         if Self.isDeck(words) { first += "\n" + Self.deckBrief }
         Log.info("job[\(job.id)] started placement=\(placement.rawValue) warm=\(warm ? 1 : 0) model=\(model) goal=\(Log.short(goal, 120))")
-        if placement == .front, comet {
-            // Pin his tab now, while the model writes its first step.
+        if placement == .front {
+            // Pin his tab and read it before the first message, so the model acts on its first turn instead of spending
+            // one on look (about 1.5 s; bench rows 10 and 12 took 4-5 s to a first action on 10-20).
+            let session = made.session
             Task { @MainActor in
-                job.bindTries += 1
-                if await page.bindFront(windowTitle: context.windowTitle, url: context.url) {
-                    Log.info("job[\(job.id)] bound to his tab")
-                } else {
-                    Log.info("job[\(job.id)] couldn't pin his tab; its first open makes one")
+                let started = Date()
+                if comet {
+                    job.bindTries += 1
+                    if await page.bindFront(windowTitle: context.windowTitle, url: context.url) {
+                        Log.info("job[\(job.id)] bound to his tab")
+                    } else {
+                        Log.info("job[\(job.id)] couldn't pin his tab; its first open makes one")
+                    }
                 }
+                var message = first
+                if !comet || page.isBound {
+                    let (text, failed, _) = await self.perform(job, tool: "look", args: [:])
+                    if !failed, !text.hasPrefix("(no page"), !text.hasPrefix("paused"), !text.hasPrefix("error") {
+                        message += "\n[look] the page as it is now (refs are good for your first action):\n" + text
+                    }
+                }
+                Log.info("job[\(job.id)] first message after \(Int(Date().timeIntervalSince(started) * 1000)) ms")
+                session.send(text: message)
             }
+        } else {
+            made.session.send(text: first)
         }
-        made.session.send(text: first)
         if config.jobSpare, !bench, spare == nil, warm || model == config.jobModel {
             DispatchQueue.main.asyncAfter(deadline: .now() + 1) { [weak self] in
                 guard let self, self.spare == nil else { return }

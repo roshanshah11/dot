@@ -465,7 +465,7 @@ def a_no_act(want, ctx):
 
 
 def a_max_acts(want, ctx):
-    n = len([a for a in act_lines(ctx['lines']) if a['verb'] != 'go'])
+    n = len([a for a in act_lines(ctx['lines']) if a['verb'] not in ('go', 'look')])
     return n <= int(want), '%d action line(s), limit %d' % (n, int(want))
 
 
