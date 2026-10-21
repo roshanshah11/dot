@@ -80,5 +80,11 @@ fi
 print -r -- "$NEW" > "$PLIST"
 plutil -lint "$PLIST" >/dev/null
 launchctl bootout "gui/$(id -u)/$LABEL" 2>/dev/null || true
-launchctl bootstrap "gui/$(id -u)" "$PLIST"
+# A bootstrap right after the bootout can fail with "5: Input/output error" while launchd still tears the old one
+# down (10-21 13:11: the host stayed down after an install); try again for a few seconds.
+for try in 1 2 3 4 5 6 7 8 9 10; do
+  launchctl bootstrap "gui/$(id -u)" "$PLIST" 2>/dev/null && break
+  [[ $try == 10 ]] && { launchctl bootstrap "gui/$(id -u)" "$PLIST"; exit 1 }
+  sleep 0.5
+done
 echo "host: installed $LABEL ($BIN --host)"

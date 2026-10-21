@@ -61,7 +61,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         hud.attach(stack: stack)
         hud.onGreet = { [weak self] text, seconds in self?.overlay.greet(text, for: seconds) }
         hud.configure(talkOnly: config.notchTalkOnly, consentInNotch: config.consentInNotch)
-        Log.info("notch: \(config.notchTalkOnly ? "only while talking; agents, jobs and cards in the stack at the top right" : "as before 04")"
+        Log.info("notch: \(config.notchTalkOnly ? "only while talking; agents, jobs and cards in the stack at the bottom right" : "as before 04")"
                  + "; consent cards in the \(config.notchTalkOnly && !config.consentInNotch ? "stack" : "notch")")
         atlas = AtlasBridge(config: config)
         let apple = AppleSpeaker(voiceIdentifier: config.voiceIdentifier, rate: config.speechRate)
