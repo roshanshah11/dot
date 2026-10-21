@@ -2089,6 +2089,10 @@ final class Talk {
         }
         if route.choice == "lecture", route.probability >= 0.6, route.confidence >= 0.5 { return .lecture }
         if config.jobsEnabled, route.choice == "act", route.probability >= 0.5, route.confidence >= 0.5, !PanelCoach.wantsPanel(text), !Self.teachWords(text) {
+            if JobWords.isHisPressOnly(text) {
+                Log.info("jev: his press only; talk rings it")
+                return .answer
+            }
             if config.jobsSmallActsInTalk, JobWords.isSingleAct(text) {
                 // One small act on what is in front stays a talk tag, as fast as before.
                 Log.info("jev: one small act (\(String(format: "%.2f", route.probability))); talk writes the tag")

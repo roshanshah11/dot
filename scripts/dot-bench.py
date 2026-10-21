@@ -583,6 +583,14 @@ def a_front_app(want, ctx):
     return True, '%s -> %s' % (before.get('name', '?'), after.get('name', '?'))
 
 
+def a_front_stays(want, ctx):
+    """The app in front before the ask is still in front after it (a behind job never takes focus, J5)."""
+    after, before = ctx.get('front_after') or {}, ctx.get('front_before') or {}
+    label = lambda f: '%s %s' % (f.get('name', ''), f.get('bundle', ''))
+    ok = bool(re.search(want, label(before), re.I)) and bool(re.search(want, label(after), re.I))
+    return ok, '%s -> %s' % (label(before).strip() or '?', label(after).strip() or '?')
+
+
 def a_log_has(want, ctx):
     for rx in _regexes(want):
         if not any(re.search(rx, l.msg, re.I) for l in ctx['lines']):
@@ -789,7 +797,7 @@ ASSERTIONS = {
     'no_blocked': a_no_blocked, 'server_event': a_server_event, 'no_server_event': a_no_server_event,
     'no_server_click_text': a_no_server_click_text, 'reply_contains': a_reply_contains,
     'reply_not_contains': a_reply_not_contains, 'cursor_unchanged': a_cursor_unchanged,
-    'scroll_delta_min': a_scroll_delta_min, 'scroll_delta_max': a_scroll_delta_max, 'front_app': a_front_app,
+    'scroll_delta_min': a_scroll_delta_min, 'scroll_delta_max': a_scroll_delta_max, 'front_app': a_front_app, 'front_stays': a_front_stays,
     'log_has': a_log_has, 'log_lacks': a_log_lacks, 'log_count': a_log_count,
     'interrupt_within_ms': a_interrupt_within_ms, 'not_reasked': a_not_reasked, 'answered_last': a_answered_last,
     'job': a_job, 'no_job': a_no_job, 'no_act_after': a_no_act_after, 'stop_within_ms': a_stop_within_ms,

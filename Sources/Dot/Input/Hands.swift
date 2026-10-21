@@ -397,6 +397,9 @@ final class Hands {
         case .otherApp:
             return Outcome(ok: false, line: "something else is on top of \(element.title.lowercased()), so i left it.", detail: "element belongs to another app", point: center)
         case .failed:
+            if case .pressed = Self.pressToggleBeside(element.frame, frontPid: NSWorkspace.shared.frontmostApplication?.processIdentifier) {
+                return Outcome(ok: true, line: "clicked \(element.title.lowercased()).", detail: "axpress on the switch beside \"\(element.title)\"", point: center)
+            }
             return Outcome(ok: false, line: "\(element.title.lowercased()) didn't take a click from me.", detail: "axpress failed", point: center)
         }
     }
@@ -730,6 +733,22 @@ final class Hands {
     }
 
     enum Press: Equatable { case pressed, commit(String), otherApp, failed }
+
+    /// A label that won't press ("Email alerts" beside its switch, bench row 10): the switch, checkbox or radio on the same
+    /// line to its right, pressed through press(atAppKit:) so his rule and the covered check still run. Nothing else.
+    static func pressToggleBeside(_ label: CGRect, frontPid: pid_t?) -> Press {
+        let toggles: Set<String> = ["AXCheckBox", "AXRadioButton", "AXSwitch", "AXToggle"]
+        var x = label.maxX + 8
+        while x < label.maxX + 900 {
+            let point = CGPoint(x: x, y: label.midY)
+            if let e = elementAt(point) {
+                let role = string(e, kAXRoleAttribute) ?? "", sub = string(e, kAXSubroleAttribute) ?? ""
+                if toggles.contains(role) || sub == "AXSwitch" { return press(atAppKit: point, frontPid: frontPid) }
+            }
+            x += 14
+        }
+        return .failed
+    }
 
     /// AXPress on the element under an AppKit point (or its nearest pressable ancestor). The cursor stays put.
     /// Every element on the way up is checked against his rule, so an icon inside a Send button can't slip past;

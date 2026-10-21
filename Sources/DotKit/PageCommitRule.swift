@@ -37,7 +37,12 @@ public enum PageCommitRule {
         let clickable = ["button", "a", "summary", "input"].contains(lowerTag) || ["button", "link", "menuitem", "tab", "switch", "checkbox", "option"].contains(role.lowercased())
         if clickable, !hasWords(name) { return .unnamed }
         if Rx.has(lookalikes, name) { return .ok }
-        if CommitGuard.isCommit(name) || Rx.has(jobWords, name) { return .his(name) }
+        // A link with a long name is mostly its description ("Page 1 Links to page 2, for back and forward", J12 on 10-21):
+        // only its first four words say what it does. Buttons and short names keep the whole check.
+        let words = name.split(separator: " ")
+        let isLink = lowerTag == "a" || role.lowercased() == "link"
+        let checked = isLink && words.count > 4 ? words.prefix(4).joined(separator: " ") : name
+        if CommitGuard.isCommit(checked) || Rx.has(jobWords, checked) { return .his(name) }
         for a in ancestors.prefix(4) where !a.isEmpty {
             if Rx.has(lookalikes, a) { continue }
             if CommitGuard.isCommit(a) || Rx.has(jobWords, a) { return .his(name.isEmpty ? clean(a) : name) }

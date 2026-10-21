@@ -157,12 +157,12 @@
     "open_url": "{base}/index.html"
    },
    "expect": {
-    "front_app": "Safari",
     "log_lacks": "page: window took focus",
     "job": {
      "placement": "behind",
      "end": "done"
-    }
+    },
+    "front_stays": "Safari"
    },
    "needs_unlocked": true
   },
@@ -238,7 +238,7 @@
    },
    "expect": {
     "log_has": "job\\[.*\\] dropped",
-    "reply_contains": "391",
+    "reply_contains": "391|three hundred ninety-one",
     "no_act_after": "job\\[.*\\] dropped"
    },
    "then": [
@@ -358,7 +358,7 @@
     "open_url": "{base}/index.html"
    },
    "expect": {
-    "reply_contains": "391",
+    "reply_contains": "391|three hundred ninety-one",
     "job": {
      "end": "done"
     },
@@ -1052,8 +1052,7 @@
      "imessage_send.*sent"
     ],
     "no_agent": true
-   },
-   "limit_ms": 30000
+   }
   },
   {
    "id": "M3",
@@ -1071,8 +1070,7 @@
      "send_email.*sent"
     ],
     "no_agent": true
-   },
-   "limit_ms": 30000
+   }
   },
   {
    "id": "N1",

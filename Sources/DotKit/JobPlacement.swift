@@ -66,6 +66,15 @@ public enum JobWords {
 
     /// "click export", "scroll down", "open page two": one small act on what is in front, which stays a talk tag (as
     /// fast as today). Anything with a second step, or a find, search, download or submit, is a job.
+    static let hisPressOnlyRe = Rx.make(JobPlacementRule.lead + #"(?:submit|send|apply|pay|buy|book|confirm|post|publish|purchase|check ?out|place (?:the |my )?order)(?: (?:it|this|that|the|my|this|our)?(?: ?[a-z0-9'-]+){0,2})?$"#)
+
+    /// The ask is only a press that is his ("submit the application", "send it"): no job can do it, so talk rings the
+    /// button at once (1.8 s on 10-19) instead of a job finding it to ring (8 s on 10-21, bench row 12).
+    public static func isHisPressOnly(_ text: String) -> Bool {
+        let t = clean(text).lowercased().trimmingCharacters(in: CharacterSet(charactersIn: ".!?"))
+        return Rx.has(hisPressOnlyRe, t) && !Rx.has(secondClauseRe, t)
+    }
+
     public static func isSingleAct(_ text: String) -> Bool {
         let t = clean(text).trimmingCharacters(in: CharacterSet(charactersIn: ".!?"))
         guard Rx.has(singleLeadRe, t) else { return false }

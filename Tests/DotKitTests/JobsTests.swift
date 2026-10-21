@@ -562,3 +562,29 @@ final class SingleActURLTests: XCTestCase {
         XCTAssertFalse(JobWords.isSingleAct("in a separate tab, open 127.0.0.1:8766/page1.html"))
     }
 }
+
+final class LinkDescriptionTests: XCTestCase {
+    func v(_ name: String, tag: String = "a", role: String = "link") -> PageVerdict {
+        PageCommitRule.verdict(name: name, role: role, tag: tag, type: "", inForm: false, formIsSearch: false)
+    }
+    func testALinksDescriptionIsNotItsVerb() {
+        XCTAssertEqual(v("Page 1 Links to page 2, for back and forward"), .ok)
+        XCTAssertEqual(v("Read our guide on how to share files safely"), .ok)
+        if case .his = v("Unsubscribe from all emails") {} else { XCTFail("unsubscribe link") }
+        if case .his = v("Delete account") {} else { XCTFail("delete link") }
+        if case .his = v("Click here to unsubscribe") {} else { XCTFail("short link, whole check") }
+        if case .his = v("Yes, delete my account permanently now", tag: "button", role: "button") {} else { XCTFail("buttons keep the whole check") }
+    }
+}
+
+final class HisPressOnlyTests: XCTestCase {
+    func testOnlyAPressThatIsHis() {
+        for a in ["submit the application", "send it", "submit", "please book it", "confirm the order", "check out"] {
+            XCTAssertTrue(JobWords.isHisPressOnly(a), a)
+        }
+        for a in ["type Sam Rivera in the name field and submit the application", "submit my application to northwind on handshake",
+                  "send sam a text saying hi there", "open the form", "find the submit button and tell me what it says"] {
+            XCTAssertFalse(JobWords.isHisPressOnly(a), a)
+        }
+    }
+}

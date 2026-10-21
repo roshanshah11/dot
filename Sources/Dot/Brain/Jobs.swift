@@ -882,6 +882,11 @@ final class JobManager {
             case .otherApp:
                 return await done("error: something else is on top of \(title); close it first", true)
             case .failed:
+                if case .pressed = Hands.pressToggleBeside(frame, frontPid: NSWorkspace.shared.frontmostApplication?.processIdentifier) {
+                    Log.info("act: click \(Log.short(title, 60)) ok \(Int(Date().timeIntervalSince(started) * 1000)) ms (job \(job.id): axpress on the switch beside \(ref))")
+                    pointAt(job, center, label: title)
+                    return await done("ok: clicked \(title) (its switch)", false)
+                }
                 Log.info("act: click \(Log.short(title, 60)) fail \(Int(Date().timeIntervalSince(started) * 1000)) ms (job \(job.id): axpress at \(ref) failed; trying by name)")
             }
         }
