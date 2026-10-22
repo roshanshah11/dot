@@ -203,7 +203,8 @@ public enum MacSetting: Equatable, Sendable {
     /// "bluetooth on", "wi-fi off", "dark mode on", "light mode", "volume up", "volume 30", "mute", "unmute".
     public static func parse(_ text: String) -> MacSetting? {
         let t = text.lowercased().replacingOccurrences(of: "wi-fi", with: "wifi").trimmingCharacters(in: .whitespacesAndNewlines)
-        let words = t.split(whereSeparator: { $0 == " " || $0 == ":" }).map(String.init)
+        // words without punctuation: "back on." ends in "on"
+        let words = t.components(separatedBy: CharacterSet.alphanumerics.union(CharacterSet(charactersIn: "%")).inverted).filter { !$0.isEmpty }
         let on = words.contains("on") || words.contains("enable") || words.contains("enabled")
         let off = words.contains("off") || words.contains("disable") || words.contains("disabled")
         if t.contains("bluetooth"), on != off { return .bluetooth(on: on) }
@@ -260,11 +261,35 @@ public enum ActionPhrases {
     /// "set the volume to 30", "mute", "unmute the sound".
     private static let toggleName = #"(bluetooth|wi-?fi|dark mode|light mode)"#
     static let settingToggle = re(lead + #"(?:(?:turn|switch|flip|put)\s+(on|off)\s+(?:the\s+|my\s+)?"# + toggleName
-        + #"|(?:turn|switch|flip|put)\s+(?:the\s+|my\s+)?"# + toggleName + #"\s+(on|off)"#
+        + #"|(?:turn|switch|flip|put)\s+(?:the\s+|my\s+)?"# + toggleName + #"\s+(?:back\s+)?(on|off)(?:\s+again)?"#
         + #"|(enable|disable)\s+(?:the\s+|my\s+)?"# + toggleName
         + #"|(?:switch|go|change)\s+(?:to|into)\s+"# + toggleName
         + #"|"# + toggleName + #"\s+(on|off))"# + tail)
+    /// "turn it back on", "switch that off again", "turn it up": the setting Dot flipped a moment ago (10-21 19:42: "turn
+    /// it back on" right after "turn off my bluetooth" became a job that couldn't tell what "it" was).
+    static let settingAgain = re(lead + #"(?:turn|switch|flip|put)\s+(?:it|that|this)\s+(?:back\s+)?(on|off|up|down)(?:\s+again)?"# + tail)
     static let volume = re(lead + #"(?:(?:turn|put)\s+(?:the\s+|my\s+)?(?:volume|sound)\s+(up|down)|turn\s+(up|down)\s+(?:the\s+|my\s+)?(?:volume|sound)|(?:volume|sound)\s+(up|down)|(?:set|put|turn)\s+(?:the\s+|my\s+)?(?:volume|sound)\s+(?:to|at)\s+(\d{1,3})\s*(?:%|percent)?|(mute|unmute)(?:\s+(?:the\s+|my\s+)?(?:sound|volume|mac|computer|audio))?)"# + tail)
+
+    /// "turn it back on" after a setting Dot just flipped: the same setting, turned the way he says; nil for other words or
+    /// when the last setting doesn't take that word (a volume goes up or down, a switch on or off).
+    public static func settingAgain(_ text: String, last: MacSetting) -> MacSetting? {
+        let t = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        let range = NSRange(location: 0, length: (t as NSString).length)
+        guard let m = settingAgain.firstMatch(in: t, range: range) else { return nil }
+        let word = (t as NSString).substring(with: m.range(at: 1)).lowercased()
+        switch last {
+        case .bluetooth: return ["on", "off"].contains(word) ? .bluetooth(on: word == "on") : nil
+        case .wifi: return ["on", "off"].contains(word) ? .wifi(on: word == "on") : nil
+        case .darkMode: return ["on", "off"].contains(word) ? .darkMode(on: word == "on") : nil
+        case .volume:
+            switch word {
+            case "up": return .volume(.up)
+            case "down": return .volume(.down)
+            case "on": return .volume(.unmute)
+            default: return .volume(.mute)
+            }
+        }
+    }
 
     /// The command for a fixed phrase, or nil when the words need the model. `open X` is returned
     /// unresolved: the caller acts on it only when X is an app, a folder or a site it can name.

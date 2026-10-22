@@ -677,6 +677,26 @@ final class JobManager {
             rang(job, label: str(args, "label") ?? ref.flatMap { job.nativeRefs[$0] } ?? ref ?? "that", point: frame.map { CGPoint(x: $0.midX, y: $0.midY) })
             return ("stopped: left for his press. stop here and tell him it's ready for his press.", false, nil)
         }
+        // Music and Mac settings touch no page and no window, so they work whatever is in front (10-21 19:43: a front
+        // job in the terminal answered "play works in comet only").
+        if tool == "play" || tool == "setting" {
+            let command: ActionCommand
+            if tool == "setting" {
+                guard let setting = MacSetting.parse(str(args, "to") ?? "") else { return ("error: which setting? (bluetooth on, wifi off, volume 30, mute)", true, nil) }
+                command = .setting(setting)
+            } else {
+                let kind = SpotifyPlay.Kind(rawValue: str(args, "kind") ?? "playlist") ?? .playlist
+                guard let play = SpotifyPlay.make(kind, str(args, "words") ?? "") else { return ("error: play what?", true, nil) }
+                command = .play(play)
+            }
+            let outcome = await job.hands.perform(command, context: AccessibilityContext.capture(maxElements: 10))
+            let ms = Int(Date().timeIntervalSince(started) * 1000)
+            Log.info("act: \(tool) \(Log.short(str(args, "to") ?? str(args, "words") ?? "", 60)) \(outcome.ok ? "ok" : "fail") \(ms) ms (job \(job.id): \(Log.short(outcome.ok ? outcome.line : outcome.detail, 100)))")
+            if outcome.ok { return ("ok: \(outcome.line)", false, nil) }
+            var text = "error: \(outcome.line.isEmpty ? outcome.detail : outcome.line)"
+            if let offer = outcome.offer { text += " (offer him: \(offer.verb) \(offer.object))" }
+            return (text, true, nil)
+        }
         if !job.isBrowserJob { return await performNative(job, tool: tool, args: args) }
         var result: PageDriver.Result
         switch tool {
@@ -725,15 +745,6 @@ final class JobManager {
             if result.status == .ok { Log.info("job[\(job.id)] upload \((path as NSString).lastPathComponent) -> \(await job.page.host)") }
         case "show":
             return await show(job)
-        case "setting":
-            guard let setting = MacSetting.parse(str(args, "to") ?? "") else { return ("error: which setting? (bluetooth on, wifi off, volume 30, mute)", true, nil) }
-            let outcome = await job.hands.perform(.setting(setting), context: AccessibilityContext.capture(maxElements: 10))
-            result = outcome.ok ? .ok(outcome.line) : .error(outcome.line.isEmpty ? outcome.detail : outcome.line)
-        case "play":
-            let kind = SpotifyPlay.Kind(rawValue: str(args, "kind") ?? "playlist") ?? .playlist
-            guard let play = SpotifyPlay.make(kind, str(args, "words") ?? "") else { return ("error: play what?", true, nil) }
-            let outcome = await job.hands.perform(.play(play), context: AccessibilityContext.capture(maxElements: 10))
-            result = outcome.ok ? .ok(outcome.line) : .error(outcome.line.isEmpty ? outcome.detail : outcome.line)
         default:
             return ("error: no tool \(tool)", true, nil)
         }

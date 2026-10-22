@@ -691,6 +691,8 @@ final class Talk {
     private var lastAsked = ""
     /// The ask in flight was made with shift held (agent mode); `mode` itself goes back to talk as the ask starts.
     private var askedWithShift = false
+    /// The setting Dot flipped last and when, so "turn it back on" knows what "it" is for a few minutes.
+    private var lastSetting: (MacSetting, Date)?
 
     // MARK: Streaming transcription
 
@@ -1688,6 +1690,7 @@ final class Talk {
         let outcome = await hands.perform(command, context: context)
         let ms = Int(Date().timeIntervalSince(started) * 1000)
         Log.info("act: \(command.verb) \(Log.short(command.object, 60)) \(outcome.ok ? "ok" : "fail") \(ms) ms (\(outcome.detail))")
+        if case .setting(let s) = command, outcome.ok { lastSetting = (s, Date()) }
         if let point = outcome.point { overlay.point(at: point, label: Log.short(command.object, 24)) }
         if let commit = outcome.commitLabel {
             // his rule: ring it for his own hand, never press it
@@ -1993,6 +1996,11 @@ final class Talk {
         }
         // The small things, with no model (the basics pass): "scroll down", "go back", "open spotify", "pause".
         // An "open X" Dot can't name goes on to the model, which asks one short question.
+        // "turn it back on" right after a setting Dot flipped (10-21 19:42).
+        if !inWalkthrough, let (last, at) = lastSetting, Date().timeIntervalSince(at) < 180, let again = ActionPhrases.settingAgain(text, last: last) {
+            Log.info("route: fixed phrase setting \(again.words) (again, after \(last.words))")
+            return .act(.setting(again))
+        }
         if !inWalkthrough, !agentWords, let command = ActionPhrases.match(text) {
             if case .open(let name) = command, !hands.canResolve(name) {
                 Log.info("act: \"\(name)\" is no app, folder or bookmark; the model takes it")

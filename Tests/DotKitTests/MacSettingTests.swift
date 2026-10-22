@@ -25,6 +25,17 @@ final class MacSettingTests: XCTestCase {
         XCTAssertEqual(setting("unmute the sound"), .volume(.unmute))
     }
 
+    /// 10-21 19:42, his words after "turn off my bluetooth".
+    func testBackOnAndTurnItBackOn() {
+        XCTAssertEqual(setting("Turn my Bluetooth back on."), .bluetooth(on: true))
+        XCTAssertEqual(setting("turn the wifi off again"), .wifi(on: false))
+        XCTAssertEqual(ActionPhrases.settingAgain("Turn it back on.", last: .bluetooth(on: false)), .bluetooth(on: true))
+        XCTAssertEqual(ActionPhrases.settingAgain("switch that off again", last: .wifi(on: true)), .wifi(on: false))
+        XCTAssertEqual(ActionPhrases.settingAgain("turn it up", last: .volume(.down)), .volume(.up))
+        XCTAssertNil(ActionPhrases.settingAgain("turn it up", last: .bluetooth(on: false)))
+        XCTAssertNil(ActionPhrases.settingAgain("turn it into a pdf", last: .bluetooth(on: false)))
+    }
+
     func testLookAlikesAreNotSettings() {
         XCTAssertNil(setting("what is bluetooth"))
         XCTAssertNil(setting("why is my wifi so slow"))
