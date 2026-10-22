@@ -154,3 +154,19 @@ final class ThisTabTests: XCTestCase {
         XCTAssertFalse(JobWords.saysThisTab("where is the here and now chapter"))
     }
 }
+
+/// His words carry on the live job (10-21 22:38: two follow-ups dropped the flights search and asked what "it" was).
+final class CarryOnJobTests: XCTestCase {
+    func testHisFollowUpsCarryOn() {
+        for t in ["Go on, can you do it in a different uh like window so you're not interrupting?", "Can you work on it, um behind my window so there's no issues.",
+                  "keep going but only nonstop flights", "do it in the background", "finish that", "yes, continue"] {
+            XCTAssertTrue(JobWords.continuesJob(t), t)
+        }
+    }
+
+    func testNewAsksDoNot() {
+        for t in ["what's on my calendar tomorrow", "open spotify", "find me a hotel in philly", "show me flights to boston", "stop"] {
+            XCTAssertFalse(JobWords.continuesJob(t), t)
+        }
+    }
+}

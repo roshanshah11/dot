@@ -34,6 +34,8 @@ final class JobManager {
         var rung: (label: String, point: CGPoint?)?
         /// A pause picks itself back up once he has left the tab alone for a while (10-21: "my dot is stuck").
         var autoResume: DispatchWorkItem?
+        /// When he last asked to see its window ("show me"): a behind job pauses on his clicks only then (10-21 22:38).
+        var shownAt: Date?
         let bench: Bool
         let folder: URL
         let stamp: String
@@ -284,7 +286,7 @@ final class JobManager {
     /// Start a job. Returns the line Dot says (it says it itself, so nothing waits on the model), or nil when it couldn't.
     @discardableResult
     func start(goal: String, placement asked: JobPlacement, context: ScreenContext, askedAt: Date?, bench: Bool, benchPort: Int? = nil,
-               hisWords: String? = nil, announce: Bool = true) -> String? {
+               hisWords: String? = nil, announce: Bool = true, conversation: [String] = []) -> String? {
         let words = hisWords ?? goal
         if running.count >= config.jobsMax {
             queue.append((goal, asked, context, askedAt, bench))
@@ -335,6 +337,8 @@ final class JobManager {
             // A behind job still needs to know what "this" or "the reading" was: what he had in front when he asked.
             first += "\nhe was looking at: app \(context.appName ?? "?"), window \"\(Log.short(context.windowTitle ?? "", 100))\"\(context.url.map { ", url \($0) (open it in your window when the ask is about it)" } ?? "")"
         }
+        // Atlas's way: the work starts inside the conversation, so "it" and "that" mean what he just talked about.
+        if !conversation.isEmpty { first += "\nthe last few minutes with dot, oldest first (\"it\" may mean these):\n" + conversation.joined(separator: "\n") }
         first += "\nhe said: \"\(words)\""
         if goal != words { first += "\nwhat talk saw that matters: \(goal)" }
         if Self.isDeck(words) { first += "\n" + Self.deckBrief }
@@ -1079,7 +1083,9 @@ final class JobManager {
             return
         }
         for job in running where job.phase == .paused { scheduleAutoResume(job) }   // still using the tab: wait longer
-        let candidates = running.filter { $0.phase == .running }
+        // A behind job is his to ignore: his clicks pause it only after he asked to see its window (10-21 22:38 its window
+        // took focus for a moment and his next click paused the flights search).
+        let candidates = running.filter { $0.phase == .running && ($0.placement == .front || $0.shownAt.map { Date().timeIntervalSince($0) < 180 } == true) }
         guard !candidates.isEmpty else { return }
         inputDebounce?.cancel()
         let work = DispatchWorkItem { [weak self] in
@@ -1195,6 +1201,7 @@ final class JobManager {
     @discardableResult
     func show(_ job: Job) async -> (String, Bool, String?) {
         Log.info("job[\(job.id)] shown")
+        job.shownAt = Date()
         if job.page.isBound {
             let r = await job.page.show()
             if let rung = job.rung, let point = rung.point {

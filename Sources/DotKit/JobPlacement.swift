@@ -70,6 +70,12 @@ public enum JobWords {
     static let questionRe = Rx.make(question)
     static let doingRe = Rx.make(doing)
 
+    /// His words carry on the job that's live rather than start a new one (10-21 22:38: "go on, can you do it in a different
+    /// window so you're not interrupting?" dropped the flights job and started a job that asked what "it" was): a resume
+    /// word first, "it" or "that" as the thing to do, or where it should run.
+    static let carryOnRe = Rx.make(lead + #"(?:(?:yes|yeah|ok(?:ay)?)[,.]?\s+)?(?:go on|keep going|continue|carry on|resume|go ahead)\b|\b(?:do|work on|keep doing|finish|try|run|redo)\s+(?:it|that|this)\b|\b(?:behind (?:my|the|your) window|(?:a |another |a different |your own |its own )window|in the background|(?:so )?(?:you'?re|you are) not interrupting|without interrupting|don'?t interrupt)\b"#)
+    public static func continuesJob(_ text: String) -> Bool { Rx.has(carryOnRe, clean(text)) }
+
     /// He said to use the tab in front: "in this tab", "same tab", "here", "replace this page".
     static let thisTabRe = Rx.make(#"\b(?:(?:in|on|use) (?:this|the same|my current) (?:tab|page|window)|same tab|right here|in here|here instead|replace (?:this|the) (?:tab|page))\b|\bhere\W*$"#)
     public static func saysThisTab(_ text: String) -> Bool { Rx.has(thisTabRe, clean(text)) }

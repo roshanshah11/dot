@@ -1218,6 +1218,10 @@ final class Talk {
             if let job = jobs.job(id) { jobs.followUp(job, text: text); lastJobAddressed = id }
             jobLine("got it.")
             return
+        case .carryOnJob(let id):
+            if let job = jobs.job(id) { jobs.resume(job, why: "said: \"\(text)\" (fold that in)"); lastJobAddressed = id }
+            jobLine("going on.")
+            return
         case .jobStatus:
             jobLine(jobs.spokenStatus())
             return
@@ -1558,7 +1562,7 @@ final class Talk {
              resumeRoutine(String), askWhichCard(ConsentVoice.Answer), morning(Bool, String?), homeThread(String), setMode(ContextMode?)
         /// The fast lane: a job Dot runs itself, and his words to a running one; an agent only on his words.
         case job(JobPlacement, goal: String, why: String), stopJob(String), stopAllJobs, resumeJob(String), showJob(String),
-             steerJob(String, String), followUpJob(String), jobStatus, agentAsked
+             steerJob(String, String), followUpJob(String), jobStatus, agentAsked, carryOnJob(String)
         var description: String {
             switch self {
             case .act(let command): return "act(\(command.verb) \(command.object))"
@@ -1608,6 +1612,7 @@ final class Talk {
             case .showJob(let id): return "showJob(\(id))"
             case .steerJob(let id, let to): return "steerJob(\(id), \(to))"
             case .followUpJob(let id): return "followUpJob(\(id))"
+            case .carryOnJob(let id): return "carryOnJob(\(id))"
             case .jobStatus: return "jobStatus"
             case .agentAsked: return "agentAsked"
             }
@@ -1734,13 +1739,26 @@ final class Talk {
         AgentWords.asksForAgent(lastAsked) || AgentModeFilter.wantsFreshAgent(lastAsked) || askedWithShift
     }
 
+    /// The last 15 minutes with Dot, oldest first, for a new job's first message: his asks and what Dot said, and the jobs
+    /// with how they ended. A job that starts cold can't tell what "it" is (10-21 22:38 and 22:39).
+    private func recentConversation(now: Date = Date()) -> [String] {
+        func short(_ t: String, _ n: Int) -> String { let f = t.replacingOccurrences(of: "\n", with: " "); return f.count <= n ? f : String(f.prefix(n)) + "…" }
+        var items: [(Date, String)] = shared.turns.filter { now.timeIntervalSince($0.at) < 900 }
+            .map { ($0.at, "- he asked \"\(short($0.asked, 140))\"; dot said \"\(short($0.said, 200))\"") }
+        for job in jobs.jobs where now.timeIntervalSince(job.startedAt) < 900 {
+            let how = job.phase.isTerminal ? (job.endLine.isEmpty ? job.phase.rawValue : "\(job.phase.rawValue): \(short(job.endLine, 160))") : "\(job.phase.rawValue), last step: \(short(job.lastLine, 100))"
+            items.append((job.startedAt, "- a job for \"\(short(job.hisWords, 140))\" (\(job.placement.rawValue)), \(how)"))
+        }
+        return items.sorted { $0.0 < $1.0 }.suffix(6).map(\.1)
+    }
+
     /// Start a job; Dot says its own start line unless talk already said one.
     private func startJob(goal: String, placement: JobPlacement, words: String, announce: Bool = true) {
         phase = .idle
         hud.set(phase: .hidden)
         overlay.setPhase(.idle)
         let started = jobs.start(goal: goal, placement: placement, context: context, askedAt: askReceivedAt, bench: benchMode,
-                                 benchPort: hands.bench?.cometPort, hisWords: words, announce: announce)
+                                 benchPort: hands.bench?.cometPort, hisWords: words, announce: announce, conversation: recentConversation())
         if started == nil { jobLine("i couldn't start that job.") }
         lastJobAddressed = jobs.newest?.id
         region = nil
@@ -1905,9 +1923,15 @@ final class Talk {
         }
         // The fast lane: his words to a running job (stop, go on after a pause, show me, change course).
         if config.jobsEnabled, !jobs.jobs.isEmpty {
+            // Atlas's way (telegram_chat: a message mid-turn is queued for the running conversation, never a reason to drop
+            // it): his words while a job is paused or running carry it on; a paused job is never dropped for speaking.
             if let paused = jobs.pausedJob {
                 if JobWords.isResume(text) { return .resumeJob(paused.id) }
-                jobs.drop(paused, reason: "he moved on")
+                if JobWords.continuesJob(text) { return .carryOnJob(paused.id) }
+            }
+            if JobWords.continuesJob(text), !JobWords.isStop(text), let job = jobs.running.first(where: { $0.id == lastJobAddressed }) ?? jobs.newest {
+                Log.info("route: carries on job[\(job.id)]")
+                return .followUpJob(job.id)
             }
             if JobWords.isStopAll(text), !jobs.running.isEmpty { return .stopAllJobs }
             if JobWords.isStop(text), let job = jobs.frontJob ?? jobs.newest { return .stopJob(job.id) }

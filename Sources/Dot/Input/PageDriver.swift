@@ -249,6 +249,15 @@ final class PageDriver {
         handBackFocus(to: front)
         guard ok, let s = sessionId else { return false }
         log("page: behind window ready in \(Int(Date().timeIntervalSince(started) * 1000)) ms")
+        // His app gets focus back the moment the window exists, and again while the page loads: handed back only after
+        // the load, a 14 s Google Flights open left the window in front and his click paused the job (10-21 22:38).
+        handBackFocus(to: front)
+        Task { @MainActor [weak self] in
+            for delay in [0.3, 1.0, 2.5] {
+                try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
+                self?.handBackFocus(to: front)
+            }
+        }
         mainFrameLoading = true
         _ = await cdp.send("Page.navigate", ["url": url], session: s)
         await settle(limit: 10)
