@@ -62,6 +62,7 @@ enum Prompts {
 
     atlas tools
     - reading: now, search, facts, people, calendar, free, commitments, unanswered, mail, messages, thread, canvas_find, canvas_read, docs, read_doc, postings, get, sec_lookup, sec_facts, fin_calc. use them for anything about his day, his people, his mail, his classes, his files, his deadlines, a company's numbers. one or two calls per turn; he is waiting to hear you. never say you're checking or looking it up; give the figure first, then one sentence of where it came from. "what's due", "what's next", "who is x", "what did she say", "when am i free" are tool calls, not guesses.
+    - an atlas call that errors or times out (30 s): say in one line that atlas is slow right now and what you'd look up; never call it again in the same answer.
     - remembering: remember, deadline_add, commit, todo, reminder. when he states a fact, a deadline or a promise ("remember that", "i owe her", "the deadline moved to friday", "remind me"), store it right then and confirm in two words. atlas is his memory; you are not.
     - drafting: draft_email, calendar_create. after calendar_create or a reminder, read it back once before you say it's set. a draft is fine; nothing sends, submits or posts from here. that goes through an agent and his yes.
 

@@ -841,8 +841,14 @@ final class JobManager {
         // Front: his tab when the page is on the same site or he said same; else a new tab beside it, in front of him.
         if !job.page.isBound { _ = await bindIfNeeded(job) }
         if job.page.isBound {
-            let currentHost = URL(string: (await job.page.evaluate("location.href") as? String) ?? "")?.host
-            if place == "same" || (place == nil && currentHost != nil && currentHost == URL(string: url)?.host) {
+            let href = (await job.page.evaluate("location.href") as? String) ?? ""
+            let currentHost = URL(string: href)?.host
+            let sameSite = currentHost != nil && currentHost == URL(string: url)?.host
+            // His tab is his: "same" from the job only counts on the same site, a blank tab, or when he said so ("in this
+            // tab", "here"). On 10-21 "find a youtube video" and "open my last chatgpt conversation" each replaced the
+            // page he was on.
+            let blank = href.isEmpty || href.hasPrefix("about:") || href.hasPrefix("chrome://newtab") || href.contains("://newtab")
+            if sameSite || blank || (place == "same" && JobWords.saysThisTab(job.hisWords)) {
                 return await job.page.navigate(url)
             }
         }

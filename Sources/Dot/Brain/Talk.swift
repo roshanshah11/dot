@@ -2048,7 +2048,9 @@ final class Talk {
         ]
         if config.jobsEnabled {
             // The fast lane: doing is the companion's own, any number of steps; agents start only on his words.
-            routeCriteria["act"] = "anything for the companion to do rather than answer: open an app, a site, a file or a folder; go somewhere and do something there; click, type, search, scroll; download or save files; fill a form up to its submit button; check a site or an account; make a file or a deck; go through mail; research across sources and write it up; any number of steps, in front of him or in a window behind"
+            routeCriteria["act"] = "anything for the companion to do rather than answer: open an app, a site, a file or a folder; go somewhere and do something there; click, type, search, scroll; download or save files; fill a form up to its submit button; make a file or a deck; draft or send something; research across sources and write it up; any number of steps, in front of him or in a window behind"
+            // 10-21: questions about his own mail, texts, canvas, wyzant and applications went to act and became slow jobs.
+            routeCriteria["answer"] = (routeCriteria["answer"] ?? "") + "; also any question about his own things that the companion can look up: his mail and what someone wrote, his texts, canvas assignments and readings, wyzant messages, where an application stands, his files, his people"
             routeCriteria["agent"] = nil
         }
         if !lastAskWasTyped, text.count >= 40 || lecture.isListening {
@@ -2132,6 +2134,10 @@ final class Talk {
         }
         if route.choice == "lecture", route.probability >= 0.6, route.confidence >= 0.5 { return .lecture }
         if config.jobsEnabled, route.choice == "act", route.probability >= 0.5, route.confidence >= 0.5, !PanelCoach.wantsPanel(text), !Self.teachWords(text) {
+            if JobWords.isLookupQuestion(text) {
+                Log.info("jev: act, but a question about his things; talk answers it (\(String(format: "%.2f", route.probability)))")
+                return .answer
+            }
             if JobWords.isHisPressOnly(text) {
                 Log.info("jev: his press only; talk rings it")
                 return .answer

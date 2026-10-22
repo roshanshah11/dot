@@ -59,6 +59,26 @@ public enum JobWords {
 
     static func clean(_ text: String) -> String { text.trimmingCharacters(in: .whitespacesAndNewlines) }
 
+    /// A question about his own things that Atlas answers in one or two calls ("what did alexander white say in his last
+    /// email", "what's due this week", "any new wyzant messages", "what did sam text me last"): talk answers it in
+    /// seconds. On 10-21 the route model called these act and each became a 10 to 30 s job "behind your window".
+    static let question = JobPlacementRule.lead + #"(?:(?:can|could) you (?:tell me|check)\s+)?(?:what|what's|whats|when|where|who|whom|whose|which|why|how (?:many|much|long|often)|any|anything|is there|are there|did|does|do i|do you know|have i|has|is|are|was|were)\b"#
+    /// Words that ask for something done, not said: then it is a job whatever the question shape ("can you open...").
+    /// ("email" and "reply" are nouns in "his last email" and "did she reply": asking Dot to email or reply never starts
+    /// with a question word, so it isn't a lookup anyway.)
+    static let doing = #"\b(?:open|pull up|bring up|go to|navigate|download|save|upload|fill|submit|send|text him|text her|play|put on|click|type|book|buy|order|print|make|create|draft|write|delete|move|rename|install|sign (?:in|up)|log in|apply)\b"#
+    static let questionRe = Rx.make(question)
+    static let doingRe = Rx.make(doing)
+
+    /// He said to use the tab in front: "in this tab", "same tab", "here", "replace this page".
+    static let thisTabRe = Rx.make(#"\b(?:(?:in|on|use) (?:this|the same|my current) (?:tab|page|window)|same tab|right here|in here|here instead|replace (?:this|the) (?:tab|page))\b|\bhere\W*$"#)
+    public static func saysThisTab(_ text: String) -> Bool { Rx.has(thisTabRe, clean(text)) }
+
+    public static func isLookupQuestion(_ text: String) -> Bool {
+        let t = clean(text)
+        return Rx.has(questionRe, t) && !Rx.has(doingRe, t)
+    }
+
     public static func isStop(_ text: String) -> Bool { Rx.has(stopRe, clean(text)) }
     public static func isStopAll(_ text: String) -> Bool { Rx.has(stopAllRe, clean(text)) }
     public static func isResume(_ text: String) -> Bool { Rx.has(resumeRe, clean(text)) }

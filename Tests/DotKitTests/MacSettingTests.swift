@@ -123,3 +123,34 @@ final class SpotifyDeviceTests: XCTestCase {
         XCTAssertEqual(SpotifyControl.parse(SpotifyControl.moveTo("tv").words), .moveTo("tv"))
     }
 }
+
+/// Questions about his things go to talk, not a job (10-21 top-sites pass: five of them became 10 to 30 s jobs).
+final class LookupQuestionTests: XCTestCase {
+    func testHisQuestionsAreAnswers() {
+        for q in ["what did alexander white say in his last email", "what's due this week for my classes", "what are my bio readings for thursday",
+                  "any new wyzant messages", "what did sam text me last", "where does my northwind application stand", "where is my resume",
+                  "Can you tell me what's on my calendar tomorrow?", "did sam rivera reply to me", "how many emails do i have from northwind bank"] {
+            XCTAssertTrue(JobWords.isLookupQuestion(q), q)
+        }
+    }
+
+    func testDoingStaysAJob() {
+        for d in ["can you open my outlook", "download my bio readings", "find investment banking jobs on handshake posted this week",
+                  "can you text sam that i'm running late", "any chance you can download the readings", "what's up, open spotify",
+                  "go to canvas and get my readings", "fill this out for me"] {
+            XCTAssertFalse(JobWords.isLookupQuestion(d), d)
+        }
+    }
+}
+
+/// A job keeps his tab unless he said to use it (10-21: two front jobs replaced the page he was on).
+final class ThisTabTests: XCTestCase {
+    func testOnlyHisWordsGiveAwayHisTab() {
+        XCTAssertTrue(JobWords.saysThisTab("open youtube in this tab"))
+        XCTAssertTrue(JobWords.saysThisTab("open my outlook here"))
+        XCTAssertTrue(JobWords.saysThisTab("go to canvas in the same tab"))
+        XCTAssertFalse(JobWords.saysThisTab("find a youtube video explaining eigenvalues"))
+        XCTAssertFalse(JobWords.saysThisTab("open my last chatgpt conversation"))
+        XCTAssertFalse(JobWords.saysThisTab("where is the here and now chapter"))
+    }
+}
