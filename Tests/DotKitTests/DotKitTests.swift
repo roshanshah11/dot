@@ -1084,6 +1084,15 @@ final class AgentVoiceTests: XCTestCase {
         XCTAssertEqual(TagParser.parse("stopping it. [STOP_AGENT:Email]").tags, [.stopAgent(name: "Email")])
         XCTAssertEqual(TagParser.parse("[STOP_AGENT:]").tags, [])
     }
+
+    /// One Dot (10-22): talk routes his words to a live job by id; the message keeps its own colons.
+    func testJobTag() {
+        let parsed = TagParser.parse("[JOB:ftrdh4:keep the flights search going in your own window: only nonstops]\nsending that to the flights search.")
+        XCTAssertEqual(parsed.tags, [.jobMessage(id: "ftrdh4", message: "keep the flights search going in your own window: only nonstops")])
+        XCTAssertEqual(parsed.spoken, "sending that to the flights search.")
+        XCTAssertEqual(TagParser.parse("[JOB:ftrdh4:stop]").tags, [.jobMessage(id: "ftrdh4", message: "stop")])
+        XCTAssertEqual(TagParser.parse("[JOB::go on]").tags, [])
+    }
 }
 
 final class AgentRecoveryTests: XCTestCase {

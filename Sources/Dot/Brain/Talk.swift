@@ -1749,7 +1749,9 @@ final class Talk {
             let how = job.phase.isTerminal ? (job.endLine.isEmpty ? job.phase.rawValue : "\(job.phase.rawValue): \(short(job.endLine, 160))") : "\(job.phase.rawValue), last step: \(short(job.lastLine, 100))"
             items.append((job.startedAt, "- a job for \"\(short(job.hisWords, 140))\" (\(job.placement.rawValue)), \(how)"))
         }
-        return items.sorted { $0.0 < $1.0 }.suffix(6).map(\.1)
+        let mine = items.sorted { $0.0 < $1.0 }.suffix(6).map(\.1)
+        let atlas = benchMode ? [] : AtlasThread.shared.lines(now: now)
+        return atlas + mine
     }
 
     /// Start a job; Dot says its own start line unless talk already said one.
@@ -1908,17 +1910,19 @@ final class Talk {
         // minutes, never into a turn still running. The agent whose Home thread is open comes first (VO-09, VO-06).
         let focused = focusedThread?().flatMap { slug in addressBook.contains(where: { $0.slug == slug }) ? slug : nil }
         let working = agents.runningAgents()
-        if let instruction = AgentVoice.steer(text) {
+        // One Dot (10-22): which agent or job he means is talk's call, with all of them in its context; only the words
+        // that can't mean anything else (named agents above, stop, go on, show me) skip it.
+        if !config.oneDot, let instruction = AgentVoice.steer(text) {
             let target = working.first(where: { $0.slug == focused })?.slug ?? working.first(where: { $0.slug == agents.lastAddressed })?.slug
                 ?? (working.count == 1 ? working[0].slug : nil)
             if let target { return .steerAgent(target, instruction) }
         }
-        if AgentVoice.isRetry(text) {
+        if !config.oneDot, AgentVoice.isRetry(text) {
             let idle = { (slug: String) in !working.contains(where: { $0.slug == slug }) }
             let recent = Date().timeIntervalSince(agents.lastAddressedAt) < 900 ? agents.lastAddressed : nil
             if let slug = [focused, recent, agents.justReported(within: 900)?.slug].compactMap({ $0 }).first(where: idle) { return .retryAgent(slug) }
         }
-        if AgentAddress.isProgressAsk(text), !agents.runningAgents().isEmpty || !hud.openConsents.isEmpty {
+        if !config.oneDot, AgentAddress.isProgressAsk(text), !agents.runningAgents().isEmpty || !hud.openConsents.isEmpty {
             return .agentStatus(nil)
         }
         // The fast lane: his words to a running job (stop, go on after a pause, show me, change course).
@@ -1927,19 +1931,19 @@ final class Talk {
             // it): his words while a job is paused or running carry it on; a paused job is never dropped for speaking.
             if let paused = jobs.pausedJob {
                 if JobWords.isResume(text) { return .resumeJob(paused.id) }
-                if JobWords.continuesJob(text) { return .carryOnJob(paused.id) }
+                if !config.oneDot, JobWords.continuesJob(text) { return .carryOnJob(paused.id) }
             }
-            if JobWords.continuesJob(text), !JobWords.isStop(text), let job = jobs.running.first(where: { $0.id == lastJobAddressed }) ?? jobs.newest {
+            if !config.oneDot, JobWords.continuesJob(text), !JobWords.isStop(text), let job = jobs.running.first(where: { $0.id == lastJobAddressed }) ?? jobs.newest {
                 Log.info("route: carries on job[\(job.id)]")
                 return .followUpJob(job.id)
             }
             if JobWords.isStopAll(text), !jobs.running.isEmpty { return .stopAllJobs }
             if JobWords.isStop(text), let job = jobs.frontJob ?? jobs.newest { return .stopJob(job.id) }
             if JobWords.isShowMe(text), let job = jobs.newestBehind() { return .showJob(job.id) }
-            if let instruction = AgentVoice.steer(text), let job = jobs.running.first(where: { $0.id == lastJobAddressed }) ?? jobs.frontJob ?? jobs.newest {
+            if !config.oneDot, let instruction = AgentVoice.steer(text), let job = jobs.running.first(where: { $0.id == lastJobAddressed }) ?? jobs.frontJob ?? jobs.newest {
                 return .steerJob(job.id, instruction)
             }
-            if AgentAddress.isProgressAsk(text), !jobs.running.isEmpty { return .jobStatus }
+            if !config.oneDot, AgentAddress.isProgressAsk(text), !jobs.running.isEmpty { return .jobStatus }
         }
         // "close the panel" closes the panel; a bare "close it" closes the board, or the panel when it just opened
         // (later, "close this" is likely about his own tab or window)
@@ -2008,8 +2012,8 @@ final class Talk {
         }
         // "have an agent do it" is his agent words, not "do it" (review H1): the agent check below takes it.
         let agentWords = config.jobsEnabled && AgentWords.asksForAgent(text)
-        if config.jobsEnabled, saysDrive(text), !agentWords {
-            // "do it": Dot takes it over as a job, in a walkthrough or after one.
+        if config.jobsEnabled, saysDrive(text), !agentWords, !config.oneDot || inWalkthrough {
+            // "do it": Dot takes it over as a job, in a walkthrough or after one (one Dot: talk decides outside one).
             if inWalkthrough { return .drive }
             let bare = Self.driveWords.stringByReplacingMatches(in: text, range: range, withTemplate: "")
                 .trimmingCharacters(in: CharacterSet.alphanumerics.inverted)
@@ -2131,12 +2135,12 @@ final class Talk {
             hud.flash(status: "didn't catch a question", for: 2)
             return .dismiss
         }
-        if config.jobsEnabled, let follow = answers["followup"]?.probability, follow >= 0.7,
+        if config.jobsEnabled, !config.oneDot, let follow = answers["followup"]?.probability, follow >= 0.7,
            let job = jobs.running.first(where: { $0.id == lastJobAddressed }) ?? jobs.newest {
             Log.info("jev: follow-up for job[\(job.id)] (\(String(format: "%.2f", follow)))")
             return .followUpJob(job.id)
         }
-        if let follow = answers["followup"]?.probability, follow >= 0.7 {
+        if !config.oneDot, let follow = answers["followup"]?.probability, follow >= 0.7 {
             // The agent he last spoke to when it is still working, else the newest; with none working,
             // the one that just reported (G2), but never for a bare acknowledgment, which its offered
             // next step would read as a yes.
@@ -2169,6 +2173,11 @@ final class Talk {
             if config.jobsSmallActsInTalk, JobWords.isSingleAct(text) {
                 // One small act on what is in front stays a talk tag, as fast as before.
                 Log.info("jev: one small act (\(String(format: "%.2f", route.probability))); talk writes the tag")
+                return .answer
+            }
+            if config.oneDot {
+                // One Dot: talk hears it with the jobs and agents in view and starts, tells or steers with its tags.
+                Log.info("route: act, through talk (one dot)")
                 return .answer
             }
             let (placement, why) = JobPlacementRule.decide(text: text, frontApp: context.appName)
@@ -2398,6 +2407,8 @@ final class Talk {
         // The other conversation's last exchanges, for "it" and "show me" (2026-10-19 08:58).
         let unseen = shared.unseen(by: kind == .talk ? .talk : .think, now: Date())
         if !unseen.isEmpty { lines.append(contentsOf: SharedTurns.lines(unseen)) }
+        // His Atlas chats (Telegram, the app, his terminal): one thread of record (10-22).
+        if !benchMode { lines.append(contentsOf: AtlasThread.shared.lines()) }
         lines.append("[/context]")
         lines.append("")
         lines.append(transcript)
@@ -2868,6 +2879,7 @@ final class Talk {
         if !benchMode, !result.isError {
             let handedOff = kind == "talk" && tags.contains { if case .think = $0 { return true }; return false }
             shared.record(kind == "think" ? .think : .talk, asked: lastAsked, said: spoken, at: Date(), handedOff: handedOff)
+            if !benchMode { AtlasThread.shared.record(kind: "talk", asked: lastAsked, said: spoken) }
         }
         Log.info("turn[\(kind)] done in \(result.durationMs) ms, $\(String(format: "%.4f", result.costUSD)), \(tags.filter { $0.isVisual }.count) visual beat(s), tags \(tags.map { "\($0)" }.joined(separator: " | "))")
         Log.info("turn[\(kind)] said: \(Log.short(spoken, 240))")
@@ -2913,6 +2925,23 @@ final class Talk {
                 }
             case .newAgent(let name, let brief):
                 startAgent(brief: brief, name: name, fresh: true)
+            case .jobMessage(let id, let message):
+                // [JOB:id:...] from talk: his words for that job (one Dot, 10-22).
+                guard let job = jobs.job(id) ?? jobs.jobs.first(where: { $0.id.hasPrefix(id) || id.hasPrefix($0.id) }) else {
+                    Log.warn("job tag for \(id): no such job"); break
+                }
+                lastJobAddressed = job.id
+                if message.lowercased().trimmingCharacters(in: .punctuationCharacters) == "stop" {
+                    jobs.stop(job, reason: "he said stop")
+                } else if job.phase == .paused {
+                    jobs.resume(job, why: "said: \"\(message)\" (fold that in)")
+                } else if job.phase.isLive {
+                    jobs.followUp(job, text: message)
+                } else {
+                    // Finished already: the same work again with his change, knowing how it went.
+                    jobs.continueJob(job, with: message)
+                }
+                Log.info("job[\(job.id)] from talk: \(Log.short(message, 100))")
             case .tell(let name, let message):
                 let fits = AgentAddress.candidates(named: name, in: addressBook)
                 if fits.count == 1 {

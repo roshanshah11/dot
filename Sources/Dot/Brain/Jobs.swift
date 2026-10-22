@@ -553,6 +553,10 @@ final class JobManager {
         job.endedAt = Date()
         job.endLine = line
         job.pendingDone?.cancel()
+        if !job.bench {
+            let how = stopReason.map { "stopped (\($0))" } ?? (failed ? "failed" : "done")
+            AtlasThread.shared.record(kind: "job", asked: job.hisWords, said: line.isEmpty ? how : "\(how): \(line)")
+        }
         let ms = Int(Date().timeIntervalSince(job.startedAt) * 1000)
         if let stopReason {
             Log.info("job[\(job.id)] stopped (\(stopReason)) after \(ms) ms, $\(String(format: "%.4f", job.cost))")
@@ -1223,7 +1227,7 @@ final class JobManager {
         let live = jobs.filter { $0.phase.isLive || ($0.endedAt.map { Date().timeIntervalSince($0) < 600 } ?? false) }
         guard !live.isEmpty else { return "" }
         return "jobs: " + live.map { job in
-            var s = "\(Log.short(job.goal, 80)) (\(job.placement.rawValue), \(job.phase.rawValue))"
+            var s = "job \(job.id): \(Log.short(job.hisWords, 80)) (\(job.placement.rawValue), \(job.phase.rawValue))"
             if job.phase.isLive, let step = job.steps.last { s += "; last step: \(Log.short(step, 60))" }
             if !job.endLine.isEmpty { s += "; it said: \"\(Log.short(job.endLine, 160))\"" }
             if job.rung != nil { s += "; waiting on his press: \(job.rung!.label)" }

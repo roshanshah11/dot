@@ -165,6 +165,13 @@ struct DotConfig: Codable {
     var jobsEnabled = true
     /// One small act on what is in front ("click export", "scroll down") stays a talk tag, as fast as before.
     var jobsSmallActsInTalk = true
+    /// One Dot (his call, 2026-10-22): every message but the instant commands goes through talk's one conversation, which
+    /// starts, tells, steers or stops jobs and agents itself ([GO], [JOB:id:...], [TELL:name:...]). Off: the sorter's
+    /// shortcuts (route model act -> job, follow-up and steer guesses) as on 10-21.
+    var oneDot = true
+    /// One thread of record with Atlas (10-22): Dot's turns, jobs and agents go into Atlas's history, and his newest Atlas
+    /// turns (Telegram, the app, his terminal) come into Dot's context (scripts/dot-atlas-thread.py).
+    var atlasThread = true
     var jobModel = "sonnet"
     /// Decks and anything written under his name that he didn't dictate (his rule: prose under his name runs on Opus).
     var jobProseModel = "opus"
@@ -298,6 +305,8 @@ struct DotConfig: Codable {
         quipModel = get(.quipModel, d.quipModel)
         jobsEnabled = get(.jobsEnabled, d.jobsEnabled)
         jobsSmallActsInTalk = get(.jobsSmallActsInTalk, d.jobsSmallActsInTalk)
+        oneDot = get(.oneDot, d.oneDot)
+        atlasThread = get(.atlasThread, d.atlasThread)
         jobModel = get(.jobModel, d.jobModel)
         jobProseModel = get(.jobProseModel, d.jobProseModel)
         jobEffort = c.contains(.jobEffort) ? (try? c.decodeIfPresent(String.self, forKey: .jobEffort)) : d.jobEffort

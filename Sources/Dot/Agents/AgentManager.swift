@@ -644,6 +644,7 @@ final class AgentManager {
         run.turnsOwed = max(run.turnsOwed - 1, 0)
         if unprompted { Log.info("agent[\(agent.slug)] a result nobody asked for (a helper's notice or a folded-in message): row updated, no chime or word") }
         if !quiet || report.chip == .alert, !unprompted { reportedAt[agent.slug] = Date() }
+        if !unprompted { AtlasThread.shared.record(kind: "agent", asked: "\(agent.name): \(Log.short(run.lastBrief, 200))", said: (failed ? "failed: " : "") + summary) }
         run.isRoutine = false
         if quiet { routineOutcome?(agent.slug, failed, failed ? summary : nil) }
         // On a call or a muted Mac the result waits in the stack: no chime, no voice (FX-11, decided item 22).

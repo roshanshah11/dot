@@ -105,6 +105,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         quitCleanlyOnSignals()
         agents.recoverAfterLaunch()
         talk = Talk(config: config, hud: hud, overlay: overlay, speaker: speaker, transcriber: transcriber, agents: agents, ledger: ledger, atlas: atlas, jev: jev)
+        AtlasThread.shared.enabled = config.atlasThread
+        AtlasThread.shared.start()
         // The fast lane: a job's dot tools ask the running Dot here (`Dot --hands-mcp`).
         control.register("hands") { [weak self] request, reply in
             guard let self else { reply(["error": "dot is quitting"]); return }
