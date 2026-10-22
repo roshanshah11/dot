@@ -61,6 +61,8 @@ public enum HandsMCPWire {
          schema(["kind": ["type": "string", "enum": ["playlist", "track", "album", "artist"]], "words": str], required: ["words"])),
         ("setting", "Flip a Mac setting at once and read it back: \"bluetooth on\", \"wifi off\", \"dark mode on\", \"volume up\", \"volume 30\", \"mute\", \"unmute\".",
          schema(["to": str], required: ["to"])),
+        ("spotify", "Control the Spotify app: \"play\", \"pause\", \"next\", \"previous\", \"restart\", \"seek 30\" (seconds, minus to go back), \"shuffle on\", \"repeat off\", \"volume 40\", \"now playing\".",
+         schema(["do": str], required: ["do"])),
     ]
 
     public static var toolNames: [String] { tools.map(\.0) }

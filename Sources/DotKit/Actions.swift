@@ -26,6 +26,8 @@ public enum ActionCommand: Equatable, Sendable {
     case play(SpotifyPlay)
     /// A Mac setting he names ("turn on my bluetooth", "mute", "dark mode on"): Dot flips it at once (10-21).
     case setting(MacSetting)
+    /// The Spotify app itself ("shuffle on", "restart the song", "what's playing"): its own AppleScript (10-21).
+    case spotify(SpotifyControl)
 
     /// The verb in the log's `act:` lines.
     public var verb: String {
@@ -40,6 +42,7 @@ public enum ActionCommand: Equatable, Sendable {
         case .go: return "go"
         case .play: return "play"
         case .setting: return "setting"
+        case .spotify: return "spotify"
         }
     }
 
@@ -65,6 +68,7 @@ public enum ActionCommand: Equatable, Sendable {
         case .go(let goal): return goal
         case .play(let p): return "\(p.kind.rawValue):\(p.mine ? "my " : "")\(p.words)"
         case .setting(let s): return s.words
+        case .spotify(let c): return c.words
         }
     }
 
@@ -99,6 +103,7 @@ public enum ActionCommand: Equatable, Sendable {
         case .go: return "on it."
         case .play: return "playing it."
         case .setting(let s): return s.doneLine
+        case .spotify(let c): return c.doneLine
         }
     }
 }
@@ -138,6 +143,8 @@ public enum ActionTags {
             return SpotifyPlay.command(text)
         case "SETTING":
             return MacSetting.parse(text).map { .setting($0) }
+        case "SPOTIFY":
+            return SpotifyControl.parse(text).map { .spotify($0) }
         default:
             return nil
         }
@@ -222,6 +229,70 @@ public enum MacSetting: Equatable, Sendable {
     }
 }
 
+/// The Spotify app, driven through its own AppleScript (2026-10-21, "also control my spotify app"). What its scripting
+/// can't do (like a song, the queue, play on his phone) waits for Spotify's Web API.
+public enum SpotifyControl: Equatable, Sendable {
+    case play, pause, next, previous, restart, nowPlaying
+    /// Seconds to move within the song: forward when positive.
+    case seek(Int)
+    case shuffle(Bool), repeatSong(Bool)
+    /// Spotify's own volume, apart from the Mac's.
+    case volume(MacSetting.Volume)
+
+    /// The tag's words and the log's: "play", "next", "seek 30", "seek -10", "shuffle on", "repeat off", "volume 40".
+    public var words: String {
+        switch self {
+        case .play: return "play"
+        case .pause: return "pause"
+        case .next: return "next"
+        case .previous: return "previous"
+        case .restart: return "restart"
+        case .nowPlaying: return "now playing"
+        case .seek(let n): return "seek \(n)"
+        case .shuffle(let on): return "shuffle \(on ? "on" : "off")"
+        case .repeatSong(let on): return "repeat \(on ? "on" : "off")"
+        case .volume(let v): return MacSetting.volume(v).words
+        }
+    }
+
+    public var doneLine: String {
+        switch self {
+        case .play: return "playing."
+        case .pause: return "paused."
+        case .next: return "next one."
+        case .previous: return "previous one."
+        case .restart: return "from the top."
+        case .nowPlaying: return ""
+        case .seek(let n): return n >= 0 ? "skipped ahead." : "went back a bit."
+        case .shuffle(let on): return on ? "shuffle's on." : "shuffle's off."
+        case .repeatSong(let on): return on ? "repeating it." : "repeat's off."
+        case .volume(let v): return MacSetting.volume(v).doneLine.replacingOccurrences(of: "volume", with: "spotify")
+        }
+    }
+
+    public static func parse(_ text: String) -> SpotifyControl? {
+        let t = text.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
+        let words = t.components(separatedBy: CharacterSet.alphanumerics.union(CharacterSet(charactersIn: "%-")).inverted).filter { !$0.isEmpty }
+        guard let first = words.first else { return nil }
+        let on = words.contains("on"), off = words.contains("off")
+        switch first {
+        case "play", "resume": return .play
+        case "pause", "stop": return .pause
+        case "next", "skip": return .next
+        case "previous", "back": return .previous
+        case "restart": return .restart
+        case "now", "playing": return .nowPlaying
+        case "seek": return words.dropFirst().compactMap { Int($0) }.first.map { .seek($0) }
+        case "shuffle": return on == off ? nil : .shuffle(on)
+        case "repeat": return on == off ? nil : .repeatSong(on)
+        case "volume":
+            if case .volume(let v)? = MacSetting.parse(t) { return .volume(v) }
+            return nil
+        default: return nil
+        }
+    }
+}
+
 /// The fixed phrases Dot answers itself before any model call: under 300 ms from the transcript.
 public enum ActionPhrases {
     private static func re(_ p: String) -> NSRegularExpression { try! NSRegularExpression(pattern: p, options: .caseInsensitive) }
@@ -265,6 +336,15 @@ public enum ActionPhrases {
         + #"|(enable|disable)\s+(?:the\s+|my\s+)?"# + toggleName
         + #"|(?:switch|go|change)\s+(?:to|into)\s+"# + toggleName
         + #"|"# + toggleName + #"\s+(on|off))"# + tail)
+    /// The Spotify app (10-21): "turn shuffle on", "shuffle off", "repeat this song", "restart the song", "skip ahead 30
+    /// seconds", "rewind 10 seconds", "turn spotify down", "spotify volume 40", "what song is this".
+    static let spotifyShuffle = re(lead + #"(?:(?:turn|switch|put)\s+(on|off)\s+(?:the\s+)?shuffle|(?:turn|switch|put)\s+(?:the\s+)?shuffle\s+(on|off)|shuffle\s+(on|off)|(?:shuffle|un-?shuffle)\s+(?:it|this|the music|my music|spotify|the playlist))"# + tail)
+    static let spotifyRepeat = re(lead + #"(?:(?:turn|switch|put)\s+(on|off)\s+(?:the\s+)?repeat|(?:turn|switch|put)\s+(?:the\s+)?repeat\s+(on|off)|repeat\s+(on|off)|(repeat)\s+(?:this|the)\s+(?:song|track)(?:\s+on spotify)?|(stop)\s+repeating(?:\s+(?:this|the)\s+(?:song|track))?)"# + tail)
+    static let spotifyRestart = re(lead + #"(?:restart|replay|start over)(?:\s+(?:the|this))?\s+(?:song|track)|(?:go back to|play from)\s+the\s+(?:start|beginning)\s+of\s+(?:the|this)\s+(?:song|track)"# + tail)
+    static let spotifySeek = re(lead + #"(?:(skip|jump|fast forward|go)\s+(?:ahead|forward)|(rewind|go back|skip back|jump back))\s+(\d{1,3})\s*(?:seconds|secs|s)\b"# + tail)
+    static let spotifyVolume = re(lead + #"(?:(?:turn|put)\s+(?:the\s+)?spotify\s+(up|down)|turn\s+(up|down)\s+(?:the\s+)?spotify|(?:set\s+)?(?:the\s+)?spotify(?:'s)?\s+volume\s+(?:to\s+)?(\d{1,3})\s*(?:%|percent)?)"# + tail)
+    static let nowPlaying = re(lead + #"(?:what(?:'s| is)\s+(?:this\s+)?(?:song|playing|track)(?:\s+(?:called|playing|on spotify))?|what\s+song\s+is\s+(?:this|playing|on)|who\s+(?:sings|is singing|made)\s+this(?:\s+song)?|what\s+am\s+i\s+listening\s+to)"# + tail)
+
     /// "turn it back on", "switch that off again", "turn it up": the setting Dot flipped a moment ago (10-21 19:42: "turn
     /// it back on" right after "turn off my bluetooth" became a job that couldn't tell what "it" was).
     static let settingAgain = re(lead + #"(?:turn|switch|flip|put)\s+(?:it|that|this)\s+(?:back\s+)?(on|off|up|down)(?:\s+again)?"# + tail)
@@ -311,6 +391,24 @@ public enum ActionPhrases {
         if nextSong.firstMatch(in: t, range: range) != nil { return .media(.next) }
         if previousSong.firstMatch(in: t, range: range) != nil { return .media(.previous) }
         if pause.firstMatch(in: t, range: range) != nil { return .media(.playPause) }
+        if nowPlaying.firstMatch(in: t, range: range) != nil { return .spotify(.nowPlaying) }
+        if let m = spotifyShuffle.firstMatch(in: t, range: range) {
+            let flag = (1...3).compactMap { i -> String? in m.range(at: i).location == NSNotFound ? nil : group(m, i) }.first
+            return .spotify(.shuffle(flag.map { $0 == "on" } ?? !t.lowercased().contains("unshuffle") && !t.lowercased().contains("un-shuffle")))
+        }
+        if let m = spotifyRepeat.firstMatch(in: t, range: range) {
+            let flag = (1...5).compactMap { i -> String? in m.range(at: i).location == NSNotFound ? nil : group(m, i) }.first ?? "on"
+            return .spotify(.repeatSong(flag == "on" || flag == "repeat"))
+        }
+        if spotifyRestart.firstMatch(in: t, range: range) != nil { return .spotify(.restart) }
+        if let m = spotifySeek.firstMatch(in: t, range: range), let n = Int(group(m, 3)) {
+            return .spotify(.seek(m.range(at: 2).location == NSNotFound ? n : -n))
+        }
+        if let m = spotifyVolume.firstMatch(in: t, range: range) {
+            if m.range(at: 3).location != NSNotFound, let n = Int(group(m, 3)) { return .spotify(.volume(.set(max(0, min(100, n))))) }
+            let dir = m.range(at: 1).location != NSNotFound ? group(m, 1) : group(m, 2)
+            return .spotify(.volume(dir == "up" ? .up : .down))
+        }
         if let m = settingToggle.firstMatch(in: t, range: range) {
             // the matched words, read the same way as a [SETTING:...] tag
             if let setting = MacSetting.parse((t as NSString).substring(with: m.range)) { return .setting(setting) }

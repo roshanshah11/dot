@@ -55,3 +55,43 @@ final class MacSettingTests: XCTestCase {
         XCTAssertEqual(TagParser.parse("[SETTING:bluetooth on] switching bluetooth on.").tags, [.act(.setting(.bluetooth(on: true)))])
     }
 }
+
+/// The Spotify app's own controls (10-21, "also control my spotify app").
+final class SpotifyControlTests: XCTestCase {
+    private func control(_ text: String) -> SpotifyControl? {
+        if case .spotify(let c)? = ActionPhrases.match(text) { return c }
+        return nil
+    }
+
+    func testHisWaysOfAsking() {
+        XCTAssertEqual(control("turn on shuffle"), .shuffle(true))
+        XCTAssertEqual(control("shuffle off"), .shuffle(false))
+        XCTAssertEqual(control("can you shuffle my music"), .shuffle(true))
+        XCTAssertEqual(control("repeat this song"), .repeatSong(true))
+        XCTAssertEqual(control("turn off repeat"), .repeatSong(false))
+        XCTAssertEqual(control("stop repeating"), .repeatSong(false))
+        XCTAssertEqual(control("restart the song"), .restart)
+        XCTAssertEqual(control("skip ahead 30 seconds"), .seek(30))
+        XCTAssertEqual(control("rewind 10 seconds"), .seek(-10))
+        XCTAssertEqual(control("turn spotify down"), .volume(.down))
+        XCTAssertEqual(control("set spotify volume to 40"), .volume(.set(40)))
+        XCTAssertEqual(control("what song is this?"), .nowPlaying)
+        XCTAssertEqual(control("who sings this"), .nowPlaying)
+        XCTAssertEqual(control("what's playing"), .nowPlaying)
+    }
+
+    func testTheRestStaysAsItWas() {
+        XCTAssertEqual(ActionPhrases.match("next song"), .media(.next))
+        XCTAssertEqual(ActionPhrases.match("pause the music"), .media(.playPause))
+        XCTAssertEqual(ActionPhrases.match("turn the volume up"), .setting(.volume(.up)))
+        XCTAssertNil(control("what is this song about"))
+        XCTAssertNil(control("repeat that"))
+    }
+
+    func testTheTagAndTheJobToolReadTheSameWords() {
+        for c: SpotifyControl in [.play, .pause, .next, .previous, .restart, .nowPlaying, .seek(30), .seek(-10), .shuffle(true), .repeatSong(false), .volume(.set(40))] {
+            XCTAssertEqual(SpotifyControl.parse(c.words), c, "\(c.words) reads back")
+        }
+        XCTAssertEqual(TagParser.parse("[SPOTIFY:shuffle on] shuffling.").tags, [.act(.spotify(.shuffle(true)))])
+    }
+}

@@ -79,6 +79,7 @@ final class Hands {
         case .go: return Outcome(ok: true, line: "on it.", detail: "go: handed to a driven walkthrough")
         case .play(let p): return await playSpotify(p)
         case .setting(let s): return await setting(s)
+        case .spotify(let c): return await spotify(c)
         }
     }
 
@@ -735,6 +736,7 @@ final class Hands {
         case .media: return "media keys reach his music"
         case .play: return nil   // the bench finds on the fixture and never plays (playSpotify)
         case .setting: return "a bench never changes his mac's settings"
+        case .spotify: return "a bench never touches his music"
         default:
             if context.bundleIdentifier == Self.cometBundle, !fixtureFront { return "comet window is not the bench" }
             let allowedApps: Set<String> = ["com.apple.Safari", Self.cometBundle, "com.apple.TextEdit", "com.apple.finder"]

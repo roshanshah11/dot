@@ -679,9 +679,12 @@ final class JobManager {
         }
         // Music and Mac settings touch no page and no window, so they work whatever is in front (10-21 19:43: a front
         // job in the terminal answered "play works in comet only").
-        if tool == "play" || tool == "setting" {
+        if tool == "play" || tool == "setting" || tool == "spotify" {
             let command: ActionCommand
-            if tool == "setting" {
+            if tool == "spotify" {
+                guard let control = SpotifyControl.parse(str(args, "do") ?? "") else { return ("error: which control? (play, pause, next, seek 30, shuffle on, volume 40, now playing)", true, nil) }
+                command = .spotify(control)
+            } else if tool == "setting" {
                 guard let setting = MacSetting.parse(str(args, "to") ?? "") else { return ("error: which setting? (bluetooth on, wifi off, volume 30, mute)", true, nil) }
                 command = .setting(setting)
             } else {
@@ -691,7 +694,7 @@ final class JobManager {
             }
             let outcome = await job.hands.perform(command, context: AccessibilityContext.capture(maxElements: 10))
             let ms = Int(Date().timeIntervalSince(started) * 1000)
-            Log.info("act: \(tool) \(Log.short(str(args, "to") ?? str(args, "words") ?? "", 60)) \(outcome.ok ? "ok" : "fail") \(ms) ms (job \(job.id): \(Log.short(outcome.ok ? outcome.line : outcome.detail, 100)))")
+            Log.info("act: \(tool) \(Log.short(str(args, "to") ?? str(args, "do") ?? str(args, "words") ?? "", 60)) \(outcome.ok ? "ok" : "fail") \(ms) ms (job \(job.id): \(Log.short(outcome.ok ? outcome.line : outcome.detail, 100)))")
             if outcome.ok { return ("ok: \(outcome.line)", false, nil) }
             var text = "error: \(outcome.line.isEmpty ? outcome.detail : outcome.line)"
             if let offer = outcome.offer { text += " (offer him: \(offer.verb) \(offer.object))" }
