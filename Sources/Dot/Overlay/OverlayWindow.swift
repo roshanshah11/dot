@@ -1591,12 +1591,36 @@ final class OverlayManager {
                     leads[index] = .zero
                     continue
                 }
+                if unstick(index: index, model: model, mouse: mouse, desired: desired, sitsHere: sitsHere, now: now) { continue }
                 guard model.motion == .following else { if armed[index], grab?.index != index { setArmed(index, false) }; continue }
                 follow(index: index, desired: desired, mouse: mouse, velocity: velocity, now: now, dt: dt)
                 if animators[index].wantsPerch, !sitsHere { startPerch(index: index, mouse: mouse, now: now) }
             }
         }
         animate(now: now)
+    }
+
+    /// Far from the cursor while he moves it, for a few seconds, with nothing holding Dot there (not talking, not told to
+    /// stay, not held, thrown or pointing): it comes back, and the log says what state it was stuck in (10-21 22:2x: "my
+    /// dot is stuck in the bottom corner of my screen", cause not seen from outside).
+    private var farSince: [Int: (at: Double, mouse: CGPoint)] = [:]
+
+    private func unstick(index: Int, model: CompanionModel, mouse: CGPoint, desired: CGPoint, sitsHere: Bool, now: Double) -> Bool {
+        let cursor = overlayPoint(mouse, index)
+        let far = hypot(cursor.x - model.position.x, cursor.y - model.position.y) > 300
+        guard far, model.phase == .idle, !sitsHere, grab == nil, toss == nil, model.motion != .flying else { farSince[index] = nil; return false }
+        guard let since = farSince[index] else { farSince[index] = (now, mouse); return false }
+        guard now - since.at > 4, hypot(mouse.x - since.mouse.x, mouse.y - since.mouse.y) > 150 else { return false }
+        farSince[index] = nil
+        Log.info("orb: stuck at \(Int(model.position.x)),\(Int(model.position.y)) with the cursor at \(Int(cursor.x)),\(Int(cursor.y)) for \(Int(now - since.at)) s (motion \(model.motion), perched \(perched)); back to the cursor")
+        perched = false
+        model.motion = .following
+        leashes[index].heel()
+        fly(model: model, to: desired, style: .trot) { [weak self] in
+            model.motion = .following
+            self?.followers[index].snap(to: model.position)
+        }
+        return true
     }
 
     /// One frame of following, on the leash (round two): Dot sits while the cursor stays near and trots to

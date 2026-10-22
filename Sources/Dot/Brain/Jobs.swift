@@ -32,6 +32,8 @@ final class JobManager {
         var lastLine = ""
         /// A control he must press, kept for "show me".
         var rung: (label: String, point: CGPoint?)?
+        /// A pause picks itself back up once he has left the tab alone for a while (10-21: "my dot is stuck").
+        var autoResume: DispatchWorkItem?
         let bench: Bool
         let folder: URL
         let stamp: String
@@ -865,6 +867,15 @@ final class JobManager {
 
     private func uploadAllowed(_ job: Job, _ path: String) -> Bool {
         let canonical = (path as NSString).standardizingPath
+        // Atlas's permissions (his call, 10-21): any file of his but the closed folders and hidden ones (.ssh, .aws); on
+        // 10-21 "apply to this for me" filled the form and then asked him to attach his own resume.
+        if config.permissionsMode == .atlas, !job.bench {
+            let home = NSHomeDirectory()
+            let closed = AtlasDeny.folders(home: home, vault: home + "/roshan")
+            let hidden = canonical.hasPrefix(home + "/") && canonical.dropFirst(home.count + 1).split(separator: "/").contains { $0.hasPrefix(".") }
+            return FileManager.default.fileExists(atPath: canonical) && canonical.hasPrefix(home + "/") && !hidden
+                && !closed.contains { canonical == $0 || canonical.hasPrefix($0.hasSuffix("/") ? $0 : $0 + "/") }
+        }
         if canonical.hasPrefix(job.folder.appendingPathComponent("output").path + "/") { return true }
         if job.page.downloaded.contains(canonical) { return true }
         let name = (canonical as NSString).lastPathComponent.lowercased()
@@ -1062,6 +1073,12 @@ final class JobManager {
     /// His click or key (from the HID tap). Dot's own events are tagged and never count.
     func userInput(kind: JobInput, point: CGPoint?, own: Bool, simulated: Bool = false) {
         guard !own, kind == .click || kind == .key else { return }
+        // His press on the thing a job rang for him is what it asked for, not a reason to stop (10-21: the file box).
+        if kind == .click, let point, let job = running.first(where: { $0.phase == .running && $0.rung?.point.map { hypot($0.x - point.x, $0.y - point.y) < 40 } == true }) {
+            Log.info("job[\(job.id)] he pressed the rung \(Log.short(job.rung?.label ?? "", 30)); not a pause")
+            return
+        }
+        for job in running where job.phase == .paused { scheduleAutoResume(job) }   // still using the tab: wait longer
         let candidates = running.filter { $0.phase == .running }
         guard !candidates.isEmpty else { return }
         inputDebounce?.cancel()
@@ -1098,14 +1115,35 @@ final class JobManager {
         job.phase = next
         job.session?.interrupt()
         Log.info("job[\(job.id)] paused (\(reason))")
-        say("paused.", job: job, start: false, short: true)
+        say("paused while you use the tab; i'll carry on \(Int(Self.autoResumeSeconds)) seconds after you stop, or say go on.", job: job, start: false, short: true)
+        scheduleAutoResume(job)
         publish(job)
     }
 
-    func resume(_ job: Job) {
+    /// He clicked or typed in a job's tab and then left it alone: the job carries on by itself (10-21: a pause that only
+    /// "go on" ended looked like a stuck Dot).
+    static let autoResumeSeconds: TimeInterval = 15
+
+    private func scheduleAutoResume(_ job: Job) {
+        job.autoResume?.cancel()
+        let work = DispatchWorkItem { [weak self, weak job] in
+            Task { @MainActor in
+                guard let self, let job, job.phase == .paused else { return }
+                Log.info("job[\(job.id)] carrying on: he left the tab alone for \(Int(Self.autoResumeSeconds)) s")
+                self.say("carrying on.", job: job, start: false, short: true)
+                self.resume(job, why: "he stopped using the tab")
+            }
+        }
+        job.autoResume = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + Self.autoResumeSeconds, execute: work)
+    }
+
+    func resume(_ job: Job, why: String = "he said go on") {
         guard let next = job.phase.next(.resumed) else { return }
+        job.autoResume?.cancel()
+        job.autoResume = nil
         job.phase = next
-        job.session?.send(text: "[resume] he used the tab and said go on. continue where you left off; look first, the page may have changed.")
+        job.session?.send(text: "[resume] he used the tab and \(why). continue where you left off; look first, the page may have changed, and keep what he typed.")
         Log.info("job[\(job.id)] resumed")
         publish(job)
     }
