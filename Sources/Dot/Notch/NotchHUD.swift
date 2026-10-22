@@ -1653,4 +1653,8 @@ struct NotchContentSizeKey: PreferenceKey {
 class KeyablePanel: NSPanel {
     override var canBecomeKey: Bool { true }
     override var canBecomeMain: Bool { false }
+
+    override func performKeyEquivalent(with event: NSEvent) -> Bool {
+        EditKeys.perform(event, in: self) || super.performKeyEquivalent(with: event)
+    }
 }

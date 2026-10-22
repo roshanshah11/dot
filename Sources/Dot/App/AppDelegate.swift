@@ -55,6 +55,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         Log.info("Dot \(Version.string) launching; config \(DotConfig.fileURL.path)")
+        EditKeys.installMenu()
         hud = NotchHUD(accentHex: config.pointerColorHex)
         overlay = OverlayManager(colorHex: config.pointerColorHex, presence: config.showCompanion, orbSize: CGFloat(config.orbSize))
         stack = AgentStack(accentHex: config.pointerColorHex)

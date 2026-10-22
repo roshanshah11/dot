@@ -252,6 +252,10 @@ final class ExplainerPanel: NSObject, NSWindowDelegate, WKNavigationDelegate, WK
 final class PanelWindow: NSPanel {
     override var canBecomeKey: Bool { true }
     override var canBecomeMain: Bool { false }
+
+    override func performKeyEquivalent(with event: NSEvent) -> Bool {
+        EditKeys.perform(event, in: self) || super.performKeyEquivalent(with: event)
+    }
 }
 
 /// The page's messages, relayed without the content controller retaining the panel.

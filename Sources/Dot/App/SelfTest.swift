@@ -52,6 +52,57 @@ enum SelfTest {
         check("a spoken yes that names the card's act does", ConsentVoice.interpret("yes, delete it", guarded: email.guarded, card: words) == .allow)
         check("a yes naming another act does not", ConsentVoice.interpret("yes, send it", guarded: email.guarded, card: words) == .needsExplicit)
         check("a request that starts with ok is not an answer (FX-01)", ConsentVoice.interpret("ok so explain this", guarded: physics.guarded, card: physics.title) == .none)
+        editKeys(check)
         return ok
     }
+
+    /// ⌘X ⌘C ⌘V ⌘A ⌘Z in Dot's own panels (2026-10-22): the keys go through the app's real event dispatch to a panel
+    /// off every display, and a real paste lands in a text field; his clipboard is put back as it was.
+    private static func editKeys(_ check: (String, Bool) -> Void) {
+        let panel = KeyablePanel(contentRect: NSRect(x: -20000, y: -20000, width: 320, height: 60), styleMask: [.borderless, .nonactivatingPanel],
+                                 backing: .buffered, defer: false)
+        let recorder = EditRecorder(frame: NSRect(x: 0, y: 0, width: 320, height: 30))
+        let field = NSTextField(frame: NSRect(x: 0, y: 30, width: 320, height: 24))
+        panel.contentView?.addSubview(recorder)
+        panel.contentView?.addSubview(field)
+        panel.orderFrontRegardless()
+        panel.makeKey()
+        func press(_ key: String, shift: Bool = false) {
+            let codes: [String: UInt16] = ["x": 7, "c": 8, "v": 9, "a": 0, "z": 6]
+            guard let event = NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: shift ? [.command, .shift] : .command, timestamp: 0,
+                                               windowNumber: panel.windowNumber, context: nil, characters: shift ? key.uppercased() : key,
+                                               charactersIgnoringModifiers: shift ? key.uppercased() : key, isARepeat: false, keyCode: codes[key] ?? 0)
+            else { return }
+            NSApp.sendEvent(event)
+        }
+        panel.makeFirstResponder(recorder)
+        check("the panel takes the keys (it is key)", panel.isKeyWindow)
+        for key in ["x", "c", "v", "a", "z"] { press(key) }
+        press("z", shift: true)
+        check("⌘X ⌘C ⌘V ⌘A ⌘Z ⇧⌘Z reach the focused field: \(recorder.seen)", recorder.seen == ["cut", "copy", "paste", "selectAll", "undo", "redo"])
+        let board = NSPasteboard.general
+        let saved = (board.pasteboardItems ?? []).map { item in item.types.compactMap { type in item.data(forType: type).map { (type, $0) } } }
+        board.clearContents()
+        board.setString("pasted into dot", forType: .string)
+        panel.makeFirstResponder(field)
+        press("v")
+        check("a real ⌘V puts the clipboard's text in the field", field.stringValue == "pasted into dot")
+        board.clearContents()
+        board.writeObjects(saved.map { pairs in
+            let item = NSPasteboardItem()
+            for (type, data) in pairs { item.setData(data, forType: type) }
+            return item
+        })
+        panel.close()
+    }
+}
+
+private final class EditRecorder: NSTextView {
+    var seen: [String] = []
+    override func cut(_ sender: Any?) { seen.append("cut") }
+    override func copy(_ sender: Any?) { seen.append("copy") }
+    override func paste(_ sender: Any?) { seen.append("paste") }
+    override func selectAll(_ sender: Any?) { seen.append("selectAll") }
+    @objc func undo(_ sender: Any?) { seen.append("undo") }
+    @objc func redo(_ sender: Any?) { seen.append("redo") }
 }
