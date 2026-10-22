@@ -22,17 +22,28 @@ final class LectureListener {
     private var segments: [(at: Date, text: String)] = []
     private var liveText = ""
     private var liveSince = Date()
+    /// What lecture mode's note writer reads: every confirmed chunk in order, never rewritten (the live tail can
+    /// still change, and a finished segment's tidy text can differ from its chunks).
+    private(set) var feed = ""
+    private var confirmedInSegment = ""
     private var fileURL: URL?
     private static let segmentSeconds: TimeInterval = 180
+    private var replaying = false
+    private var pumpTask: Task<Void, Never>?
+    /// A replay ran out of audio.
+    var onReplayEnded: (() -> Void)?
     var onStatus: ((String) -> Void)?
 
     init(transcriber: Transcriber) { self.transcriber = transcriber }
 
-    func start(title: String) async -> Bool {
+    /// `replay`: a recorded lecture played into the recognizer instead of the microphone, `speed` times real time
+    /// (Dot --lecture-replay, to check lecture mode end to end without a class).
+    func start(title: String, replay: URL? = nil, speed: Double = 1) async -> Bool {
         guard !isListening else { return true }
         do {
             let fresh = try await transcriber.makeStream()
-            _ = try recorder.start(stream: fresh)
+            if let replay { pump(replay, speed: speed) } else { _ = try recorder.start(stream: fresh) }
+            replaying = replay != nil
             stream = fresh
         } catch {
             Log.error("lecture: could not start listening: \(error)")
@@ -44,6 +55,8 @@ final class LectureListener {
         segments = []
         liveText = ""
         liveSince = Date()
+        feed = ""
+        confirmedInSegment = ""
         let day = DateFormatter(); day.dateFormat = "yyyy-MM-dd HH.mm"; day.locale = Locale(identifier: "en_US_POSIX")
         let folder = TranscriptLog.directory.appendingPathComponent("lectures", isDirectory: true)
         try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
@@ -67,10 +80,13 @@ final class LectureListener {
         segmentTimer = nil
         reader?.cancel()
         reader = nil
-        if let url = try? recorder.stop().url { try? FileManager.default.removeItem(at: url) }
+        pumpTask?.cancel()
+        pumpTask = nil
+        if !replaying, let url = try? recorder.stop().url { try? FileManager.default.removeItem(at: url) }
         if let stream {
-            if let text = try? await stream.finish(), !text.trimmingCharacters(in: .whitespaces).isEmpty { appendSegment(text) }
-            else if !liveText.isEmpty { appendSegment(liveText) }
+            let tail = liveText, done = confirmedInSegment
+            if let text = try? await stream.finish(), !text.trimmingCharacters(in: .whitespaces).isEmpty { appendSegment(text); feedRest(of: text, confirmed: done) }
+            else if !tail.isEmpty { appendSegment(tail); feedRest(of: tail, confirmed: done) }
         }
         stream = nil
         liveText = ""
@@ -107,7 +123,12 @@ final class LectureListener {
                 let text = update.text.trimmingCharacters(in: .whitespaces)
                 guard !text.isEmpty else { continue }
                 // Each update is the latest chunk; confirmed chunks accumulate, a volatile one shows after them.
-                if update.isConfirmed { confirmed += (confirmed.isEmpty ? "" : " ") + text; liveText = confirmed }
+                if update.isConfirmed {
+                    confirmed += (confirmed.isEmpty ? "" : " ") + text
+                    liveText = confirmed
+                    self.confirmedInSegment = confirmed
+                    self.feed += (self.feed.isEmpty ? "" : " ") + text
+                }
                 else { liveText = confirmed + (confirmed.isEmpty ? "" : " ") + text }
             }
         }
@@ -119,14 +140,54 @@ final class LectureListener {
         guard isListening, let old = stream else { return }
         guard let fresh = try? await transcriber.makeStream() else { return }
         reader?.cancel()
-        recorder.swapStream(fresh)
+        let tail = liveText, done = confirmedInSegment
+        confirmedInSegment = ""
+        if !replaying { recorder.swapStream(fresh) }
         stream = fresh
         readUpdates()
-        if let text = try? await old.finish(), !text.trimmingCharacters(in: .whitespaces).isEmpty { appendSegment(text) }
-        else if !liveText.isEmpty { appendSegment(liveText) }
+        if let text = try? await old.finish(), !text.trimmingCharacters(in: .whitespaces).isEmpty { appendSegment(text); feedRest(of: text, confirmed: done) }
+        else if !tail.isEmpty { appendSegment(tail); feedRest(of: tail, confirmed: done) }
         liveText = ""
         liveSince = Date()
         onStatus?("listening, \(elapsedMinutes) min")
+    }
+
+    /// Half-second mono buffers from the file into whichever stream is current, paced to `speed` times real time.
+    private func pump(_ url: URL, speed: Double) {
+        pumpTask = Task { @MainActor [weak self] in
+            guard let file = try? AVAudioFile(forReading: url) else { Log.warn("lecture: replay: can't read \(url.lastPathComponent)"); return }
+            let format = file.processingFormat
+            guard let mono = AVAudioFormat(commonFormat: .pcmFormatFloat32, sampleRate: format.sampleRate, channels: 1, interleaved: false) else { return }
+            let frames = AVAudioFrameCount(format.sampleRate / 2)
+            Log.info(String(format: "lecture: replaying %@ (%.0f min) at %.1fx", url.lastPathComponent, Double(file.length) / format.sampleRate / 60, speed))
+            while !Task.isCancelled, let self {
+                guard let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: frames), (try? file.read(into: buffer, frameCount: frames)) != nil,
+                      buffer.frameLength > 0, let out = AVAudioPCMBuffer(pcmFormat: mono, frameCapacity: buffer.frameLength) else { break }
+                out.frameLength = buffer.frameLength
+                if let src = buffer.floatChannelData?[0], let dst = out.floatChannelData?[0] { dst.update(from: src, count: Int(buffer.frameLength)) }
+                await self.stream?.streamAudio(out)
+                try? await Task.sleep(nanoseconds: UInt64(0.5 / max(speed, 0.1) * 1_000_000_000))
+            }
+            guard !Task.isCancelled else { return }
+            Log.info("lecture: replay finished")
+            self?.onReplayEnded?()
+        }
+    }
+
+    /// A segment ended: the words its final text has past what was confirmed chunk by chunk go on the feed too.
+    private func feedRest(of final: String, confirmed: String) {
+        let done = confirmed.split(separator: " ").count
+        let words = final.split(separator: " ")
+        guard words.count > done else { return }
+        feed += (feed.isEmpty ? "" : " ") + words[done...].joined(separator: " ")
+    }
+
+    /// Delete the saved transcript (lecture mode: once the class's notes are done, what's kept is notes).
+    func discardTranscript() {
+        if let fileURL { try? FileManager.default.removeItem(at: fileURL) }
+        fileURL = nil
+        segments = []
+        feed = ""
     }
 
     private func appendSegment(_ text: String) {

@@ -1,0 +1,29 @@
+<!doctype html>
+<html><head><meta charset="utf-8">
+<meta name="color-scheme" content="light dark">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src dotnotes:; style-src dotnotes: 'unsafe-inline'; font-src dotnotes: data:; img-src dotnotes: data:">
+<title>Notes</title>
+<link rel="stylesheet" href="../katex/katex.min.css">
+<link rel="stylesheet" href="notes.css">
+<script src="../katex/katex.min.js"></script>
+<script src="notes.js"></script>
+</head><body>
+<div id="live">
+  <header id="head">
+    <div id="course"></div>
+    <div id="heading"></div>
+    <div id="bar"><span id="status"></span><button id="end" type="button">End class</button></div>
+  </header>
+  <main id="scroller"><div id="lines"></div><div id="room"></div></main>
+  <section id="dock" hidden>
+    <div id="recall" hidden>
+      <div class="dock-top"><span id="recall-prompt"></span><span id="countdown"></span></div>
+      <textarea id="recall-text" rows="4" placeholder="in your own words"></textarea>
+      <div class="dock-bar"><button id="skip" type="button" class="quiet">Skip</button><button id="submit" type="button">Submit</button></div>
+      <div id="feedback" hidden></div>
+    </div>
+    <div id="saved" hidden></div>
+  </section>
+</div>
+<article id="doc" hidden></article>
+</body></html>

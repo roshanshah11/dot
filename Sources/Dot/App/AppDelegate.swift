@@ -69,9 +69,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if let command = config.resolvedTTSCommand() {
             let worker = CommandSpeaker(command: command, fallback: apple)
             worker.start()
-            speaker = worker
+            speaker = QuietSpeaker(worker)
         } else {
-            speaker = apple
+            speaker = QuietSpeaker(apple)
         }
         ledger = Ledger(url: config.dotHome.appendingPathComponent("ledger.sqlite"))
         let hud = self.hud!
@@ -108,6 +108,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         talk = Talk(config: config, hud: hud, overlay: overlay, speaker: speaker, transcriber: transcriber, agents: agents, ledger: ledger, atlas: atlas, jev: jev)
         AtlasThread.shared.enabled = config.atlasThread
         AtlasThread.shared.start()
+        // Lecture mode is offered as each class on his calendar begins.
+        Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { [weak self] _ in
+            Task { @MainActor in self?.talk.offerLecture() }
+        }
         // The fast lane: a job's dot tools ask the running Dot here (`Dot --hands-mcp`).
         control.register("hands") { [weak self] request, reply in
             guard let self else { reply(["error": "dot is quitting"]); return }
@@ -588,6 +592,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         stack.onOpenHome = { [weak self] id in self?.home.show(agent: id) }
         stack.onReply = { [weak self] id, text in
             guard let self else { return }
+            if id == "lecture-offer" { Task { @MainActor in await self.talk.startLecture(title: "") }; return }
             if id.hasPrefix("job-") { self.talk.jobs.chipAction("reply", chipId: id, text: text); return }
             self.agents.reply(to: id, text: text)
         }

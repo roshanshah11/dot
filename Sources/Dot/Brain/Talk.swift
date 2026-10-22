@@ -178,7 +178,7 @@ final class Talk {
         self.panels = PanelCoach(accentHex: config.pointerColorHex)
         self.lecture = LectureListener(transcriber: transcriber)
         recorder.preferredInputName = config.microphoneName
-        (speaker as? CommandSpeaker)?.warm(Self.acks + Self.thinkAcks)
+        ((speaker as? QuietSpeaker)?.inner as? CommandSpeaker ?? speaker as? CommandSpeaker)?.warm(Self.acks + Self.thinkAcks)
         lecture.onStatus = { [weak self] line in self?.hud.model.listeningLine = line }
         CallPresence.setOwnMicrophoneCheck { [weak self] in
             guard let self else { return false }
@@ -1472,11 +1472,38 @@ final class Talk {
 
     // MARK: The lecture ear
 
-    func startLecture(title: String) async {
+    private var lectureOffered: Set<String> = []
+
+    /// A class on his calendar has just begun: a row in the stack with one button, for its first ten minutes.
+    func offerLecture(now: Date = Date()) {
+        guard config.lectureNotes, !lecture.isListening, let items = localCalendar.items(days: 1, now: now),
+              let cls = LectureCalendar.starting(items, now: now) else { return }
+        let key = "\(cls.course)|\(Int(cls.start.timeIntervalSince1970))"
+        guard !lectureOffered.contains(key) else { return }
+        lectureOffered.insert(key)
+        hud.upsertAgent(AgentRow(id: "lecture-offer", name: cls.course, line: "class is starting · want notes?", state: .waiting,
+                                 nextActions: [Self.takeNotesLabel], kind: .lesson, canStop: true))
+        DispatchQueue.main.asyncAfter(deadline: .now() + 600) { [weak self] in self?.hud.removeAgent(id: "lecture-offer") }
+        Log.info("lecture: offered notes for \(cls.course) (\(cls.kind), \(LectureSession.clock(cls.start)))")
+    }
+
+    static let takeNotesLabel = "take notes"
+
+    /// Lecture mode's class while one is on (2026-10-22): notes in his style, the panel explaining on its own.
+    private(set) var lectureSession: LectureSession?
+    private var notesWindow: NotesWindow?
+
+    func startLecture(title: String, replay: URL? = nil, replaySpeed: Double = 1) async {
         phase = .idle
         hud.set(phase: .hidden)
         if lecture.isListening {
-            speaker.speak("still listening, \(lecture.elapsedMinutes) minutes in.")
+            if lectureSession != nil { hud.flash(status: "lecture mode is on, \(lecture.elapsedMinutes) min in", for: 4) }
+            else { speaker.speak("still listening, \(lecture.elapsedMinutes) minutes in.") }
+            scheduleIdleCheck()
+            return
+        }
+        if config.lectureNotes {
+            await startLectureMode(windowTitle: title, replay: replay, replaySpeed: replaySpeed)
             scheduleIdleCheck()
             return
         }
@@ -1489,8 +1516,64 @@ final class Talk {
         scheduleIdleCheck()
     }
 
+    /// Which class (the calendar), which folder (his answer, a course map, the School folders, else the fast model picks),
+    /// then the ear, the note writer and the notes window. Nothing is said out loud: it's a lecture.
+    private func startLectureMode(windowTitle: String, replay: URL?, replaySpeed: Double) async {
+        let now = Date()
+        let cls = localCalendar.items(days: 1, now: now).flatMap { LectureCalendar.current($0, now: now) }
+        let school = URL(fileURLWithPath: DotConfig.expand("~/roshan/School"), isDirectory: true)
+        let folders = ((try? FileManager.default.contentsOfDirectory(at: school, includingPropertiesForKeys: [.isDirectoryKey])) ?? [])
+            .filter { (try? $0.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true }.map(\.lastPathComponent)
+        let named = cls?.course ?? ""
+        var aliases = LectureAliases.load()
+        var folder = named.isEmpty ? nil : LectureCourses.folder(for: named, aliases: aliases, maps: panels.courses, folders: folders)
+        if folder == nil, !named.isEmpty, let picked = await pickCourseFolder(named, folders: folders) {
+            folder = picked
+            aliases[named] = picked
+            LectureAliases.save(aliases)
+        }
+        let course = folder ?? (named.isEmpty ? "Other lectures" : LectureCourses.newFolderName(for: named))
+        let courseTitle = named.isEmpty ? (windowTitle.isEmpty ? course : "\(course): \(Log.short(windowTitle, 60))") : named
+        let ok = await lecture.start(title: course, replay: replay, speed: replaySpeed)
+        guard ok else {
+            hud.flash(status: "lecture mode: i couldn't open the microphone", for: 6)
+            Log.warn("lecture: mode failed to start: no microphone")
+            return
+        }
+        let window = notesWindow ?? NotesWindow()
+        notesWindow = window
+        let session = LectureSession(course: course, courseTitle: courseTitle, folder: school.appendingPathComponent(course, isDirectory: true),
+                                     endsAt: cls?.end, listener: lecture, writer: NoteWriter(config: config), window: window)
+        session.screenText = { [weak self] in await self?.lectureScreenText() ?? "" }
+        session.onExplain = { [weak self] topic, why, recent in self?.lectureExplain(topic: topic, why: why, recent: recent) ?? false }
+        session.onFinished = { [weak self] file, pdf in self?.lectureFinished(file: file, pdf: pdf) }
+        do {
+            try session.start(courseText: Self.courseMapText(label: course, root: config.talkRootURL))
+        } catch {
+            _ = await lecture.stop()
+            hud.flash(status: "lecture mode: the note writer didn't start", for: 6)
+            Log.error("lecture: note writer failed to start: \(error)")
+            return
+        }
+        lectureSession = session
+        QuietSpeaker.quiet = true
+        hud.model.listeningLine = "lecture mode: \(course)"
+        hud.upsertAgent(AgentRow(id: "lecture", name: course, line: "taking notes; End class in the notes when it's over", state: .running, kind: .lesson, canStop: true))
+        hud.removeAgent(id: "lecture-offer")
+        Log.info("lecture: mode on for \(course) (\(courseTitle))\(cls.map { ", class until \(LectureSession.clock($0.end))" } ?? ", no class on the calendar")")
+        if Self.courseMapText(label: course, root: config.talkRootURL).isEmpty || !FileManager.default.fileExists(atPath: session.folder.path) {
+            prepareCourse(course: course, title: courseTitle, folder: session.folder)
+        } else {
+            prepareCourse(course: course, title: courseTitle, folder: session.folder, mapOnly: false, readingsOnly: true)
+        }
+    }
+
     func stopLecture() async {
         guard lecture.isListening else { return }
+        if let session = lectureSession {
+            await session.end()
+            return
+        }
         let minutes = lecture.elapsedMinutes
         let text = await lecture.stop()
         hud.model.listeningLine = nil
@@ -1504,6 +1587,97 @@ final class Talk {
             TranscriptLog.append(kind: .lecture, you: "(lecture, \(minutes) min)", dot: nil, app: context.appName, extra: ["file": file.path, "words": String(words)])
         }
         scheduleIdleCheck()
+    }
+
+    private func lectureFinished(file: URL, pdf: URL?) {
+        lectureSession = nil
+        QuietSpeaker.quiet = false
+        hud.model.listeningLine = nil
+        hud.removeAgent(id: "lecture")
+        hud.flash(status: "notes saved: \(file.lastPathComponent)", for: 8)
+        if !benchMode { AtlasThread.shared.record(kind: "job", asked: "lecture mode: take notes in \(file.deletingPathExtension().lastPathComponent)",
+                                                  said: "saved \(file.path)" + (pdf.map { " and \($0.lastPathComponent)" } ?? "")) }
+    }
+
+    /// The words on the screen he's looking at (a slide, a page), for the note writer; Dot's own windows aren't in it.
+    private func lectureScreenText() async -> String {
+        guard let shots = try? await ScreenCapture.captureAll(maxDimension: 1600, includeOtherScreens: false),
+              let shot = shots.first(where: { $0.isCursorScreen }) ?? shots.first else { return "" }
+        return await TextRecognizer.recognize(jpeg: shot.jpeg).split(separator: "\n").joined(separator: " / ")
+    }
+
+    /// Lecture mode's explainer (his pick, "Explains on its own"): a talk turn that opens the panel without being asked.
+    /// False while a turn is running; the next idea gets its own.
+    private func lectureExplain(topic: String, why: String, recent: String) -> Bool {
+        guard phase == .idle, activeSession?.turnInFlight != true, let session = session(for: .talk) else { return false }
+        Task { @MainActor in
+            startCapture()
+            if let task = captureTask {
+                let captured = await task.value
+                shots = captured.shots
+                context = captured.context
+                captureTask = nil
+            }
+            guard phase == .idle else { return }
+            lastAsked = "(lecture mode, on its own) explain: \(topic)"
+            lastAskWasTyped = false
+            lastAskWasLecture = true
+            quietTurn = true
+            hud.model.transcript = "explaining: \(topic)"
+            let lines = [
+                "[lecture-explain] lecture mode is on: dot is writing his notes in its notes window while the lecture goes. without being asked, open the panel with a short explainer of: \(topic)" + (why.isEmpty ? "" : " (\(why))") + ".",
+                "the last minute and a half of the lecture (machine transcribed): \"\(Log.short(recent, 1400))\"",
+                "tie it to what the lecturer just said and to the slide on his screen. a figure or diagram when it helps; the page of the reading when you know it. short enough to read in under a minute while he keeps listening. it's a lecture: nothing spoken, no preamble, the panel is the answer.",
+            ]
+            let (built, images) = buildMessage(lines.joined(separator: "\n"), kind: .talk)
+            sendTurn(built, images: images, to: session, kind: .talk)
+        }
+        return true
+    }
+
+    /// The fast model picks the School folder a new course's notes go in ("Example Studies" -> the folder named by its code).
+    private func pickCourseFolder(_ course: String, folders: [String]) async -> String? {
+        guard let jev, !folders.isEmpty else { return nil }
+        var criteria = Dictionary(uniqueKeysWithValues: folders.map { ($0, "the folder for this course") })
+        criteria["none"] = "no folder here is this course"
+        let answer: [String: Jev.Answer]? = await withCheckedContinuation { done in
+            jev.evaluate("lecture-course", state: ["course_on_calendar": course, "folders": folders],
+                         questions: ["folder": .choice(instructions: "Which of his school folders holds this course? Folders are usually named by course code (a department and number); match the course title to its code.", criteria: criteria)],
+                         timeout: 3) { done.resume(returning: $0) }
+        }
+        guard let choice = answer?["folder"]?.choice, choice.choice != "none", choice.probability >= 0.6, folders.contains(choice.choice) else {
+            Log.info("lecture: no folder for \(course)")
+            return nil
+        }
+        Log.info(String(format: "lecture: %@ is in %@ (%.2f)", course, choice.choice, choice.probability))
+        return choice.choice
+    }
+
+    /// A behind job, silent: today's slides and readings from Canvas into the course folder, and a course map when the
+    /// course has none, so the notes spell terms right and the gap-fill has something to check against.
+    private func prepareCourse(course: String, title: String, folder: URL, mapOnly: Bool = false, readingsOnly: Bool = false) {
+        guard config.jobsEnabled, !benchMode else { return }
+        let today = ClassNotes.dateLabel(Date())
+        var steps: [String] = []
+        if !mapOnly {
+            steps.append("with Atlas's canvas tools only (canvas_courses, canvas_find, canvas_readings, canvas_download; never open a page), find the slides, notes and readings for today's class (\(today)) of \(title) and download any not already in \(folder.path) into that folder (keep their names)")
+        }
+        if !readingsOnly {
+            steps.append("if \(config.talkRootURL.appendingPathComponent("context").path) has no course map for this course, write one there (file named after the course code, lowercase, no space, .md) in the format of the existing maps: a '# CODE NUMBER (Title, ...)' first line, the instructor, dates that matter, the schedule, then what each lecture so far covered, from the syllabus and Canvas")
+        }
+        guard !steps.isEmpty else { return }
+        let goal = "lecture prep for \(course) (\(title)), while he is in class; quiet, no questions to him: " + steps.joined(separator: "; then ") + ". say in one line what you added."
+        jobs.start(goal: goal, placement: .behind, context: context, askedAt: nil, bench: false, hisWords: "lecture prep: \(course)", announce: false)
+    }
+
+    static func courseMapText(label: String, root: URL) -> String {
+        let dir = root.appendingPathComponent("context")
+        for name in (try? FileManager.default.contentsOfDirectory(atPath: dir.path)) ?? [] where name.hasSuffix(".md") {
+            guard let text = try? String(contentsOf: dir.appendingPathComponent(name), encoding: .utf8),
+                  let tag = CourseTag(fileName: name, text: text), tag.label.lowercased() == label.lowercased() else { continue }
+            return text.count > 12_000 ? String(text.prefix(12_000)) + "…" : text
+        }
+        return ""
     }
 
     private func recapLecture() async {
@@ -1648,6 +1822,7 @@ final class Talk {
     private static let listenWords = try! NSRegularExpression(pattern: #"^(?:(?:dot,? )?(?:start )?listen(?:ing)? (?:to )?(?:the |this )?(?:lecture|class|talk|lecturer|meeting)|(?:start|begin) (?:the )?lecture(?: mode)?|lecture mode(?: on)?)\W*$"#, options: .caseInsensitive)
     /// "show the transcript", "open my transcript", "pull up the conversation" (10-21; Control+Command+T does the same).
     private static let transcriptWords = try! NSRegularExpression(pattern: #"^(?:dot,? )?(?:show|open|pull up|bring up)(?: me)? (?:the |my |our |today's )?(?:whole |full )?(?:transcript|conversation)(?: so far)?\W*$"#, options: .caseInsensitive)
+    private static let takeNotesWords = try! NSRegularExpression(pattern: #"^(?:(?:dot,? )?(?:can you |could you |please )?)?(?:take|write|start taking) (?:my |the |some )?(?:lecture |class )?notes(?: (?:on|for|of) (?:this|the|my|this) ?(?:lecture|class|talk)?)?(?: for me)?\W*$"#, options: .caseInsensitive)
     private static let stopListenWords = try! NSRegularExpression(pattern: #"^(?:(?:dot,? )?stop listening|(?:the )?lecture(?:'s| is)? (?:over|done|finished)|end (?:the )?lecture|lecture mode off|stop the lecture)\W*$"#, options: .caseInsensitive)
     private static let recapWords = try! NSRegularExpression(pattern: #"^(?:(?:can you |could you |please )?(?:recap|summarize|summarise|sum up|review|go over) (?:the |this |today's )?(?:lecture|class|talk)|what did i miss(?: in (?:the )?lecture)?|what (?:was|is) (?:the |this )?lecture about)\W*$"#, options: .caseInsensitive)
 
@@ -1953,6 +2128,10 @@ final class Talk {
         if saysClose, panels.isOpen, panels.openedRecently { return .closePanel }
         if panels.available, PanelCoach.wantsReopen(text) { return .reopenPanel }
         if Self.listenWords.firstMatch(in: text, range: range) != nil { return .listen }
+        // "take notes on this" (his words in class, 10-22 11:19) starts lecture mode while a class is on his calendar.
+        if config.lectureNotes, Self.takeNotesWords.firstMatch(in: text, range: range) != nil,
+           text.lowercased().contains("lecture") || text.lowercased().contains("class")
+            || localCalendar.items(days: 1).flatMap({ LectureCalendar.current($0, now: Date()) }) != nil { return .listen }
         if Self.transcriptWords.firstMatch(in: text, range: range) != nil { return .showTranscript }
         // "desk mode", "study mode", "back to normal" (VI-03): his word beats the detector until he changes it.
         if let override = ContextMode.parseOverride(text) {
@@ -3370,6 +3549,7 @@ final class Talk {
         case "walkthrough": endWalkthrough(reason: "stopped from the task bar")
         case "lesson": clearBoard()
         case "lecture": Task { @MainActor in await stopLecture() }
+        case "lecture-offer": hud.removeAgent(id: "lecture-offer")
         default: break
         }
     }

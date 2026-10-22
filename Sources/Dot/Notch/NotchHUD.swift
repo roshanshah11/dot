@@ -28,8 +28,8 @@ struct AgentRow: Identifiable, Equatable {
     /// A card held for reading time: the line he did not hear on a muted Mac.
     var holdUntil: Date? = nil
 
-    /// A walkthrough, lesson or board row: a live exchange, drawn in the notch. The lecture ear's row goes to the stack.
-    var isLiveExchange: Bool { kind == .walkthrough || (kind == .lesson && id != "lecture") }
+    /// A walkthrough, lesson or board row: a live exchange, drawn in the notch. Lecture mode's rows go to the stack.
+    var isLiveExchange: Bool { kind == .walkthrough || (kind == .lesson && !id.hasPrefix("lecture")) }
     /// Drawn by the stack at the top right when the notch is for talking only.
     var isStackBound: Bool { !isLiveExchange }
 

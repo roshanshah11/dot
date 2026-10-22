@@ -143,12 +143,26 @@ case "--quip-test":
     let config = DotConfig.peek()
     let passed = MainActor.assumeIsolated { QuipWriter.selfTest(config: config) }
     exit(passed ? 0 : 1)
+case "--lecture-replay":
+    // A recorded lecture through lecture mode's real pipeline, into a scratch folder (LectureReplay).
+    let replayApp = NSApplication.shared
+    replayApp.setActivationPolicy(.accessory)
+    replayApp.finishLaunching()
+    let passed = MainActor.assumeIsolated { LectureReplay.run(Array(arguments.dropFirst())) }
+    exit(passed ? 0 : 1)
 case "--selftest":
     let selfTestApp = NSApplication.shared
     selfTestApp.setActivationPolicy(.accessory)
     selfTestApp.finishLaunching()
     let passed = MainActor.assumeIsolated { SelfTest.run() }
     exit(passed ? 0 : 1)
+case "--notes-selftest":
+    // The lecture notes window off every display: Dot's lines around his, his keys as messages, a paginated PDF.
+    let notesApp = NSApplication.shared
+    notesApp.setActivationPolicy(.accessory)
+    notesApp.finishLaunching()
+    let notesPassed = MainActor.assumeIsolated { NotesSelfTest.run() }
+    exit(notesPassed ? 0 : 1)
 case "--voices":
     for voice in AppleSpeaker.availableVoices() {
         print("\(voice.quality.padding(toLength: 9, withPad: " ", startingAt: 0)) \(voice.name)\n          \(voice.id)")

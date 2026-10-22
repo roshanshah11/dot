@@ -172,6 +172,10 @@ struct DotConfig: Codable {
     /// One thread of record with Atlas (10-22): Dot's turns, jobs and agents go into Atlas's history, and his newest Atlas
     /// turns (Telegram, the app, his terminal) come into Dot's context (scripts/dot-atlas-thread.py).
     var atlasThread = true
+    /// Lecture mode (10-22): "lecture mode" writes the class's notes live in his style, in Dot's notes window, and the panel
+    /// explains on its own. Off: the lecture ear only listens, as before.
+    var lectureNotes = true
+    var lectureModel = "sonnet"
     var jobModel = "sonnet"
     /// Decks and anything written under his name that he didn't dictate (his rule: prose under his name runs on Opus).
     var jobProseModel = "opus"
@@ -307,6 +311,8 @@ struct DotConfig: Codable {
         jobsSmallActsInTalk = get(.jobsSmallActsInTalk, d.jobsSmallActsInTalk)
         oneDot = get(.oneDot, d.oneDot)
         atlasThread = get(.atlasThread, d.atlasThread)
+        lectureNotes = get(.lectureNotes, d.lectureNotes)
+        lectureModel = get(.lectureModel, d.lectureModel)
         jobModel = get(.jobModel, d.jobModel)
         jobProseModel = get(.jobProseModel, d.jobProseModel)
         jobEffort = c.contains(.jobEffort) ? (try? c.decodeIfPresent(String.self, forKey: .jobEffort)) : d.jobEffort
