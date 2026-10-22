@@ -14,6 +14,9 @@ public enum JobPlacementRule {
     static let frontLead = lead + #"(?:open(?: up)?|go (?:to|on|onto|into|back to)|show me|take me|pull up|bring up|navigate|head (?:to|over to)|play|put on|click|press|tap|scroll|type|search(?: for)?|jump to|switch to|log ?in(?:to)?|sign in(?:to)?)\b"#
     /// 3. Result only: he wants the outcome, not to watch.
     static let result = #"\b(?:download|save|export|print|check(?: on| whether| if)?|find out|look up|where (?:does|do|is|are) [^.?!]{1,60} stand|what(?:'s| is) the status|status of|track|tell me|let me know|text me|research|summari[sz]e|write|draft|make (?:me )?(?:a|an|the)|create|build|put together|prepare|fill (?:out|in)|compare|collect|gather|go through|clean up|organi[sz]e|book|order)\b"#
+    /// 2b. Filling in the form on screen: its answers live in his tab, which a window of its own never sees (10-22 "fill this
+    /// out for me" ran behind, opened the site's login page and stopped in 15 s).
+    static let fillHere = #"\bfill (?:this|it|that)(?: (?:out|in|up))?\b|\bfill (?:out|in) (?:this|the rest|what'?s left)\b|\bfinish (?:filling|this (?:form|application))\b"#
     /// 4. The thing on screen.
     static let here = #"\b(?:on|in) (?:this|the) (?:page|tab|window|site|screen)\b|\bhere\b|\bon my screen\b|\bthis (?:page|form|tab|site)\b"#
     public static let browsers: Set<String> = ["comet", "safari", "google chrome", "chrome", "arc", "firefox", "brave browser", "microsoft edge"]
@@ -21,13 +24,16 @@ public enum JobPlacementRule {
     static let behindRe = Rx.make(behind)
     static let frontRe = Rx.make(frontLead)
     static let resultRe = Rx.make(result)
+    static let fillHereRe = Rx.make(fillHere)
     static let hereRe = Rx.make(here)
 
-    /// 1 behind words, 2 a leading front verb, 3 result words, 4 here words, 5 a browser in front -> front, else behind.
+    /// 1 behind words, 2 a leading front verb, 2b filling in what's on screen, 3 result words, 4 here words, 5 a browser in
+    /// front -> front, else behind.
     public static func decide(text: String, frontApp: String?) -> (placement: JobPlacement, why: String) {
         let t = text.trimmingCharacters(in: .whitespacesAndNewlines)
         if Rx.has(behindRe, t) { return (.behind, "behind words") }
         if Rx.has(frontRe, t) { return (.front, "front verb") }
+        if Rx.has(fillHereRe, t) { return (.front, "fill the form on screen") }
         if Rx.has(resultRe, t) { return (.behind, "result only") }
         if Rx.has(hereRe, t) { return (.front, "on this page") }
         if let app = frontApp?.lowercased(), browsers.contains(app) { return (.front, "browser in front") }

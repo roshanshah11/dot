@@ -38,6 +38,15 @@ final class JobPlacementTests: XCTestCase {
         }
     }
 
+    /// 10-22: "fill this out for me" ran behind and lost his tab, where the application was.
+    func testFillThisRunsInHisTab() {
+        for t in ["fill this out for me", "can you fill this in", "fill out this form", "fill in the rest", "fill it out with my details"] {
+            XCTAssertEqual(JobPlacementRule.decide(text: t, frontApp: "Comet").placement, .front, t)
+        }
+        XCTAssertEqual(JobPlacementRule.decide(text: "fill this out in a separate tab", frontApp: "Comet").placement, .behind)
+        XCTAssertEqual(JobPlacementRule.decide(text: "fill out the example.com contact form with Sam Rivera's details", frontApp: "Comet").placement, .behind)
+    }
+
     func testWhySaysWhichRule() {
         XCTAssertEqual(JobPlacementRule.decide(text: "in a separate tab, open page one", frontApp: "Comet").why, "behind words")
         XCTAssertEqual(JobPlacementRule.decide(text: "find the posting", frontApp: "Comet").why, "browser in front")
@@ -70,6 +79,18 @@ final class AgentWordsTests: XCTestCase {
                   "do I have an agent on that", "don't spawn an agent, just open it", "open the class site", "scroll down",
                   "click modules", "find the readings section", "the background agent finished?", "no need for an agent, just do it",
                   "do it without an agent", "how does an agent work", "open the agents page"] {
+            XCTAssertFalse(AgentWords.asksForAgent(t), t)
+        }
+    }
+
+    /// His typed shorthand (10-22: "apply <firm> menlo part agent" became a fast job).
+    func testTrailingAgentTag() {
+        for t in ["apply northwind menlo part agent", "apply northwind menlo park agent please", "do my week 3 readings agent",
+                  "agent: apply to the Northwind posting", "Agent, find the Northwind job"] {
+            XCTAssertTrue(AgentWords.asksForAgent(t), t)
+        }
+        for t in ["stop the agent", "who is my agent", "call my travel agent", "is there an agent", "change the user agent",
+                  "don't use an agent", "what does an ai agent do", "agent", "the agent"] {
             XCTAssertFalse(AgentWords.asksForAgent(t), t)
         }
     }

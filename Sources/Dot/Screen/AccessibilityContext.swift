@@ -63,10 +63,17 @@ enum AccessibilityContext {
         guard AXIsProcessTrusted() else { return context }
         var candidate = NSWorkspace.shared.frontmostApplication
         if candidate?.processIdentifier == ProcessInfo.processInfo.processIdentifier { candidate = lastForegroundApp }
-        guard let app = candidate else { return context }
+        guard var app = candidate else { return context }
+        var appElement = AXUIElementCreateApplication(app.processIdentifier)
+        var found = attribute(appElement, kAXFocusedWindowAttribute) ?? firstChildWindow(appElement)
+        // An app in front with no window (Messages after its window closed) isn't what he sees: the window under it is.
+        // On 10-22 "fill this out for me" over his application tab read as Messages with no window, and the job ran behind.
+        if found == nil, let under = appUnderWindowless(app) {
+            Log.info("context: \(app.localizedName ?? "the app in front") has no window; reading \(under.app.localizedName ?? "the app") under it")
+            (app, appElement, found) = (under.app, under.element, under.window)
+        }
         context.appName = app.localizedName
         context.bundleIdentifier = app.bundleIdentifier
-        let appElement = AXUIElementCreateApplication(app.processIdentifier)
 
         if let focused = attribute(appElement, kAXFocusedUIElementAttribute) {
             if let selected = string(focused, kAXSelectedTextAttribute), !selected.isEmpty {
@@ -74,7 +81,7 @@ enum AccessibilityContext {
             }
         }
 
-        guard let window = attribute(appElement, kAXFocusedWindowAttribute) ?? firstChildWindow(appElement) else { return context }
+        guard let window = found else { return context }
         context.windowTitle = string(window, kAXTitleAttribute)
         if let document = string(window, kAXDocumentAttribute) {
             if document.hasPrefix("http") { context.url = document }
@@ -161,6 +168,26 @@ enum AccessibilityContext {
         }
         if best == nil, !byLabel.isEmpty, byLabel.count == 1 { return byLabel[0] }
         return best?.0
+    }
+
+    /// The app owning the topmost ordinary window on screen, past the windowless app in front and Dot itself, with a window
+    /// the accessibility API can read (Cua Driver's invisible full-screen window has none, so it is passed over).
+    private static func appUnderWindowless(_ front: NSRunningApplication) -> (app: NSRunningApplication, element: AXUIElement, window: AXUIElement)? {
+        guard let list = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]] else { return nil }
+        let own = ProcessInfo.processInfo.processIdentifier
+        var tried: Set<pid_t> = [own, front.processIdentifier]
+        for info in list {
+            guard let layer = info[kCGWindowLayer as String] as? Int, layer == 0,
+                  let pid = info[kCGWindowOwnerPID as String] as? pid_t, !tried.contains(pid),
+                  let alpha = info[kCGWindowAlpha as String] as? Double, alpha > 0.05,
+                  let bounds = info[kCGWindowBounds as String] as? [String: Any],
+                  let w = bounds["Width"] as? Double, let h = bounds["Height"] as? Double, w >= 200, h >= 150 else { continue }
+            tried.insert(pid)
+            guard let app = NSRunningApplication(processIdentifier: pid), app.activationPolicy == .regular else { continue }
+            let element = AXUIElementCreateApplication(pid)
+            if let window = attribute(element, kAXFocusedWindowAttribute) ?? firstChildWindow(element) { return (app, element, window) }
+        }
+        return nil
     }
 
     // MARK: AX helpers

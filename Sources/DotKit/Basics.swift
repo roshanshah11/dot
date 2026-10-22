@@ -137,10 +137,25 @@ public enum AgentWords {
     static let negated = try! NSRegularExpression(
         pattern: #"\b(?:don'?t|do not|never|without|no need (?:for|to))\b[^.?!]{0,20}\bagent\b|\b(?:do|does|did) (?:i|you|we) have\b"#,
         options: .caseInsensitive)
+    /// His typed shorthand: "agent" tagged on the end or put first ("apply <firm> menlo park agent", "agent: do my readings").
+    /// On 10-22 "apply northwind part agent" became a fast job that stopped at Apply in 27 s.
+    static let tag = try! NSRegularExpression(
+        pattern: #"(?:^|\s)(\S+)\s+agent(?:\s+(?:please|pls|plz|now|thanks|thx))?\W*$|^\W*agent\s*[:,-]"#,
+        options: .caseInsensitive)
+    /// The word before a trailing "agent" that makes it some agent, not his ask: "stop the agent", "call my travel agent".
+    static let notTag: Set<String> = ["the", "a", "an", "my", "your", "his", "her", "their", "our", "its", "this", "that", "which",
+                                      "what", "each", "every", "no", "any", "travel", "estate", "insurance", "talent", "sports",
+                                      "booking", "leasing", "rental", "secret", "special", "double", "free", "fbi", "user", "ai",
+                                      "support", "customer", "literary", "ticket"]
 
     public static func asksForAgent(_ text: String) -> Bool {
         let range = NSRange(location: 0, length: (text as NSString).length)
-        return ask.firstMatch(in: text, range: range) != nil && negated.firstMatch(in: text, range: range) == nil
+        guard negated.firstMatch(in: text, range: range) == nil else { return false }
+        if ask.firstMatch(in: text, range: range) != nil { return true }
+        guard let m = tag.firstMatch(in: text, range: range) else { return false }
+        guard m.range(at: 1).location != NSNotFound else { return true }
+        let before = (text as NSString).substring(with: m.range(at: 1)).lowercased().trimmingCharacters(in: .punctuationCharacters)
+        return !notTag.contains(before)
     }
 }
 
