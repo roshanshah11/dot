@@ -80,3 +80,41 @@ public enum LectureCourses {
         return cleaned.isEmpty ? "Other lectures" : String(cleaned.prefix(60))
     }
 }
+
+extension LectureCourses {
+    /// The course folder a spoken name means ("my biotech notes", "math", "physics", "language and the human"): a folder
+    /// named outright, then his saved calendar names, then a course map's name, then a department code the word starts with.
+    public static func resolve(spoken: String, aliases: [String: String], maps: [CourseTag], folders: [String]) -> String? {
+        let said = spoken.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !said.isEmpty else { return nil }
+        if let hit = folders.first(where: { $0.lowercased() == said }) { return hit }
+        let words = said.split(whereSeparator: { !$0.isLetter && !$0.isNumber }).map(String.init).filter { $0.count >= 3 }
+        func names(_ name: String) -> Bool {
+            let parts = name.lowercased().split(whereSeparator: { !$0.isLetter && !$0.isNumber }).map(String.init)
+            return name.lowercased().contains(said) || words.contains { w in parts.contains { $0.hasPrefix(w) && w.count >= 4 } }
+        }
+        if let alias = aliases.first(where: { names($0.key) }), folders.contains(alias.value) { return alias.value }
+        if let map = maps.first(where: { names($0.name) || $0.isNamed(in: said) }), let hit = folders.first(where: { $0.lowercased() == map.label.lowercased() }) {
+            return hit
+        }
+        // "physics" -> "PHYS 13000", "math" -> "MATH 20000": the department code begins the word
+        return folders.first { folder in
+            guard let dept = folder.split(separator: " ").first.map({ $0.lowercased() }), dept.count >= 3, folder.contains(where: \.isNumber) else { return false }
+            return words.contains { $0.hasPrefix(dept) || dept.hasPrefix($0) }
+        }
+    }
+}
+
+/// Is what's in front a slide (lecture mode puts a new slide's picture in the notes)? A deck app, a PDF viewer, Google
+/// Slides, or a lecture deck or PDF open in the browser.
+public enum LectureSlides {
+    static let apps: Set<String> = ["com.microsoft.Powerpoint", "com.apple.iWork.Keynote", "com.apple.Preview", "net.sourceforge.skim-app.skim",
+                                    "com.adobe.Reader", "com.adobe.Acrobat.Pro"]
+
+    public static func looksLikeSlides(bundle: String?, title: String?, url: String?) -> Bool {
+        if let bundle, apps.contains(bundle) { return true }
+        let probe = ((title ?? "") + " " + (url ?? "")).lowercased()
+        return probe.contains("docs.google.com/presentation") || probe.range(of: #"\.(pptx?|key|pdf)\b"#, options: .regularExpression) != nil
+            || probe.range(of: #"\b(lec(ture)?|slides?)\b"#, options: .regularExpression) != nil
+    }
+}

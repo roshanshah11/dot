@@ -16,6 +16,12 @@ enum NotesMessage: Equatable {
     case recall(String)
     case skipRecall
     case end
+    /// He tapped a line's time chip: answer with `showSource` (what was said then).
+    case source(id: String)
+    /// He tapped a ready explainer marker.
+    case showExplain(id: String)
+    /// The deadlines he kept checked (empty: Skip).
+    case addDeadlines([String])
 
     init?(_ body: Any) {
         guard let d = body as? [String: Any], let type = d["type"] as? String else { return nil }
@@ -33,6 +39,9 @@ enum NotesMessage: Equatable {
         case "recall": self = .recall(text)
         case "skipRecall": self = .skipRecall
         case "end": self = .end
+        case "source": guard let id else { return nil }; self = .source(id: id)
+        case "showExplain": guard let id else { return nil }; self = .showExplain(id: id)
+        case "addDeadlines": self = .addDeadlines(d["ids"] as? [String] ?? [])
         default: return nil
         }
     }
@@ -44,13 +53,22 @@ enum NotesMessage: Equatable {
 /// the course file's PDF after class.
 @MainActor
 final class NotesWindow: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUIDelegate {
-    /// One line of the notes as the page draws it. `author` is "dot", "him" or "added"; `kind` is "bullet" or "image".
+    /// One line of the notes as the page draws it. `author` is "dot", "him" or "added"; `kind` is "bullet", "image" (a
+    /// board photo) or "slide" (`text` is the slide's title); `src` is an image path relative to the course folder; `at`
+    /// is the clock time the line came from ("11:42:10"), which gives it a time chip.
     struct Block: Encodable {
         var id, text: String
         var depth: Int
         var author: String
         var kind: String
         var src: String?
+        var at: String? = nil
+    }
+
+    /// A deadline heard in class, offered for Atlas after it. `line` is the notes line it came from.
+    struct DeadlineItem: Encodable {
+        var id, title, due: String
+        var line: String?
     }
 
     enum Op { case append(Block), insertAfter(String, Block), replace(Block), remove(String) }
@@ -112,13 +130,14 @@ final class NotesWindow: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUID
     // MARK: Driving it
 
     /// Open (or refill) the window with a class's notes. `baseURL` is the course folder, where image blocks' relative
-    /// paths (notes-images/...) live.
-    func show(course: String, heading: String, title: String, status: String, blocks: [Block], baseURL: URL? = nil) {
+    /// paths (notes-images/...) live. `mode` "review" is his saved notes opened again: no End class and no hearing line;
+    /// editing works and sends the same messages.
+    func show(course: String, heading: String, title: String, status: String, blocks: [Block], baseURL: URL? = nil, mode: String = "live") {
         guard let resources else { return }
         ensureWindow(resources: resources)
         if let baseURL { files?.allow(baseURL) }
         let load = Load(course: course, heading: heading, title: title, status: status, blocks: blocks,
-                        base: baseURL.map(NotesFiles.folderURL))
+                        base: baseURL.map(NotesFiles.folderURL), mode: mode)
         replay = []
         generation += 1
         call("notes.load(\(Self.json(load)))")
@@ -151,6 +170,25 @@ final class NotesWindow: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUID
     /// One line of feedback on his 3 big ideas; several calls stack up in the box.
     func recallFeedback(_ text: String) { call("notes.recallFeedback(\(Self.json(text)))") }
 
+    /// The last words the ear heard (about one call a second); the page shows the last ten or so. Empty hides it.
+    func hearing(_ text: String) { call("notes.hearing(\(Self.json(text)))") }
+
+    /// The answer to `.source(id)`: the transcript around `time`, in a popover under that line.
+    func showSource(id: String, time: String, text: String) {
+        call("notes.showSource(\(Self.json(id)), \(Self.json(["time": time, "text": text])))")
+    }
+
+    /// The explainer marker on a line: "queued", "ready" (a click sends `.showExplain`), "shown", or nil to clear it.
+    func markExplain(id: String, state: String?) {
+        call("notes.markExplain(\(Self.json(id)), \(state.map { Self.json($0) } ?? "null"))")
+    }
+
+    /// Deadlines heard in class, each checked; "Add to Atlas" sends `.addDeadlines` with the checked ids, Skip with none.
+    func offerDeadlines(_ items: [DeadlineItem]) { call("notes.offerDeadlines(\(Self.json(items)))") }
+
+    /// The result of adding them ("added 2 to Atlas").
+    func deadlinesAdded(_ text: String) { call("notes.deadlinesAdded(\(Self.json(text)))") }
+
     /// The class is saved: the notes file and the PDF (an empty path when there is none) as links he can open.
     func finished(pdf: String, file: String) {
         call("notes.finished(\(Self.json(["pdf": pdf, "file": file])))")
@@ -173,7 +211,8 @@ final class NotesWindow: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUID
         return rows.compactMap { row in
             guard let id = row["id"] as? String else { return nil }
             return Block(id: id, text: row["text"] as? String ?? "", depth: (row["depth"] as? NSNumber)?.intValue ?? 0,
-                         author: row["author"] as? String ?? "dot", kind: row["kind"] as? String ?? "bullet", src: row["src"] as? String)
+                         author: row["author"] as? String ?? "dot", kind: row["kind"] as? String ?? "bullet", src: row["src"] as? String,
+                         at: row["at"] as? String)
         }
     }
 
@@ -324,7 +363,8 @@ final class NotesWindow: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUID
             // the status ticks every few seconds: only the latest of each setter is worth replaying
             replay.removeAll { $0.hasPrefix(setter) }
             replay.append(js)
-        } else if !js.hasPrefix("notes.flush(") {
+        } else if !["notes.flush(", "notes.hearing(", "notes.showSource("].contains(where: js.hasPrefix) {
+            // the hearing line and a popover are of the moment; nothing to bring back after a reload
             replay.append(js)
         }
         guard ready, let web else { queued.append(js); return }
@@ -351,7 +391,7 @@ final class NotesWindow: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUID
 
     // MARK: JSON for the page
 
-    private struct Load: Encodable { let course, heading, title, status: String; let blocks: [Block]; let base: String? }
+    private struct Load: Encodable { let course, heading, title, status: String; let blocks: [Block]; let base: String?; let mode: String }
     private struct Recall: Encodable { let seconds: Int; let prompt: String }
     private struct OpJSON: Encodable {
         let op: String

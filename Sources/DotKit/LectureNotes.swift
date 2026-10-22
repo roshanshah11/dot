@@ -11,11 +11,14 @@ public struct NoteBlock: Equatable, Codable, Sendable {
     public var depth: Int
     public var text: String
     public var author: Author
-    /// An image block's path, relative to the notes file (a board photo).
+    /// An image block's path, relative to the notes file (a board photo, a slide).
     public var image: String?
+    /// When in class the line came from ("11:42:10"), so a tap shows what was said there. Kept in the file as a
+    /// trailing comment no renderer shows.
+    public var at: String?
 
-    public init(id: String, depth: Int, text: String, author: Author, image: String? = nil) {
-        self.id = id; self.depth = max(0, min(NoteBlock.maxDepth, depth)); self.text = text; self.author = author; self.image = image
+    public init(id: String, depth: Int, text: String, author: Author, image: String? = nil, at: String? = nil) {
+        self.id = id; self.depth = max(0, min(NoteBlock.maxDepth, depth)); self.text = text; self.author = author; self.image = image; self.at = at
     }
 
     public static let maxDepth = 3
@@ -24,8 +27,15 @@ public struct NoteBlock: Equatable, Codable, Sendable {
 
     public var markdown: String {
         let indent = String(repeating: "  ", count: depth)
-        if let image { return indent + "![\(text)](\(image))" }
-        return indent + "- " + (author == .added ? Self.addedMark : "") + text
+        let stamp = at.map { " <!--@\($0)-->" } ?? ""
+        if let image { return indent + "![\(text)](\(image))" + stamp }
+        return indent + "- " + (author == .added ? Self.addedMark : "") + text + stamp
+    }
+
+    /// A line's text and its trailing time comment apart: "- x <!--@11:42:10-->" -> ("- x", "11:42:10").
+    static func splitStamp(_ line: String) -> (String, String?) {
+        guard let m = line.firstMatch(of: #/\s*<!--@([0-9:]+)-->\s*$/#) else { return (line, nil) }
+        return (String(line[..<m.range.lowerBound]), String(m.1))
     }
 }
 
@@ -76,12 +86,13 @@ public struct ClassNotes: Equatable, Sendable {
     /// A new line from Dot at the end (or just before `before`, his line in progress at the bottom). A line can sit at
     /// most one level under the one above it.
     @discardableResult
-    public mutating func append(depth: Int, text: String, before: String? = nil) -> NoteBlock? {
+    public mutating func append(depth: Int, text: String, before: String? = nil, at time: String? = nil) -> NoteBlock? {
         let clean = text.trimmingCharacters(in: .whitespaces)
-        guard !clean.isEmpty else { return nil }
+        // the same line again (a reply that restarted itself) is dropped
+        guard !clean.isEmpty, !blocks.suffix(12).contains(where: { $0.text == clean }) else { return nil }
         let at = before.flatMap { index($0) } ?? blocks.count
         let above = at > 0 ? blocks[at - 1].depth : -1
-        let block = NoteBlock(id: "d\(nextDot)", depth: min(depth, above + 1), text: clean, author: .dot)
+        let block = NoteBlock(id: "d\(nextDot)", depth: min(depth, above + 1), text: clean, author: .dot, at: time)
         nextDot += 1
         blocks.insert(block, at: at)
         return block
@@ -127,10 +138,10 @@ public struct ClassNotes: Equatable, Sendable {
     }
 
     @discardableResult
-    public mutating func add(id: String, after: String?, depth: Int, text: String) -> Bool {
+    public mutating func add(id: String, after: String?, depth: Int, text: String, at time: String? = nil) -> Bool {
         guard index(id) == nil else { return edit(id, text: text) }
         let at = after.flatMap { index($0).map { $0 + 1 } } ?? blocks.count
-        blocks.insert(NoteBlock(id: id, depth: depth, text: text, author: .him), at: at)
+        blocks.insert(NoteBlock(id: id, depth: depth, text: text, author: .him, at: time), at: at)
         return true
     }
 
@@ -150,8 +161,8 @@ public struct ClassNotes: Equatable, Sendable {
 
     /// An image (a board photo) at the end.
     @discardableResult
-    public mutating func appendImage(path: String, caption: String) -> NoteBlock {
-        let block = NoteBlock(id: "d\(nextDot)", depth: 0, text: caption, author: .dot, image: path)
+    public mutating func appendImage(path: String, caption: String, at time: String? = nil) -> NoteBlock {
+        let block = NoteBlock(id: "d\(nextDot)", depth: 0, text: caption, author: .dot, image: path, at: time)
         nextDot += 1
         blocks.append(block)
         return block
@@ -171,20 +182,21 @@ public struct ClassNotes: Equatable, Sendable {
         guard let first = lines.first, let head = CourseNotesFile.classHeading(first) else { return nil }
         lines.removeFirst()
         var blocks: [NoteBlock] = []
-        for line in lines where !line.trimmingCharacters(in: .whitespaces).isEmpty {
+        for raw in lines where !raw.trimmingCharacters(in: .whitespaces).isEmpty {
+            let (line, stamp) = NoteBlock.splitStamp(raw)
             let spaces = line.prefix { $0 == " " }.count
             let body = line.dropFirst(spaces)
             let depth = spaces / 2
             let n = blocks.count + 1
             if let m = body.firstMatch(of: #/^!\[(.*)\]\((.+)\)$/#) {
-                blocks.append(NoteBlock(id: "d\(n)", depth: depth, text: String(m.1), author: .dot, image: String(m.2)))
+                blocks.append(NoteBlock(id: "d\(n)", depth: depth, text: String(m.1), author: .dot, image: String(m.2), at: stamp))
             } else if body.hasPrefix("- ") || body.hasPrefix("* ") {
                 var text = String(body.dropFirst(2))
                 let added = text.hasPrefix(NoteBlock.addedMark)
                 if added { text = String(text.dropFirst(NoteBlock.addedMark.count)) }
-                blocks.append(NoteBlock(id: "d\(n)", depth: depth, text: text, author: added ? .added : .dot))
+                blocks.append(NoteBlock(id: "d\(n)", depth: depth, text: text, author: added ? .added : .dot, at: stamp))
             } else {
-                blocks.append(NoteBlock(id: "d\(n)", depth: depth, text: String(body), author: .dot))
+                blocks.append(NoteBlock(id: "d\(n)", depth: depth, text: String(body), author: .dot, at: stamp))
             }
         }
         return ClassNotes(number: head.number, dateLabel: head.date, title: head.title, blocks: blocks)
@@ -257,6 +269,10 @@ public enum NoteOp: Equatable, Sendable {
     case explain(topic: String, why: String)
     case addAfter(id: String, text: String)
     case feedback(String)
+    /// The recall's one "why" question.
+    case why(String)
+    /// An announced date: when (ISO), what, and the line it was said in.
+    case deadline(due: String, title: String, block: String?)
     case nothing
 }
 
@@ -290,6 +306,11 @@ public enum NoteProtocol {
                 ops.append(.addAfter(id: String(m.1), text: text))
             } else if let m = body.firstMatch(of: #/^FEEDBACK\s*:\s*(.+)$/#) {
                 ops.append(.feedback(String(m.1)))
+            } else if let m = body.firstMatch(of: #/^WHY\s*:\s*(.+)$/#) {
+                ops.append(.why(String(m.1)))
+            } else if let m = body.firstMatch(of: #/^DEADLINE\s*:\s*([^|]+?)\s*\|\s*([^|]+?)\s*(?:\|\s*(\S+))?\s*$/#) {
+                let block = m.3.map(String.init).flatMap { $0.lowercased() == "none" ? nil : $0 }
+                ops.append(.deadline(due: String(m.1), title: String(m.2), block: block))
             } else {
                 ignored.append(raw)
             }

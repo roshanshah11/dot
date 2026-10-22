@@ -20,17 +20,21 @@ enum NotesSelfTest {
         try? FileManager.default.createDirectory(at: folder.appendingPathComponent("notes-images"), withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: folder) }
         writeImage(to: folder.appendingPathComponent("notes-images/board 1.png"))
+        writeImage(to: folder.appendingPathComponent("notes-images/slide-1.png"), size: NSSize(width: 640, height: 360), label: "Supply shifters")
 
         let notes = NotesWindow(accentHex: "#ff6b2c")
         notes.offscreen = true
         let messages = Box<[NotesMessage]>([])
         notes.onMessage = { messages.value.append($0) }
-        func B(_ id: String, _ text: String, _ depth: Int = 0, _ author: String = "dot", kind: String = "bullet", src: String? = nil) -> NotesWindow.Block {
-            NotesWindow.Block(id: id, text: text, depth: depth, author: author, kind: kind, src: src)
+        func B(_ id: String, _ text: String, _ depth: Int = 0, _ author: String = "dot", kind: String = "bullet", src: String? = nil,
+               at: String? = nil) -> NotesWindow.Block {
+            NotesWindow.Block(id: id, text: text, depth: depth, author: author, kind: kind, src: src, at: at)
         }
-        let fixture = [B("d1", "**supply curve**: price up -> quantity supplied up"), B("d2", "firms enter when profit > 0", 1),
+        let fixture = [B("d1", "**supply curve**: price up -> quantity supplied up", at: "11:42:10"), B("d2", "firms enter when profit > 0", 1),
                        B("d3", "energy: $E = mc^2$, plain-text too: E = mc^2"), B("h1", "(DO later for practice)", 1, "him"),
-                       B("img1", "board 11:42", 0, "dot", kind: "image", src: "notes-images/board 1.png"), B("d4", "\"u can't skip the margin\" - Prof. Example"),
+                       B("img1", "board 11:42", 0, "dot", kind: "image", src: "notes-images/board 1.png"),
+                       B("s1", "Supply shifters", 0, "dot", kind: "slide", src: "notes-images/slide-1.png"),
+                       B("d4", "\"u can't skip the margin\" - Prof. Example"), B("c1", "a stray timestamp left in the text <!--@11:42:30-->", 1),
                        B("a1", "the slide's elasticity table", 1, "added")]
         notes.show(course: "COURSE 101", heading: "CLASS 3 (Thu Oct 22)", title: "markets", status: "listening · 23 min", blocks: fixture, baseURL: folder)
         guard !notes.isOnAnyDisplay else {
@@ -80,6 +84,82 @@ enum NotesSelfTest {
               "an image block's relative path (notes-images/board 1.png) loads from the course folder")
         check(js("document.querySelector('.line[data-id=\"a1\"]').classList.contains('added')") as? Bool == true, "an added line is marked added (grey, leading ⁺)")
         check(js("document.querySelector('.line[data-id=\"h1\"]').classList.contains('him')") as? Bool == true, "his line carries the margin marker class")
+
+        // 8: an HTML comment never shows; a timestamp comment becomes the line's time
+        let c1 = js("document.querySelector('.line[data-id=\"c1\"] .text').textContent") as? String ?? "?"
+        check(!c1.contains("<!--") && !c1.contains("11:42:30") && c1.contains("stray timestamp"), "an HTML comment in a line is not shown (\"\(c1)\")")
+        check(block("c1")["at"] as? String == "11:42:30" && js("document.querySelector('.line[data-id=\"c1\"] .at').textContent") as? String == "11:42",
+              "a trailing <!--@11:42:30--> becomes the line's time chip (11:42)")
+
+        // 4: a slide is a small thumbnail with its title; a click opens it large, Esc closes
+        check(spin(until: 4) { js("(document.querySelector('.line[data-id=\"s1\"] img') || {}).naturalWidth > 0") as? Bool == true },
+              "a slide block's image loads")
+        let slideHeight = js("document.querySelector('.line[data-id=\"s1\"] img').getBoundingClientRect().height") as? Double ?? 999
+        check(slideHeight > 20 && slideHeight <= 110.5, String(format: "the slide thumbnail is compact (%.0f px tall, at most 110)", slideHeight))
+        check(js("document.querySelector('.line[data-id=\"s1\"] figcaption').textContent") as? String == "Supply shifters", "the slide's title is its caption")
+        _ = js("document.querySelector('.line[data-id=\"s1\"] img').click()")
+        check(js("!document.getElementById('lightbox').hidden && /slide-1\\.png$/.test(document.querySelector('#lightbox img').src)") as? Bool == true,
+              "a click on the slide opens it in the lightbox")
+        _ = js("document.dispatchEvent(new KeyboardEvent('keydown', {key: 'Escape', bubbles: true}))")
+        check(js("document.getElementById('lightbox').hidden") as? Bool == true, "Esc closes the lightbox")
+
+        // 1: the hearing line shows the last words heard, cut from the left
+        notes.hearing((1...25).map { "w\($0)" }.joined(separator: " "))
+        spin(0.2)
+        check(js("!document.getElementById('hearing').hidden && document.getElementById('hearing-text').textContent") as? String
+              == "\u{2026} " + (16...25).map { "w\($0)" }.joined(separator: " "), "the hearing line shows the last ten words heard, with a leading ellipsis")
+        notes.hearing("")
+        spin(0.2)
+        check(js("document.getElementById('hearing').hidden") as? Bool == true, "an empty hearing line is hidden")
+
+        // 2: a line's time chip asks for what was said; Dot's answer shows under the line
+        messages.value.removeAll()
+        check(js("document.querySelector('.line[data-id=\"d1\"] .at').textContent") as? String == "11:42", "a line with a time has a time chip (11:42)")
+        _ = js("document.querySelector('.line[data-id=\"d1\"] .at').click()")
+        check(sent(.source(id: "d1")), "a click on the time chip sends source d1")
+        notes.showSource(id: "d1", time: "11:42:10", text: "so the curve slopes up because each extra unit costs more to make")
+        spin(0.2)
+        check(js("!document.getElementById('source').hidden && document.getElementById('source').textContent") as? String
+              == "11:42:10\u{201C}so the curve slopes up because each extra unit costs more to make\u{201D}", "showSource puts the transcript in a popover under the line")
+        check(js("var p = document.getElementById('source'), l = document.querySelector('.line[data-id=\"d1\"]'); Math.abs(p.offsetTop - (l.offsetTop + l.offsetHeight)) < 6") as? Bool == true,
+              "the popover sits right under that line")
+        _ = js("document.dispatchEvent(new KeyboardEvent('keydown', {key: 'Escape', bubbles: true}))")
+        check(js("document.getElementById('source').hidden") as? Bool == true, "Esc closes the popover")
+
+        // 3: explainer markers
+        notes.markExplain(id: "d2", state: "queued")
+        spin(0.2)
+        check(js("!!document.querySelector('.line[data-id=\"d2\"] .xdot.queued')") as? Bool == true, "markExplain queued draws a hollow marker")
+        _ = js("document.querySelector('.line[data-id=\"d2\"] .xdot').click()")
+        spin(0.3)
+        check(!messages.value.contains(.showExplain(id: "d2")), "a queued marker does nothing on click")
+        notes.markExplain(id: "d2", state: "ready")
+        spin(0.2)
+        _ = js("document.querySelector('.line[data-id=\"d2\"] .xdot.ready').click()")
+        check(sent(.showExplain(id: "d2")), "a ready marker's click sends showExplain d2")
+        notes.markExplain(id: "d2", state: "shown")
+        spin(0.2)
+        check(js("!!document.querySelector('.line[data-id=\"d2\"] .xdot.shown')") as? Bool == true, "markExplain shown makes it faint")
+        if shots != nil {
+            // the hover tools, a ready marker, the popover and the hearing line, all at once, for a person to look at
+            notes.markExplain(id: "d4", state: "ready")
+            notes.markExplain(id: "c1", state: "queued")
+            notes.hearing("and that's why the supply curve slopes up, every extra unit costs a bit more to make")
+            notes.showSource(id: "d1", time: "11:42:10", text: "so the curve slopes up because each extra unit costs more to make")
+            // transitions do not run in a window off every display, so the hover state is set outright
+            _ = js("var t = document.querySelector('.line[data-id=\"d1\"] .tools'); t.style.transition = 'none'; t.style.opacity = 1")
+            spin(0.3)
+            picture("notes-r2-light", dark: false)
+            picture("notes-r2-dark", dark: true)
+            _ = js("var t = document.querySelector('.line[data-id=\"d1\"] .tools'); t.style.transition = ''; t.style.opacity = ''")
+            notes.markExplain(id: "d4", state: nil)
+            notes.markExplain(id: "c1", state: nil)
+            notes.hearing("")
+            _ = js("document.dispatchEvent(new KeyboardEvent('keydown', {key: 'Escape', bubbles: true}))")
+        }
+        notes.markExplain(id: "d2", state: nil)
+        spin(0.2)
+        check(js("!document.querySelector('.line[data-id=\"d2\"] .xdot')") as? Bool == true, "markExplain nil clears it")
 
         // he types in the line at the bottom
         messages.value.removeAll()
@@ -191,15 +271,71 @@ enum NotesSelfTest {
         spin(0.3)
         check((js("document.getElementById('feedback').textContent") as? String)?.contains("u got supply and entry\nelasticity was the third") == true,
               "feedback lines show in the box, stacked")
+
+        // 7: a second round (one "why"), then rounds that time out with and without an answer
+        messages.value.removeAll()
+        notes.showRecall(seconds: 120, prompt: "why does supply slope up?")
+        spin(0.3)
+        check((js("document.getElementById('recall-history').textContent") as? String)?.contains("u got supply and entry") == true,
+              "a second recall keeps the first round's feedback above")
+        check(js("var t = document.getElementById('recall-text'); t.value === '' && !t.disabled && document.getElementById('recall-prompt').textContent") as? String
+              == "why does supply slope up?", "and resets the prompt and the box")
+        check((js("document.getElementById('countdown').textContent") as? String).map { ["2:00", "1:59"].contains($0) } == true, "and the countdown")
+        _ = js("document.getElementById('recall-text').value = 'each extra unit costs more'; document.getElementById('submit').click()")
+        check(sent(.recall("each extra unit costs more")), "Submit works the second time")
+        notes.recallFeedback("right: rising marginal cost")
+        notes.showRecall(seconds: 1, prompt: "one more?")
+        _ = js("document.getElementById('recall-text').value = 'written before time ran out'")
+        check(sent(.recall("written before time ran out"), within: 8), "when time runs out, what he wrote is submitted")
+        notes.recallFeedback("good")
+        notes.showRecall(seconds: 1, prompt: "last one?")
+        check(sent(.skipRecall, within: 8), "when time runs out with nothing written, it is a skip")
+        check(js("!document.getElementById('recall').hidden && document.getElementById('recall-now').hidden && document.getElementById('recall-history').children.length") as? Int == 3,
+              "after the skip, the earlier rounds stay in view")
+        messages.value.removeAll()
+        notes.showRecall(seconds: 120, prompt: "really the last one?")
+        spin(0.2)
+        _ = js("document.getElementById('skip').click()")
+        check(sent(.skipRecall), "Skip sends skipRecall on a later round")
+
         notes.finished(pdf: "/Users/sam/School/COURSE 101/COURSE 101 notes.pdf", file: "/Users/sam/School/COURSE 101/COURSE 101 notes.md")
         spin(0.3)
         check((js("document.getElementById('saved').textContent") as? String).map { $0.contains("saved") && $0.contains("~/School/COURSE 101/COURSE 101 notes.pdf") } == true,
               "finished shows saved with both paths")
-        picture("notes-saved-dark", dark: true)
-        notes.showRecall(seconds: 120, prompt: "again")
+
+        // 6: deadlines heard in class, offered for Atlas
+        messages.value.removeAll()
+        notes.offerDeadlines([NotesWindow.DeadlineItem(id: "dl1", title: "problem set 4", due: "Fri Oct 30", line: "pset 4 due next fri"),
+                              NotesWindow.DeadlineItem(id: "dl2", title: "reading: chapter 6", due: "Tue Oct 27", line: nil),
+                              NotesWindow.DeadlineItem(id: "dl3", title: "midterm", due: "Thu Nov 5", line: "midterm is nov 5 - Prof. Example")])
+        spin(0.3)
+        check(js("document.querySelectorAll('#deadline-list input:checked').length") as? Int == 3, "offerDeadlines lists each, checked")
+        picture("notes-r2-dock", dark: false)
+        _ = js("document.querySelectorAll('#deadline-list input')[1].checked = false; document.getElementById('deadline-add').click()")
+        check(sent(.addDeadlines(["dl1", "dl3"])), "Add to Atlas sends only the checked ids (dl1, dl3)")
+        notes.deadlinesAdded("added 2 to Atlas")
         spin(0.2)
-        _ = js("document.getElementById('skip').click()")
-        check(sent(.skipRecall), "Skip sends skipRecall")
+        check(js("!document.getElementById('deadline-result').hidden && document.getElementById('deadline-result').textContent") as? String == "added 2 to Atlas",
+              "deadlinesAdded shows the result")
+        notes.offerDeadlines([NotesWindow.DeadlineItem(id: "dl4", title: "lab report", due: "Mon Nov 2", line: nil)])
+        spin(0.2)
+        _ = js("document.getElementById('deadline-skip').click()")
+        check(sent(.addDeadlines([])), "Skip sends addDeadlines with no ids")
+
+        // 5: review mode, his saved notes opened again
+        messages.value.removeAll()
+        notes.show(course: "COURSE 101", heading: "CLASS 3 (Thu Oct 22)", title: "markets", status: "saved notes · CLASS 3", blocks: fixture,
+                   baseURL: folder, mode: "review")
+        spin(0.4)
+        check(!notes.isOnAnyDisplay, "the window is still off every display")
+        check(js("getComputedStyle(document.getElementById('end')).display") as? String == "none", "review mode has no End class button")
+        notes.hearing("words the ear should not show in review")
+        spin(0.2)
+        check(js("getComputedStyle(document.getElementById('hearing')).display") as? String == "none", "review mode has no hearing line")
+        check(js("document.getElementById('status').textContent") as? String == "saved notes · CLASS 3", "review mode shows the status as given")
+        _ = js("notes._test.type('d2', 'fixed after class')")
+        check(sent(.edit(id: "d2", text: "fixed after class")), "editing in review mode sends edit as live does")
+        _ = js("notes._test.blur()")
 
         // the course file as a PDF
         let pdf = folder.appendingPathComponent("COURSE 101 notes.pdf")
@@ -219,6 +355,8 @@ enum NotesSelfTest {
         for heading in ["CLASS 3 (Thu Oct 22): markets", "CLASS 2 (Tue Oct 20): costs", "CLASS 1 (Thu Oct 15): intro"] {
             check(text.contains(heading), "the PDF's text has \"\(heading)\"")
         }
+        check(!text.contains("<!--") && !text.contains("11:42:10"), "no HTML comment (a line's <!--@11:42:10-->) reaches the PDF")
+        check(text.contains("Slide: Supply shifters"), "a ![slide: ...] image prints with its title")
         if let keep = ProcessInfo.processInfo.environment["DOT_NOTES_SELFTEST_PDF"], FileManager.default.fileExists(atPath: pdf.path) {
             try? FileManager.default.removeItem(atPath: keep)
             try? FileManager.default.copyItem(atPath: pdf.path, toPath: keep)
@@ -260,24 +398,27 @@ enum NotesSelfTest {
             let (date, title) = named[n] ?? ("Tue Nov \(n)", "topic \(n)")
             out.append("## CLASS \(n) (\(date)): \(title)")
             for i in 1...ideas {
-                out.append("- **idea \(i)** of class \(n): price up -> quantity supplied up, b/c firms want profit")
+                out.append("- **idea \(i)** of class \(n): price up -> quantity supplied up, b/c firms want profit <!--@11:42:10-->")
                 out.append("  - why: marginal cost $MC = \\frac{dTC}{dq}$ rises w output")
                 if i % 3 == 0 { out.append("    - \"u can't skip the margin\" - Prof. Example") }
                 if i % 4 == 0 { out.append("  - ⁺ added after class: the slide's worked example \(i)") }
             }
-            if n == 3 { out.append("![board 11:42](notes-images/board 1.png)") }
+            if n == 3 {
+                out.append("![board 11:42](notes-images/board 1.png)")
+                out.append("![slide: Supply shifters](notes-images/slide-1.png)")
+            }
             out.append("- (DO later for practice) - Sam Rivera's study group, end of class \(n).")
             out.append("")
         }
         return out.joined(separator: "\n")
     }
 
-    /// A small board photo stand-in.
-    private static func writeImage(to url: URL) {
-        let image = NSImage(size: NSSize(width: 240, height: 120), flipped: false) { rect in
+    /// A board photo or slide stand-in.
+    private static func writeImage(to url: URL, size: NSSize = NSSize(width: 240, height: 120), label: String = "x = 2y") {
+        let image = NSImage(size: size, flipped: false) { rect in
             NSColor(calibratedRed: 0.2, green: 0.35, blue: 0.3, alpha: 1).setFill()
             rect.fill()
-            ("x = 2y" as NSString).draw(at: NSPoint(x: 20, y: 50), withAttributes: [.font: NSFont.systemFont(ofSize: 28), .foregroundColor: NSColor.white])
+            (label as NSString).draw(at: NSPoint(x: 20, y: rect.midY - 15), withAttributes: [.font: NSFont.systemFont(ofSize: 28), .foregroundColor: NSColor.white])
             return true
         }
         guard let tiff = image.tiffRepresentation, let png = NSBitmapImageRep(data: tiff)?.representation(using: .png, properties: [:]) else { return }

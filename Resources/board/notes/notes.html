@@ -14,16 +14,27 @@
     <div id="heading"></div>
     <div id="bar"><span id="status"></span><button id="end" type="button">End class</button></div>
   </header>
-  <main id="scroller"><div id="lines"></div><div id="room"></div></main>
+  <main id="scroller"><div id="lines"></div><div id="room"></div><div id="source" hidden></div></main>
+  <footer id="hearing" hidden><span id="hearing-text"></span></footer>
   <section id="dock" hidden>
     <div id="recall" hidden>
-      <div class="dock-top"><span id="recall-prompt"></span><span id="countdown"></span></div>
-      <textarea id="recall-text" rows="4" placeholder="in your own words"></textarea>
-      <div class="dock-bar"><button id="skip" type="button" class="quiet">Skip</button><button id="submit" type="button">Submit</button></div>
+      <div id="recall-history"></div>
+      <div id="recall-now">
+        <div class="dock-top"><span id="recall-prompt"></span><span id="countdown"></span></div>
+        <textarea id="recall-text" rows="4" placeholder="in your own words"></textarea>
+        <div class="dock-bar"><button id="skip" type="button" class="quiet">Skip</button><button id="submit" type="button">Submit</button></div>
+      </div>
       <div id="feedback" hidden></div>
+    </div>
+    <div id="deadlines" hidden>
+      <div class="dock-top"><span class="dock-title">Deadlines from class</span></div>
+      <div id="deadline-list"></div>
+      <div class="dock-bar" id="deadline-bar"><button id="deadline-skip" type="button" class="quiet">Skip</button><button id="deadline-add" type="button">Add to Atlas</button></div>
+      <div id="deadline-result" hidden></div>
     </div>
     <div id="saved" hidden></div>
   </section>
+  <div id="lightbox" hidden><figure><img alt=""><figcaption></figcaption></figure></div>
 </div>
 <article id="doc" hidden></article>
 </body></html>

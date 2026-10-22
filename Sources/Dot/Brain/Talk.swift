@@ -1156,6 +1156,8 @@ final class Talk {
         case .stopListening:
             await stopLecture()
             return
+        case .openNotes(let course, let number):
+            openCourseNotes(course, classNumber: number)
         case .recapLecture:
             await recapLecture()
             return
@@ -1542,13 +1544,23 @@ final class Talk {
         }
         let window = notesWindow ?? NotesWindow()
         notesWindow = window
+        let courseText = Self.courseMapText(label: course, root: config.talkRootURL)
+        let explainers = LectureExplainers(config: config, course: courseTitle == course ? course : "\(course), \(courseTitle)\n\n" + String(courseText.prefix(4000)))
+        explainers.onShow = { [weak self] title, markup in self?.showLectureExplainer(title: title, markup: markup) ?? false }
         let session = LectureSession(course: course, courseTitle: courseTitle, folder: school.appendingPathComponent(course, isDirectory: true),
-                                     endsAt: cls?.end, listener: lecture, writer: NoteWriter(config: config), window: window)
+                                     endsAt: cls?.end, listener: lecture, writer: NoteWriter(config: config), window: window, explainers: explainers)
         session.screenText = { [weak self] in await self?.lectureScreenText() ?? "" }
-        session.onExplain = { [weak self] topic, why, recent in self?.lectureExplain(topic: topic, why: why, recent: recent) ?? false }
+        session.slideShot = { await SlideShot.capture() }
+        if !named.isEmpty, let upcoming = localCalendar.items(days: 14, now: now) {
+            let day = DateFormatter(); day.dateFormat = "EEE"; day.locale = Locale(identifier: "en_US_POSIX")
+            let order = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
+            let days = Set(upcoming.compactMap(LectureCalendar.asClass).filter { $0.course == named }.map { day.string(from: $0.start) })
+            session.meets = order.filter(days.contains).joined(separator: "/")
+        }
+        session.onAddDeadlines = { [weak self] items in self?.addDeadlinesToAtlas(items, course: course) ?? "atlas isn't reachable from here" }
         session.onFinished = { [weak self] file, pdf in self?.lectureFinished(file: file, pdf: pdf) }
         do {
-            try session.start(courseText: Self.courseMapText(label: course, root: config.talkRootURL))
+            try session.start(courseText: courseText)
         } catch {
             _ = await lecture.stop()
             hud.flash(status: "lecture mode: the note writer didn't start", for: 6)
@@ -1606,33 +1618,47 @@ final class Talk {
         return await TextRecognizer.recognize(jpeg: shot.jpeg).split(separator: "\n").joined(separator: " / ")
     }
 
-    /// Lecture mode's explainer (his pick, "Explains on its own"): a talk turn that opens the panel without being asked.
-    /// False while a turn is running; the next idea gets its own.
-    private func lectureExplain(topic: String, why: String, recent: String) -> Bool {
-        guard phase == .idle, activeSession?.turnInFlight != true, let session = session(for: .talk) else { return false }
-        Task { @MainActor in
-            startCapture()
-            if let task = captureTask {
-                let captured = await task.value
-                shots = captured.shots
-                context = captured.context
-                captureTask = nil
-            }
-            guard phase == .idle else { return }
-            lastAsked = "(lecture mode, on its own) explain: \(topic)"
-            lastAskWasTyped = false
-            lastAskWasLecture = true
-            quietTurn = true
-            hud.model.transcript = "explaining: \(topic)"
-            let lines = [
-                "[lecture-explain] lecture mode is on: dot is writing his notes in its notes window while the lecture goes. without being asked, open the panel with a short explainer of: \(topic)" + (why.isEmpty ? "" : " (\(why))") + ".",
-                "the last minute and a half of the lecture (machine transcribed): \"\(Log.short(recent, 1400))\"",
-                "tie it to what the lecturer just said and to the slide on his screen. a figure or diagram when it helps; the page of the reading when you know it. short enough to read in under a minute while he keeps listening. it's a lecture: nothing spoken, no preamble, the panel is the answer.",
-            ]
-            let (built, images) = buildMessage(lines.joined(separator: "\n"), kind: .talk)
-            sendTurn(built, images: images, to: session, kind: .talk)
-        }
+    /// A background explainer is ready and the lecturer paused: it opens in the panel, unless he's mid-question with Dot
+    /// (then it waits for the next pause). Built by LectureExplainers, not talk, so his own questions never queue behind it.
+    private func showLectureExplainer(title: String, markup: String) -> Bool {
+        guard phase == .idle, activeSession?.turnInFlight != true, panels.panel.available else { return false }
+        let (screen, avoid) = panels.placement()
+        panels.panel.open(id: "lecture-\(Int(Date().timeIntervalSince1970))", title: title, markup: markup, screen: screen, avoid: avoid)
+        let courses = panels.courses
+        panels.panel.finish(course: { text in CourseTag.detect(context: title, content: text, among: courses)?.code })
         return true
+    }
+
+    /// Deadlines he checked after class go to Atlas through a quiet behind job (Atlas's deadline_add, one each).
+    private func addDeadlinesToAtlas(_ items: [(due: String, title: String)], course: String) -> String {
+        let list = items.map { "\($0.title) (\(course)) due \($0.due)" }.joined(separator: "; ")
+        let goal = "add these to atlas as deadlines with the atlas deadline_add tool, one call each, title and due exactly as given; nothing else, no questions: \(list). say in one line what you added."
+        jobs.start(goal: goal, placement: .behind, context: context, askedAt: nil, bench: false, hisWords: "atlas deadlines from \(course)", announce: false)
+        return "adding \(items.count) to atlas"
+    }
+
+    /// "open my biotech notes": a course's saved notes back in the notes window.
+    private var notesReview: NotesReview?
+
+    func openCourseNotes(_ spoken: String, classNumber: Int?) {
+        phase = .idle
+        let school = URL(fileURLWithPath: DotConfig.expand("~/roshan/School"), isDirectory: true)
+        let folders = ((try? FileManager.default.contentsOfDirectory(at: school, includingPropertiesForKeys: [.isDirectoryKey])) ?? [])
+            .filter { (try? $0.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true }.map(\.lastPathComponent)
+        guard let course = LectureCourses.resolve(spoken: spoken, aliases: LectureAliases.load(), maps: panels.courses, folders: folders) else {
+            hud.flash(status: "no course called \(spoken)", for: 5)
+            return
+        }
+        let window = notesWindow ?? NotesWindow()
+        notesWindow = window
+        guard lectureSession == nil else { hud.flash(status: "lecture mode is on; its notes are open", for: 4); return }
+        guard let review = NotesReview(course: course, folder: school.appendingPathComponent(course, isDirectory: true), classNumber: classNumber, window: window) else {
+            hud.flash(status: "no notes for \(course) yet", for: 5)
+            return
+        }
+        notesReview = review
+        review.show()
+        hud.flash(status: "\(course) \(review.heading)", for: 4)
     }
 
     /// The fast model picks the School folder a new course's notes go in ("Example Studies" -> the folder named by its code).
@@ -1728,7 +1754,7 @@ final class Talk {
     private enum Route: CustomStringConvertible {
         /// The basics pass: a small thing Dot does itself; a job for a new agent, never the running one.
         case act(ActionCommand), agentFresh
-        case answer, agent, think, explain, reopenPanel, closePanel, showTranscript, followUp(String), continueWalkthrough, drive, closeBoard, lessonNext, lessonBack, lessonAgain, lecture, suggestion(String), dismiss, find(String), listen, stopListening, recapLecture, dictionary(heard: String?, correct: String), place(what: String, whereWord: String?), images(String)
+        case answer, agent, think, explain, reopenPanel, closePanel, showTranscript, followUp(String), continueWalkthrough, drive, closeBoard, lessonNext, lessonBack, lessonAgain, lecture, suggestion(String), dismiss, find(String), listen, stopListening, recapLecture, openNotes(String, Int?), dictionary(heard: String?, correct: String), place(what: String, whereWord: String?), images(String)
         /// Round seven (G2): his spoken answer to the card on show; a named agent told, stopped or asked after.
         case consentAnswer(ConsentVoice.Answer), tellAgent(String), stopAgent(String), agentStatus(String?)
         /// Tonight's voice verbs (VO-01 to VO-13, MB-07).
@@ -1762,6 +1788,7 @@ final class Talk {
             case .listen: return "listen"
             case .stopListening: return "stopListening"
             case .recapLecture: return "recapLecture"
+            case .openNotes: return "openNotes"
             case .dictionary: return "dictionary"
             case .place: return "place"
             case .images: return "images"
@@ -1822,6 +1849,7 @@ final class Talk {
     private static let listenWords = try! NSRegularExpression(pattern: #"^(?:(?:dot,? )?(?:start )?listen(?:ing)? (?:to )?(?:the |this )?(?:lecture|class|talk|lecturer|meeting)|(?:start|begin) (?:the )?lecture(?: mode)?|lecture mode(?: on)?)\W*$"#, options: .caseInsensitive)
     /// "show the transcript", "open my transcript", "pull up the conversation" (10-21; Control+Command+T does the same).
     private static let transcriptWords = try! NSRegularExpression(pattern: #"^(?:dot,? )?(?:show|open|pull up|bring up)(?: me)? (?:the |my |our |today's )?(?:whole |full )?(?:transcript|conversation)(?: so far)?\W*$"#, options: .caseInsensitive)
+    private static let openNotesWords = try! NSRegularExpression(pattern: #"^(?:(?:dot,? )?(?:can you |please )?)?(?:open|show|pull up|bring up|reopen)(?: me)? (?:my |the )?(.+?) (?:class |lecture )?notes(?: (?:from|for) (?:class|lecture) (\d+))?\W*$"#, options: .caseInsensitive)
     private static let takeNotesWords = try! NSRegularExpression(pattern: #"^(?:(?:dot,? )?(?:can you |could you |please )?)?(?:take|write|start taking) (?:my |the |some )?(?:lecture |class )?notes(?: (?:on|for|of) (?:this|the|my|this) ?(?:lecture|class|talk)?)?(?: for me)?\W*$"#, options: .caseInsensitive)
     private static let stopListenWords = try! NSRegularExpression(pattern: #"^(?:(?:dot,? )?stop listening|(?:the )?lecture(?:'s| is)? (?:over|done|finished)|end (?:the )?lecture|lecture mode off|stop the lecture)\W*$"#, options: .caseInsensitive)
     private static let recapWords = try! NSRegularExpression(pattern: #"^(?:(?:can you |could you |please )?(?:recap|summarize|summarise|sum up|review|go over) (?:the |this |today's )?(?:lecture|class|talk)|what did i miss(?: in (?:the )?lecture)?|what (?:was|is) (?:the |this )?lecture about)\W*$"#, options: .caseInsensitive)
@@ -2128,6 +2156,10 @@ final class Talk {
         if saysClose, panels.isOpen, panels.openedRecently { return .closePanel }
         if panels.available, PanelCoach.wantsReopen(text) { return .reopenPanel }
         if Self.listenWords.firstMatch(in: text, range: range) != nil { return .listen }
+        if let m = Self.openNotesWords.firstMatch(in: text, range: range), let r = Range(m.range(at: 1), in: text) {
+            let number = Range(m.range(at: 2), in: text).flatMap { Int(text[$0]) }
+            return .openNotes(String(text[r]), number)
+        }
         // "take notes on this" (his words in class, 10-22 11:19) starts lecture mode while a class is on his calendar.
         if config.lectureNotes, Self.takeNotesWords.firstMatch(in: text, range: range) != nil,
            text.lowercased().contains("lecture") || text.lowercased().contains("class")

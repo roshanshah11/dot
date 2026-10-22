@@ -3,23 +3,32 @@
 
 One long-lived `claude -p` session in streaming-input mode (Sonnet, no tools, no setting sources, the note
 writer's own system prompt: Resources/lecture/notes-system.md with its placeholders filled in). The transcript is
-cut into ~45-second chunks (~110 words) and sent as the protocol's cycle messages; each reply is applied with
+cut into ~30-second chunks (~75 words) and sent as the protocol's cycle messages; each reply is applied with
 the parser's rules (append, ~ rewrite, ## title, ? explain logged with its minute). A few of the student's own
-edits are simulated partway through. At the end it sends [recall] and [gap-fill].
+edits are simulated partway through. At the end, the way Dot's LectureSession does it: [recall] (FEEDBACK lines and
+one WHY question), [why] with a made-up answer (FEEDBACK lines), [gap-fill] (+after lines) and [deadlines]
+(DEADLINE lines).
+
+With --explainers, every `?` line also starts the background explainer worker (one-shot `claude -p` with
+Resources/lecture/explainer-system.md, {{PANEL_RULES}} taken from Sources/Dot/Brain/Prompts+Panel.swift), fed the
+trigger plus the last ~90 s of speech and the slide; its panel markup lands in <out>/explainers/*.ui. --explain-at
+runs the worker at chosen minutes (with --explain-only, without the note writer). --check-panels renders every .ui in
+WebKit with scripts/panel-check.py's checks (Playwright) and screenshots it.
 
 Writes into --out:
   notes.md          the class section as it lands in the course file (protocol section 1)
-  log.md            per-cycle latency, tokens and cost; explain triggers with their minute; recall feedback;
-                    gap-fill lines; refused and ignored lines
+  log.md            per-cycle latency, tokens and cost; explain triggers with their minute; recall feedback, the WHY
+                    question and its feedback; gap-fill lines; deadlines; refused and ignored lines; explainers
   conversation.md   every message sent and every raw reply
   run.json          the same numbers, for scripts
 
 Example (paths are placeholders):
   scripts/lecture-replay.py "transcript.txt" --course "BIOS 101, Intro Biology" \\
       --course-map course-map.md --materials slides.pptx --materials reading.pdf \\
-      --heading "CLASS 1 (Tue Sep 29)" --time 11:00-12:20 --start-minute 5 --minutes 30 \\
+      --heading "CLASS 1 (Tue Sep 29)" --date 2026-09-29 --time 11:00-12:20 --start-minute 5 --minutes 30 \\
       --his-add "14|exams r 40% total" --his-change "20|+ (on exam)" \\
-      --recall "1. ... 2. ... 3. ..." --out /tmp/replay-1
+      --recall "1. ... 2. ... 3. ..." --why-answer "b/c ..." --explainers --check-panels --out /tmp/replay-1
+  scripts/lecture-replay.py "transcript.txt" --explain-only --explain-at "30|how X works|named in the demo" ...
 
 Materials: .pptx (slide text), .pdf (pdftotext), anything else read as text. Slides shown on his screen during
 class: --slides FILE, sections headed "[minute N]" with the slide's text under each.
@@ -35,6 +44,7 @@ import re
 import shutil
 import subprocess
 import sys
+import textwrap
 import threading
 import time
 import uuid
@@ -43,7 +53,8 @@ from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent
 PROMPTS = REPO / "Resources" / "lecture"
-CHUNK_SECONDS = 45
+PANEL_SWIFT = REPO / "Sources" / "Dot" / "Brain" / "Prompts+Panel.swift"
+VIZ_INDEX = REPO / "Resources" / "board" / "viz" / "index.js"
 
 
 # ---------------------------------------------------------------- inputs
@@ -187,6 +198,8 @@ TITLE = re.compile(r"^##\s+(.+)$")
 EXPLAIN = re.compile(r"^\?\s*(.+)$")
 AFTER = re.compile(r"^\+after\s+([a-z]\d+)\s*:\s*(.+)$")
 FEEDBACK = re.compile(r"^FEEDBACK:\s*(.+)$")
+WHY = re.compile(r"^WHY:\s*(.+)$")
+DEADLINE = re.compile(r"^DEADLINE:\s*([^|]+?)\s*\|\s*([^|]+?)\s*\|\s*(\S+)\s*$")
 
 
 def apply_reply(notes, reply, minute, mode, result):
@@ -203,6 +216,8 @@ def apply_reply(notes, reply, minute, mode, result):
             m = BULLET.match(line)
             if m:
                 depth = min(3, len(m.group(1)) // 2)
+                if any(b["text"] == m.group(2).strip() and b["author"] == "dot" for b in notes.blocks[-12:]):
+                    notes.log.append((minute, "repeated line", line.strip()))   # applied anyway, as the parser would
                 bid = notes.append(depth, m.group(2).strip(), "dot")
                 counts["appended"] += 1
                 continue
@@ -257,11 +272,29 @@ def apply_reply(notes, reply, minute, mode, result):
                 after_runs[anchor] = bid
                 counts["added"] += 1
                 continue
-        elif mode == "recall":
+        elif mode in ("recall", "why"):
             m = FEEDBACK.match(line)
             if m:
-                result["feedback"].append(m.group(1).strip())
+                result["feedback" if mode == "recall" else "why_feedback"].append(m.group(1).strip())
                 counts["feedback"] += 1
+                continue
+            m = WHY.match(line)
+            if m and mode == "recall":
+                result["why"].append(m.group(1).strip())
+                continue
+        elif mode == "deadlines":
+            m = DEADLINE.match(line)
+            if m:
+                when, title, bid = m.group(1).strip(), m.group(2).strip(), m.group(3).strip()
+                problems = []
+                try:
+                    dt.datetime.fromisoformat(when)
+                except ValueError:
+                    problems.append("not an ISO date")
+                if bid != "none" and notes.find(bid) is None:
+                    problems.append("no such block")
+                result["deadlines"].append({"date": when, "title": title, "block": bid, "problems": problems,
+                                            "said": notes.blocks[notes.find(bid)]["text"] if not problems and bid != "none" else None})
                 continue
         notes.log.append((minute, "ignored", line))
         counts["ignored"] += 1
@@ -358,6 +391,114 @@ class Session:
             self.proc.kill()
 
 
+# ---------------------------------------------------------------- the explainer worker
+
+def viz_catalog_line(limit=160):
+    """Port of Prompts.vizCatalogLine(): the catalog's widgets as "id: title", his subjects first."""
+    if not VIZ_INDEX.exists():
+        return "- interactive explainers: none are installed yet; use drawn svg and the reactive pieces."
+    text = VIZ_INDEX.read_text(encoding="utf-8")
+    items = json.loads(text[text.index("["):text.rindex("]") + 1])
+    mine = ["linear-algebra", "finance", "biology", "stats"]
+    ranked = [i for i in items if i.get("subject") in mine] + [i for i in items if i.get("subject") not in mine]
+    shown = [f"{i['id']}: {i['title']}" for i in ranked[:limit] if i.get("id") and i.get("title")]
+    more = f' ({len(items) - len(shown)} more, reached with <viz topic="...">)' if len(items) > len(shown) else ""
+    return ("- interactive explainers you can put in a panel with <viz id=\"...\" values='{...}'> (values optional; "
+            "the widget has sensible defaults)" + more + ": " + "; ".join(shown))
+
+
+def panel_rules(path=None):
+    """Dot's panel markup rules: a file, or the panelRules literal in Prompts+Panel.swift with its one interpolation."""
+    if path:
+        return Path(path).read_text(encoding="utf-8").strip()
+    src = PANEL_SWIFT.read_text(encoding="utf-8")
+    m = re.search(r'static let panelRules: String = """\n(.*?)\n[ \t]*"""', src, re.S)
+    if not m:
+        sys.exit(f"panelRules not found in {PANEL_SWIFT}; pass --panel-rules FILE")
+    body = textwrap.dedent(m.group(1)).replace("\\(Prompts.vizCatalogLine())", viz_catalog_line())
+    return body.replace('\\"', '"').replace("\\\\", "\\").strip()
+
+
+def explain_message(topic, why, speech, slide):
+    parts = [f"[explain] topic: {topic} | why: {why}",
+             "what was just said (machine transcribed; names and terms may be misspelled):", f'"{speech}"']
+    if slide:
+        parts.append(f'slide on his screen (OCR): "{slide}"')
+    return "\n".join(parts)
+
+
+def run_explainer(args, system, message):
+    cmd = [args.claude, "-p", "--output-format", "json", "--model", args.explainer_model, "--system-prompt", system,
+           "--tools", "", "--mcp-config", '{"mcpServers":{}}', "--strict-mcp-config", "--setting-sources", "",
+           "--no-session-persistence"]
+    env = dict(os.environ)
+    env.pop("CLAUDECODE", None)
+    env.pop("CLAUDE_CODE_ENTRYPOINT", None)
+    if args.explainer_thinking == "off":
+        env["MAX_THINKING_TOKENS"] = "0"
+    started = time.time()
+    try:
+        p = subprocess.run(cmd, input=message, capture_output=True, text=True, timeout=300, env=env, cwd=args.cwd)
+        data = json.loads(p.stdout or "{}")
+    except (subprocess.TimeoutExpired, json.JSONDecodeError) as e:
+        return {"markup": "", "error": str(e)[:200], "seconds": time.time() - started}
+    return {"markup": (data.get("result") or "").strip(), "error": data.get("subtype") if data.get("is_error") else None,
+            "seconds": time.time() - started, "cost_usd": data.get("total_cost_usd"),
+            "output_tokens": (data.get("usage") or {}).get("output_tokens")}
+
+
+TAGS = ["lead", "title", "text", "steps", "step", "callout", "svg", "list", "item", "box", "row", "grid", "table", "quote"]
+
+
+def check_markup(ui):
+    """Structure a parser can trust: markup only, balanced main tags, short, a figure."""
+    s = ui.strip()
+    problems = []
+    if not s.startswith("<lead>"):
+        problems.append("does not start with <lead>")
+    for bad in ["[PANEL", "<<<", ">>>", "[STEP", "[HIGHLIGHT", "[THINK", "[WEB", "```", "<script", "\u2014", "<quiz", "<followups"]:
+        if bad in s:
+            problems.append(f"contains {bad!r}")
+    for tag in TAGS:
+        opened = len(re.findall(rf"<{tag}(?=[\s>])(?![^>]*/>)", s))
+        closed = s.count(f"</{tag}>")
+        if opened != closed:
+            problems.append(f"<{tag}> opened {opened}, closed {closed}")
+    prose = re.sub(r"<svg.*?</svg>", " ", s, flags=re.S)
+    words = len(re.sub(r"<[^>]+>", " ", prose).split())
+    figure = bool(re.search(r"<svg|<viz|<plot|<chart|<table|<image", s))
+    return {"problems": problems, "words": words, "figure": figure}
+
+
+def render_panels(folder, names):
+    """scripts/panel-check.py's WebKit checks on our own .ui files (its FIX folder pointed at ours)."""
+    import importlib.util
+    sys.dont_write_bytecode = True   # no __pycache__ left in scripts/
+    spec = importlib.util.spec_from_file_location("panel_check", REPO / "scripts" / "panel-check.py")
+    pc = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(pc)
+    pc.FIX = Path(folder)
+    from playwright.sync_api import sync_playwright
+    shots = Path(folder) / "shots"
+    shots.mkdir(exist_ok=True)
+    httpd, port = pc.serve()
+    results = {}
+    try:
+        with sync_playwright() as p:
+            browser = p.webkit.launch()
+            for n in names:
+                page = browser.new_page(viewport={"width": 440, "height": 900})
+                try:
+                    results[n] = pc.check(page, port, n, shots)
+                except Exception as e:
+                    results[n] = {"status": "fail", "failures": [f"checker crashed: {e}"[:220]]}
+                page.close()
+            browser.close()
+    finally:
+        httpd.shutdown()
+    return results
+
+
 # ---------------------------------------------------------------- the replay
 
 def cycle_message(minute, words, slide, edits, notes, tail_n):
@@ -420,21 +561,33 @@ def main():
     ap.add_argument("--materials", action="append", default=[], help="today's slides or readings (repeatable)")
     ap.add_argument("--style", help="style block file (default: Resources/lecture/notes-style-default.md)")
     ap.add_argument("--heading", default=None, help='class heading, e.g. "CLASS 7 (Thu Oct 22)"')
-    ap.add_argument("--time", default="", help="class time for the [start] line, e.g. 11:00-12:20")
+    ap.add_argument("--date", default=None, help="the class date, YYYY-MM-DD, for [deadlines] (default today)")
+    ap.add_argument("--time", default="", help="class time, e.g. 11:00-12:20 (the [start] and [deadlines] lines)")
     ap.add_argument("--start-minute", type=int, default=0, help="minute of class at which the transcript starts")
     ap.add_argument("--minutes", type=float, default=None, help="replay only this many minutes of transcript")
-    ap.add_argument("--words-per-chunk", type=int, default=110, help="~45 seconds of speech (default 110)")
+    ap.add_argument("--seconds-per-chunk", type=int, default=30, help="one cycle's speech (default 30)")
+    ap.add_argument("--words-per-chunk", type=int, default=75, help="words in one cycle (default 75, ~30 s)")
     ap.add_argument("--slides", help='slides on his screen: "[minute N]" sections')
     ap.add_argument("--his-add", action="append", help='MINUTE|text: he types a line at the end ("  - " sets depth)')
     ap.add_argument("--his-change", action="append", help="MINUTE|+suffix or MINUTE|=text: he edits Dot's latest block")
     ap.add_argument("--his-delete", action="append", type=int, help="MINUTE: he deletes Dot's latest block")
-    ap.add_argument("--recall", help="his 3 big ideas (omit to skip [recall])")
+    ap.add_argument("--recall", help="his 3 big ideas (omit to skip [recall] and [why])")
+    ap.add_argument("--why-answer", default="idk, i think b/c it just works that way",
+                    help="his answer to the WHY question, sent as [why]")
     ap.add_argument("--no-gapfill", action="store_true")
+    ap.add_argument("--no-deadlines", action="store_true")
     ap.add_argument("--tail", type=int, default=12, help="blocks shown to the writer each cycle")
     ap.add_argument("--model", default="sonnet")
     ap.add_argument("--thinking", choices=["on", "off"], default="off",
-                    help="off sets MAX_THINKING_TOKENS=0, as Dot's quick sessions do")
+                    help="off sets MAX_THINKING_TOKENS=0, as Dot runs the note writer")
     ap.add_argument("--effort", default=None)
+    ap.add_argument("--explainers", action="store_true", help="run the explainer worker on every ? line")
+    ap.add_argument("--explain-at", action="append", default=[], help='MINUTE|topic|why: run the worker at that minute')
+    ap.add_argument("--explain-only", action="store_true", help="only the --explain-at explainers, no note writer")
+    ap.add_argument("--explainer-model", default="sonnet")
+    ap.add_argument("--explainer-thinking", choices=["on", "off"], default="off")
+    ap.add_argument("--panel-rules", help="a file with the panel rules (default: from Prompts+Panel.swift)")
+    ap.add_argument("--check-panels", action="store_true", help="render every explainer in WebKit (Playwright)")
     ap.add_argument("--prompts", default=str(PROMPTS))
     ap.add_argument("--claude", default=shutil.which("claude") or "claude")
     ap.add_argument("--cwd", default=None, help="working directory for claude (default: a temp folder in --out)")
@@ -448,8 +601,10 @@ def main():
     out.mkdir(parents=True, exist_ok=True)
     args.cwd = args.cwd or str(out / "cwd")
     Path(args.cwd).mkdir(parents=True, exist_ok=True)
+    chunk_s = args.seconds_per_chunk
+    class_date = dt.date.fromisoformat(args.date) if args.date else dt.date.today()
 
-    heading = args.heading or f"CLASS 1 ({dt.date.today():%a %b} {dt.date.today().day})"
+    heading = args.heading or f"CLASS 1 ({class_date:%a %b} {class_date.day})"
     course_text = args.course
     if args.course_map:
         course_text += "\n\n" + Path(args.course_map).read_text(encoding="utf-8").strip()
@@ -461,21 +616,74 @@ def main():
     (out / "system-prompt.md").write_text(system_prompt, encoding="utf-8")
 
     words = read_transcript(args.transcript).split()
-    per_minute = args.words_per_chunk * 60 / CHUNK_SECONDS
+    per_minute = args.words_per_chunk * 60 / chunk_s
     if args.minutes:
         words = words[: int(args.minutes * per_minute)]
     chunks = [" ".join(words[i:i + args.words_per_chunk]) for i in range(0, len(words), args.words_per_chunk)]
+    minute_of = lambda i: args.start_minute + int((i + 1) * chunk_s / 60)   # minute at the end of chunk i
     slides = read_slides(args.slides)
     adds = parse_timed(args.his_add, "--his-add")
     changes = parse_timed(args.his_change, "--his-change")
     deletes = sorted(args.his_delete or [])
 
     notes = Notes(heading)
-    result = {"explains": [], "feedback": [], "cycles": [], "end": {}}
+    result = {"explains": [], "feedback": [], "why": [], "why_feedback": [], "deadlines": [], "cycles": [],
+              "end": {}, "explainers": []}
     convo = [f"# Replay of {Path(args.transcript).name}\n", f"system prompt: {len(system_prompt)} chars (system-prompt.md)\n"]
 
+    # The explainer worker: its own one-shot claude per `?`, in the background, as Dot runs it.
+    explainer_system = None
+    workers = []
+    exp_dir = out / "explainers"
+    if args.explainers or args.explain_at:
+        explainer_system = fill((prompts / "explainer-system.md").read_text(encoding="utf-8"), {
+            "PANEL_RULES": panel_rules(args.panel_rules), "COURSE": course_text})
+        exp_dir.mkdir(exist_ok=True)
+        (exp_dir / "system-prompt.md").write_text(explainer_system, encoding="utf-8")
+
+    def slide_at(minute):
+        current = None
+        for m, text in slides:
+            if m <= minute:
+                current = text
+        return current
+
+    def start_explainer(minute, upto_chunk, topic, why):
+        n = len(result["explainers"]) + 1
+        back = max(1, round(90 / chunk_s))
+        speech = " ".join(chunks[max(0, upto_chunk + 1 - back): upto_chunk + 1])
+        message = explain_message(topic, why, speech, slide_at(minute))
+        slug = re.sub(r"[^a-z0-9]+", "-", topic.lower()).strip("-")[:40]
+        entry = {"n": n, "minute": minute, "topic": topic, "why": why, "name": f"{n:02d}-min{minute}-{slug}"}
+        result["explainers"].append(entry)
+        (exp_dir / f"{entry['name']}.message.txt").write_text(message, encoding="utf-8")
+        if args.dry_run:
+            return
+
+        def work():
+            r = run_explainer(args, explainer_system, message)
+            entry.update({k: r.get(k) for k in ("seconds", "cost_usd", "output_tokens", "error")})
+            (exp_dir / f"{entry['name']}.ui").write_text(r["markup"] + "\n", encoding="utf-8")
+            entry["structure"] = check_markup(r["markup"])
+        t = threading.Thread(target=work)
+        t.start()
+        workers.append(t)
+
+    def chunk_for_minute(minute):
+        for i in range(len(chunks)):
+            if minute_of(i) >= minute:
+                return i
+        return len(chunks) - 1
+
+    for spec_ in args.explain_at:
+        parts = spec_.split("|")
+        if len(parts) < 2:
+            sys.exit(f"--explain-at wants MINUTE|topic|why, got: {spec_}")
+        minute = int(parts[0])
+        start_explainer(minute, chunk_for_minute(minute), parts[1].strip(), (parts[2] if len(parts) > 2 else "").strip())
+
     start_line = f"[start] {heading}, {args.course}" + (f", {args.time}" if args.time else "")
-    session = None if args.dry_run else Session(args, system_prompt)
+    session = None if (args.dry_run or args.explain_only) else Session(args, system_prompt)
 
     def run_turn(label, text, minute, mode):
         convo.append(f"\n## >>> {label}\n```\n{text}\n```\n")
@@ -489,43 +697,64 @@ def main():
         return r, counts
 
     try:
-        r, _ = run_turn("start", start_line, args.start_minute, "class")
-        result["start"] = {k: r.get(k) for k in ("seconds", "cost_usd", "cache_write", "input_tokens")}
-        slide_i = 0
-        current_slide = None
-        for i, chunk in enumerate(chunks):
-            minute = args.start_minute + int((i + 1) * CHUNK_SECONDS / 60)
-            slide = None
-            while slide_i < len(slides) and slides[slide_i][0] <= minute:
-                if slides[slide_i][1] != current_slide:
-                    slide = current_slide = slides[slide_i][1]
-                slide_i += 1
-            edits = simulate_edits(notes, minute, adds, changes, deletes)
-            msg = cycle_message(minute, chunk, slide, edits, notes, args.tail)
-            r, counts = run_turn(f"cycle {i + 1}, minute {minute}", msg, minute, "class")
-            row = {"cycle": i + 1, "minute": minute, **{k: r.get(k) for k in (
-                "seconds", "first_message_s", "input_tokens", "cache_read", "cache_write", "output_tokens",
-                "thinking_tokens", "cost_usd", "error")}, **counts, "reply": r.get("text")}
-            result["cycles"].append(row)
-            print(f"cycle {i + 1:3d} min {minute:3d}  {r.get('seconds', 0):5.1f}s  "
-                  f"+{counts.get('appended', 0)} ~{counts.get('rewrote', 0)} ?{counts.get('explain', 0)}"
-                  f"{'  ' + r['error'] if r.get('error') else ''}", flush=True)
-        end_minute = args.start_minute + int(len(chunks) * CHUNK_SECONDS / 60)
-        # The end-of-class messages are built the way Dot builds them (LectureSession.recall / gapFill): the protocol
-        # line, the instructions file, then (gap-fill) the slides and readings and every block with its id.
-        if args.recall:
-            text = f'[recall] his 3 big ideas: "{args.recall}"\n\n' + (prompts / "notes-recall.md").read_text(encoding="utf-8")
-            r, _ = run_turn("recall", text.strip(), end_minute, "recall")
-            result["end"]["recall"] = {k: r.get(k) for k in ("seconds", "cost_usd", "text")}
-        if not args.no_gapfill and materials:
-            text = ("[gap-fill]\n" + (prompts / "notes-gapfill.md").read_text(encoding="utf-8")
-                    + "\n\nslides and readings:\n" + materials
-                    + "\n\nthe whole class's notes, with ids:\n" + notes.all_with_ids())
-            r, _ = run_turn("gap-fill", text.strip(), end_minute, "gapfill")
-            result["end"]["gapfill"] = {k: r.get(k) for k in ("seconds", "cost_usd", "text")}
+        if not args.explain_only:
+            r, _ = run_turn("start", start_line, args.start_minute, "class")
+            result["start"] = {k: r.get(k) for k in ("seconds", "cost_usd", "cache_write", "input_tokens")}
+            current_slide = None
+            for i, chunk in enumerate(chunks):
+                minute = minute_of(i)
+                slide = slide_at(minute)
+                shown, current_slide = (slide if slide != current_slide else None), slide
+                edits = simulate_edits(notes, minute, adds, changes, deletes)
+                msg = cycle_message(minute, chunk, shown, edits, notes, args.tail)
+                before = len(result["explains"])
+                r, counts = run_turn(f"cycle {i + 1}, minute {minute}", msg, minute, "class")
+                if args.explainers:
+                    for e in result["explains"][before:]:
+                        start_explainer(minute, i, e["topic"], e["why"])
+                row = {"cycle": i + 1, "minute": minute, **{k: r.get(k) for k in (
+                    "seconds", "first_message_s", "input_tokens", "cache_read", "cache_write", "output_tokens",
+                    "thinking_tokens", "cost_usd", "error")}, **counts, "reply": r.get("text")}
+                result["cycles"].append(row)
+                print(f"cycle {i + 1:3d} min {minute:3d}  {r.get('seconds', 0):5.1f}s  "
+                      f"+{counts.get('appended', 0)} ~{counts.get('rewrote', 0)} ?{counts.get('explain', 0)}"
+                      f"{'  ' + r['error'] if r.get('error') else ''}", flush=True)
+            end_minute = minute_of(len(chunks) - 1) if chunks else args.start_minute
+            # The end-of-class messages are built the way Dot builds them (LectureSession): the protocol line, the
+            # instructions file, then (gap-fill, deadlines) the slides and readings and every block with its id.
+            if args.recall:
+                text = f'[recall] his 3 big ideas: "{args.recall}"\n\n' + (prompts / "notes-recall.md").read_text(encoding="utf-8")
+                r, _ = run_turn("recall", text.strip(), end_minute, "recall")
+                result["end"]["recall"] = {k: r.get(k) for k in ("seconds", "cost_usd", "text")}
+                if result["why"]:
+                    r, _ = run_turn("why", f'[why] his answer: "{args.why_answer}"', end_minute, "why")
+                    result["end"]["why"] = {k: r.get(k) for k in ("seconds", "cost_usd", "text")}
+            if not args.no_gapfill and materials:
+                text = ("[gap-fill]\n" + (prompts / "notes-gapfill.md").read_text(encoding="utf-8")
+                        + "\n\nslides and readings:\n" + materials
+                        + "\n\nthe whole class's notes, with ids:\n" + notes.all_with_ids())
+                r, _ = run_turn("gap-fill", text.strip(), end_minute, "gapfill")
+                result["end"]["gapfill"] = {k: r.get(k) for k in ("seconds", "cost_usd", "text")}
+            if not args.no_deadlines:
+                head = f"[deadlines] class date: {class_date.isoformat()} ({class_date:%a})" + (
+                    f", class time {args.time}" if args.time else "")
+                text = (head + "\n\n" + (prompts / "notes-deadlines.md").read_text(encoding="utf-8")
+                        + "\n\nthe whole class's notes, with ids:\n" + notes.all_with_ids())
+                r, _ = run_turn("deadlines", text.strip(), end_minute, "deadlines")
+                result["end"]["deadlines"] = {k: r.get(k) for k in ("seconds", "cost_usd", "text")}
     finally:
         if session:
             session.close()
+        for t in workers:
+            t.join()
+
+    if args.check_panels and result["explainers"] and not args.dry_run:
+        try:
+            rendered = render_panels(exp_dir, [e["name"] for e in result["explainers"]])
+            for e in result["explainers"]:
+                e["render"] = rendered.get(e["name"])
+        except ImportError:
+            print("playwright is not installed; skipped --check-panels", file=sys.stderr)
 
     md = notes.markdown()
     (out / "notes.md").write_text(md, encoding="utf-8")
@@ -538,11 +767,12 @@ def main():
         (v.get("cost_usd") or 0) for v in result["end"].values()) + (result.get("start", {}).get("cost_usd") or 0)
     summary = {
         "model": session.model if session else None, "thinking": args.thinking, "chunks": len(chunks),
-        "minutes_replayed": round(len(chunks) * CHUNK_SECONDS / 60, 1),
+        "seconds_per_chunk": chunk_s, "minutes_replayed": round(len(chunks) * chunk_s / 60, 1),
         "dot_blocks": sum(1 for b in notes.blocks if b["author"] == "dot"),
         "dot_words": body_words, "added_blocks": sum(1 for b in notes.blocks if b["author"] == "added"),
         "nothing_cycles": sum(1 for c in cycles if not (c.get("appended") or c.get("rewrote") or c.get("explain"))),
         "explains": len(result["explains"]), "latency_s": lat, "total_cost_usd": round(total_cost, 4),
+        "explainer_cost_usd": round(sum(e.get("cost_usd") or 0 for e in result["explainers"]), 4),
         "cache_read_tokens": sum(c.get("cache_read") or 0 for c in cycles),
         "thinking_tokens": sum(c.get("thinking_tokens") or 0 for c in cycles),
         "output_tokens": sum(c.get("output_tokens") or 0 for c in cycles),
@@ -551,7 +781,7 @@ def main():
     (out / "run.json").write_text(json.dumps(result, indent=2), encoding="utf-8")
 
     log = [f"# Replay log: {Path(args.transcript).name}\n",
-           f"model {summary['model']}, thinking {args.thinking}; {summary['chunks']} cycles "
+           f"model {summary['model']}, thinking {args.thinking}; {summary['chunks']} cycles of {chunk_s} s "
            f"({summary['minutes_replayed']} min); Dot wrote {summary['dot_blocks']} blocks, {body_words} words; "
            f"{summary['nothing_cycles']} cycles added nothing; total cost ${summary['total_cost_usd']}\n"]
     if lat:
@@ -565,6 +795,24 @@ def main():
         log.append(f"- {len(close)} pair(s) closer than 3 minutes apart\n")
     log.append("\n## Recall feedback\n")
     log += [f"- {f}\n" for f in result["feedback"]] or ["- none\n"]
+    log.append("\n## WHY question and feedback on his answer\n")
+    log += [f"- WHY: {w}\n" for w in result["why"]] or ["- no WHY line\n"]
+    if result["why"]:
+        log.append(f'- his answer (made up): "{args.why_answer}"\n')
+        log += [f"- FEEDBACK: {f}\n" for f in result["why_feedback"]] or ["- no feedback\n"]
+    log.append("\n## Deadlines\n")
+    log += [f"- {d['date']} | {d['title']} | {d['block']}" + (f"  PROBLEM: {', '.join(d['problems'])}" if d["problems"] else "")
+            + (f'  (block: "{d["said"]}")' if d.get("said") else "") + "\n" for d in result["deadlines"]] or ["- none\n"]
+    if result["explainers"]:
+        log.append("\n## Explainers (background worker)\n")
+        for e in result["explainers"]:
+            st = e.get("structure") or {}
+            rd = e.get("render") or {}
+            log.append(f"- {e['name']}.ui: {e.get('seconds') or 0:.1f}s, ${e.get('cost_usd') or 0:.4f}, "
+                       f"{st.get('words', '?')} words, figure {st.get('figure')}, structure "
+                       f"{'ok' if st and not st.get('problems') else st.get('problems')}"
+                       + (f", render {rd.get('status')}" + (f" {rd.get('failures')}" if rd.get('failures') else "") if rd else "")
+                       + (f", error {e['error']}" if e.get("error") else "") + "\n")
     log.append("\n## Edits, rewrites, titles, refused and ignored lines\n")
     log += [f"- min {m} {kind}: {detail}\n" for m, kind, detail in notes.log] or ["- none\n"]
     log.append("\n## Per cycle\n\n| cycle | min | s | in | cache read | cache write | out | think | cost | + | ~ | ? |\n"
@@ -580,7 +828,7 @@ def main():
 
     print("\n" + md)
     print("".join(log[:3]))
-    print(f"wrote {out}/notes.md, log.md, conversation.md, run.json")
+    print(f"wrote {out}/notes.md, log.md, conversation.md, run.json" + (", explainers/" if result["explainers"] else ""))
 
 
 if __name__ == "__main__":

@@ -3,14 +3,14 @@ import DotKit
 import Foundation
 
 /// One class in lecture mode (his ask 2026-10-22: "takes notes and fill out this doc of notes in my style during/throughout
-/// the lecture... use the panel to explain things... pull up anything useful"). The ear's words go to the note writer
-/// about every 45 seconds; its lines land in the notes window and the course's notes file; he types into the same notes
-/// and his lines stay his; the writer's "? topic" lines open an explainer in the panel on their own. At the end: his
-/// 2-minute "3 big ideas", feedback, lines added from the slides and readings, the file and a PDF saved, and the
-/// transcript deleted, so what's kept is notes.
+/// the lecture... use the panel to explain things... pull up anything useful"; round two the same day: complete notes,
+/// explainers built in the background and shown at pauses, the transcript kept as text). The ear's words go to the note
+/// writer about every 30 seconds; its lines land in the notes window and the course's notes file, each stamped with the
+/// moment it came from; he types into the same notes and his lines stay his. At the end: his 3 big ideas, one "why",
+/// feedback, lines added from the slides and readings, announced deadlines offered for Atlas, and the PDF on his Desktop.
 @MainActor
 final class LectureSession {
-    enum Phase: Equatable { case live, closing, recall, finishing, done }
+    enum Phase: Equatable { case live, closing, recall, why, finishing, done }
 
     let course: String
     let courseTitle: String
@@ -22,44 +22,54 @@ final class LectureSession {
     private let window: NotesWindow
     private let writer: NoteWriter
     private let listener: LectureListener
+    private let explainers: LectureExplainers
     private let startedAt = Date()
     /// When the calendar says the class ends: the recall comes up a few minutes after if he hasn't ended it.
     let endsAt: Date?
     private var sentChars = 0
     private var lastCycleAt = Date()
+    private var chunkStart = ""
     private var edits: [String] = []
     private var focused: String?
     private var lastSlide = ""
-    private var lastExplainAt = Date.distantPast
     private var tickTimer: Timer?
+    private var secondTimer: Timer?
     private var recallTimer: DispatchWorkItem?
     private var saveWork: DispatchWorkItem?
-    private var explains = 0
-    private var explainQueue: [(topic: String, why: String, at: Date)] = []
     private var photos: BoardPhotos?
     private var setup: NoteWriter.Setup?
     private var restarts = 0
     private var pendingPhotos: [(jpeg: Data, block: String)] = []
+    /// What was said, chunk by chunk ("11:42:10", words): saved as text next to the notes, never audio.
+    private var transcript: [(clock: String, text: String)] = []
+    private var deadlines: [(id: String, due: String, title: String, line: String?)] = []
+    private var terms: [String] = []
 
+    /// Where the course's PDF goes after class: his Desktop (his pick); the replay test points it at its scratch folder.
+    var pdfFolder = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Desktop", isDirectory: true)
+    /// The days the class meets ("Tue/Thu"), from his calendar: a "week 9" deadline lands on a class day.
+    var meets = ""
     /// Board photos AirDropped to Downloads go into the notes (off in the replay test).
     var watchPhotos = true
     /// The slide or page on his screen, read by OCR (empty when nothing readable).
     var screenText: () async -> String = { "" }
-    /// An explainer in the panel: topic, why, the last minute and a half of speech. False when talk is busy.
-    var onExplain: ((String, String, String) -> Bool)?
+    /// The slide window's picture when a slide is up in front (a deck, a PDF): a JPEG and the slide's first line.
+    var slideShot: () async -> (jpeg: Data, title: String)? = { nil }
+    /// Deadlines he checked, for Atlas; answers with the line to show.
+    var onAddDeadlines: (([(due: String, title: String)]) async -> String)?
     /// The class is over: the notes file and the PDF (nil when it could not be made).
     var onFinished: ((URL, URL?) -> Void)?
 
-    static let cycleSeconds: TimeInterval = 45
-    static let cycleWords = 110
-    /// Explainers come one at a time, this far apart; a dense stretch queues the newest two and lets them out in turn,
-    /// and one waiting longer than `explainStale` is dropped because the lecture has moved on.
-    var explainGap: TimeInterval = 90
-    var explainStale: TimeInterval = 240
+    var cycleSeconds: TimeInterval = 30
+    var cycleWords = 75
     static let gapFillCap = 6
     static let recallSeconds = 120
+    static let whySeconds = 90
+    /// A gap this long in the words means the speaker paused: a ready explainer can open.
+    var pauseSeconds: TimeInterval = 1.2
 
-    init(course: String, courseTitle: String, folder: URL, endsAt: Date?, listener: LectureListener, writer: NoteWriter, window: NotesWindow, now: Date = Date()) {
+    init(course: String, courseTitle: String, folder: URL, endsAt: Date?, listener: LectureListener, writer: NoteWriter, window: NotesWindow,
+         explainers: LectureExplainers, now: Date = Date()) {
         self.course = course
         self.courseTitle = courseTitle
         self.folder = folder
@@ -67,6 +77,7 @@ final class LectureSession {
         self.listener = listener
         self.writer = writer
         self.window = window
+        self.explainers = explainers
         fileURL = folder.appendingPathComponent("\(course) notes.md")
         let existing = (try? String(contentsOf: fileURL, encoding: .utf8)).map { CourseNotesFile.parse($0, fallbackTitle: "\(course) notes") }
         file = existing ?? CourseNotesFile(title: "\(course) notes")
@@ -84,6 +95,19 @@ final class LectureSession {
     /// Lecture time per wall second (the replay test plays faster than real time).
     var clockScale = 1.0
     var minutes: Int { Int(Date().timeIntervalSince(startedAt) * clockScale / 60) }
+    var explainersShown: Int { explainers.shown }
+
+    /// The lecture's clock: "11:42:10" (in the replay, lecture time, not wall time).
+    func lectureClock(_ date: Date = Date()) -> String {
+        let f = DateFormatter(); f.dateFormat = "HH:mm:ss"; f.locale = Locale(identifier: "en_US_POSIX")
+        return f.string(from: startedAt.addingTimeInterval(date.timeIntervalSince(startedAt) * clockScale))
+    }
+
+    var transcriptURL: URL {
+        let f = DateFormatter(); f.dateFormat = "yyyy-MM-dd"; f.locale = Locale(identifier: "en_US_POSIX")
+        return folder.appendingPathComponent("\(course) transcripts", isDirectory: true)
+            .appendingPathComponent("\(f.string(from: startedAt)) CLASS \(notes.number).md")
+    }
 
     func start(courseText: String) throws {
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
@@ -94,14 +118,19 @@ final class LectureSession {
         try writer.start(setup)
         window.onMessage = { [weak self] message in self?.received(message) }
         window.show(course: course, heading: notes.key, title: notes.title, status: "listening", blocks: notes.blocks.map(Self.windowBlock), baseURL: folder)
+        explainers.onMark = { [weak self] line, state in self?.window.markExplain(id: line, state: state) }
         var first = "[start] \(notes.heading), \(course)" + (courseTitle == course ? "" : " (\(courseTitle))")
         if let endsAt { first += ", until \(Self.clock(endsAt))" }
         if isResumed { first += "\nresuming after a restart; the notes so far:\n" + notes.tail(400).joined(separator: "\n") }
         first += "\nreply nothing until the speech starts."
         writer.send(first) { _, _ in }
+        chunkStart = lectureClock()
         save()
         tickTimer = Timer.scheduledTimer(withTimeInterval: 5, repeats: true) { [weak self] _ in
             Task { @MainActor in self?.tick() }
+        }
+        secondTimer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
+            Task { @MainActor in self?.everySecond() }
         }
         if watchPhotos {
             let photos = BoardPhotos(since: startedAt)
@@ -109,10 +138,27 @@ final class LectureSession {
             photos.start()
             self.photos = photos
         }
+        boostTerms(courseText + "\n" + materials.text)
         Log.info("lecture: notes for \(course) \(notes.key) in \(fileURL.path)\(isResumed ? " (resumed)" : ""); materials: \(materials.files.joined(separator: ", "))")
     }
 
+    /// The course map's and the slides' terms go to the recognizer (in the background; the first time downloads its model).
+    private func boostTerms(_ text: String) {
+        let fresh = LectureTerms.extract(text, limit: 150)
+        let merged = Array(NSOrderedSet(array: terms + fresh).array.compactMap { $0 as? String }.prefix(200))
+        guard merged != terms else { return }
+        terms = merged
+        Task { await listener.setTerms(merged) }
+    }
+
     // MARK: The live loop
+
+    private func everySecond() {
+        guard phase == .live else { return }
+        let words = listener.liveTail.split(separator: " ").suffix(12).joined(separator: " ")
+        window.hearing(words)
+        explainers.tick(paused: Date().timeIntervalSince(listener.lastHeardAt) >= pauseSeconds / max(clockScale, 1))
+    }
 
     private func tick() {
         guard phase == .live else { return }
@@ -122,11 +168,10 @@ final class LectureSession {
             return
         }
         window.setStatus("listening · \(minutes) min · \(notes.blocks.count) lines")
-        releaseExplain()
         guard !writer.isBusy else { return }
         let words = newSpeech().split(separator: " ").count
-        let waited = Date().timeIntervalSince(lastCycleAt)
-        if words >= Self.cycleWords || (words >= 25 && waited >= Self.cycleSeconds) || (!edits.isEmpty && waited >= Self.cycleSeconds) || !pendingPhotos.isEmpty {
+        let waited = Date().timeIntervalSince(lastCycleAt) * clockScale
+        if words >= cycleWords || (words >= 20 && waited >= cycleSeconds) || (!edits.isEmpty && waited >= cycleSeconds) || !pendingPhotos.isEmpty {
             Task { await cycle() }
         }
     }
@@ -142,11 +187,14 @@ final class LectureSession {
         guard !writer.isBusy else { return }
         let speech = newSpeech()
         let feedEnd = listener.feed.count
+        let clock = chunkStart
         let slide = final ? "" : String(await screenText().prefix(900))
         var lines = ["[minute \(minutes)] new speech (machine transcribed; names and terms may be misspelled):", "\"\(speech.isEmpty ? "(nothing new)" : speech)\""]
         if !slide.isEmpty, Self.changed(slide, from: lastSlide) {
             lines.append("slide on his screen (OCR): \"\(slide)\"")
             lastSlide = slide
+            await captureSlide(at: clock)
+            boostTerms(slide)
         }
         if !edits.isEmpty {
             lines.append("his edits since last time:")
@@ -164,33 +212,43 @@ final class LectureSession {
         let sentEdits = edits.count
         sentChars = feedEnd
         lastCycleAt = Date()
+        chunkStart = lectureClock()
         pendingPhotos.removeFirst(photosSent.count)
+        if !speech.isEmpty { keepTranscript(clock: clock, text: speech) }
         let reply: (String?, Double) = await withCheckedContinuation { done in
             writer.send(lines.joined(separator: "\n"), images: photosSent.map(\.jpeg)) { text, seconds in done.resume(returning: (text, seconds)) }
         }
         guard let text = reply.0 else {
-            restartWriterIfDown()
+            // a stuck or failed reply: a fresh writer picks up from the notes, and this stretch is sent again
+            sentChars = max(0, min(sentChars, feedEnd - speech.count))
+            restartWriter(reason: "no reply in \(Int(reply.1)) s")
             return
         }
         edits.removeFirst(min(sentEdits, edits.count))
-        let applied = apply(text, live: !final)
-        Log.info(String(format: "lecture: cycle %d (%.1f s): %d words in, %@", writer.cycles, reply.1, speech.split(separator: " ").count, applied))
+        let applied = apply(text, live: !final, at: clock)
+        Log.info(String(format: "lecture: cycle %d (%.1f s, model %.1f s): %d words in, %@", writer.cycles, reply.1, Double(writer.lastApiMs) / 1000,
+                        speech.split(separator: " ").count, applied))
+        // a long class keeps one writer only so long: its context grows and its replies slow; a fresh one gets the notes
+        cyclesSinceStart += 1
+        if !final, cyclesSinceStart >= Self.refreshEvery { restartWriter(reason: "fresh writer after \(cyclesSinceStart) cycles") }
     }
 
     /// The writer's reply onto the notes and the window; a short summary for the log.
     @discardableResult
-    private func apply(_ reply: String, live: Bool) -> String {
+    private func apply(_ reply: String, live: Bool, at clock: String? = nil) -> String {
         let (ops, ignored) = NoteProtocol.parse(reply)
         var ops2: [NotesWindow.Op] = []
         var added = 0, rewritten = 0
+        var lastLine: String?
         for op in ops {
             switch op {
             case .append(let depth, let text):
                 // his line in progress at the bottom stays at the bottom
                 let before = focused.flatMap { id in notes.blocks.last?.id == id ? id : nil }
-                if let block = notes.append(depth: depth, text: text, before: before) {
+                if let block = notes.append(depth: depth, text: text, before: before, at: clock) {
                     ops2.append(.append(Self.windowBlock(block)))
                     added += 1
+                    lastLine = block.id
                 }
             case .rewrite(let id, let text):
                 guard id != focused, let block = notes.rewrite(id, text: text) else { continue }
@@ -201,12 +259,18 @@ final class LectureSession {
                 window.setTitle(title)
             case .explain(let topic, let why):
                 guard live else { continue }
-                explain(topic: topic, why: why, tapped: false)
+                // the explainer is built in the background while the lecture goes on; it opens at the next pause
+                if !ops2.isEmpty { window.apply(ops2); ops2 = [] }
+                explainers.request(topic: topic, why: why, line: lastLine ?? notes.blocks.last?.id, context: explainContext(), tapped: false)
             case .addAfter(let id, let text):
                 guard added < Self.gapFillCap else { continue }
                 if let placed = notes.addAfter(id, text: text) { ops2.append(.insertAfter(placed.after, Self.windowBlock(placed.block))); added += 1 }
             case .feedback(let line):
                 window.recallFeedback(line)
+            case .why(let question):
+                pendingWhy = question
+            case .deadline(let due, let title, let block):
+                deadlines.append(("dl\(deadlines.count + 1)", due, title, block))
             case .nothing:
                 break
             }
@@ -217,62 +281,120 @@ final class LectureSession {
         return "+\(added) ~\(rewritten)" + (notes.title.isEmpty ? "" : " [\(Log.short(notes.title, 40))]")
     }
 
-    /// The writer's process died (a crash, a sign-out): start a fresh one that picks up from the notes so far, twice at most.
-    private func restartWriterIfDown() {
-        guard !writer.isRunning, restarts < 2, let setup else { return }
+    private var pendingWhy: String?
+
+    private func explainContext() -> String {
+        var context = "what was just said (machine transcribed; names and terms may be misspelled):\n\"\(Log.short(listener.recent(seconds: 90), 1400))\""
+        if !lastSlide.isEmpty { context += "\nslide on his screen (OCR): \"\(Log.short(lastSlide, 700))\"" }
+        return context
+    }
+
+    private var cyclesSinceStart = 0
+    static let refreshEvery = 40
+    static let maxRestarts = 12
+
+    /// A fresh writer that picks up from the notes so far: after a stuck reply, a dead process, or every `refreshEvery` cycles.
+    private func restartWriter(reason: String) {
+        guard let setup, restarts < Self.maxRestarts else { return }
         restarts += 1
+        cyclesSinceStart = 0
+        writer.stop()
         do {
             var fresh = setup
             fresh.heading = notes.heading
             try writer.start(fresh)
-            writer.send("[start] \(notes.heading), resuming after the note writer restarted; the notes so far:\n" + notes.tail(400).joined(separator: "\n") + "\nreply nothing.") { _, _ in }
-            Log.warn("lecture: note writer restarted (\(restarts))")
+            var first = "[start] \(notes.heading), resuming: a fresh note writer takes over mid-class at minute \(minutes); the notes so far:\n"
+                + notes.tail(400).joined(separator: "\n")
+            if !notes.title.isEmpty { first += "\nthe class title is already set: \(notes.title)" }
+            writer.send(first + "\nreply nothing.") { _, _ in }
+            Log.info("lecture: note writer restarted (\(reason); \(restarts) so far)")
         } catch {
             Log.error("lecture: note writer could not restart: \(error)")
         }
     }
 
-    private func explain(topic: String, why: String, tapped: Bool) {
-        if tapped {
-            if onExplain?(topic, why, listener.recent(seconds: 90)) == true { lastExplainAt = Date(); explains += 1 }
-            Log.info("lecture: explaining \"\(Log.short(topic, 60))\" (he tapped it)")
-            return
+    /// One end-of-class message: waits for the writer to be free, and if the reply doesn't come, a fresh writer gets it once more.
+    private func ask(_ message: String) async -> String? {
+        for attempt in 0..<2 {
+            var waited = 0
+            while writer.isBusy, waited < 600 { try? await Task.sleep(nanoseconds: 100_000_000); waited += 1 }
+            let reply: String? = await withCheckedContinuation { done in writer.send(message) { reply, _ in done.resume(returning: reply) } }
+            if let reply { return reply }
+            if attempt == 0 { restartWriter(reason: "no reply to an end-of-class message") }
         }
-        explainQueue.append((topic, why, Date()))
-        Log.info("lecture: explainer queued: \"\(Log.short(topic, 60))\"")
-        if explainQueue.count > 2 { explainQueue.removeFirst(explainQueue.count - 2) }
-        releaseExplain()
+        return nil
     }
 
-    /// The next queued explainer, when the last one has had its time and talk is free.
-    private func releaseExplain() {
-        explainQueue.removeAll { Date().timeIntervalSince($0.at) > explainStale }
-        guard phase == .live, let next = explainQueue.first, Date().timeIntervalSince(lastExplainAt) >= explainGap else { return }
-        if onExplain?(next.topic, next.why, listener.recent(seconds: 90)) == true {
-            explainQueue.removeFirst()
-            lastExplainAt = Date()
-            explains += 1
-            Log.info("lecture: explaining \"\(Log.short(next.topic, 60))\" (\(explainQueue.count) waiting)")
-        }
-    }
+    // MARK: Pictures: board photos and slides
 
     /// A board photo: saved next to the notes, shown in them, and read by the writer on the next cycle.
     private func boardPhoto(_ jpeg: Data, at: Date) {
-        guard phase == .live else { return }
-        let images = folder.appendingPathComponent("notes-images", isDirectory: true)
-        let f = DateFormatter(); f.dateFormat = "yyyy-MM-dd-HHmmss"; f.locale = Locale(identifier: "en_US_POSIX")
-        let name = "board-\(f.string(from: at)).jpg"
-        do {
-            try FileManager.default.createDirectory(at: images, withIntermediateDirectories: true)
-            try jpeg.write(to: images.appendingPathComponent(name))
-        } catch {
-            Log.warn("lecture: couldn't save the board photo: \(error)")
-            return
-        }
-        let block = notes.appendImage(path: "notes-images/\(name)", caption: "board \(Self.clock(at))")
+        guard phase == .live, let name = saveImage(jpeg, prefix: "board", at: at) else { return }
+        let block = notes.appendImage(path: "notes-images/\(name)", caption: "board \(Self.clock(at))", at: lectureClock(at))
         window.apply([.append(Self.windowBlock(block))])
         pendingPhotos.append((jpeg, block.id))
         save()
+    }
+
+    /// A new slide in front: its picture and title go into the notes where the lecture reached it.
+    private func captureSlide(at clock: String) async {
+        guard let shot = await slideShot(), let name = saveImage(shot.jpeg, prefix: "slide", at: Date()) else { return }
+        let title = shot.title.trimmingCharacters(in: .whitespacesAndNewlines)
+        let block = notes.appendImage(path: "notes-images/\(name)", caption: "slide: \(title.isEmpty ? "untitled" : Log.short(title, 80))", at: clock)
+        window.apply([.append(Self.windowBlock(block))])
+        save()
+        Log.info("lecture: slide \"\(Log.short(title, 60))\" into the notes")
+    }
+
+    private func saveImage(_ jpeg: Data, prefix: String, at: Date) -> String? {
+        let images = folder.appendingPathComponent("notes-images", isDirectory: true)
+        let f = DateFormatter(); f.dateFormat = "yyyy-MM-dd-HHmmss"; f.locale = Locale(identifier: "en_US_POSIX")
+        let name = "\(prefix)-\(f.string(from: at)).jpg"
+        do {
+            try FileManager.default.createDirectory(at: images, withIntermediateDirectories: true)
+            try jpeg.write(to: images.appendingPathComponent(name))
+            return name
+        } catch {
+            Log.warn("lecture: couldn't save the \(prefix) picture: \(error)")
+            return nil
+        }
+    }
+
+    // MARK: The transcript, kept as text
+
+    private func keepTranscript(clock: String, text: String) {
+        transcript.append((clock, text))
+        let url = transcriptURL
+        let block = "**\(clock)** \(text)\n\n"
+        do {
+            try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+            if !FileManager.default.fileExists(atPath: url.path) {
+                try "# \(course) \(notes.key) transcript (machine transcribed, text only)\n\n".write(to: url, atomically: true, encoding: .utf8)
+            }
+            let handle = try FileHandle(forWritingTo: url)
+            defer { try? handle.close() }
+            _ = try handle.seekToEnd()
+            try handle.write(contentsOf: Data(block.utf8))
+        } catch {
+            Log.warn("lecture: couldn't keep the transcript: \(error)")
+        }
+    }
+
+    /// What was said where a line came from: its chunk and the one after (a point often lands across two).
+    func source(for id: String) -> (time: String, text: String)? {
+        guard let at = notes.block(id)?.at else { return nil }
+        let chunks = transcript.isEmpty ? Self.readTranscript(transcriptURL) : transcript
+        guard let i = chunks.firstIndex(where: { $0.clock == at }) ?? chunks.lastIndex(where: { $0.clock < at }) else { return nil }
+        let text = chunks[i...].prefix(2).map(\.text).joined(separator: " ")
+        return (at, text)
+    }
+
+    static func readTranscript(_ url: URL) -> [(clock: String, text: String)] {
+        guard let text = try? String(contentsOf: url, encoding: .utf8) else { return [] }
+        return text.components(separatedBy: "\n\n").compactMap { para in
+            guard let m = para.firstMatch(of: #/^\*\*([0-9:]+)\*\* (.+)$/#.dotMatchesNewlines()) else { return nil }
+            return (String(m.1), String(m.2))
+        }
     }
 
     // MARK: His side of the notes
@@ -283,7 +405,7 @@ final class LectureSession {
         case .edit(let id, let text):
             if notes.edit(id, text: text) { edits.append("he changed \(id) to: \"\(text)\""); save() }
         case .add(let id, let after, let depth, let text):
-            if notes.add(id: id, after: after, depth: depth, text: text), !text.isEmpty {
+            if notes.add(id: id, after: after, depth: depth, text: text, at: phase == .live ? lectureClock() : nil), !text.isEmpty {
                 edits.append("he wrote \(id)\(after.map { " after \($0)" } ?? ""): \"\(text)\"")
                 save()
             }
@@ -293,12 +415,19 @@ final class LectureSession {
             if notes.remove(id) { edits.append("he deleted \(id)"); save() }
         case .focus(let id):
             focused = id
-        case .explain(_, let text):
-            explain(topic: text, why: "he tapped this line in his notes", tapped: true)
+        case .explain(let id, let text):
+            explainers.request(topic: text, why: "he tapped this line in his notes", line: id, context: explainContext(), tapped: true)
+        case .showExplain(let id):
+            if let ready = explainers.readyID(forLine: id) { explainers.show(ready) }
+        case .source(let id):
+            if let found = source(for: id) { window.showSource(id: id, time: found.time, text: found.text) }
+            else { window.showSource(id: id, time: "", text: "no transcript for this line") }
         case .recall(let text):
-            Task { await recall(text) }
+            Task { phase == .why ? await whyAnswered(text) : await recall(text) }
         case .skipRecall:
-            Task { await recall(nil) }
+            Task { phase == .why ? await whyAnswered(nil) : await recall(nil) }
+        case .addDeadlines(let ids):
+            Task { await addDeadlines(ids) }
         case .end:
             Task { await end() }
         }
@@ -312,32 +441,74 @@ final class LectureSession {
         phase = .closing
         tickTimer?.invalidate()
         tickTimer = nil
+        secondTimer?.invalidate()
+        secondTimer = nil
+        window.hearing("")
         photos?.poll()
         photos?.stop()
         window.setStatus("wrapping up")
         _ = await listener.stop()
-        while writer.isBusy { try? await Task.sleep(nanoseconds: 200_000_000) }
-        await cycle(final: true)
+        // the last stretch; once more if the reply didn't come (a fresh writer gets the same words)
+        for attempt in 0..<2 where attempt == 0 || !newSpeech().isEmpty {
+            var waited = 0
+            while writer.isBusy, waited < 600 { try? await Task.sleep(nanoseconds: 100_000_000); waited += 1 }
+            await cycle(final: true)
+        }
         phase = .recall
         window.showRecall(seconds: Self.recallSeconds, prompt: "before u look: what were the 3 big ideas today?")
-        let work = DispatchWorkItem { [weak self] in Task { @MainActor in await self?.recall(nil) } }
-        recallTimer = work
-        DispatchQueue.main.asyncAfter(deadline: .now() + .seconds(Self.recallSeconds + 30), execute: work)
+        armRecallTimer(Self.recallSeconds)
         Log.info("lecture: ended after \(minutes) min, \(notes.blocks.count) lines; asking for the 3 big ideas")
     }
 
-    /// His 3 big ideas (nil: skipped or timed out): feedback, then the gap-fill and the save.
+    private func armRecallTimer(_ seconds: Int) {
+        recallTimer?.cancel()
+        let work = DispatchWorkItem { [weak self] in
+            Task { @MainActor in
+                guard let self else { return }
+                if self.phase == .why { await self.whyAnswered(nil) } else { await self.recall(nil) }
+            }
+        }
+        recallTimer = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + .seconds(seconds + 30), execute: work)
+    }
+
+    /// His 3 big ideas (nil: skipped or timed out): feedback and one "why", or straight on to the gap-fill.
     func recall(_ text: String?) async {
         guard phase == .recall else { return }
+        recallTimer?.cancel()
+        if let text, !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            phase = .finishing
+            let message = "[recall] his 3 big ideas: \"\(text)\"\n\n" + NoteWriter.resource("notes-recall.md")
+            let reply = await ask(message)
+            if let reply { apply(reply, live: false) }
+            Log.info("lecture: recall answered (\(text.split(separator: " ").count) words)\(pendingWhy.map { "; why: \(Log.short($0, 80))" } ?? "")")
+            if let why = pendingWhy {
+                pendingWhy = nil
+                phase = .why
+                window.showRecall(seconds: Self.whySeconds, prompt: why)
+                armRecallTimer(Self.whySeconds)
+                return
+            }
+        }
+        phase = .finishing
+        await wrapUp()
+    }
+
+    /// His answer to the "why" (nil: skipped): feedback, then the rest.
+    func whyAnswered(_ text: String?) async {
+        guard phase == .why else { return }
         phase = .finishing
         recallTimer?.cancel()
         if let text, !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            let message = "[recall] his 3 big ideas: \"\(text)\"\n\n" + NoteWriter.resource("notes-recall.md")
-            let reply: String? = await withCheckedContinuation { done in writer.send(message) { reply, _ in done.resume(returning: reply) } }
+            let reply = await ask("[why] his answer: \"\(text)\"")
             if let reply { apply(reply, live: false) }
-            Log.info("lecture: recall answered (\(text.split(separator: " ").count) words)")
         }
+        await wrapUp()
+    }
+
+    private func wrapUp() async {
         await gapFill()
+        await findDeadlines()
         await finish()
     }
 
@@ -351,25 +522,50 @@ final class LectureSession {
         let message = "[gap-fill]\n" + NoteWriter.resource("notes-gapfill.md") + "\n\nslides and readings:\n" + materials.text
             + "\n\nthe whole class's notes, with ids:\n" + notes.tail(1000).joined(separator: "\n")
             + "\nlast block: \(notes.blocks.last?.id ?? "none") (use +after end: for a line after everything)"
-        let reply: String? = await withCheckedContinuation { done in writer.send(message) { reply, _ in done.resume(returning: reply) } }
+        let reply = await ask(message)
         if let reply { Log.info("lecture: gap-fill \(apply(reply, live: false)) from \(materials.files.joined(separator: ", "))") }
+    }
+
+    /// Announced dates, offered for Atlas with a box he checks (Atlas alerts on a deadline at once, so he picks).
+    private func findDeadlines() async {
+        guard !notes.blocks.isEmpty else { return }
+        let f = DateFormatter(); f.dateFormat = "yyyy-MM-dd (EEE)"; f.locale = Locale(identifier: "en_US_POSIX")
+        var head = "[deadlines] class date: \(f.string(from: startedAt))"
+        if let endsAt { head += ", class time \(Self.clock(startedAt))-\(Self.clock(endsAt))" }
+        if !meets.isEmpty { head += ", meets \(meets)" }
+        let message = head + "\n\n" + NoteWriter.resource("notes-deadlines.md") + "\n\nthe whole class's notes, with ids:\n" + notes.tail(1000).joined(separator: "\n")
+        let reply = await ask(message)
+        if let reply { apply(reply, live: false) }
+        guard !deadlines.isEmpty else { return }
+        window.offerDeadlines(deadlines.map { NotesWindow.DeadlineItem(id: $0.id, title: $0.title, due: $0.due, line: $0.line) })
+        Log.info("lecture: \(deadlines.count) deadline(s) offered: \(Log.short(deadlines.map { "\($0.title) \($0.due)" }.joined(separator: "; "), 160))")
+    }
+
+    private func addDeadlines(_ ids: [String]) async {
+        let chosen = deadlines.filter { ids.contains($0.id) }
+        guard !chosen.isEmpty else { window.deadlinesAdded("skipped"); return }
+        let line = await onAddDeadlines?(chosen.map { ($0.due, $0.title) }) ?? "atlas isn't reachable from here"
+        window.deadlinesAdded(line)
+        Log.info("lecture: deadlines for atlas: \(chosen.count) (\(line))")
     }
 
     private func finish() async {
         saveNow()
         writer.stop()
-        var pdf: URL? = folder.appendingPathComponent("\(course) notes.pdf")
+        explainers.stopAll()
+        let desktop = pdfFolder.appendingPathComponent("\(course) notes.pdf")
+        var pdf: URL? = desktop
         do {
-            try await window.exportPDF(markdown: file.markdown, baseURL: folder, to: pdf!)
+            try await window.exportPDF(markdown: file.markdown, baseURL: folder, to: desktop)
         } catch {
             Log.warn("lecture: pdf failed: \(error)")
             pdf = nil
         }
-        listener.discardTranscript()
+        listener.discardTranscript()   // the ear's own 3-minute file; the class's transcript is kept in the course folder
         phase = .done
         window.finished(pdf: pdf?.path ?? "", file: fileURL.path)
         window.setStatus("saved · \(notes.blocks.count) lines")
-        Log.info("lecture: saved \(fileURL.lastPathComponent)\(pdf.map { " and \($0.lastPathComponent)" } ?? ""); \(explains) explainer(s); transcript deleted")
+        Log.info("lecture: saved \(fileURL.lastPathComponent)\(pdf.map { " and \($0.path)" } ?? ""); \(explainers.shown) explainer(s); transcript \(transcriptURL.lastPathComponent)")
         onFinished?(fileURL, pdf)
     }
 
@@ -393,7 +589,9 @@ final class LectureSession {
     // MARK: Helpers
 
     static func windowBlock(_ b: NoteBlock) -> NotesWindow.Block {
-        NotesWindow.Block(id: b.id, text: b.text, depth: b.depth, author: b.author.rawValue, kind: b.image == nil ? "bullet" : "image", src: b.image)
+        let kind = b.image == nil ? "bullet" : (b.image!.contains("/slide-") ? "slide" : "image")
+        let text = kind == "slide" && b.text.hasPrefix("slide: ") ? String(b.text.dropFirst(7)) : b.text
+        return NotesWindow.Block(id: b.id, text: text, depth: b.depth, author: b.author.rawValue, kind: kind, src: b.image, at: b.at)
     }
 
     /// A new slide, not the same one read again: under 70 percent of its words shared.

@@ -26,6 +26,12 @@ final class LectureListener {
     /// still change, and a finished segment's tidy text can differ from its chunks).
     private(set) var feed = ""
     private var confirmedInSegment = ""
+    /// When the recognizer last produced words: a gap means the speaker paused (explainers wait for one).
+    private(set) var lastHeardAt = Date.distantPast
+    /// The words heard most recently, live (the notes window's "hearing" line).
+    var liveTail: String { liveText.isEmpty ? String(feed.suffix(160)) : liveText }
+    /// The course's terms, boosted in every stream (lecture mode; FluidAudio's CTC rescoring, a one-time 97.5 MB model).
+    private var boost: (vocab: CustomVocabularyContext, models: CtcModels)?
     private var fileURL: URL?
     private static let segmentSeconds: TimeInterval = 180
     private var replaying = false
@@ -41,7 +47,7 @@ final class LectureListener {
     func start(title: String, replay: URL? = nil, speed: Double = 1) async -> Bool {
         guard !isListening else { return true }
         do {
-            let fresh = try await transcriber.makeStream()
+            let fresh = try await makeStream()
             if let replay { pump(replay, speed: speed) } else { _ = try recorder.start(stream: fresh) }
             replaying = replay != nil
             stream = fresh
@@ -122,6 +128,7 @@ final class LectureListener {
                 if Task.isCancelled { break }
                 let text = update.text.trimmingCharacters(in: .whitespaces)
                 guard !text.isEmpty else { continue }
+                self.lastHeardAt = Date()
                 // Each update is the latest chunk; confirmed chunks accumulate, a volatile one shows after them.
                 if update.isConfirmed {
                     confirmed += (confirmed.isEmpty ? "" : " ") + text
@@ -138,7 +145,7 @@ final class LectureListener {
     /// stretch) and a fresh one takes over, so memory and the decoder state stay small.
     private func rollSegment() async {
         guard isListening, let old = stream else { return }
-        guard let fresh = try? await transcriber.makeStream() else { return }
+        guard let fresh = try? await makeStream() else { return }
         reader?.cancel()
         let tail = liveText, done = confirmedInSegment
         confirmedInSegment = ""
@@ -150,6 +157,34 @@ final class LectureListener {
         liveText = ""
         liveSince = Date()
         onStatus?("listening, \(elapsedMinutes) min")
+    }
+
+    private func makeStream() async throws -> SlidingWindowAsrManager {
+        let stream = try await transcriber.makeStream()
+        if let boost {
+            do { try await stream.configureVocabularyBoosting(vocabulary: boost.vocab, ctcModels: boost.models) }
+            catch { Log.warn("lecture: term boosting not applied: \(error)") }
+        }
+        return stream
+    }
+
+    /// Boost these terms from the next stream on (the current one too). The CTC model downloads once, in the background.
+    func setTerms(_ terms: [String]) async {
+        guard !terms.isEmpty else { return }
+        do {
+            let models: CtcModels
+            if let loaded = boost?.models { models = loaded } else { models = try await CtcModels.downloadAndLoad(variant: .ctc110m) }
+            let tokenizer = try await CtcTokenizer.load(from: CtcModels.defaultCacheDirectory(for: .ctc110m))
+            let vocab = CustomVocabularyContext(terms: terms.compactMap { term in
+                let ids = tokenizer.encode(term)
+                return ids.isEmpty ? nil : CustomVocabularyTerm(text: term, ctcTokenIds: ids)
+            })
+            boost = (vocab, models)
+            if let stream { try await stream.configureVocabularyBoosting(vocabulary: vocab, ctcModels: models) }
+            Log.info("lecture: boosting \(vocab.terms.count) course terms (\(Log.short(terms.prefix(8).joined(separator: ", "), 120)))")
+        } catch {
+            Log.warn("lecture: course terms not boosted: \(error)")
+        }
     }
 
     /// Half-second mono buffers from the file into whichever stream is current, paced to `speed` times real time.

@@ -25,7 +25,7 @@ button { font: 600 12px/1.3 -apple-system, sans-serif; cursor: pointer; }
 #end.confirm { background: var(--accent); border-color: var(--accent); color: #fff; }
 #end:disabled { opacity: 0.45; cursor: default; }
 
-#scroller { flex: 1; overflow-y: auto; overflow-x: hidden; padding: 10px 10px 0 6px; }
+#scroller { flex: 1; position: relative; overflow-y: auto; overflow-x: hidden; padding: 10px 10px 0 6px; }
 #room { height: 40px; }
 
 .line { position: relative; display: flex; align-items: flex-start; padding: 1px 30px 1px 24px; border-radius: 6px; min-height: 23px; }
@@ -50,14 +50,25 @@ button { font: 600 12px/1.3 -apple-system, sans-serif; cursor: pointer; }
 @keyframes fresh { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
 @media (prefers-reduced-motion: reduce) { .line.fresh { animation: none; } }
 
-.explain { position: absolute; right: 6px; top: 2px; width: 20px; height: 20px; border-radius: 50%; border: 1px solid var(--line);
-           background: var(--raised); color: var(--muted); font-size: 11px; line-height: 18px; padding: 0; opacity: 0; transition: opacity 0.12s; }
-.line:hover .explain { opacity: 1; }
-.explain:hover { color: var(--accent); border-color: var(--accent); }
-.line.tail .explain, .line.unsent .explain { display: none; }
+/* on hover: the time chip and the explain button, left of the explainer marker */
+.tools { position: absolute; right: 22px; top: 1px; display: flex; gap: 4px; padding-left: 10px; opacity: 0; transition: opacity 0.12s;
+         background: linear-gradient(90deg, transparent, var(--ground) 10px); }
+.line:hover .tools { opacity: 1; }
+.tools button { height: 20px; border-radius: 99px; border: 1px solid var(--line); background: var(--raised); color: var(--muted);
+                font: 600 10.5px/18px -apple-system, sans-serif; padding: 0 6px; font-variant-numeric: tabular-nums; }
+.tools .explain { width: 20px; padding: 0; border-radius: 50%; font-size: 11px; }
+.tools button:hover { color: var(--accent); border-color: var(--accent); }
+.line.tail .tools, .line.unsent .tools { display: none; }
+/* an explainer for this line: queued (hollow), ready (filled; a click shows it), shown (faint) */
+.xdot { position: absolute; right: 7px; top: 8px; width: 8px; height: 8px; padding: 0; border-radius: 50%; border: 1.5px solid var(--muted);
+        background: transparent; cursor: default; }
+.xdot.ready { border-color: var(--accent); background: var(--accent); cursor: pointer; box-shadow: 0 0 0 3px rgba(255,107,44,0.18); }
+.xdot.shown { border-color: var(--faint); background: var(--faint); opacity: 0.55; }
 
-.line.image { padding-top: 4px; padding-bottom: 4px; }
-.line.image .bullet { visibility: hidden; }
+.line.image, .line.slide { padding-top: 4px; padding-bottom: 4px; }
+.line.image .bullet, .line.slide .bullet { visibility: hidden; }
+.line.image img, .line.slide img { cursor: zoom-in; }
+.line.slide img { max-height: 110px; max-width: 70%; }
 figure { margin: 0; flex: 1; min-width: 0; }
 figure img { display: block; max-width: 100%; max-height: 360px; border-radius: 8px; border: 1px solid var(--line); }
 figcaption { margin-top: 3px; font-size: 11.5px; color: var(--muted); }
@@ -65,9 +76,45 @@ figcaption { margin-top: 3px; font-size: 11.5px; color: var(--muted); }
 .katex { font-size: 1.05em; }
 .text .katex { white-space: nowrap; }
 
-/* ---- the dock: recall, feedback, saved ---------------------------------------------------------------------------- */
+/* what was said when a line came from: a popover under the line */
+#source { position: absolute; left: 30px; right: 14px; z-index: 5; padding: 8px 11px; border-radius: 10px; background: var(--raised);
+          border: 1px solid var(--line); box-shadow: 0 8px 24px rgba(0,0,0,0.2); max-height: 180px; overflow-y: auto; font-size: 13px; }
+.source-time { font: 600 10.5px "SF Mono", Menlo, monospace; color: var(--muted); margin-bottom: 3px; }
+.source-text.waiting { color: var(--muted); }
+
+/* the last words the ear heard, under the notes */
+/* left-aligned while the words fit; wider than the window, the start is cut and fades (the newest words stay in view) */
+#hearing { flex: none; display: flex; justify-content: flex-end; overflow: hidden; padding: 5px 16px 6px 24px; border-top: 1px solid var(--line);
+           font-size: 11.5px; color: var(--faint); white-space: nowrap; }
+#hearing-text { flex: none; margin-right: auto; }
+#hearing.clipped { -webkit-mask-image: linear-gradient(90deg, transparent 12px, #000 40px); mask-image: linear-gradient(90deg, transparent 12px, #000 40px); }
+body.review #end, body.review #hearing { display: none !important; }
+
+/* a slide or board photo, larger */
+#lightbox { position: fixed; inset: 0; z-index: 20; display: flex; align-items: center; justify-content: center; background: rgba(0,0,0,0.82); cursor: zoom-out; }
+#lightbox figure { margin: 0; max-width: 94%; max-height: 92%; display: flex; flex-direction: column; align-items: center; }
+#lightbox img { max-width: 100%; max-height: 84vh; border-radius: 6px; }
+#lightbox figcaption { margin-top: 8px; color: #eee; font-size: 12.5px; }
+
+/* ---- the dock: recall, deadlines, saved --------------------------------------------------------------------------- */
 #dock { position: absolute; left: 10px; right: 10px; bottom: 10px; padding: 12px 13px; border-radius: 14px; background: var(--raised);
-        border: 1px solid var(--line); box-shadow: 0 10px 30px rgba(0,0,0,0.22); }
+        border: 1px solid var(--line); box-shadow: 0 10px 30px rgba(0,0,0,0.22); max-height: 72vh; overflow-y: auto; z-index: 6; }
+#dock > div:not([hidden]) ~ div:not([hidden]) { margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--line); }
+.recall-past { font-size: 13px; }
+.recall-past + .recall-past, #recall-history:not(:empty) + #recall-now:not([hidden]) { margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--line); }
+.past-prompt { font-weight: 650; color: var(--muted); }
+.past-answer { margin: 3px 0; color: var(--ink); }
+.past-feedback { white-space: pre-wrap; color: var(--ink); }
+.dock-title { flex: 1; font-weight: 650; color: var(--strong); }
+.deadline { display: flex; align-items: flex-start; gap: 8px; padding: 4px 0; cursor: pointer; }
+.deadline input { margin-top: 3px; accent-color: var(--accent); }
+.deadline-body { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.deadline-top { display: flex; gap: 8px; }
+.deadline-title { flex: 1; }
+.deadline-due { flex: none; color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; }
+.deadline-line { font-size: 11.5px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#deadline-result { margin-top: 6px; font-size: 13px; }
+#deadline-result.waiting { color: var(--muted); }
 .dock-top { display: flex; align-items: baseline; gap: 10px; margin-bottom: 8px; }
 #recall-prompt { flex: 1; font-weight: 650; color: var(--strong); }
 #countdown { flex: none; font: 600 12px "SF Mono", Menlo, monospace; color: var(--muted); font-variant-numeric: tabular-nums; }
@@ -82,7 +129,6 @@ figcaption { margin-top: 3px; font-size: 11.5px; color: var(--muted); }
 #feedback { margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--line); white-space: pre-wrap; }
 #feedback.waiting { color: var(--muted); }
 #saved { font-size: 13px; }
-#recall:not([hidden]) + #saved { margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--line); }
 #saved .saved-head { display: flex; align-items: center; gap: 8px; font-weight: 650; color: var(--strong); margin-bottom: 4px; }
 #saved .saved-head span { flex: 1; }
 #saved a { display: block; color: var(--accent); text-decoration: none; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -104,6 +150,7 @@ body.doc-mode #live { display: none; }
 #doc p { margin: 3pt 0; }
 #doc figure { margin: 6pt 0; break-inside: avoid; page-break-inside: avoid; }
 #doc figure img { max-width: 100%; max-height: 4.5in; border-radius: 2px; border: 1px solid #ddd; }
+#doc figure.slide img { max-width: 3.2in; max-height: 2.4in; }
 #doc figcaption { font-size: 9pt; color: #666; }
 #doc strong { font-weight: 700; color: #000; }
 #doc code { font: 9.5pt "SF Mono", Menlo, monospace; background: #f2f0ec; padding: 0 3px; border-radius: 3px; }

@@ -33,17 +33,21 @@ enum LectureReplay {
         let listener = LectureListener(transcriber: Transcriber())
         let window = NotesWindow()
         window.offscreen = true
-        let session = LectureSession(course: course, courseTitle: course, folder: folder, endsAt: nil, listener: listener, writer: NoteWriter(config: config), window: window)
-        session.watchPhotos = false
-        // the clock runs `speed` times faster here, so explainers are spaced by lecture time, not wall time
-        session.explainGap /= speed
-        session.explainStale /= speed
-        session.clockScale = speed
+        let explainers = LectureExplainers(config: config, course: course)
         var explains: [String] = []
-        session.onExplain = { topic, why, _ in
-            explains.append("[\(session.minutes) min] \(topic)" + (why.isEmpty ? "" : " | \(why)"))
+        explainers.onShow = { title, markup in
+            explains.append("[\(explains.count + 1)] \(title) (\(markup.count) chars)")
+            try? markup.write(to: out.appendingPathComponent("explainer-\(explains.count).html"), atomically: true, encoding: .utf8)
             return true
         }
+        explainers.readGap /= speed
+        explainers.stale /= speed
+        let session = LectureSession(course: course, courseTitle: course, folder: folder, endsAt: nil, listener: listener, writer: NoteWriter(config: config),
+                                     window: window, explainers: explainers)
+        session.watchPhotos = false
+        // the clock runs `speed` times faster here: cycles, pauses and explainers go by lecture time, not wall time
+        session.clockScale = speed
+        session.pdfFolder = out   // never his Desktop
         var finished: (URL, URL?)?
         session.onFinished = { file, pdf in finished = (file, pdf) }
         let started = Date()
@@ -74,6 +78,7 @@ enum LectureReplay {
         Task { @MainActor in
             await session.end()
             await session.recall(value("--recall") ?? "")
+            if session.phase == .why { await session.whyAnswered(value("--why") ?? "") }
         }
         runLoop({ finished != nil }, 600)
         print("\n==== notes (\(session.notes.blocks.count) lines)\n" + session.notes.markdown)

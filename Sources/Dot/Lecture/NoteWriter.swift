@@ -22,6 +22,10 @@ final class NoteWriter {
     private(set) var cycles = 0
     /// The session's cost as its last result reported it.
     private(set) var costUSD = 0.0
+    /// The model's own time for the last reply (the rest of a slow cycle is waiting on Dot or the network).
+    private(set) var lastApiMs = 0
+    /// A reply this late is given up on; the session is then replaced (a slow one only gets slower).
+    var timeout: TimeInterval = 45
 
     init(config: DotConfig) { self.config = config }
 
@@ -60,9 +64,9 @@ final class NoteWriter {
         session.send(text: text, images: images.map { (data: $0, mediaType: "image/jpeg") })
         // A reply that never comes would stall every cycle after it.
         let started = sentAt
-        DispatchQueue.main.asyncAfter(deadline: .now() + 90) { [weak self] in
+        DispatchQueue.main.asyncAfter(deadline: .now() + timeout) { [weak self] in
             guard let self, self.waiting != nil, self.sentAt == started else { return }
-            Log.warn("lecture: a note cycle took over 90 s; skipping it")
+            Log.warn("lecture: a note cycle took over \(Int(self.timeout)) s; skipping it")
             self.session?.interrupt()
             self.finish(nil)
         }
@@ -77,9 +81,13 @@ final class NoteWriter {
     private func received(_ event: StreamEvent) {
         switch event {
         case .assistantText(let text): reply += text
+        case .rateLimit(let status, let resetsAt, let kind):
+            Log.warn("lecture: note writer rate limit \(status) \(kind ?? "")\(resetsAt.map { " resets \(Date(timeIntervalSince1970: $0))" } ?? "")")
         case .result(let info):
             costUSD = info.costUSD
+            lastApiMs = info.durationApiMs
             cycles += 1
+            if info.isError { Log.warn("lecture: note writer error: \(Log.short(info.resultText ?? info.subtype, 160))") }
             finish(info.isError ? nil : (info.resultText ?? reply))
         default: break
         }

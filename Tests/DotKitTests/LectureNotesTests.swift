@@ -36,6 +36,70 @@ final class LectureNotesTests: XCTestCase {
         XCTAssertEqual(ignored, ["~h2: never his", "some stray prose"])
     }
 
+    func testLineTimesRoundTripAndStayOutOfTheText() {
+        var notes = ClassNotes(number: 2, dateLabel: "Thu Oct 22")
+        notes.append(depth: 0, text: "**term**: meaning", at: "11:42:10")
+        notes.add(id: "h1", after: "d1", depth: 1, text: "mine", at: "11:43:00")
+        notes.appendImage(path: "notes-images/slide-1.jpg", caption: "slide: Intro", at: "11:44:05")
+        XCTAssertEqual(notes.blocks[0].markdown, "- **term**: meaning <!--@11:42:10-->")
+        let back = ClassNotes.parse(section: notes.markdown)!
+        XCTAssertEqual(back.blocks.map(\.at), ["11:42:10", "11:43:00", "11:44:05"])
+        XCTAssertEqual(back.blocks.map(\.text), ["**term**: meaning", "mine", "slide: Intro"])
+        XCTAssertEqual(back.blocks[2].image, "notes-images/slide-1.jpg")
+        XCTAssertFalse(back.tail().joined().contains("<!--"), "the writer never sees the time comments")
+    }
+
+    func testCourseTermsForTheRecognizer() {
+        let text = """
+        # EXMP 10100 (Intro to Examples)
+        Detection uses **real-time PCR** and LC-MS. The qPCR signal tracks mRNA.
+        Then the Krebs cycle feeds the Electron Transport chain. The end.
+        Monday: Exam 1. PCR again and PCR once more.
+        """
+        let terms = LectureTerms.extract(text)
+        XCTAssertEqual(terms.first, "PCR", "the most frequent term leads")
+        for t in ["real-time PCR", "LC-MS", "qPCR", "mRNA", "Krebs", "Electron", "Transport"] { XCTAssertTrue(terms.contains(t), t) }
+        for t in ["Detection", "The", "Monday", "Exam", "Then"] { XCTAssertFalse(terms.contains(t), t) }
+        XCTAssertEqual(LectureTerms.extract(text, limit: 2).count, 2)
+    }
+
+    func testSpokenCourseNamesFindTheirFolder() {
+        let map = CourseTag(fileName: "exmp10100.md", text: "# EXMP 10100 (Biotechnology for Examples, Example U)\n\nwords")!
+        let folders = ["EXMP 10100", "MATH 20000", "PHYS 13000", "HIST 17000", "Other lectures"]
+        let aliases = ["Language and the Example I": "HIST 17000", "Mechanics": "PHYS 13000"]
+        func r(_ s: String) -> String? { LectureCourses.resolve(spoken: s, aliases: aliases, maps: [map], folders: folders) }
+        XCTAssertEqual(r("biotech"), "EXMP 10100", "a word that starts a course map's name")
+        XCTAssertEqual(r("math"), "MATH 20000", "the department code")
+        XCTAssertEqual(r("physics"), "PHYS 13000", "a word the code begins")
+        XCTAssertEqual(r("mechanics"), "PHYS 13000", "his calendar name")
+        XCTAssertEqual(r("language and the example"), "HIST 17000")
+        XCTAssertEqual(r("other lectures"), "Other lectures")
+        XCTAssertNil(r("chemistry"))
+    }
+
+    func testWhatCountsAsASlide() {
+        XCTAssertTrue(LectureSlides.looksLikeSlides(bundle: "com.microsoft.Powerpoint", title: "anything", url: nil))
+        XCTAssertTrue(LectureSlides.looksLikeSlides(bundle: "ai.perplexity.comet", title: "Lec 4 - Gene Expression", url: "https://canvas.example.edu/files/9"))
+        XCTAssertTrue(LectureSlides.looksLikeSlides(bundle: "ai.perplexity.comet", title: "Deck", url: "https://docs.google.com/presentation/d/x"))
+        XCTAssertFalse(LectureSlides.looksLikeSlides(bundle: "ai.perplexity.comet", title: "Instagram", url: "https://instagram.com"))
+        XCTAssertFalse(LectureSlides.looksLikeSlides(bundle: "com.apple.MobileSMS", title: "Messages", url: nil))
+    }
+
+    func testWhyAndDeadlineLines() {
+        let (ops, ignored) = NoteProtocol.parse("""
+        FEEDBACK: u got the first two
+        WHY: why does a lower Ct mean more starting RNA?
+        DEADLINE: 2026-10-27 | Exam 1 | d4
+        DEADLINE: 2026-11-19T11:00 | Exam II | none
+        DEADLINE: 2026-10-29 | news article signup
+        """)
+        XCTAssertEqual(ops, [.feedback("u got the first two"), .why("why does a lower Ct mean more starting RNA?"),
+                             .deadline(due: "2026-10-27", title: "Exam 1", block: "d4"),
+                             .deadline(due: "2026-11-19T11:00", title: "Exam II", block: nil),
+                             .deadline(due: "2026-10-29", title: "news article signup", block: nil)])
+        XCTAssertEqual(ignored, [])
+    }
+
     func testBacktickedLinesAndAfterEnd() {
         let (ops, ignored) = NoteProtocol.parse("`~d5: finished thought`\n  `- nested in ticks`\n+after end: ⁺ slides not reached yet")
         XCTAssertEqual(ops, [.rewrite(id: "d5", text: "finished thought"), .append(depth: 1, text: "nested in ticks"),
@@ -71,6 +135,13 @@ final class LectureNotesTests: XCTestCase {
         XCTAssertEqual(notes.block("h1")?.depth, 1)
         XCTAssertTrue(notes.remove("h1"))
         XCTAssertNil(notes.block("h1"))
+    }
+
+    func testARepeatedLineIsDropped() {
+        var notes = ClassNotes(number: 1, dateLabel: "Thu Oct 22")
+        notes.append(depth: 0, text: "same point")
+        XCTAssertNil(notes.append(depth: 1, text: "same point"))
+        XCTAssertEqual(notes.blocks.count, 1)
     }
 
     func testGapFillGoesAfterTheWholeSubtree() {

@@ -10,8 +10,8 @@
   var AUTHORS = {dot: 1, him: 1, added: 1};
   var DEBOUNCE = 700;
 
-  var state = {focused: null, focusPosted: undefined, hisCounter: 0, heading: "", title: "", base: "",
-               endArmed: 0, recallEnds: 0, recallTimer: 0};
+  var state = {focused: null, focusPosted: undefined, hisCounter: 0, heading: "", title: "", base: "", mode: "live",
+               endArmed: 0, recallEnds: 0, recallTimer: 0, marks: {}, sourceFor: null};
   var els = {};
 
   function post(msg) {
@@ -31,7 +31,7 @@
   function inline(raw) {
     var keep = [];
     function stash(html) { keep.push(html); return "\u0000" + (keep.length - 1) + "\u0000"; }
-    var s = String(raw || "").replace(/\u0000/g, "").replace(/`([^`\n]+)`/g, function (_, c) { return stash("<code>" + esc(c) + "</code>"); });
+    var s = String(raw || "").replace(/<!--[\s\S]*?-->/g, "").replace(/\u0000/g, "").replace(/`([^`\n]+)`/g, function (_, c) { return stash("<code>" + esc(c) + "</code>"); });
     s = s.split(MATH_SPAN).map(function (part, i) {
       if (i % 2 === 0 || !window.katex) return part;
       var tex = part.charAt(0) === "$" ? part.replace(/^\$\$?|\$\$?$/g, "") : part.slice(2, -2);
@@ -54,25 +54,36 @@
   }
 
   // ---- lines ----------------------------------------------------------------------------------------------------------
-  // A line: {id, depth, text, author, kind, src, sent, dirty, timer, el, textEl}. `sent` is false only for his new
-  // lines that Dot has not been told about yet (the empty line at the bottom, a line Enter just made).
+  // A line: {id, depth, text, author, kind, src, at, sent, dirty, timer, el, textEl}. `kind` is bullet, image (a board
+  // photo) or slide; `at` is the clock time the line came from. `sent` is false only for his new lines that Dot has not
+  // been told about yet (the empty line at the bottom, a line Enter just made).
   function lines() { return Array.prototype.map.call(els.lines.children, function (el) { return el._line; }); }
   function find(id) { var all = lines(); for (var i = 0; i < all.length; i++) if (all[i].id === id) return all[i]; return null; }
   function prevLine(l) { var p = l.el.previousElementSibling; return p ? p._line : null; }
   function nextLine(l) { var n = l.el.nextElementSibling; return n ? n._line : null; }
   function isLast(l) { return !l.el.nextElementSibling; }
-  function editable(l) { return l && l.kind !== "image"; }
+  function editable(l) { return l && l.kind === "bullet"; }
+  function kindOf(k) { return k === "image" || k === "slide" ? k : "bullet"; }
+  // A line's text never carries an HTML comment; a timestamp left at its end ("<!--@11:42:10-->") becomes its `at`.
+  function cleanText(text, at) {
+    text = String(text == null ? "" : text);
+    var m = /\s*<!--@([^>]*?)-->\s*$/.exec(text);
+    if (m) { text = text.slice(0, m.index); if (!at) at = m[1].trim(); }
+    return {text: text.replace(/<!--[\s\S]*?-->/g, ""), at: at || ""};
+  }
+  function clock(at) { var m = /^(\d{1,2}:\d{2})/.exec(at); return m ? m[1] : at; }
   function blankNew(l) { return !l.sent && !l.text; }
   function clampDepth(d) { d = parseInt(d, 10); return isNaN(d) ? 0 : Math.max(0, Math.min(3, d)); }
   function bumpCounter(id) { var m = /^h(\d+)$/.exec(id || ""); if (m) state.hisCounter = Math.max(state.hisCounter, +m[1]); }
 
   function makeLine(b, sent) {
-    var l = {id: String(b.id || ""), depth: clampDepth(b.depth), text: String(b.text || ""), author: AUTHORS[b.author] ? b.author : "dot",
-             kind: b.kind === "image" ? "image" : "bullet", src: b.src || "", sent: sent, dirty: false, timer: 0};
+    var c = cleanText(b.text, b.at);
+    var l = {id: String(b.id || ""), depth: clampDepth(b.depth), text: c.text, at: c.at, author: AUTHORS[b.author] ? b.author : "dot",
+             kind: kindOf(b.kind), src: b.src || "", sent: sent, dirty: false, timer: 0};
     var el = h("div", "line");
     el._line = l; l.el = el;
     el.appendChild(h("span", "bullet"));
-    if (l.kind === "image") {
+    if (l.kind !== "bullet") {
       el.appendChild(h("figure"));
     } else {
       var t = h("div", "text");
@@ -83,9 +94,6 @@
       t.setAttribute("autocapitalize", "off");
       l.textEl = t;
       el.appendChild(t);
-      var x = h("button", "explain", "?");
-      x.type = "button"; x.title = "explain this"; x.tabIndex = -1;
-      el.appendChild(x);
     }
     bumpCounter(l.id);
     paint(l);
@@ -106,12 +114,13 @@
     ["d0", "d1", "d2", "d3", "dot", "him", "added"].forEach(function (k) { c.remove(k); });
     c.add("d" + l.depth); c.add(l.author);
     c.toggle("image", l.kind === "image");
+    c.toggle("slide", l.kind === "slide");
     c.toggle("unsent", !l.sent);
     l.el.dataset.id = l.id;
   }
   function shown(l) { return l.author === "added" ? l.text.replace(/^⁺\s*/, "") : l.text; }
   function paintText(l) {
-    if (l.kind === "image") {
+    if (l.kind !== "bullet") {
       var fig = l.el.querySelector("figure");
       fig.textContent = "";
       var img = h("img"); img.alt = l.text; img.src = resolve(l.src);
@@ -122,7 +131,29 @@
     if (l === state.focused) return;   // he is in it: his raw text stays exactly as he left it
     l.textEl.innerHTML = inline(shown(l));
   }
-  function paint(l) { paintClasses(l); paintText(l); }
+  // On hover: the time chip (what was said then) and the explain button.
+  function paintTools(l) {
+    var tools = l.el.querySelector(".tools");
+    if (!tools) { tools = h("span", "tools"); l.el.appendChild(tools); }
+    tools.textContent = "";
+    if (l.at) {
+      var chip = h("button", "at", clock(l.at));
+      chip.type = "button"; chip.title = "what was said at " + l.at; chip.tabIndex = -1;
+      tools.appendChild(chip);
+    }
+    var x = h("button", "explain", "?");
+    x.type = "button"; x.title = "explain this"; x.tabIndex = -1;
+    tools.appendChild(x);
+  }
+  // The explainer marker in the right margin: queued (hollow), ready (filled; a click shows it), shown (faint).
+  function paintMark(l) {
+    var s = state.marks[l.id], dot = l.el.querySelector(".xdot");
+    if (!s) { if (dot) dot.parentNode.removeChild(dot); return; }
+    if (!dot) { dot = h("button"); dot.type = "button"; dot.tabIndex = -1; l.el.appendChild(dot); }
+    dot.className = "xdot " + s;
+    dot.title = s === "ready" ? "an explanation is ready: show it" : s === "queued" ? "an explanation is coming" : "explained";
+  }
+  function paint(l) { paintClasses(l); paintText(l); paintTools(l); paintMark(l); }
   function fresh(l) {
     l.el.classList.add("fresh");
     setTimeout(function () { l.el.classList.remove("fresh"); }, 700);
@@ -358,15 +389,40 @@
       else if (e.key === "ArrowDown" && !e.shiftKey) onArrow(l, e, false);
       else if (e.key === "Escape") l.textEl.blur();
     });
-    // the explain button never takes focus from the line he is in
-    L.addEventListener("mousedown", function (e) { if (e.target.classList && e.target.classList.contains("explain")) e.preventDefault(); });
+    // the line's buttons never take focus from the line he is in
+    L.addEventListener("mousedown", function (e) { if (e.target.closest && e.target.closest(".tools, .xdot")) e.preventDefault(); });
     L.addEventListener("click", function (e) {
-      if (!e.target.classList || !e.target.classList.contains("explain")) return;
-      var l = lineOf(e.target);
-      if (!l || !l.text.trim()) return;
-      flush(l);
-      post({type: "explain", id: l.id, text: l.text});
+      var t = e.target, l = lineOf(t);
+      if (!l || !t.closest) return;
+      if (t.closest(".explain")) {
+        if (!l.text.trim()) return;
+        flush(l);
+        post({type: "explain", id: l.id, text: l.text});
+      } else if (t.closest(".at")) {
+        openSource(l, l.at, "");
+        post({type: "source", id: l.id});
+      } else if (t.closest(".xdot")) {
+        if (state.marks[l.id] === "ready") post({type: "showExplain", id: l.id});
+      } else if (t.tagName === "IMG" && l.kind !== "bullet") {
+        openLightbox(t.src, l.text);
+      }
     });
+    els.lightbox.addEventListener("click", closeLightbox);
+    document.addEventListener("keydown", function (e) {
+      if (e.key !== "Escape") return;
+      if (!els.lightbox.hidden) { closeLightbox(); e.preventDefault(); }
+      if (!els.source.hidden) { closeSource(); e.preventDefault(); }
+    });
+    // a click anywhere else closes the transcript popover
+    document.addEventListener("mousedown", function (e) {
+      if (!els.source.hidden && e.target.closest && !e.target.closest("#source, .at")) closeSource();
+    });
+    els.deadlineAdd.addEventListener("click", function () {
+      var ids = Array.prototype.filter.call(els.deadlineList.querySelectorAll("input"), function (b) { return b.checked; })
+        .map(function (b) { return b.value; });
+      sendDeadlines(ids);
+    });
+    els.deadlineSkip.addEventListener("click", function () { sendDeadlines([]); });
     // a click in the empty space under the notes goes to the bottom line
     els.room.addEventListener("mousedown", function (e) {
       e.preventDefault();
@@ -433,13 +489,14 @@
     var l = b && find(b.id);
     if (!l || l === state.focused || l.dirty) return;
     if (l.author === "him" && b.author !== "him") return;
-    var kind = b.kind === "image" ? "image" : "bullet";
-    if (kind !== l.kind) {
+    if (kindOf(b.kind) !== l.kind) {
       var fresh2 = makeLine(b, true);
       l.el.parentNode.replaceChild(fresh2.el, l.el);
       return;
     }
-    l.text = String(b.text == null ? l.text : b.text);
+    var c = cleanText(b.text == null ? l.text : b.text, b.at || l.at);
+    l.text = c.text;
+    l.at = c.at;
     if (b.depth != null) l.depth = clampDepth(b.depth);
     if (AUTHORS[b.author]) l.author = b.author;
     l.src = b.src || l.src;
@@ -474,6 +531,7 @@
     });
     ensureTail();
     if (stuck) follow();
+    if (state.sourceFor) { var sl = find(state.sourceFor); if (sl) placeSource(sl); else closeSource(); }
   }
 
   function load(data) {
@@ -484,6 +542,13 @@
     els.lines.textContent = "";
     state.hisCounter = 0;
     if (data.base != null) state.base = data.base;
+    // review: his saved notes opened again; no End class, no hearing line, editing as live
+    state.mode = data.mode === "review" ? "review" : "live";
+    document.body.classList.toggle("review", state.mode === "review");
+    state.marks = {};
+    hearing("");
+    closeSource(); closeLightbox();
+    els.recallHistory.textContent = "";
     document.body.classList.remove("doc-mode");
     els.doc.hidden = true;
     els.course.textContent = data.course || "";
@@ -522,18 +587,30 @@
   }
   function hideDock() {
     clearInterval(state.recallTimer);
-    els.dock.hidden = true; els.recall.hidden = true; els.saved.hidden = true;
+    els.dock.hidden = true; els.recall.hidden = true; els.saved.hidden = true; els.deadlines.hidden = true;
     els.room.style.height = "";
   }
+  function dockEmpty() { return els.recall.hidden && els.deadlines.hidden && els.saved.hidden; }
   function showRecall(o) {
     o = o || {};
     flushAll();
-    els.recall.hidden = false; els.saved.hidden = true; els.feedback.hidden = true;
+    // a second round (one "why" question after the feedback): the first round stays above it, read-only
+    if (!els.feedback.hidden && els.feedback.className !== "waiting" && els.feedback.innerHTML) {
+      var past = h("div", "recall-past");
+      past.appendChild(h("div", "past-prompt", els.recallPrompt.textContent));
+      if (els.recallText.value.trim()) past.appendChild(h("div", "past-answer", els.recallText.value.trim()));
+      var said = h("div", "past-feedback");
+      said.innerHTML = els.feedback.innerHTML;
+      past.appendChild(said);
+      els.recallHistory.appendChild(past);
+    }
+    els.recall.hidden = false; els.recallNow.hidden = false; els.saved.hidden = true;
+    els.feedback.hidden = true; els.feedback.textContent = "";
     els.recallPrompt.textContent = o.prompt || "what were the 3 big ideas?";
     els.recallText.value = ""; els.recallText.disabled = false;
     els.submit.disabled = false; els.skip.disabled = false; els.dockBar.hidden = false;
     els.end.disabled = true;
-    state.recallEnds = Date.now() + Math.max(5, +o.seconds || 120) * 1000;
+    state.recallEnds = Date.now() + Math.max(1, +o.seconds || 120) * 1000;
     clearInterval(state.recallTimer);
     state.recallTimer = setInterval(tick, 250);
     tick();
@@ -562,8 +639,9 @@
   function skipRecall() {
     if (els.skip.disabled) return;
     clearInterval(state.recallTimer);
-    els.recall.hidden = true;
-    if (els.saved.hidden) hideDock();
+    // a skipped second round leaves the first round's feedback in view
+    if (els.recallHistory.children.length) els.recallNow.hidden = true; else els.recall.hidden = true;
+    if (dockEmpty()) hideDock(); else showDock();
     post({type: "skipRecall"});
   }
   // Dot sends feedback a line at a time: the first replaces "checking", the rest stack under it.
@@ -583,7 +661,11 @@
     var head = h("div", "saved-head");
     head.appendChild(h("span", null, "saved"));
     var close = h("button", null, "close"); close.type = "button";
-    close.addEventListener("click", hideDock);
+    close.addEventListener("click", function () {
+      // closes what the class ended with; deadlines he has not answered stay
+      els.recall.hidden = true; els.saved.hidden = true;
+      if (!els.deadlineBar.hidden && !els.deadlines.hidden) showDock(); else hideDock();
+    });
     head.appendChild(close);
     els.saved.appendChild(head);
     [o.file, o.pdf].forEach(function (p) {
@@ -597,13 +679,94 @@
     showDock();
   }
 
+  // ---- while class runs: what the ear hears, what was said at a line, explainer markers, slides --------------------------
+  // The last ten or so words, cut from the left, so he can see the ear working.
+  function hearing(text) {
+    var words = String(text || "").replace(/\s+/g, " ").trim().split(" ").filter(Boolean);
+    els.hearingText.textContent = (words.length > 10 ? "\u2026 " : "") + words.slice(-10).join(" ");
+    els.hearing.hidden = !words.length || state.mode === "review";
+    els.hearing.classList.toggle("clipped", !els.hearing.hidden && els.hearingText.offsetWidth > els.hearing.clientWidth - 40);
+  }
+
+  function placeSource(l) { els.source.style.top = (l.el.offsetTop + l.el.offsetHeight + 2) + "px"; }
+  function openSource(l, time, text) {
+    var pop = els.source;
+    state.sourceFor = l.id;
+    pop.textContent = "";
+    if (time) pop.appendChild(h("div", "source-time", time));
+    pop.appendChild(text ? h("div", "source-text", "\u201C" + text + "\u201D") : h("div", "source-text waiting", "finding what was said"));
+    pop.hidden = false;
+    placeSource(l);
+  }
+  // Dot's answer to a time chip: the transcript around that moment, under the line.
+  function showSource(id, o) {
+    var l = find(id);
+    if (!l) return;
+    o = o || {};
+    openSource(l, o.time || l.at, o.text || "nothing was heard there");
+  }
+  function closeSource() { els.source.hidden = true; state.sourceFor = null; }
+
+  function markExplain(id, s) {
+    if (s === "queued" || s === "ready" || s === "shown") state.marks[id] = s; else delete state.marks[id];
+    var l = find(id);
+    if (l) paintMark(l);
+  }
+
+  function openLightbox(src, caption) {
+    els.lightbox.querySelector("img").src = src;
+    els.lightbox.querySelector("figcaption").textContent = caption || "";
+    els.lightbox.hidden = false;
+  }
+  function closeLightbox() { els.lightbox.hidden = true; }
+
+  // ---- deadlines heard in class, offered for Atlas after it -------------------------------------------------------------
+  function offerDeadlines(items) {
+    items = items || [];
+    els.deadlineList.textContent = "";
+    items.forEach(function (it) {
+      var row = h("label", "deadline"), box = h("input"), body = h("span", "deadline-body"), top = h("span", "deadline-top");
+      box.type = "checkbox"; box.checked = true; box.value = String(it.id);
+      top.appendChild(h("span", "deadline-title", it.title || ""));
+      if (it.due) top.appendChild(h("span", "deadline-due", it.due));
+      body.appendChild(top);
+      if (it.line) body.appendChild(h("span", "deadline-line", it.line));
+      row.appendChild(box); row.appendChild(body);
+      els.deadlineList.appendChild(row);
+    });
+    els.deadlineAdd.disabled = false; els.deadlineSkip.disabled = false; els.deadlineBar.hidden = false;
+    els.deadlineResult.hidden = true;
+    els.deadlines.hidden = !items.length;
+    if (items.length) showDock();
+  }
+  function sendDeadlines(ids) {
+    if (els.deadlineAdd.disabled) return;
+    els.deadlineAdd.disabled = true; els.deadlineSkip.disabled = true;
+    Array.prototype.forEach.call(els.deadlineList.querySelectorAll("input"), function (b) { b.disabled = true; });
+    if (ids.length) {
+      els.deadlineBar.hidden = true;
+      els.deadlineResult.hidden = false; els.deadlineResult.className = "waiting"; els.deadlineResult.textContent = "adding to Atlas";
+      showDock();
+    } else {
+      els.deadlines.hidden = true;
+      if (dockEmpty()) hideDock(); else showDock();
+    }
+    post({type: "addDeadlines", ids: ids});
+  }
+  function deadlinesAdded(text) {
+    els.deadlines.hidden = false; els.deadlineBar.hidden = true;
+    els.deadlineResult.hidden = false; els.deadlineResult.className = ""; els.deadlineResult.textContent = text || "";
+    showDock();
+  }
+
   // ---- the print view of a whole course file (protocol.md section 1) ---------------------------------------------------
   var IMAGE = /^\s*!\[([^\]]*)\]\(\s*<?([^)>]+?)>?(?:\s+"[^"]*")?\s*\)\s*$/;
+  // ![slide: title](notes-images/slide-....jpg) is a slide, set smaller than a board photo
   function figure(alt, src) {
-    var fig = h("figure"), img = h("img");
+    var slide = /^slide:\s*/i.test(alt), fig = h("figure", slide ? "slide" : null), img = h("img");
     img.alt = alt; img.src = resolve(src);
     fig.appendChild(img);
-    if (alt) fig.appendChild(h("figcaption", null, alt));
+    if (alt) fig.appendChild(h("figcaption", null, slide ? "Slide: " + alt.replace(/^slide:\s*/i, "") : alt));
     return fig;
   }
   function renderDocument(markdown, opts) {
@@ -618,7 +781,8 @@
       if (!card) { card = h("section", "card"); doc.appendChild(card); stack = []; }
       return card;
     }
-    String(markdown || "").replace(/\r/g, "").split("\n").forEach(function (raw) {
+    // HTML comments (a line's "<!--@11:42:10-->" timestamp) never print
+    String(markdown || "").replace(/<!--[\s\S]*?-->/g, "").replace(/\r/g, "").split("\n").forEach(function (raw) {
       if (!raw.trim()) return;
       var m;
       if ((m = /^#\s+(.*)$/.exec(raw))) { var t = h("h1"); t.innerHTML = inline(m[1]); doc.appendChild(t); card = null; return; }
@@ -663,7 +827,7 @@
   function snapshot() {
     flushAll();
     return lines().filter(function (l) { return l.sent; }).map(function (l) {
-      return {id: l.id, depth: l.depth, text: l.text, author: l.author, kind: l.kind, src: l.src || null};
+      return {id: l.id, depth: l.depth, text: l.text, author: l.author, kind: l.kind, src: l.src || null, at: l.at || null};
     });
   }
 
@@ -704,12 +868,21 @@
   window.notes = {
     load: load, apply: apply, setTitle: setTitle, status: setStatus, setStatus: setStatus, setAccent: setAccent,
     showRecall: showRecall, recallFeedback: recallFeedback, finished: finished, renderDocument: renderDocument,
+    hearing: hearing, showSource: showSource, markExplain: markExplain, offerDeadlines: offerDeadlines, deadlinesAdded: deadlinesAdded,
     snapshot: snapshot, flush: flushAll, inline: inline, _test: test
   };
 
   document.addEventListener("DOMContentLoaded", function () {
     ["lines", "room", "scroller", "course", "heading", "status", "end", "dock", "recall", "countdown", "submit", "skip", "feedback",
-     "saved", "doc"].forEach(function (id) { els[id] = document.getElementById(id); });
+     "saved", "doc", "hearing", "source", "lightbox", "deadlines"].forEach(function (id) { els[id] = document.getElementById(id); });
+    els.hearingText = document.getElementById("hearing-text");
+    els.recallHistory = document.getElementById("recall-history");
+    els.recallNow = document.getElementById("recall-now");
+    els.deadlineList = document.getElementById("deadline-list");
+    els.deadlineBar = document.getElementById("deadline-bar");
+    els.deadlineAdd = document.getElementById("deadline-add");
+    els.deadlineSkip = document.getElementById("deadline-skip");
+    els.deadlineResult = document.getElementById("deadline-result");
     els.recallPrompt = document.getElementById("recall-prompt");
     els.recallText = document.getElementById("recall-text");
     els.dockBar = document.querySelector("#recall .dock-bar");
