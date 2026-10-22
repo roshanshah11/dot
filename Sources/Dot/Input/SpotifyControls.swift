@@ -6,6 +6,18 @@ import Foundation
 /// the place in the song, shuffle, repeat, its own volume, and what's playing, each read back after the change.
 extension Hands {
     func spotify(_ c: SpotifyControl) async -> Outcome {
+        // What AppleScript can't do goes through Spotify's Web API (scripts/dot-spotify-api.py).
+        switch c {
+        case .like:
+            let (code, out) = await Self.spotifyAPI(["like"])
+            return code == 0 ? Outcome(ok: true, line: c.doneLine, detail: out) : Self.apiTrouble(code, out, doing: "like songs")
+        case .moveTo(let device):
+            let (code, out) = await Self.spotifyAPI(["transfer", device])
+            if code == 0 { return Outcome(ok: true, line: c.doneLine, detail: out) }
+            if code == 4 { return Outcome(ok: false, line: "i don't see your \(device) in spotify; open spotify on it first.", detail: out) }
+            return Self.apiTrouble(code, out, doing: "move music between devices")
+        default: break
+        }
         guard NSWorkspace.shared.urlForApplication(withBundleIdentifier: "com.spotify.client") != nil else {
             return Outcome(ok: false, line: "spotify isn't on this mac.", detail: "no spotify app")
         }
@@ -22,6 +34,7 @@ extension Hands {
         case .seek(let n): action = "set player position to (player position + (\(n)))"
         case .shuffle(let on): action = "set shuffling to \(on)"
         case .repeatSong(let on): action = "set repeating to \(on)"
+        case .like, .moveTo: action = ""
         case .volume(let v):
             switch v {
             case .up: action = "set sound volume to ((sound volume + 12) as integer)"
@@ -64,5 +77,18 @@ extension Hands {
         default:
             return Outcome(ok: true, line: c.doneLine, detail: detail)
         }
+    }
+    /// Spotify's Web API script: its exit code and its one line. 3: not set up, 4: no such device, 5: Spotify refused.
+    nonisolated static func spotifyAPI(_ args: [String]) async -> (code: Int32, out: String) {
+        guard let script = DotConfig.bundledScript("dot-spotify-api.py", fallback: "~/Projects/dot-fast/scripts/dot-spotify-api.py") else { return (-1, "no dot-spotify-api.py") }
+        let (code, out) = await run("/usr/bin/python3", [script] + args, timeout: 15)
+        return (code, out.trimmingCharacters(in: .whitespacesAndNewlines))
+    }
+
+    /// What he hears when the Web API can't do it: not set up yet, or Spotify said no.
+    static func apiTrouble(_ code: Int32, _ out: String, doing: String) -> Outcome {
+        if code == 3 { return Outcome(ok: false, line: "to \(doing) i need spotify's web api set up; send me the client id from your spotify developer app.", detail: "spotify api: not set up") }
+        let why = out.hasPrefix("refused:") ? String(out.dropFirst("refused:".count)).trimmingCharacters(in: .whitespaces) : out
+        return Outcome(ok: false, line: "spotify said no: \(Log.short(why.lowercased(), 80)).", detail: "spotify api exit \(code): \(Log.short(out, 120))")
     }
 }

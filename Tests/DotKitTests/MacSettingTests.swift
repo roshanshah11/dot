@@ -95,3 +95,31 @@ final class SpotifyControlTests: XCTestCase {
         XCTAssertEqual(TagParser.parse("[SPOTIFY:shuffle on] shuffling.").tags, [.act(.spotify(.shuffle(true)))])
     }
 }
+
+/// Spotify on another device, liking, moving (10-21 19:43: "...put on my chill playlist but play it on phone").
+final class SpotifyDeviceTests: XCTestCase {
+    func testHisSentenceGoesToHisPhone() {
+        XCTAssertEqual(ActionPhrases.match("Can you open my Spotify and put on my chill playlist but play it on phone."),
+                       .play(SpotifyPlay(kind: .playlist, words: "chill", mine: true, device: "phone")))
+        XCTAssertEqual(ActionPhrases.match("play my road trip playlist on my phone"),
+                       .play(SpotifyPlay(kind: .playlist, words: "road trip", mine: true, device: "phone")))
+        XCTAssertEqual(ActionPhrases.match("put on lofi on the tv"), .play(SpotifyPlay(kind: .playlist, words: "lofi", device: "tv")))
+        // no device: where it plays now, as before
+        XCTAssertEqual(ActionPhrases.match("play my road trip playlist"), .play(SpotifyPlay(kind: .playlist, words: "road trip", mine: true)))
+    }
+
+    func testLikeAndMove() {
+        XCTAssertEqual(ActionPhrases.match("like this song"), .spotify(.like))
+        XCTAssertEqual(ActionPhrases.match("add this song to my liked songs"), .spotify(.like))
+        XCTAssertEqual(ActionPhrases.match("move it to my phone"), .spotify(.moveTo("phone")))
+        XCTAssertEqual(ActionPhrases.match("switch the music to the tv"), .spotify(.moveTo("tv")))
+        XCTAssertNil(ActionPhrases.match("i like this song"))
+    }
+
+    func testTagsAndToolWords() {
+        XCTAssertEqual(ActionTags.make(kind: "PLAY", payload: "playlist:my chill@phone"), .play(SpotifyPlay(kind: .playlist, words: "chill", mine: true, device: "phone")))
+        XCTAssertEqual(ActionTags.make(kind: "SPOTIFY", payload: "move phone"), .spotify(.moveTo("phone")))
+        XCTAssertEqual(SpotifyControl.parse("like"), .like)
+        XCTAssertEqual(SpotifyControl.parse(SpotifyControl.moveTo("tv").words), .moveTo("tv"))
+    }
+}

@@ -41,6 +41,7 @@ cp scripts/dot-scout.py "$APP/Contents/Resources/dot-scout.py"
 cp scripts/dot-atlas-approve.py "$APP/Contents/Resources/dot-atlas-approve.py"
 cp scripts/dot-spotify.sh "$APP/Contents/Resources/dot-spotify.sh" && chmod +x "$APP/Contents/Resources/dot-spotify.sh"
 cp scripts/dot-spotify-library.py "$APP/Contents/Resources/dot-spotify-library.py"
+cp scripts/dot-spotify-api.py "$APP/Contents/Resources/dot-spotify-api.py"
 cp -R Resources/board "$APP/Contents/Resources/board"
 # SwiftPM resource bundles (FluidAudio ships none today; copy whatever exists).
 for bundle in .build/$CONFIG/*.bundle(N); do

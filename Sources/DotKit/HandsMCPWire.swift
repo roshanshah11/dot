@@ -57,11 +57,11 @@ public enum HandsMCPWire {
         ("upload", "Put a file into a file input by ref: only a file he named, one you made in your output folder, or one you downloaded in this job.",
          schema(["ref": str, "path": str], required: ["ref", "path"])),
         ("show", "Bring your window in front of him (what \"show me\" does).", schema([:])),
-        ("play", "Play music in Spotify: kind playlist, track, album or artist, and the words to find it. Start the words with \"my\" for one of his own playlists (\"my road trip\"); that never plays a public one.",
-         schema(["kind": ["type": "string", "enum": ["playlist", "track", "album", "artist"]], "words": str], required: ["words"])),
+        ("play", "Play music in Spotify: kind playlist, track, album or artist, and the words to find it. Start the words with \"my\" for one of his own playlists (\"my road trip\"); that never plays a public one. device: \"phone\", \"tv\" to play it there.",
+         schema(["kind": ["type": "string", "enum": ["playlist", "track", "album", "artist"]], "words": str, "device": str], required: ["words"])),
         ("setting", "Flip a Mac setting at once and read it back: \"bluetooth on\", \"wifi off\", \"dark mode on\", \"volume up\", \"volume 30\", \"mute\", \"unmute\".",
          schema(["to": str], required: ["to"])),
-        ("spotify", "Control the Spotify app: \"play\", \"pause\", \"next\", \"previous\", \"restart\", \"seek 30\" (seconds, minus to go back), \"shuffle on\", \"repeat off\", \"volume 40\", \"now playing\".",
+        ("spotify", "Control the Spotify app: \"play\", \"pause\", \"next\", \"previous\", \"restart\", \"seek 30\" (seconds, minus to go back), \"shuffle on\", \"repeat off\", \"volume 40\", \"now playing\", \"like\" (save the song), \"move phone\" (send it to a device).",
          schema(["do": str], required: ["do"])),
     ]
 

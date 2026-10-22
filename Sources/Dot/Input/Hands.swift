@@ -130,7 +130,7 @@ final class Hands {
             let entries = SpotifyLibrary.parse(library.out)
             let libraryMs = Int(Date().timeIntervalSince(started) * 1000)
             if let own = SpotifyLibrary.pick(p, in: entries) {
-                return await startSpotify(uri: own.uri, title: own.name, kind: p.kind, env: env, started: started, findMs: libraryMs, from: "library")
+                return await startSpotify(uri: own.uri, title: own.name, kind: p.kind, env: env, started: started, findMs: libraryMs, from: "library", device: p.device)
             }
             if p.mine {
                 // His own was asked for: nothing public plays unless he says yes to it.
@@ -153,12 +153,24 @@ final class Hands {
             return Outcome(ok: false, line: warming ? "one sec, spotify's search is starting; ask me again in a moment." : "i couldn't find a \(p.kind.rawValue) for \(p.words.lowercased()) on spotify.",
                            detail: "spotify find \(p.kind.rawValue) \(p.words): exit \(find.code) \(Log.short(find.out, 60))")
         }
-        return await startSpotify(uri: top.uri, title: top.title, kind: p.kind, env: env, started: started, findMs: findMs, from: "search")
+        return await startSpotify(uri: top.uri, title: top.title, kind: p.kind, env: env, started: started, findMs: findMs, from: "search", device: p.device)
     }
 
     /// Start a found URI (his library's or the search's) and check it is playing; the bench only logs a dry play.
-    private func startSpotify(uri: String, title fullTitle: String, kind: SpotifyPlay.Kind, env: [String: String], started: Date, findMs: Int, from: String) async -> Outcome {
+    private func startSpotify(uri: String, title fullTitle: String, kind: SpotifyPlay.Kind, env: [String: String], started: Date, findMs: Int, from: String,
+                              device: String? = nil) async -> Outcome {
         let title = Log.short(fullTitle.lowercased(), 40)
+        // On another device ("on my phone"): Spotify's Web API moves there and plays; not set up, it plays here and says how.
+        if let device, bench == nil {
+            let (code, out) = await Self.spotifyAPI(["play", uri, device])
+            Log.info("act: play \(uri) \"\(fullTitle)\" on \(device) \(code == 0 ? "ok" : "fail") \(Int(Date().timeIntervalSince(started) * 1000)) ms (\(from) \(findMs) ms, api: \(Log.short(out, 80)))")
+            if code == 0 { return Outcome(ok: true, line: "playing \(title) on your \(device).", detail: "spotify api \(out)") }
+            if code == 4 { return Outcome(ok: false, line: "i don't see your \(device) in spotify; open spotify on it, then ask again.", detail: out) }
+            if code != 3 { return Self.apiTrouble(code, out, doing: "play on your \(device)") }
+            let here = await startSpotify(uri: uri, title: fullTitle, kind: kind, env: env, started: started, findMs: findMs, from: from)
+            guard here.ok else { return here }
+            return Outcome(ok: true, line: "playing \(title) on the mac; for your \(device) i need spotify's web api set up.", detail: here.detail + "; api not set up")
+        }
         if bench != nil {
             let dry = await Self.spotifyScript(["play", uri], env: env, timeout: 3)
             Log.info("act: play \(uri) \"\(fullTitle)\" ok \(Int(Date().timeIntervalSince(started) * 1000)) ms (\(from) \(findMs) ms, \(dry.out.trimmingCharacters(in: .whitespacesAndNewlines)))")

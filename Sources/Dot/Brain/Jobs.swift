@@ -690,7 +690,7 @@ final class JobManager {
             } else {
                 let kind = SpotifyPlay.Kind(rawValue: str(args, "kind") ?? "playlist") ?? .playlist
                 guard let play = SpotifyPlay.make(kind, str(args, "words") ?? "") else { return ("error: play what?", true, nil) }
-                command = .play(play)
+                command = .play(play.on(str(args, "device")))
             }
             let outcome = await job.hands.perform(command, context: AccessibilityContext.capture(maxElements: 10))
             let ms = Int(Date().timeIntervalSince(started) * 1000)

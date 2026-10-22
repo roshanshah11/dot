@@ -66,7 +66,7 @@ public enum ActionCommand: Equatable, Sendable {
         case .insert(let label, _): return label ?? "the field"
         case .media: return ""
         case .go(let goal): return goal
-        case .play(let p): return "\(p.kind.rawValue):\(p.mine ? "my " : "")\(p.words)"
+        case .play(let p): return "\(p.kind.rawValue):\(p.mine ? "my " : "")\(p.words)\(p.device.map { "@\($0)" } ?? "")"
         case .setting(let s): return s.words
         case .spotify(let c): return c.words
         }
@@ -238,6 +238,8 @@ public enum SpotifyControl: Equatable, Sendable {
     case shuffle(Bool), repeatSong(Bool)
     /// Spotify's own volume, apart from the Mac's.
     case volume(MacSetting.Volume)
+    /// Through Spotify's Web API: save the song to his Liked Songs; move what's playing to a device ("phone").
+    case like, moveTo(String)
 
     /// The tag's words and the log's: "play", "next", "seek 30", "seek -10", "shuffle on", "repeat off", "volume 40".
     public var words: String {
@@ -252,6 +254,8 @@ public enum SpotifyControl: Equatable, Sendable {
         case .shuffle(let on): return "shuffle \(on ? "on" : "off")"
         case .repeatSong(let on): return "repeat \(on ? "on" : "off")"
         case .volume(let v): return MacSetting.volume(v).words
+        case .like: return "like"
+        case .moveTo(let device): return "move \(device)"
         }
     }
 
@@ -267,6 +271,8 @@ public enum SpotifyControl: Equatable, Sendable {
         case .shuffle(let on): return on ? "shuffle's on." : "shuffle's off."
         case .repeatSong(let on): return on ? "repeating it." : "repeat's off."
         case .volume(let v): return MacSetting.volume(v).doneLine.replacingOccurrences(of: "volume", with: "spotify")
+        case .like: return "added to your liked songs."
+        case .moveTo(let device): return "it's on your \(device) now."
         }
     }
 
@@ -288,6 +294,10 @@ public enum SpotifyControl: Equatable, Sendable {
         case "volume":
             if case .volume(let v)? = MacSetting.parse(t) { return .volume(v) }
             return nil
+        case "like", "save": return .like
+        case "move", "transfer":
+            let device = words.dropFirst().filter { !["to", "my", "the", "on"].contains($0) }.joined(separator: " ")
+            return device.isEmpty ? nil : .moveTo(device)
         default: return nil
         }
     }
@@ -343,6 +353,11 @@ public enum ActionPhrases {
     static let spotifyRestart = re(lead + #"(?:restart|replay|start over)(?:\s+(?:the|this))?\s+(?:song|track)|(?:go back to|play from)\s+the\s+(?:start|beginning)\s+of\s+(?:the|this)\s+(?:song|track)"# + tail)
     static let spotifySeek = re(lead + #"(?:(skip|jump|fast forward|go)\s+(?:ahead|forward)|(rewind|go back|skip back|jump back))\s+(\d{1,3})\s*(?:seconds|secs|s)\b"# + tail)
     static let spotifyVolume = re(lead + #"(?:(?:turn|put)\s+(?:the\s+)?spotify\s+(up|down)|turn\s+(up|down)\s+(?:the\s+)?spotify|(?:set\s+)?(?:the\s+)?spotify(?:'s)?\s+volume\s+(?:to\s+)?(\d{1,3})\s*(?:%|percent)?)"# + tail)
+    /// A device at the end of a play ("... but play it on my phone", "... on the tv"): Spotify's Web API puts it there.
+    static let deviceWords = #"(phone|iphone|tv|ipad|tablet|mac|computer|laptop|speaker)"#
+    static let playOnDevice = re(spotifyLead + #"(?:play|put on|queue(?: up)?)(?: me)?(?: some| a| an| the)? (.{2,60}?)(?: (?:on|in|from) spotify)?,?\s+(?:but\s+|and\s+)?(?:(?:play|put)\s+it\s+)?on\s+(?:my\s+|the\s+)?"# + deviceWords + tail)
+    static let likeSong = re(lead + #"(?:(?:like|save|heart)\s+(?:this|the|that)\s+(?:song|track)|add\s+(?:this|the|that)\s+(?:song|track)\s+to\s+(?:my\s+)?(?:liked songs|likes|library|favorites))"# + tail)
+    static let moveMusic = re(lead + #"(?:move|switch|send|transfer|play)\s+(?:it|this|that|the music|my music|spotify|the song|music)\s+(?:over\s+)?(?:to|on)\s+(?:my\s+|the\s+)?"# + deviceWords + tail)
     static let nowPlaying = re(lead + #"(?:what(?:'s| is)\s+(?:this\s+)?(?:song|playing|track)(?:\s+(?:called|playing|on spotify))?|what\s+song\s+is\s+(?:this|playing|on)|who\s+(?:sings|is singing|made)\s+this(?:\s+song)?|what\s+am\s+i\s+listening\s+to)"# + tail)
 
     /// "turn it back on", "switch that off again", "turn it up": the setting Dot flipped a moment ago (10-21 19:42: "turn
@@ -392,6 +407,11 @@ public enum ActionPhrases {
         if previousSong.firstMatch(in: t, range: range) != nil { return .media(.previous) }
         if pause.firstMatch(in: t, range: range) != nil { return .media(.playPause) }
         if nowPlaying.firstMatch(in: t, range: range) != nil { return .spotify(.nowPlaying) }
+        if likeSong.firstMatch(in: t, range: range) != nil { return .spotify(.like) }
+        if let m = moveMusic.firstMatch(in: t, range: range) { return .spotify(.moveTo(group(m, 1))) }
+        if let m = playOnDevice.firstMatch(in: t, range: range), case .play(let p)? = SpotifyPlay.command((t as NSString).substring(with: m.range(at: 1)), defaultKind: .playlist) {
+            return .play(p.on(group(m, 2)))
+        }
         if let m = spotifyShuffle.firstMatch(in: t, range: range) {
             let flag = (1...3).compactMap { i -> String? in m.range(at: i).location == NSNotFound ? nil : group(m, i) }.first
             return .spotify(.shuffle(flag.map { $0 == "on" } ?? !t.lowercased().contains("unshuffle") && !t.lowercased().contains("un-shuffle")))
@@ -467,12 +487,17 @@ public struct SpotifyPlay: Equatable, Sendable {
     public let words: String
     /// He said "my": one of his own playlists, never a stranger's public one.
     public let mine: Bool
+    /// Where to play it, in his words ("phone", "tv"); nil plays where Spotify plays now. Spotify's Web API picks it.
+    public let device: String?
 
-    public init(kind: Kind, words: String, mine: Bool = false) {
+    public init(kind: Kind, words: String, mine: Bool = false, device: String? = nil) {
         self.kind = kind
         self.words = words
         self.mine = mine
+        self.device = device
     }
+
+    public func on(_ device: String?) -> SpotifyPlay { SpotifyPlay(kind: kind, words: words, mine: mine, device: device) }
 
     static let vague: Set<String> = ["music", "something", "anything", "a song", "songs", "my music", "it", "some music", "spotify"]
 
@@ -492,6 +517,12 @@ public struct SpotifyPlay: Equatable, Sendable {
     /// makes it a track.
     public static func command(_ payload: String, defaultKind: Kind = .playlist) -> ActionCommand? {
         var text = payload.trimmingCharacters(in: .whitespacesAndNewlines)
+        // "[PLAY:playlist:my chill@phone]": a device after the words
+        if let at = text.lastIndex(of: "@") {
+            let device = text[text.index(after: at)...].trimmingCharacters(in: .whitespaces)
+            let rest = String(text[..<at])
+            if !device.isEmpty, case .play(let p)? = command(rest, defaultKind: defaultKind) { return .play(p.on(device)) }
+        }
         var kind = defaultKind
         if let colon = text.firstIndex(of: ":"), let k = Kind(rawValue: text[..<colon].lowercased().trimmingCharacters(in: .whitespaces)) {
             kind = k
