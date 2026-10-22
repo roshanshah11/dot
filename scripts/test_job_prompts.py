@@ -56,7 +56,8 @@ def main():
     if len(job) >= 6000: failures.append(f"job prompt is {len(job)} chars (limit 6000)")
     for line in ["his CLAUDE.md's browser and texting routes don't apply", 'end with one sentence starting "blocked:"',
                  "never hand it to an agent", "waiting for your yes on the card",
-                 "read ~/Dot/jobs/PROFILE.md", "never type a password, an id number or payment details. submit stays his."]:
+                 "read ~/Dot/jobs/PROFILE.md", "never type a password, an id number or payment details. submit stays his.",
+                 "a login page: call login"]:
         if line not in job: failures.append(f"job prompt lacks: {line}")
     print(f"talk off {len(off)} chars, talk on {len(on)} chars, job {len(job)} chars")
     for f in failures: print("FAIL", f)

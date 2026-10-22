@@ -12,7 +12,9 @@ enum JobHarness {
         var url = "http://127.0.0.1:8766/index.html"
         var placementWord: String?
         var seconds: Double = 180
-        // --then pause-resume | pause-drop | stop: what "he" does after the job's first action (J7, J8, J9 headless)
+        // --then pause-resume | pause-drop | stop: what "he" does after the job's first action (J7, J8, J9 headless).
+        // --then tick | click-tick | stop-wait: what he does while a login waits on the robot box (10-22): ticks it; clicks
+        // first (which must not pause it), then ticks; or stops the job (which must never press log in).
         var then: String?
         while let flag = rest.first, flag.hasPrefix("--") {
             rest.removeFirst()
@@ -88,6 +90,15 @@ enum JobHarness {
         var finished = false
         var stage = 0
         var pausedAt: Date?
+        var waitSeenAt: Date?
+        var clickedAt: Date?
+        let waitStages = ["tick", "click-tick", "stop-wait"]
+        func tick(_ job: JobManager.Job) {
+            Log.info("harness: he ticks the robot box")
+            Task { @MainActor in
+                _ = await job.page.evaluate("(function(){const f=document.querySelector('iframe[title=dot-bench-robot]'); const b=f&&f.contentDocument.getElementById('tick'); if(b){b.click(); return true} return false})()")
+            }
+        }
         while Date() < deadline {
             RunLoop.main.run(until: Date().addingTimeInterval(0.2))
             let live = MainActor.assumeIsolated { jobs?.running.isEmpty == false }
@@ -96,7 +107,27 @@ enum JobHarness {
             MainActor.assumeIsolated {
                 guard let manager = jobs, let job = manager.running.last else { return }
                 switch stage {
-                case 0 where job.steps.count >= 2:
+                case 0 where waitStages.contains(then) && job.waitingOnHim:
+                    if waitSeenAt == nil { waitSeenAt = Date() }
+                    guard Date().timeIntervalSince(waitSeenAt!) > 2 else { break }
+                    if then == "stop-wait" {
+                        Log.info("harness: stop while the login waits on his tick")
+                        manager.stop(job, reason: "his stop")
+                        stage = 9
+                    } else if then == "click-tick" {
+                        Log.info("harness: his click while the login waits on his tick")
+                        _ = manager.simulateInput(.click)
+                        clickedAt = Date()
+                        stage = 2
+                    } else {
+                        tick(job)
+                        stage = 9
+                    }
+                case 2 where clickedAt.map({ Date().timeIntervalSince($0) > 1.5 }) == true:
+                    Log.info("harness: after his click the job is \(job.phase.rawValue)")
+                    tick(job)
+                    stage = 9
+                case 0 where !waitStages.contains(then) && job.steps.count >= 2:
                     if then == "stop" {
                         Log.info("harness: stop after step \(job.steps.count)")
                         manager.stop(job, reason: "his stop")

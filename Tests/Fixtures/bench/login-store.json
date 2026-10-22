@@ -1,0 +1,5 @@
+{
+  "names": ["jobs/northwind/sam@example.com", "atlas/bot-token"],
+  "map": {"jobs/northwind/sam@example.com": ["127.0.0.1"]},
+  "secrets": {"jobs/northwind/sam@example.com": "bench-pass-7311", "atlas/bot-token": "never-a-login"}
+}

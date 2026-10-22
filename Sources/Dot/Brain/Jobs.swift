@@ -55,6 +55,10 @@ final class JobManager {
         var cardsShown: Set<String> = []
         /// Files it put in his folders (the done card's open button).
         var outputs: [URL] = []
+        /// Its login waits on his tick on a robot box: his clicks and keys then never pause it (10-22).
+        var waitingOnHim = false
+        /// Hosts its login already ran on: one try each, since a wrong try can lock the account.
+        var loginTried: Set<String> = []
 
         init(id: String, goal: String, hisWords: String, placement: JobPlacement, model: String, page: PageDriver, hands: Hands,
              askedAt: Date?, bench: Bool, folder: URL, stamp: String) {
@@ -669,7 +673,7 @@ final class JobManager {
                 Log.info("job[\(job.id)] first action \(Int(Date().timeIntervalSince(asked) * 1000)) ms")
             }
             _ = started
-            var out: [String: Any] = ["text": text, "isError": isError]
+            var out: [String: Any] = ["text": job.page.scrub(text), "isError": isError]
             if let image { out["image"] = image }
             reply(out)
         }
@@ -758,6 +762,8 @@ final class JobManager {
             if result.status == .ok { Log.info("job[\(job.id)] upload \((path as NSString).lastPathComponent) -> \(await job.page.host)") }
         case "show":
             return await show(job)
+        case "login":
+            return await login(job)
         default:
             return ("error: no tool \(tool)", true, nil)
         }
@@ -841,6 +847,7 @@ final class JobManager {
             }
         }
         if job.bench, !(url.hasPrefix("http://127.0.0.1:") || url.hasPrefix("http://localhost:")) { return .error("bench: url outside the fixture") }
+        if let adopted = await adoptOneSessionTab(job, url: url) { return adopted }
         if job.placement == .behind {
             if !job.page.isBound {
                 guard await job.page.createBehind(url: url) else { return .error(job.page.cdp.lastError.map { "couldn't open a window: \($0)" } ?? "blocked: comet's devtools port is off") }
@@ -871,6 +878,25 @@ final class JobManager {
         }
         _ = await job.page.wait(for: nil, ms: nil)
         return .ok("opened \(URL(string: url)?.host ?? url) in a new tab")
+    }
+
+    /// A one-session site (tal.net): a second window or tab on it signs out the one he has (10-22, his application form). When
+    /// one of his tabs is on that site, the job works in it, as a front job (his clicks pause it), and reads it before any
+    /// move; with several, it asks which. nil: open as usual.
+    private func adoptOneSessionTab(_ job: Job, url: String) async -> PageDriver.Result? {
+        guard !job.bench, let host = URL(string: url)?.host.map(Logins.normalize), SingleSessionSites.covers(host) else { return nil }
+        if let e = await job.page.connect() { return .error(e) }
+        if job.page.isBound, let href = await job.page.evaluate("location.href") as? String,
+           URL(string: href)?.host.map(Logins.normalize) == host { return nil }
+        let his = await job.page.pageTabs().filter { $0.id != job.page.targetId && URL(string: $0.url)?.host.map(Logins.normalize) == host }
+        if his.count > 1 { return .error("he has \(his.count) tabs on \(host), and this site signs out a second one: ask him which tab to use") }
+        guard let tab = his.first else { return nil }
+        guard await job.page.adopt(tab.id) else { return .error("couldn't reach his \(host) tab") }
+        job.placement = .front
+        job.frontURL = tab.url
+        job.frontTitle = tab.title
+        Log.info("job[\(job.id)] working in his \(host) tab (one session per login)")
+        return .ok("working in his \(host) tab instead (a second window would sign it out); it shows \"\(Log.short(tab.title, 80))\". look before moving it")
     }
 
     private func uploadAllowed(_ job: Job, _ path: String) -> Bool {
@@ -994,14 +1020,14 @@ final class JobManager {
         if !job.bench || job.placement == .front { overlay?.point(at: point, label: Log.short(label, 24)) }
     }
 
-    private func rang(_ job: Job, label: String, point: CGPoint?) {
+    private func rang(_ job: Job, label: String, point: CGPoint?, line: String? = nil) {
         job.rung = (label, point)
         let primary = NSScreen.screens.first?.frame.height ?? 0
         let where_ = point.map { "target(x: \(Int($0.x)), y: \(Int(primary - $0.y)))" } ?? "target(none)"
         Log.info("job[\(job.id)] rang \(where_) \(Log.short(label, 40))")
         if job.placement == .front, let point {
             overlay?.target(at: point, radius: 24, label: label, hover: false)
-            say("that one's yours to press: \(label.lowercased()).", job: job, start: false)
+            say(line ?? "that one's yours to press: \(label.lowercased()).", job: job, start: false)
         }
         publish(job)
     }
@@ -1089,14 +1115,15 @@ final class JobManager {
         for job in running where job.phase == .paused { scheduleAutoResume(job) }   // still using the tab: wait longer
         // A behind job is his to ignore: his clicks pause it only after he asked to see its window (10-21 22:38 its window
         // took focus for a moment and his next click paused the flights search).
-        let candidates = running.filter { $0.phase == .running && ($0.placement == .front || $0.shownAt.map { Date().timeIntervalSince($0) < 180 } == true) }
+        // A login waiting on his tick never pauses: the robot box's picture grid takes clicks, its audio test takes keys.
+        let candidates = running.filter { $0.phase == .running && !$0.waitingOnHim && ($0.placement == .front || $0.shownAt.map { Date().timeIntervalSince($0) < 180 } == true) }
         guard !candidates.isEmpty else { return }
         inputDebounce?.cancel()
         let work = DispatchWorkItem { [weak self] in
             Task { @MainActor in
                 guard let self else { return }
                 try? await Task.sleep(nanoseconds: 80_000_000)
-                for job in candidates where job.phase == .running {
+                for job in candidates where job.phase == .running && !job.waitingOnHim {
                     let front = simulated ? job.bundle : NSWorkspace.shared.frontmostApplication?.bundleIdentifier
                     var focused: Bool?
                     var inside: Bool?
@@ -1200,6 +1227,100 @@ final class JobManager {
             job.session?.send(text: "[he changed course] \(instruction)")
         }
         Log.info("job[\(job.id)] steered: \(Log.short(instruction, 100))")
+    }
+
+    /// How long a login waits on his tick before it leaves the box to him (the relay gives the call 720 s).
+    static let tickWait: Double = 600
+
+    /// The login tool (10-22, "atlas can log in. why cant u?"): his saved login for this exact host, filled by Dot itself.
+    /// The model passes nothing and gets back no password. A robot box is his: Dot points at it, waits for his tick, then
+    /// presses log in once. With no box, Dot presses log in itself (his call).
+    private func login(_ job: Job) async -> (String, Bool, String?) {
+        if !job.page.isBound, !(await bindIfNeeded(job)) { return ("error: no page yet: open the login page first", true, nil) }
+        guard let origin = await job.page.mainOrigin(), let host = Logins.host(ofOrigin: origin, bench: job.bench) else {
+            return ("blocked: a saved login only goes to an https page", true, nil)
+        }
+        if job.loginTried.contains(host) {
+            return ("stopped: login already ran on \(host) in this job, and it doesn't try again (a wrong try can lock the account). say what the site said.", true, nil)
+        }
+        if SingleSessionSites.covers(host), await job.page.otherTabs(onHost: host) > 0 {
+            return ("stopped: another of his tabs is on \(host), and this site signs one of them out; work in that tab instead", true, nil)
+        }
+        let names = await LoginStore.names(bench: job.bench)
+        var entry: Logins.Entry
+        switch Logins.match(host: host, entries: names, map: LoginStore.map(bench: job.bench)) {
+        case .none(let hint):
+            Log.info("job[\(job.id)] login: no saved login for \(host)")
+            return ("blocked: no saved login for \(host)" + (hint.map { " (\($0))" } ?? ""), true, nil)
+        case .several(let all):
+            entry = all[0]
+            let (form, _) = await job.page.findLoginForm(origin: origin)
+            guard let typed = form?.usernameValue.lowercased(), let pick = all.first(where: { $0.account?.lowercased() == typed }) else {
+                return ("stopped: two saved logins for \(host) (\(all.compactMap(\.account).joined(separator: ", "))); ask him which", true, nil)
+            }
+            entry = pick
+        case .one(let e):
+            entry = e
+        }
+        let (found, problem) = await job.page.findLoginForm(origin: origin)
+        guard let form = found else { return ("error: \(problem ?? "no login form here")", true, nil) }
+        job.loginTried.insert(host)
+        let password: String
+        switch await LoginStore.password(entry.name, bench: job.bench) {
+        case .password(let p): password = p
+        case .empty:
+            Log.warn("job[\(job.id)] login: \(entry.name) has no password in it")
+            return ("blocked: his saved login for \(host) is empty; he saves it with: gopass insert -f \(entry.name)", true, nil)
+        case .unreadable:
+            Log.warn("job[\(job.id)] login: the store didn't give \(entry.name)")
+            return ("blocked: couldn't read his saved login for \(host) (the password store didn't answer)", true, nil)
+        }
+        let who = entry.account ?? "his account"
+        if let trouble = await job.page.fillLogin(form, account: entry.account, password: password) {
+            await job.page.clearPassword(form)
+            return ("error: \(trouble)", true, nil)
+        }
+        Log.info("job[\(job.id)] login: filled \(entry.name) on \(host)")
+        job.steps.append("login \(host)")
+        job.waitingOnHim = true
+        defer {
+            job.waitingOnHim = false
+            if job.rung?.label == "the robot box" { job.rung = nil; publish(job) }
+        }
+        if let box = await job.page.robotBox() {
+            rang(job, label: "the robot box", point: box, line: "tick the robot box and i'll log you in.")
+            let outcome = await job.page.waitForTick(seconds: Self.tickWait) { job.phase == .running }
+            switch outcome {
+            case .ticked:
+                Log.info("job[\(job.id)] login: he ticked the robot box")
+            case .stopped, .gone:
+                Log.info("job[\(job.id)] login: \(outcome == .gone ? "the tab went away" : "stopped") while waiting on his tick")
+                if outcome == .gone { return ("stopped: the login tab went away", true, nil) }
+                await job.page.clearPassword(form)
+                return ("stopped: the job ended while waiting on his tick", true, nil)
+            case .timeout:
+                await job.page.clearPassword(form)
+                Log.info("job[\(job.id)] login: no tick in \(Int(Self.tickWait)) s")
+                return ("stopped: the robot box is his and he didn't tick it in \(Int(Self.tickWait / 60)) minutes. end with: the robot box is yours; tick it, then say log me in.", false, nil)
+            }
+        }
+        guard job.phase == .running, await job.page.stillReady(form, origin: origin, length: password.count) else {
+            await job.page.clearPassword(form)
+            return ("stopped: the page changed before log in, so dot didn't press it", true, nil)
+        }
+        guard await job.page.pressLogin(form) else {
+            await job.page.clearPassword(form)
+            return ("error: the log in button didn't go through", true, nil)
+        }
+        let (loggedIn, says) = await job.page.loginOutcome()
+        if !loggedIn {
+            await job.page.clearPassword(form)
+            Log.info("job[\(job.id)] login: still on the login form on \(host)")
+            return ("error: still on the login page after log in" + (says.isEmpty ? "" : "; the site says: \(says)") + ". don't retry; tell him.", true, nil)
+        }
+        Log.info("job[\(job.id)] login: logged in on \(host) as \(who)")
+        let l = await job.page.look()
+        return (await checked(job, "ok: logged in to \(host) as \(who)\n" + l.text, force: false), false, nil)
     }
 
     @discardableResult

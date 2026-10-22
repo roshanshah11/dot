@@ -73,8 +73,14 @@ public enum PageSnapshot {
 
     /// The text a job reads and the refs it may use (ref -> backendDOMNodeId). On-screen items come first; with `all`,
     /// off-screen ones follow, marked, up to 120. `viewportHeight` nil: every item counts as on screen.
+    /// A field's value that never reaches a job: a password, which Chrome shows the tree as bullets (and its length with
+    /// them), or a field Dot's login filled, which "show password" can turn into plain text (10-22).
+    public static func hidesValue(_ value: String, backendId: Int, hidden: Set<Int>) -> Bool {
+        hidden.contains(backendId) || (!value.isEmpty && value.allSatisfy { "•●*∙⋅·".contains($0) })
+    }
+
     public static func format(url: String, title: String, items: [Item], viewportHeight: Double?, all: Bool = false,
-                              note: String? = nil) -> (text: String, refs: [String: Int]) {
+                              note: String? = nil, hidden: Set<Int> = []) -> (text: String, refs: [String: Int]) {
         func onScreen(_ i: Item) -> Bool {
             guard let h = viewportHeight, let top = i.top, let bottom = i.bottom else { return true }
             return bottom > 0 && top < h
@@ -99,7 +105,7 @@ public enum PageSnapshot {
                 let ref = "e\(n)"
                 refs[ref] = item.backendId
                 line = "\(ref) \(item.role) \(quoted(item.name))"
-                if let v = item.value { line += " = \(quoted(v, max: 60))" }
+                if let v = item.value { line += hidesValue(v, backendId: item.backendId, hidden: hidden) ? " = (hidden)" : " = \(quoted(v, max: 60))" }
                 if item.checked { line += " [checked]" }
                 if item.disabled { line += " [disabled]" }
                 if CommitGuard.isCommit(item.name) || Rx.has(PageCommitRule.jobWords, item.name) { line += " [his]" }

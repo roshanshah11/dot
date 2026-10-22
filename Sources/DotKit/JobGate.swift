@@ -241,10 +241,19 @@ public enum JobGate {
     /// press them (his standing rule, kept under Atlas's permissions).
     static let screenDrivers: Set<String> = ["hb", "cb", "cbg", "rba", "agent-browser", "cliclick", "cua-driver"]
 
-    /// Bash under Atlas's permissions, after Atlas's deny list: anything, except a screen driver (the ring) and a job
-    /// approving a send it queued (his yes on Dot's card).
+    /// His secrets stay out of a job (10-22): the password store and the keychain, and Comet's DevTools port, which reads
+    /// any tab's password field. Dot's login tool is a job's one way to a password, and it never shows the model one.
+    /// Code that reaches them through Python sockets gets past a word check; only guarded mode closes that.
+    static let secretTools: Set<String> = ["gopass", "pass", "gpg", "gpg2", "age", "security"]
+    static let secretText = ["gopass", ":9222", "/json/version", "devtools/browser", "remote-debugging", ".password-store"]
+    static let secretLine = "his passwords aren't a job's: on a login page call the login tool"
+
+    /// Bash under Atlas's permissions, after Atlas's deny list: anything, except a screen driver (the ring), his secrets,
+    /// and a job approving a send it queued (his yes on Dot's card).
     public static func atlasBash(_ command: String) -> JobGateDecision {
         if command.contains("dot-atlas-approve.py") { return .deny("a queued send waits for his yes on dot's card") }
+        let lower = command.lowercased()
+        if secretText.contains(where: { lower.contains($0) }) { return .deny(secretLine) }
         let (parts, subs) = split(command)
         for sub in subs {
             if case .deny(let why) = atlasBash(sub) { return .deny(why) }
@@ -271,6 +280,7 @@ public enum JobGate {
             let word = (first as NSString).lastPathComponent
             if ["bash", "zsh", "sh"].contains(word), words.count >= 3, words[1] == "-c", case .deny(let why) = atlasBash(words[2]) { return .deny(why) }
             if screenDrivers.contains(word) { return .deny("\(word) isn't in a job: drive pages and apps with the dot tools, which ring submit, send and buy for him") }
+            if secretTools.contains(word) { return .deny(secretLine) }
             if word == "atlasctl" || word == "atlas" {
                 // its subcommand: the first word that is no flag and no --root value
                 var rest = Array(words.dropFirst())

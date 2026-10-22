@@ -1,7 +1,7 @@
 import Foundation
 
 /// JSON-RPC for `Dot --hands-mcp --job <id>`, the stdio MCP server a job sees as `dot`. The server answers initialize,
-/// tools/list and ping itself and relays tools/call to the running Dot. 13 tools; no eval, no tab switching, no port
+/// tools/list and ping itself and relays tools/call to the running Dot. 16 tools; no eval, no tab switching, no port
 /// or session arguments, so a job can't leave its tab or its rules.
 public enum HandsMCPWire {
     public struct Request {
@@ -57,6 +57,8 @@ public enum HandsMCPWire {
         ("upload", "Put a file into a file input by ref: only a file he named, one you made in your output folder, or one you downloaded in this job.",
          schema(["ref": str, "path": str], required: ["ref", "path"])),
         ("show", "Bring your window in front of him (what \"show me\" does).", schema([:])),
+        ("login", "Log in on this page with his saved login for this exact site. Dot fills it itself (you never see the password), points at a robot box and waits for his tick, then presses log in.",
+         schema([:])),
         ("play", "Play music in Spotify: kind playlist, track, album or artist, and the words to find it. Start the words with \"my\" for one of his own playlists (\"my road trip\"); that never plays a public one. device: \"phone\", \"tv\" to play it there.",
          schema(["kind": ["type": "string", "enum": ["playlist", "track", "album", "artist"]], "words": str, "device": str], required: ["words"])),
         ("setting", "Flip a Mac setting at once and read it back: \"bluetooth on\", \"wifi off\", \"dark mode on\", \"volume up\", \"volume 30\", \"mute\", \"unmute\".",

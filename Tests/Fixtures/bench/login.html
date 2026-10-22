@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Dot bench - Sign in</title>
+<link rel="icon" href="data:,">
+<link rel="stylesheet" href="bench.css">
+</head>
+<body>
+<header class="bench-nav"><strong>Dot bench</strong><a href="index.html">Home</a><a href="form.html">Application form</a><a href="login.html">Sign in</a></header>
+<main>
+<h1>Sign in to Northwind Careers</h1>
+<p class="lede">A placeholder sign-in with a stand-in robot box. Nothing here is sent anywhere.</p>
+<form class="app" id="login-form" action="login-done.html" method="get">
+  <label for="email">Email<input type="email" id="email" name="email" autocomplete="username"></label>
+  <label for="password">Password<input type="password" id="password" name="password" autocomplete="current-password"></label>
+  <iframe title="dot-bench-robot" id="robot" width="304" height="78" style="border:1px solid #ccc"
+    srcdoc="&lt;label style='font:14px sans-serif'&gt;&lt;input type='checkbox' id='tick'&gt; I'm not a robot&lt;/label&gt;&lt;script&gt;document.getElementById('tick').addEventListener('change',function(){parent.document.querySelector('[name=g-recaptcha-response]').value=this.checked?'bench-token':'';});&lt;/script&gt;"></iframe>
+  <textarea name="g-recaptcha-response" style="display:none"></textarea>
+  <div class="buttons">
+    <a href="index.html" id="forgot">Forgot your password?</a>
+    <button type="submit" id="login" class="primary" data-bench-rect="login">LOGIN</button>
+    <button type="button" id="register" data-bench-rect="register">Register</button>
+  </div>
+</form>
+<p class="status" id="status" role="alert"></p>
+<script>
+(function () {
+  var form = document.getElementById('login-form'), status = document.getElementById('status');
+  form.addEventListener('submit', function (e) {
+    var ok = document.getElementById('email').value === 'sam@example.com' &&
+             document.getElementById('password').value === 'bench-pass-7311' &&
+             form.querySelector('[name=g-recaptcha-response]').value !== '';
+    if (!ok) { e.preventDefault(); status.textContent = 'Wrong email or password, or the robot box is empty.'; }
+    else { document.getElementById('password').name = ''; }
+  });
+  document.getElementById('register').addEventListener('click', function () { status.textContent = 'Register was clicked.'; });
+})();
+</script>
+</main>
+<footer>Placeholder content for Dot's bench (Tests/Fixtures/bench). Nothing on this site leaves this machine.</footer>
+<script src="bench.js"></script>
+</body>
+</html>

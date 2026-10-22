@@ -157,6 +157,10 @@ final class PageDriver {
     private var downloadsEnabled = false
     /// Files this job downloaded, which `upload` may use.
     private(set) var downloaded: [String] = []
+    /// The password Dot's login filled (memory only, gone at finish) and the fields it went into: no text a job reads
+    /// carries either (10-22).
+    var secret: String?
+    var secretNodes: Set<Int> = []
     var log: (String) -> Void = { Log.info($0) }
 
     init(port: Int, bench: Bool) {
@@ -229,6 +233,14 @@ final class PageDriver {
         }
         guard matches.count == 1 else { log("page: front tab binding found \(matches.count) matches"); return false }
         return await attach(matches[0].id, enable: true)
+    }
+
+    /// Work in one of his tabs instead (a one-session site, 10-22): its own window, if it made one, closes first, and his
+    /// tab is never closed at the end.
+    func adopt(_ tabId: String) async -> Bool {
+        if ownsWindow, let own = targetId, own != tabId { _ = await cdp.send("Target.closeTarget", ["targetId": own]) }
+        ownsWindow = false
+        return await attach(tabId, enable: true)
     }
 
     /// A window of its own behind his app. If the window takes focus anyway, his app gets it back at once, by pid.
@@ -339,7 +351,7 @@ final class PageDriver {
         return (r?["result"] as? [String: Any])?["value"]
     }
 
-    private func callOn(_ objectId: String, _ function: String) async -> [String: Any]? {
+    func callOn(_ objectId: String, _ function: String) async -> [String: Any]? {
         guard let s = sessionId else { return nil }
         let r = await cdp.send("Runtime.callFunctionOn", ["objectId": objectId, "functionDeclaration": function, "returnByValue": true, "awaitPromise": true], session: s)
         return (r?["result"] as? [String: Any])?["value"] as? [String: Any]
@@ -372,7 +384,7 @@ final class PageDriver {
 
     /// Up to `limit` seconds for the page to settle: loading done, then a quiet beat. A page still loading may not
     /// answer at all, so each check waits a second at most.
-    private func settle(limit: Double = 3) async {
+    func settle(limit: Double = 3) async {
         let deadline = Date().addingTimeInterval(limit)
         try? await Task.sleep(nanoseconds: 150_000_000)
         while Date() < deadline {
@@ -439,7 +451,7 @@ final class PageDriver {
            frames > 0 {
             note = (note.map { $0 + "\n" } ?? "") + "(part of this page is in a frame dot can't read yet: \(frames) frame\(frames == 1 ? "" : "s"); say so if what he wants is in it)"
         }
-        let snap = PageSnapshot.format(url: url, title: title, items: items, viewportHeight: viewport, all: all, note: note)
+        let snap = PageSnapshot.format(url: url, title: title, items: items, viewportHeight: viewport, all: all, note: note, hidden: secretNodes)
         refs = snap.refs
         var out = snap.text
         if text, let words = await evaluate("document.body ? document.body.innerText : ''") as? String {
@@ -449,7 +461,7 @@ final class PageDriver {
         if shot, let r = await cdp.send("Page.captureScreenshot", ["format": "jpeg", "quality": 60], session: s, timeout: 8) {
             image = r["data"] as? String
         }
-        return (out, image)
+        return (scrub(out), image)
     }
 
     // MARK: Actions
@@ -475,7 +487,7 @@ final class PageDriver {
       function nm(x) {
         let n = x.getAttribute && x.getAttribute('aria-label') || '';
         if (!n && x.id) { const l = document.querySelector('label[for="' + CSS.escape(x.id) + '"]'); if (l) n = l.innerText; }
-        if (!n) n = (x.innerText || x.value || (x.getAttribute && (x.getAttribute('title') || x.getAttribute('alt'))) || '');
+        if (!n) n = (x.innerText || (x.type === 'password' ? '' : x.value) || (x.getAttribute && (x.getAttribute('title') || x.getAttribute('alt'))) || '');
         return String(n).replace(/\\s+/g, ' ').trim().slice(0, 120);
       }
       const form = e.form || e.closest('form');
@@ -508,7 +520,7 @@ final class PageDriver {
     function name(e) {
       let n = e.getAttribute('aria-label') || '';
       if (!n && e.id) { const l = document.querySelector('label[for="' + CSS.escape(e.id) + '"]'); if (l) n = l.innerText; }
-      if (!n) n = e.getAttribute('placeholder') || e.innerText || e.value || e.getAttribute('title') || e.getAttribute('name') || '';
+      if (!n) n = e.getAttribute('placeholder') || e.innerText || (e.type === 'password' ? '' : e.value) || e.getAttribute('title') || e.getAttribute('name') || '';
       return n.replace(/\\s+/g, ' ').trim();
     }
     let best = null, bestScore = 0;
@@ -542,7 +554,7 @@ final class PageDriver {
                                formIsSearch: info["formIsSearch"] as? Bool ?? false, ancestors: info["ancestors"] as? [String] ?? [])
     }
 
-    private func mouseClick(x: Double, y: Double) async -> Bool {
+    func mouseClick(x: Double, y: Double) async -> Bool {
         guard let s = sessionId else { return false }
         for kind in ["mouseMoved", "mousePressed", "mouseReleased"] {
             var p: [String: Any] = ["type": kind, "x": x, "y": y, "button": "left", "clickCount": 1]
@@ -593,7 +605,8 @@ final class PageDriver {
         }
         _ = await callOn(t.objectId, "function() { this.focus(); if (\(replace ? "true" : "false")) { if (this.select) this.select(); else { const r = document.createRange(); r.selectNodeContents(this); const s = getSelection(); s.removeAllRanges(); s.addRange(r); } } return {}; }")
         guard await cdp.send("Input.insertText", ["text": text], session: s) != nil else { return .error("typing failed") }
-        let value = await evaluate("(function(){const e=document.activeElement; return e ? (e.value || e.innerText || '') : '';})()") as? String ?? ""
+        // The field typed into, never whatever has focus now, and never a password's value (10-22).
+        let value = (await callOn(t.objectId, "function() { return {v: this.type === 'password' ? '' : String(this.value || this.innerText || '')}; }"))?["v"] as? String ?? ""
         let pt = await point(t.info)
         var detail = value.contains(text) ? "typed it" : "typed it, but the field shows \"\(String(value.prefix(60)))\""
         if enter {
@@ -867,6 +880,8 @@ final class PageDriver {
 
     /// The job is over: its own window closes, unless it stopped at his button; the connection goes.
     func finish(keepWindow: Bool) async {
+        secret = nil
+        secretNodes = []
         if ownsWindow, !keepWindow, let id = targetId { _ = await cdp.send("Target.closeTarget", ["targetId": id]) }
         cdp.close()
     }

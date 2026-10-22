@@ -21,6 +21,31 @@ case "--job-test":
     DistributedNotificationCenter.default().postNotificationName(DotIPC.jobTest, object: nil, userInfo: ["kind": kind], deliverImmediately: true)
     print("sent to Dot")
     exit(0)
+case "--login-check":
+    // Which saved login a host gets, and whether the store gives it from here: the entry's name and the password's
+    // length, never the password (10-22).
+    let host = arguments.dropFirst().first.map(Logins.normalize) ?? ""
+    guard !host.isEmpty else { print("usage: Dot --login-check <host>"); exit(2) }
+    let done = DispatchSemaphore(value: 0)
+    Task {
+        let names = await LoginStore.names(bench: false)
+        print("store: \(names.count) names, \(names.compactMap(Logins.entry).count) logins; map: \(LoginStore.mapPath)")
+        switch Logins.match(host: host, entries: names, map: Logins.loadMap(LoginStore.mapPath)) {
+        case .one(let e):
+            let read: String
+            switch await LoginStore.password(e.name, bench: false) {
+            case .password(let p): read = "read \(p.count) chars"
+            case .empty: read = "the entry is empty (gopass insert -f \(e.name))"
+            case .unreadable: read = "couldn't read it"
+            }
+            print("\(host): \(e.name) (\(e.account ?? "account not stored")); \(read)")
+        case .several(let all): print("\(host): several (\(all.map(\.name).joined(separator: ", ")))")
+        case .none(let hint): print("\(host): no saved login\(hint.map { "; \($0)" } ?? "")")
+        }
+        done.signal()
+    }
+    while done.wait(timeout: .now() + 0.05) == .timedOut { RunLoop.main.run(until: Date().addingTimeInterval(0.05)) }
+    exit(0)
 case "--occlusion":
     // The covered check, computed by the running Dot with its own Accessibility grant: logs both verdicts.
     let point = arguments.dropFirst().first ?? ""

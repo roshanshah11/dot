@@ -644,7 +644,7 @@ class BenchServer(unittest.TestCase):
 
 
 class Fixture(unittest.TestCase):
-    PAGES = ['index', 'long', 'page1', 'page2', 'settings', 'notifications', 'email', 'jobs', 'job', 'form']
+    PAGES = ['index', 'long', 'page1', 'page2', 'settings', 'notifications', 'email', 'jobs', 'job', 'form', 'login', 'login-done']
 
     def read(self, name):
         return (FIXTURE / (name + '.html')).read_text()

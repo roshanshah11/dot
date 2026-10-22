@@ -382,6 +382,21 @@ final class JobGateTests: XCTestCase {
         XCTAssertEqual(decide("Write", ["file_path": "~/Desktop/New.pptx"], a), .deny(JobGate.saveInOutput))
     }
 
+    /// 10-22: a job's Bash read the password store and DevTools freely; the login tool is its one way to a password.
+    func testAtlasPermissionsKeepHisSecretsOut() {
+        let a = ctx(permissions: .atlas)
+        for cmd in ["gopass show -o jobs/northwind/sam@example.com", "/opt/homebrew/bin/gopass ls --flat", "env X=1 gopass show x",
+                    "python3 -c 'import subprocess; subprocess.run([\"gopass\",\"show\",\"x\"])'", "security find-generic-password -w -s x",
+                    "/usr/bin/security dump-keychain", "gpg --decrypt ~/.password-store/x.gpg", "pass show x",
+                    "curl -s http://127.0.0.1:9222/json/version", "python3 -c 'import urllib.request as u; u.urlopen(\"http://localhost:9222/json\")'",
+                    "bash -c 'gopass show x | pbcopy'"] {
+            XCTAssertTrue(denied(bash(cmd, a)), cmd)
+        }
+        for cmd in ["grep -i cybersecurity notes.txt", "echo 'pass the salt'", "ls ~/Downloads", "python3 -c 'print(9221)'"] {
+            XCTAssertEqual(bash(cmd, a), .allow, cmd)
+        }
+    }
+
     func testAtlasPermissionsLeaveTheBenchAsItWas() {
         let calls: [(String, [String: Any])] = [
             ("Bash", ["command": "ls"]), ("Bash", ["command": "python3 -c 'print(1)'"]), ("Bash", ["command": "curl https://example.com"]),
