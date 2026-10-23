@@ -141,6 +141,8 @@ final class NotesWindow: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUID
         replay = []
         generation += 1
         call("notes.load(\(Self.json(load)))")
+        window?.title = "\(course) notes"
+        if window?.isMiniaturized == true { window?.deminiaturize(nil) }
         if window?.isVisible != true || window?.alphaValue ?? 1 < 1 {
             place()
             window?.alphaValue = 0
@@ -192,6 +194,22 @@ final class NotesWindow: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUID
     /// The class is saved: the notes file and the PDF (an empty path when there is none) as links he can open.
     func finished(pdf: String, file: String) {
         call("notes.finished(\(Self.json(["pdf": pdf, "file": file])))")
+    }
+
+    /// Back in front where he left it: after he closed or minimized it mid-class ("open my notes").
+    func bringBack() {
+        guard let window else { return }
+        generation += 1
+        if window.isMiniaturized { window.deminiaturize(nil) }
+        window.alphaValue = 1
+        window.orderFrontRegardless()
+        window.makeKey()
+    }
+
+    /// His close button: hidden, not destroyed; a class goes on being written, and "open my notes" brings it back.
+    func windowShouldClose(_ sender: NSWindow) -> Bool {
+        close()
+        return false
     }
 
     func close() {
@@ -248,20 +266,19 @@ final class NotesWindow: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUID
 
     private func ensureWindow(resources: URL) {
         if window != nil { return }
-        // a thin titled strip to drag by; titled-utility rather than borderless so it moves and resizes like a window
-        // In tests it is borderless: the window server pulls a titled window back onto a display however it's placed.
-        let style: NSWindow.StyleMask = offscreen ? [.borderless, .nonactivatingPanel] : [.titled, .resizable, .utilityWindow, .nonactivatingPanel]
+        // An ordinary window: a title bar to drag by, close, minimize and zoom, and other windows can go over it ("its
+        // blocking things. u didnt even let me move it around. or minimize it", 2026-10-22; it was a floating strip with
+        // no buttons). In tests it is borderless: the window server pulls a titled window back onto a display.
+        let style: NSWindow.StyleMask = offscreen ? [.borderless, .nonactivatingPanel]
+            : [.titled, .closable, .miniaturizable, .resizable, .nonactivatingPanel]
         let w = NotesPanel(contentRect: CGRect(x: -20_000, y: -20_000, width: Self.defaultWidth, height: 700),
                            styleMask: style, backing: .buffered, defer: false)
         w.title = "Notes"
-        w.titleVisibility = .hidden
-        w.titlebarAppearsTransparent = true
-        for b in [NSWindow.ButtonType.closeButton, .miniaturizeButton, .zoomButton] { w.standardWindowButton(b)?.isHidden = true }
         w.backgroundColor = Self.ground
         w.hasShadow = true
-        w.isFloatingPanel = true
-        w.level = .floating               // after isFloatingPanel, which resets it; beside his slides, under Dot's overlay
-        w.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+        w.isFloatingPanel = false
+        w.level = .normal
+        w.collectionBehavior = [.fullScreenAuxiliary]
         w.hidesOnDeactivate = false
         w.isReleasedWhenClosed = false
         w.minSize = CGSize(width: 300, height: 320)

@@ -1695,6 +1695,11 @@ final class Talk {
 
     func openCourseNotes(_ spoken: String, classNumber: Int?) {
         phase = .idle
+        // mid-class, "open my notes" is this class's window, back in front after he closed or minimized it
+        if lectureSession != nil, let notesWindow {
+            notesWindow.bringBack()
+            return
+        }
         if spoken.lowercased().range(of: #"^(?:the )?(?:lecture )?demo(?: lecture| class)?$"#, options: .regularExpression) != nil {
             openDemoNotes()
             return
