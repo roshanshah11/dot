@@ -1479,7 +1479,9 @@ final class Talk {
 
     private var lectureOffered: Set<String> = []
 
-    /// A class on his calendar has just begun: a row in the stack with one button, for its first ten minutes.
+    /// A class on his calendar has just begun: a card in the stack with one button through the class's first ten minutes,
+    /// then its avatar until the class ends, so a late tap still starts it. (10-23: the offer was a 40 pt avatar from the
+    /// start and left after ten minutes; he never saw it, and typed lecture mode with two minutes of class left.)
     func offerLecture(now: Date = Date()) {
         guard config.lectureNotes, !lecture.isListening, let items = localCalendar.items(days: 1, now: now),
               let cls = LectureCalendar.starting(items, now: now) else { return }
@@ -1487,8 +1489,11 @@ final class Talk {
         guard !lectureOffered.contains(key) else { return }
         lectureOffered.insert(key)
         hud.upsertAgent(AgentRow(id: "lecture-offer", name: cls.course, line: "class is starting · want notes?", state: .waiting,
-                                 nextActions: [Self.takeNotesLabel], kind: .lesson, canStop: true))
-        DispatchQueue.main.asyncAfter(deadline: .now() + 600) { [weak self] in self?.hud.removeAgent(id: "lecture-offer") }
+                                 nextActions: [Self.takeNotesLabel], kind: .lesson, canStop: true, holdUntil: cls.start.addingTimeInterval(600)))
+        DispatchQueue.main.asyncAfter(deadline: .now() + max(cls.end.timeIntervalSince(now), 60)) { [weak self] in
+            guard let self, self.hud.model.agents.contains(where: { $0.id == "lecture-offer" && $0.name == cls.course }) else { return }
+            self.hud.removeAgent(id: "lecture-offer")
+        }
         Log.info("lecture: offered notes for \(cls.course) (\(cls.kind), \(LectureSession.clock(cls.start)))")
     }
 
@@ -2253,17 +2258,20 @@ final class Talk {
         if saysClose, !board.isEmpty { return .closeBoard }
         if saysClose, panels.isOpen, panels.openedRecently { return .closePanel }
         if panels.available, PanelCoach.wantsReopen(text) { return .reopenPanel }
-        if config.lectureNotes, let m = Self.lectureDemoWords.firstMatch(in: text, range: range) {
-            return .lectureDemo(Range(m.range(at: 1), in: text).map { String(text[$0]) })
+        // Lecture mode's words as he types them in class: "lecutre mode" is lecture mode (10-23).
+        let spelled = LectureWords.correctingTypos(text)
+        let spelledRange = NSRange(location: 0, length: (spelled as NSString).length)
+        if config.lectureNotes, let m = Self.lectureDemoWords.firstMatch(in: spelled, range: spelledRange) {
+            return .lectureDemo(Range(m.range(at: 1), in: spelled).map { String(spelled[$0]) })
         }
-        if Self.listenWords.firstMatch(in: text, range: range) != nil { return .listen }
+        if Self.listenWords.firstMatch(in: spelled, range: spelledRange) != nil { return .listen }
         if let m = Self.openNotesWords.firstMatch(in: text, range: range), let r = Range(m.range(at: 1), in: text) {
             let number = Range(m.range(at: 2), in: text).flatMap { Int(text[$0]) }
             return .openNotes(String(text[r]), number)
         }
         // "take notes on this" (his words in class, 10-22 11:19) starts lecture mode while a class is on his calendar.
         if config.lectureNotes, Self.takeNotesWords.firstMatch(in: text, range: range) != nil,
-           text.lowercased().contains("lecture") || text.lowercased().contains("class")
+           spelled.lowercased().contains("lecture") || text.lowercased().contains("class")
             || localCalendar.items(days: 1).flatMap({ LectureCalendar.current($0, now: Date()) }) != nil { return .listen }
         if Self.transcriptWords.firstMatch(in: text, range: range) != nil { return .showTranscript }
         // "desk mode", "study mode", "back to normal" (VI-03): his word beats the detector until he changes it.
@@ -2271,7 +2279,7 @@ final class Talk {
             if case .force(let forced) = override { return .setMode(forced) }
             return .setMode(nil)
         }
-        if lecture.isListening, Self.stopListenWords.firstMatch(in: text, range: range) != nil { return .stopListening }
+        if lecture.isListening, Self.stopListenWords.firstMatch(in: spelled, range: spelledRange) != nil { return .stopListening }
         if Self.recapWords.firstMatch(in: text, range: range) != nil, lecture.isListening || !lecture.transcript.isEmpty { return .recapLecture }
         if let match = Self.dictionaryWords.firstMatch(in: text, range: range) {
             return .dictionary(heard: nil, correct: (text as NSString).substring(with: match.range(at: 1)).trimmingCharacters(in: CharacterSet(charactersIn: "\"' ")))

@@ -505,6 +505,8 @@ struct StackChipView: View {
 
     private var text: Color { NotchInk.text }
     private var open: Bool { model.hovering == chip.id || model.expanded == chip.id }
+    /// A waiting card held up on its own (a class's "want notes?" offer): its buttons show without a hover.
+    private var heldOffer: Bool { chip.state == .waiting && (chip.holdUntil.map { model.now < $0 } ?? false) }
 
     var body: some View {
         Group {
@@ -599,7 +601,7 @@ struct StackChipView: View {
                     .frame(maxHeight: 150)
                 }
             }
-            if open, !chip.nextActions.isEmpty {
+            if open || heldOffer, !chip.nextActions.isEmpty {
                 VStack(alignment: .leading, spacing: 4) {
                     ForEach(chip.nextActions.prefix(3), id: \.self) { next in
                         Button {
