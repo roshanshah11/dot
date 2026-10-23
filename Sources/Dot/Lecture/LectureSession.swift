@@ -24,6 +24,8 @@ final class LectureSession {
     private let listener: LectureListener
     private let explainers: LectureExplainers
     private let startedAt = Date()
+    /// The day the class is on: today, except in the lecture demo (the recording's day, so "next week" lands right).
+    private let classDay: Date
     /// When the calendar says the class ends: the recall comes up a few minutes after if he hasn't ended it.
     let endsAt: Date?
     private var sentChars = 0
@@ -78,6 +80,7 @@ final class LectureSession {
         self.writer = writer
         self.window = window
         self.explainers = explainers
+        classDay = now
         fileURL = folder.appendingPathComponent("\(course) notes.md")
         let existing = (try? String(contentsOf: fileURL, encoding: .utf8)).map { CourseNotesFile.parse($0, fallbackTitle: "\(course) notes") }
         file = existing ?? CourseNotesFile(title: "\(course) notes")
@@ -106,7 +109,7 @@ final class LectureSession {
     var transcriptURL: URL {
         let f = DateFormatter(); f.dateFormat = "yyyy-MM-dd"; f.locale = Locale(identifier: "en_US_POSIX")
         return folder.appendingPathComponent("\(course) transcripts", isDirectory: true)
-            .appendingPathComponent("\(f.string(from: startedAt)) CLASS \(notes.number).md")
+            .appendingPathComponent("\(f.string(from: classDay)) CLASS \(notes.number).md")
     }
 
     func start(courseText: String) throws {
@@ -190,10 +193,13 @@ final class LectureSession {
         let clock = chunkStart
         let slide = final ? "" : String(await screenText().prefix(900))
         var lines = ["[minute \(minutes)] new speech (machine transcribed; names and terms may be misspelled):", "\"\(speech.isEmpty ? "(nothing new)" : speech)\""]
+        var newSlide: (shot: (jpeg: Data, title: String), at: String)?
         if !slide.isEmpty, Self.changed(slide, from: lastSlide) {
             lines.append("slide on his screen (OCR): \"\(slide)\"")
             lastSlide = slide
-            await captureSlide(at: clock)
+            // the picture now; the writer marks where it goes ([slide]: after what was said before the change, before what
+            // the slide brought), else it goes after this stretch's lines (the words run a few seconds behind the screen)
+            if let shot = await slideShot() { newSlide = (shot, clock) }
             boostTerms(slide)
         }
         if !edits.isEmpty {
@@ -218,6 +224,7 @@ final class LectureSession {
         let reply: (String?, Double) = await withCheckedContinuation { done in
             writer.send(lines.joined(separator: "\n"), images: photosSent.map(\.jpeg)) { text, seconds in done.resume(returning: (text, seconds)) }
         }
+        if reply.0 == nil, let newSlide { placeSlide(newSlide.shot, at: newSlide.at) }   // the stretch goes again, after it
         guard let text = reply.0 else {
             // a stuck or failed reply: a fresh writer picks up from the notes, and this stretch is sent again
             sentChars = max(0, min(sentChars, feedEnd - speech.count))
@@ -225,7 +232,7 @@ final class LectureSession {
             return
         }
         edits.removeFirst(min(sentEdits, edits.count))
-        let applied = apply(text, live: !final, at: clock)
+        let applied = apply(text, live: !final, at: clock, slide: newSlide)
         Log.info(String(format: "lecture: cycle %d (%.1f s, model %.1f s): %d words in, %@", writer.cycles, reply.1, Double(writer.lastApiMs) / 1000,
                         speech.split(separator: " ").count, applied))
         // a long class keeps one writer only so long: its context grows and its replies slow; a fresh one gets the notes
@@ -233,9 +240,11 @@ final class LectureSession {
         if !final, cyclesSinceStart >= Self.refreshEvery { restartWriter(reason: "fresh writer after \(cyclesSinceStart) cycles") }
     }
 
-    /// The writer's reply onto the notes and the window; a short summary for the log.
+    /// The writer's reply onto the notes and the window, with a new slide's picture where it marked `[slide]`; a short
+    /// summary for the log.
     @discardableResult
-    private func apply(_ reply: String, live: Bool, at clock: String? = nil) -> String {
+    private func apply(_ reply: String, live: Bool, at clock: String? = nil, slide: (shot: (jpeg: Data, title: String), at: String)? = nil) -> String {
+        var slide = slide
         let (ops, ignored) = NoteProtocol.parse(reply)
         var ops2: [NotesWindow.Op] = []
         var added = 0, rewritten = 0
@@ -271,11 +280,17 @@ final class LectureSession {
                 pendingWhy = question
             case .deadline(let due, let title, let block):
                 deadlines.append(("dl\(deadlines.count + 1)", due, title, block))
+            case .slide:
+                guard let pending = slide else { continue }
+                if !ops2.isEmpty { window.apply(ops2); ops2 = [] }
+                placeSlide(pending.shot, at: pending.at)
+                slide = nil
             case .nothing:
                 break
             }
         }
         if !ops2.isEmpty { window.apply(ops2) }
+        if let pending = slide { placeSlide(pending.shot, at: pending.at) }
         if added + rewritten > 0 { save() }
         if !ignored.isEmpty { Log.info("lecture: ignored \(ignored.count) line(s): \(Log.short(ignored.joined(separator: " | "), 200))") }
         return "+\(added) ~\(rewritten)" + (notes.title.isEmpty ? "" : " [\(Log.short(notes.title, 40))]")
@@ -337,8 +352,8 @@ final class LectureSession {
     }
 
     /// A new slide in front: its picture and title go into the notes where the lecture reached it.
-    private func captureSlide(at clock: String) async {
-        guard let shot = await slideShot(), let name = saveImage(shot.jpeg, prefix: "slide", at: Date()) else { return }
+    private func placeSlide(_ shot: (jpeg: Data, title: String), at clock: String) {
+        guard let name = saveImage(shot.jpeg, prefix: "slide", at: Date()) else { return }
         let title = shot.title.trimmingCharacters(in: .whitespacesAndNewlines)
         let block = notes.appendImage(path: "notes-images/\(name)", caption: "slide: \(title.isEmpty ? "untitled" : Log.short(title, 80))", at: clock)
         window.apply([.append(Self.windowBlock(block))])
@@ -530,7 +545,7 @@ final class LectureSession {
     private func findDeadlines() async {
         guard !notes.blocks.isEmpty else { return }
         let f = DateFormatter(); f.dateFormat = "yyyy-MM-dd (EEE)"; f.locale = Locale(identifier: "en_US_POSIX")
-        var head = "[deadlines] class date: \(f.string(from: startedAt))"
+        var head = "[deadlines] class date: \(f.string(from: classDay))"
         if let endsAt { head += ", class time \(Self.clock(startedAt))-\(Self.clock(endsAt))" }
         if !meets.isEmpty { head += ", meets \(meets)" }
         let message = head + "\n\n" + NoteWriter.resource("notes-deadlines.md") + "\n\nthe whole class's notes, with ids:\n" + notes.tail(1000).joined(separator: "\n")

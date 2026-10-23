@@ -2,6 +2,13 @@ import XCTest
 @testable import DotKit
 
 final class LectureNotesTests: XCTestCase {
+    func testSlideMarker() {
+        let (ops, ignored) = NoteProtocol.parse("- said before the slide\n[slide]\n- **key term** from the slide\n`[Slide]`\n- [slide] is text here")
+        XCTAssertEqual(ops, [.append(depth: 0, text: "said before the slide"), .slide, .append(depth: 0, text: "**key term** from the slide"), .slide,
+                             .append(depth: 0, text: "[slide] is text here")])
+        XCTAssertEqual(ignored, [])
+    }
+
     func testProtocolLines() {
         let reply = """
         ## CLASS 3 (Thu Oct 22): enzymes

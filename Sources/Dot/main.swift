@@ -175,6 +175,14 @@ case "--lecture-replay":
     replayApp.finishLaunching()
     let passed = MainActor.assumeIsolated { LectureReplay.run(Array(arguments.dropFirst())) }
     exit(passed ? 0 : 1)
+case "--lecture-demo":
+    // Lecture mode in the running Dot on the recorded class in ~/Dot/talk/lecture-demo, into a sandbox (LectureDemo).
+    func demoValue(_ flag: String) -> String? { arguments.firstIndex(of: flag).flatMap { $0 + 1 < arguments.count ? arguments[$0 + 1] : nil } }
+    var demoInfo: [String: String] = ["speed": demoValue("--speed") ?? "2", "from": demoValue("--from") ?? "0"]
+    if arguments.contains("--mute") { demoInfo["mute"] = "1" }
+    DistributedNotificationCenter.default().postNotificationName(DotIPC.lectureDemo, object: nil, userInfo: demoInfo, deliverImmediately: true)
+    print("sent to Dot: lecture demo at \(demoInfo["speed"]!)x from minute \(demoInfo["from"]!)\(demoInfo["mute"] == nil ? ", out loud" : ", muted")")
+    exit(0)
 case "--selftest":
     let selfTestApp = NSApplication.shared
     selfTestApp.setActivationPolicy(.accessory)

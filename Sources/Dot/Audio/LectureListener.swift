@@ -36,19 +36,23 @@ final class LectureListener {
     private static let segmentSeconds: TimeInterval = 180
     private var replaying = false
     private var pumpTask: Task<Void, Never>?
+    /// The recording played out loud while it's replayed (the lecture demo), in step with what the recognizer is fed.
+    private var player: AVAudioPlayer?
+    /// How far into the recording the replay has fed the recognizer, in seconds (the demo's slides follow it).
+    private(set) var replayPosition = 0.0
     /// A replay ran out of audio.
     var onReplayEnded: (() -> Void)?
     var onStatus: ((String) -> Void)?
 
     init(transcriber: Transcriber) { self.transcriber = transcriber }
 
-    /// `replay`: a recorded lecture played into the recognizer instead of the microphone, `speed` times real time
-    /// (Dot --lecture-replay, to check lecture mode end to end without a class).
-    func start(title: String, replay: URL? = nil, speed: Double = 1) async -> Bool {
+    /// `replay`: a recorded lecture played into the recognizer instead of the microphone, `speed` times real time, from
+    /// `from` seconds in, and out loud when `audible` (Dot --lecture-replay and --lecture-demo: lecture mode without a class).
+    func start(title: String, replay: URL? = nil, speed: Double = 1, from: Double = 0, audible: Bool = false) async -> Bool {
         guard !isListening else { return true }
         do {
             let fresh = try await makeStream()
-            if let replay { pump(replay, speed: speed) } else { _ = try recorder.start(stream: fresh) }
+            if let replay { pump(replay, speed: speed, from: from, audible: audible) } else { _ = try recorder.start(stream: fresh) }
             replaying = replay != nil
             stream = fresh
         } catch {
@@ -88,6 +92,8 @@ final class LectureListener {
         reader = nil
         pumpTask?.cancel()
         pumpTask = nil
+        player?.stop()
+        player = nil
         if !replaying, let url = try? recorder.stop().url { try? FileManager.default.removeItem(at: url) }
         if let stream {
             let tail = liveText, done = confirmedInSegment
@@ -187,21 +193,39 @@ final class LectureListener {
         }
     }
 
-    /// Half-second mono buffers from the file into whichever stream is current, paced to `speed` times real time.
-    private func pump(_ url: URL, speed: Double) {
+    /// Half-second mono buffers from the file into whichever stream is current, paced to `speed` times real time by the
+    /// clock (so the sound played alongside stays in step).
+    private func pump(_ url: URL, speed: Double, from: Double, audible: Bool) {
         pumpTask = Task { @MainActor [weak self] in
             guard let file = try? AVAudioFile(forReading: url) else { Log.warn("lecture: replay: can't read \(url.lastPathComponent)"); return }
             let format = file.processingFormat
             guard let mono = AVAudioFormat(commonFormat: .pcmFormatFloat32, sampleRate: format.sampleRate, channels: 1, interleaved: false) else { return }
             let frames = AVAudioFrameCount(format.sampleRate / 2)
-            Log.info(String(format: "lecture: replaying %@ (%.0f min) at %.1fx", url.lastPathComponent, Double(file.length) / format.sampleRate / 60, speed))
+            let skip = AVAudioFramePosition(max(0, from) * format.sampleRate)
+            guard skip < file.length else { Log.warn("lecture: replay: \(Int(from)) s is past the end"); return }
+            file.framePosition = skip
+            Log.info(String(format: "lecture: replaying %@ (%.0f min) from %.0f s at %.1fx%@", url.lastPathComponent, Double(file.length) / format.sampleRate / 60,
+                            from, speed, audible ? ", out loud" : ""))
+            if audible, let player = try? AVAudioPlayer(contentsOf: url) {
+                player.enableRate = true
+                player.rate = Float(min(speed, 2))
+                player.currentTime = max(0, from)
+                player.play()
+                self?.player = player
+            }
+            let began = Date()
+            var fed = 0.0
+            self?.replayPosition = max(0, from)
             while !Task.isCancelled, let self {
                 guard let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: frames), (try? file.read(into: buffer, frameCount: frames)) != nil,
                       buffer.frameLength > 0, let out = AVAudioPCMBuffer(pcmFormat: mono, frameCapacity: buffer.frameLength) else { break }
                 out.frameLength = buffer.frameLength
                 if let src = buffer.floatChannelData?[0], let dst = out.floatChannelData?[0] { dst.update(from: src, count: Int(buffer.frameLength)) }
                 await self.stream?.streamAudio(out)
-                try? await Task.sleep(nanoseconds: UInt64(0.5 / max(speed, 0.1) * 1_000_000_000))
+                fed += Double(buffer.frameLength) / format.sampleRate
+                self.replayPosition = max(0, from) + fed
+                let due = began.addingTimeInterval(fed / max(speed, 0.1)).timeIntervalSinceNow
+                if due > 0 { try? await Task.sleep(nanoseconds: UInt64(due * 1_000_000_000)) }
             }
             guard !Task.isCancelled else { return }
             Log.info("lecture: replay finished")

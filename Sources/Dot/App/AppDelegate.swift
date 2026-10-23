@@ -401,6 +401,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         center.addObserver(forName: DotIPC.stopListening, object: nil, queue: .main) { [weak self] _ in
             Task { @MainActor in await self?.talk.stopLecture() }
         }
+        // `Dot --lecture-demo [--speed 2] [--from MIN] [--mute]`: lecture mode on the recorded class, into a sandbox.
+        center.addObserver(forName: DotIPC.lectureDemo, object: nil, queue: .main) { [weak self] note in
+            let info = note.userInfo ?? [:]
+            let speed = Double(info["speed"] as? String ?? "") ?? 2
+            let from = (Double(info["from"] as? String ?? "") ?? 0) * 60
+            let audible = (info["mute"] as? String) != "1"
+            Task { @MainActor in await self?.talk.startLectureDemo(speed: speed, from: from, audible: audible) }
+        }
         // `Dot --dictionary "heard => correct"` or a bare term.
         center.addObserver(forName: DotIPC.dictionary, object: nil, queue: .main) { [weak self] note in
             guard let text = note.userInfo?["text"] as? String else { return }
@@ -512,6 +520,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let menu = NSMenu()
         menu.addItem(withTitle: "Ask by typing", action: #selector(askByTyping), keyEquivalent: "")
         menu.addItem(withTitle: "Listen to the lecture", action: #selector(toggleLecture), keyEquivalent: "")
+        menu.addItem(withTitle: "Lecture demo", action: #selector(lectureDemo), keyEquivalent: "")
         menu.addItem(withTitle: "Open Dot", action: #selector(openHome), keyEquivalent: "")
         let transcript = NSMenuItem(title: "Show the transcript", action: #selector(showTranscript), keyEquivalent: "t")
         transcript.keyEquivalentModifierMask = [.control, .command]
@@ -559,6 +568,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// Sit Dot where it is (it stops following; it can still be petted), or let it follow again. A long press on
     /// Dot does the same.
     @objc private func toggleSit() { overlay.setSitting(!overlay.isSitting) }
+    @objc private func lectureDemo() {
+        Task { @MainActor in await talk.startLectureDemo(speed: 2, from: 0, audible: true) }
+    }
     @objc private func toggleLecture() {
         Task { @MainActor in
             if talk.lecture.isListening { await talk.stopLecture() } else { await talk.startLecture(title: AccessibilityContext.capture(maxElements: 0, timeBudget: 0.1).windowTitle ?? "") }
@@ -648,6 +660,7 @@ enum DotIPC {
     static let find = Notification.Name("com.roshan.dot.find")
     static let listen = Notification.Name("com.roshan.dot.listen")
     static let stopListening = Notification.Name("com.roshan.dot.stopListening")
+    static let lectureDemo = Notification.Name("com.roshan.dot.lecture-demo")
     static let dictionary = Notification.Name("com.roshan.dot.dictionary")
     static let jobTest = Notification.Name("com.roshan.dot.job-test")
     static let occlusion = Notification.Name("com.roshan.dot.occlusion")

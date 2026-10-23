@@ -273,6 +273,8 @@ public enum NoteOp: Equatable, Sendable {
     case why(String)
     /// An announced date: when (ISO), what, and the line it was said in.
     case deadline(due: String, title: String, block: String?)
+    /// Where the new slide's picture goes among this reply's lines.
+    case slide
     case nothing
 }
 
@@ -288,6 +290,7 @@ public enum NoteProtocol {
             let body = line.trimmingCharacters(in: .whitespaces)
             if body.isEmpty || body.hasPrefix("```") { continue }
             if body.lowercased().trimmingCharacters(in: .punctuationCharacters) == "nothing" { ops.append(.nothing); continue }
+            if body.lowercased() == "[slide]" { ops.append(.slide); continue }
             if let m = line.firstMatch(of: #/^( *)[-*•]\s+(.+)$/#) {
                 var text = String(m.2).trimmingCharacters(in: .whitespaces)
                 if text.hasPrefix(NoteBlock.addedMark) { text = String(text.dropFirst(NoteBlock.addedMark.count)) }

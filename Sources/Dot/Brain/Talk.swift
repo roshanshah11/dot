@@ -1156,6 +1156,9 @@ final class Talk {
         case .stopListening:
             await stopLecture()
             return
+        case .lectureDemo:
+            await startLectureDemo(speed: 2, from: 0, audible: true)
+            return
         case .openNotes(let course, let number):
             openCourseNotes(course, classNumber: number)
         case .recapLecture:
@@ -1542,13 +1545,9 @@ final class Talk {
             Log.warn("lecture: mode failed to start: no microphone")
             return
         }
-        let window = notesWindow ?? NotesWindow()
-        notesWindow = window
         let courseText = Self.courseMapText(label: course, root: config.talkRootURL)
-        let explainers = LectureExplainers(config: config, course: courseTitle == course ? course : "\(course), \(courseTitle)\n\n" + String(courseText.prefix(4000)))
-        explainers.onShow = { [weak self] title, markup in self?.showLectureExplainer(title: title, markup: markup) ?? false }
-        let session = LectureSession(course: course, courseTitle: courseTitle, folder: school.appendingPathComponent(course, isDirectory: true),
-                                     endsAt: cls?.end, listener: lecture, writer: NoteWriter(config: config), window: window, explainers: explainers)
+        let session = makeLectureSession(course: course, courseTitle: courseTitle, folder: school.appendingPathComponent(course, isDirectory: true),
+                                         endsAt: cls?.end, courseText: courseText).session
         session.screenText = { [weak self] in await self?.lectureScreenText() ?? "" }
         session.slideShot = { await SlideShot.capture() }
         if !named.isEmpty, let upcoming = localCalendar.items(days: 14, now: now) {
@@ -1559,25 +1558,78 @@ final class Talk {
         }
         session.onAddDeadlines = { [weak self] items in self?.addDeadlinesToAtlas(items, course: course) ?? "atlas isn't reachable from here" }
         session.onFinished = { [weak self] file, pdf in self?.lectureFinished(file: file, pdf: pdf) }
-        do {
-            try session.start(courseText: courseText)
-        } catch {
-            _ = await lecture.stop()
-            hud.flash(status: "lecture mode: the note writer didn't start", for: 6)
-            Log.error("lecture: note writer failed to start: \(error)")
-            return
-        }
-        lectureSession = session
-        QuietSpeaker.quiet = true
-        hud.model.listeningLine = "lecture mode: \(course)"
-        hud.upsertAgent(AgentRow(id: "lecture", name: course, line: "taking notes; End class in the notes when it's over", state: .running, kind: .lesson, canStop: true))
-        hud.removeAgent(id: "lecture-offer")
+        guard await beginLectureSession(session, courseText: courseText, label: "lecture mode: \(course)", line: "taking notes; End class in the notes when it's over") else { return }
         Log.info("lecture: mode on for \(course) (\(courseTitle))\(cls.map { ", class until \(LectureSession.clock($0.end))" } ?? ", no class on the calendar")")
         if Self.courseMapText(label: course, root: config.talkRootURL).isEmpty || !FileManager.default.fileExists(atPath: session.folder.path) {
             prepareCourse(course: course, title: courseTitle, folder: session.folder)
         } else {
             prepareCourse(course: course, title: courseTitle, folder: session.folder, mapOnly: false, readingsOnly: true)
         }
+    }
+
+    /// The notes window, the background explainers (opening in the panel) and the session, for a class or the demo.
+    private func makeLectureSession(course: String, courseTitle: String, folder: URL, endsAt: Date?, courseText: String,
+                                    day: Date = Date()) -> (session: LectureSession, explainers: LectureExplainers) {
+        let window = notesWindow ?? NotesWindow()
+        notesWindow = window
+        let explainers = LectureExplainers(config: config, course: courseTitle == course ? course : "\(course), \(courseTitle)\n\n" + String(courseText.prefix(4000)))
+        explainers.onShow = { [weak self] title, markup in self?.showLectureExplainer(title: title, markup: markup) ?? false }
+        let session = LectureSession(course: course, courseTitle: courseTitle, folder: folder, endsAt: endsAt, listener: lecture,
+                                     writer: NoteWriter(config: config), window: window, explainers: explainers, now: day)
+        return (session, explainers)
+    }
+
+    /// The writer starts, Dot goes quiet and the stack shows the class; false (the ear stopped) when the writer didn't start.
+    private func beginLectureSession(_ session: LectureSession, courseText: String, label: String, line: String) async -> Bool {
+        do {
+            try session.start(courseText: courseText)
+        } catch {
+            _ = await lecture.stop()
+            hud.flash(status: "lecture mode: the note writer didn't start", for: 6)
+            Log.error("lecture: note writer failed to start: \(error)")
+            return false
+        }
+        lectureSession = session
+        QuietSpeaker.quiet = true
+        hud.model.listeningLine = label
+        hud.upsertAgent(AgentRow(id: "lecture", name: session.course, line: line, state: .running, kind: .lesson, canStop: true))
+        hud.removeAgent(id: "lecture-offer")
+        return true
+    }
+
+    /// `Dot --lecture-demo`: lecture mode on the recorded class in ~/Dot/talk/lecture-demo, into a fresh sandbox run
+    /// (LectureDemo): out loud at up to 2x, the slides from the recording's timeline, Atlas untouched.
+    func startLectureDemo(speed: Double, from: Double, audible: Bool) async {
+        phase = .idle
+        hud.set(phase: .hidden)
+        guard !lecture.isListening else { hud.flash(status: "lecture mode is on; End class first", for: 5); return }
+        guard let fixture = LectureDemo.load(), FileManager.default.fileExists(atPath: fixture.audioURL.path), let run = LectureDemo.newRun(fixture) else {
+            hud.flash(status: "lecture demo: no recording set up in ~/Dot/talk/lecture-demo", for: 6)
+            return
+        }
+        let speed = min(max(speed, 0.5), 8)
+        guard await lecture.start(title: "\(fixture.course) demo", replay: fixture.audioURL, speed: speed, from: from, audible: audible && speed <= 2) else {
+            hud.flash(status: "lecture demo: the recognizer didn't start", for: 6)
+            return
+        }
+        let courseText = Self.courseMapText(label: fixture.course, root: config.talkRootURL)
+        let (session, explainers) = makeLectureSession(course: fixture.course, courseTitle: fixture.title, folder: run.course, endsAt: nil,
+                                                       courseText: courseText, day: fixture.day)
+        // the recording runs `speed` times real time: cycles, pauses and explainers go by lecture time
+        session.clockScale = speed
+        explainers.readGap /= speed
+        explainers.stale /= speed
+        let slides = LectureDemo.SlideClock(fixture) { [weak lecture] in lecture?.replayPosition ?? 0 }
+        session.screenText = { slides.screenText }
+        session.slideShot = { slides.shot }
+        session.meets = fixture.meets ?? ""
+        session.pdfFolder = run.run
+        session.onAddDeadlines = { items in "demo: \(items.count) would go to Atlas; nothing was added" }
+        session.onFinished = { [weak self] file, pdf in self?.lectureFinished(file: file, pdf: pdf, demo: true) }
+        lecture.onReplayEnded = { [weak session] in Task { @MainActor in await session?.end() } }
+        let line = "demo: \(fixture.date ?? "a") recording at \(String(format: "%g", speed))x; End class in the notes any time"
+        guard await beginLectureSession(session, courseText: courseText, label: "lecture demo: \(fixture.course)", line: line) else { return }
+        Log.info("lecture: demo on for \(fixture.course) from \(Int(from)) s at \(speed)x\(audible && speed <= 2 ? ", out loud" : ""), into \(run.run.path)")
     }
 
     func stopLecture() async {
@@ -1601,13 +1653,14 @@ final class Talk {
         scheduleIdleCheck()
     }
 
-    private func lectureFinished(file: URL, pdf: URL?) {
+    private func lectureFinished(file: URL, pdf: URL?, demo: Bool = false) {
         lectureSession = nil
+        lecture.onReplayEnded = nil
         QuietSpeaker.quiet = false
         hud.model.listeningLine = nil
         hud.removeAgent(id: "lecture")
-        hud.flash(status: "notes saved: \(file.lastPathComponent)", for: 8)
-        if !benchMode { AtlasThread.shared.record(kind: "job", asked: "lecture mode: take notes in \(file.deletingPathExtension().lastPathComponent)",
+        hud.flash(status: demo ? "demo notes saved; say open my demo notes to reopen them" : "notes saved: \(file.lastPathComponent)", for: 8)
+        if !benchMode, !demo { AtlasThread.shared.record(kind: "job", asked: "lecture mode: take notes in \(file.deletingPathExtension().lastPathComponent)",
                                                   said: "saved \(file.path)" + (pdf.map { " and \($0.lastPathComponent)" } ?? "")) }
     }
 
@@ -1642,6 +1695,10 @@ final class Talk {
 
     func openCourseNotes(_ spoken: String, classNumber: Int?) {
         phase = .idle
+        if spoken.lowercased().range(of: #"^(?:the )?(?:lecture )?demo(?: lecture| class)?$"#, options: .regularExpression) != nil {
+            openDemoNotes()
+            return
+        }
         let school = URL(fileURLWithPath: DotConfig.expand("~/roshan/School"), isDirectory: true)
         let folders = ((try? FileManager.default.contentsOfDirectory(at: school, includingPropertiesForKeys: [.isDirectoryKey])) ?? [])
             .filter { (try? $0.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true }.map(\.lastPathComponent)
@@ -1659,6 +1716,24 @@ final class Talk {
         notesReview = review
         review.show()
         hud.flash(status: "\(course) \(review.heading)", for: 4)
+    }
+
+    /// "open my demo notes": the last lecture demo's notes, from its sandbox run.
+    private func openDemoNotes() {
+        guard lectureSession == nil else { hud.flash(status: "lecture mode is on; its notes are open", for: 4); return }
+        guard let fixture = LectureDemo.load(), let folder = LectureDemo.lastRun(course: fixture.course) else {
+            hud.flash(status: "no demo notes yet; run Dot --lecture-demo", for: 5)
+            return
+        }
+        let window = notesWindow ?? NotesWindow()
+        notesWindow = window
+        guard let review = NotesReview(course: fixture.course, folder: folder, classNumber: nil, window: window) else {
+            hud.flash(status: "no demo notes yet", for: 5)
+            return
+        }
+        notesReview = review
+        review.show()
+        hud.flash(status: "demo: \(fixture.course) \(review.heading)", for: 4)
     }
 
     /// The fast model picks the School folder a new course's notes go in ("Example Studies" -> the folder named by its code).
@@ -1754,7 +1829,7 @@ final class Talk {
     private enum Route: CustomStringConvertible {
         /// The basics pass: a small thing Dot does itself; a job for a new agent, never the running one.
         case act(ActionCommand), agentFresh
-        case answer, agent, think, explain, reopenPanel, closePanel, showTranscript, followUp(String), continueWalkthrough, drive, closeBoard, lessonNext, lessonBack, lessonAgain, lecture, suggestion(String), dismiss, find(String), listen, stopListening, recapLecture, openNotes(String, Int?), dictionary(heard: String?, correct: String), place(what: String, whereWord: String?), images(String)
+        case answer, agent, think, explain, reopenPanel, closePanel, showTranscript, followUp(String), continueWalkthrough, drive, closeBoard, lessonNext, lessonBack, lessonAgain, lecture, suggestion(String), dismiss, find(String), listen, stopListening, lectureDemo, recapLecture, openNotes(String, Int?), dictionary(heard: String?, correct: String), place(what: String, whereWord: String?), images(String)
         /// Round seven (G2): his spoken answer to the card on show; a named agent told, stopped or asked after.
         case consentAnswer(ConsentVoice.Answer), tellAgent(String), stopAgent(String), agentStatus(String?)
         /// Tonight's voice verbs (VO-01 to VO-13, MB-07).
@@ -1787,6 +1862,7 @@ final class Talk {
             case .find: return "find"
             case .listen: return "listen"
             case .stopListening: return "stopListening"
+            case .lectureDemo: return "lectureDemo"
             case .recapLecture: return "recapLecture"
             case .openNotes: return "openNotes"
             case .dictionary: return "dictionary"
@@ -1851,6 +1927,7 @@ final class Talk {
     private static let transcriptWords = try! NSRegularExpression(pattern: #"^(?:dot,? )?(?:show|open|pull up|bring up)(?: me)? (?:the |my |our |today's )?(?:whole |full )?(?:transcript|conversation)(?: so far)?\W*$"#, options: .caseInsensitive)
     private static let openNotesWords = try! NSRegularExpression(pattern: #"^(?:(?:dot,? )?(?:can you |please )?)?(?:open|show|pull up|bring up|reopen)(?: me)? (?:my |the )?(.+?) (?:class |lecture )?notes(?: (?:from|for) (?:class|lecture) (\d+))?\W*$"#, options: .caseInsensitive)
     private static let takeNotesWords = try! NSRegularExpression(pattern: #"^(?:(?:dot,? )?(?:can you |could you |please )?)?(?:take|write|start taking) (?:my |the |some )?(?:lecture |class )?notes(?: (?:on|for|of) (?:this|the|my|this) ?(?:lecture|class|talk)?)?(?: for me)?\W*$"#, options: .caseInsensitive)
+    private static let lectureDemoWords = try! NSRegularExpression(pattern: #"^(?:(?:dot,? )?(?:can you |please )?)?(?:run |start |show me |play |do )?(?:the |a |me the )?(?:lecture(?: mode)? demo|demo (?:of )?(?:the )?lecture mode)\W*$"#, options: .caseInsensitive)
     private static let stopListenWords = try! NSRegularExpression(pattern: #"^(?:(?:dot,? )?stop listening|(?:the )?lecture(?:'s| is)? (?:over|done|finished)|end (?:the )?lecture|lecture mode off|stop the lecture)\W*$"#, options: .caseInsensitive)
     private static let recapWords = try! NSRegularExpression(pattern: #"^(?:(?:can you |could you |please )?(?:recap|summarize|summarise|sum up|review|go over) (?:the |this |today's )?(?:lecture|class|talk)|what did i miss(?: in (?:the )?lecture)?|what (?:was|is) (?:the |this )?lecture about)\W*$"#, options: .caseInsensitive)
 
@@ -2155,6 +2232,7 @@ final class Talk {
         if saysClose, !board.isEmpty { return .closeBoard }
         if saysClose, panels.isOpen, panels.openedRecently { return .closePanel }
         if panels.available, PanelCoach.wantsReopen(text) { return .reopenPanel }
+        if config.lectureNotes, Self.lectureDemoWords.firstMatch(in: text, range: range) != nil { return .lectureDemo }
         if Self.listenWords.firstMatch(in: text, range: range) != nil { return .listen }
         if let m = Self.openNotesWords.firstMatch(in: text, range: range), let r = Range(m.range(at: 1), in: text) {
             let number = Range(m.range(at: 2), in: text).flatMap { Int(text[$0]) }

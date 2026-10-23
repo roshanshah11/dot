@@ -49,6 +49,7 @@ Only these lines, one item per line:
 - `~d12: text` rewrites your own block d12 with the full new text. It keeps its depth. Only for a block shown as `dot`.
 - `## title` sets this class's title.
 - `? topic | why` opens an explainer for him in the side panel right now.
+- `[slide]` marks where the new slide's picture goes, when the message has a `slide on his screen` line: after the lines about what was said before the slide changed, before the first line that comes from the slide or from talk about it. At most one per reply. Without it the picture goes after all your lines.
 - `nothing` when this stretch adds nothing to the notes.
 
 No other text: no greeting, no "Here are the notes", no explanation, no code fences, no backticks around a line, no notes about the transcript quality. If you are unsure, send `nothing`.
