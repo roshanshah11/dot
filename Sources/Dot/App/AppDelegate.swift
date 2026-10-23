@@ -401,13 +401,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         center.addObserver(forName: DotIPC.stopListening, object: nil, queue: .main) { [weak self] _ in
             Task { @MainActor in await self?.talk.stopLecture() }
         }
-        // `Dot --lecture-demo [--speed 2] [--from MIN] [--mute]`: lecture mode on the recorded class, into a sandbox.
+        // `Dot --lecture-demo [name] [--speed 2] [--from MIN] [--mute]`: lecture mode on a recorded class, into a sandbox.
         center.addObserver(forName: DotIPC.lectureDemo, object: nil, queue: .main) { [weak self] note in
             let info = note.userInfo ?? [:]
             let speed = Double(info["speed"] as? String ?? "") ?? 2
             let from = (Double(info["from"] as? String ?? "") ?? 0) * 60
             let audible = (info["mute"] as? String) != "1"
-            Task { @MainActor in await self?.talk.startLectureDemo(speed: speed, from: from, audible: audible) }
+            let name = (info["name"] as? String).flatMap { $0.isEmpty ? nil : $0 }
+            Task { @MainActor in await self?.talk.startLectureDemo(name: name, speed: speed, from: from, audible: audible) }
         }
         // `Dot --dictionary "heard => correct"` or a bare term.
         center.addObserver(forName: DotIPC.dictionary, object: nil, queue: .main) { [weak self] note in

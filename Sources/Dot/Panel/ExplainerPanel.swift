@@ -36,7 +36,44 @@ final class ExplainerPanel: NSObject, NSWindowDelegate, WKNavigationDelegate, WK
     }
 
     var available: Bool { resources != nil }
-    var isOpen: Bool { window?.isVisible ?? false }
+    var isOpen: Bool { dockHost != nil ? currentID != nil && dockHost?.window?.isVisible == true : window?.isVisible ?? false }
+
+    /// The lecture window's board (2026-10-22: "just one window... the notes/board everything combined"): while it is
+    /// open the panel's page lives there instead of floating, and every explanation (the lecture's and his own questions')
+    /// opens in it. nil puts the page back in its own window, hidden.
+    private(set) var dockHost: NSView?
+
+    func dock(into host: NSView?) {
+        guard let resources, host !== dockHost else { return }
+        ensureWindow(resources: resources)
+        guard let web, let window else { return }
+        dockHost = host
+        web.removeFromSuperview()
+        if let host {
+            window.orderOut(nil)
+            web.frame = host.bounds
+            web.autoresizingMask = [.width, .height]
+            host.addSubview(web)
+            if currentID == nil { showEmptyBoard() }
+            Log.info("panel: on the lecture window's board")
+        } else {
+            // what was on the board stays in the page: it is back on the board when he is
+            web.frame = window.contentView?.bounds ?? .zero
+            window.contentView?.addSubview(web)
+            Log.info("panel: back on its own")
+        }
+    }
+
+    var dockedForTests: Bool { dockHost != nil && web?.superview === dockHost }
+    var floatingForTests: Bool { window?.isVisible ?? false }
+
+    /// The board before anything is explained.
+    private func showEmptyBoard() {
+        call("panel.load(\(Self.js(Self.emptyBoard)), {id: \"board\", title: \"board\"})")
+    }
+
+    static let emptyBoard = "<text color=\"muted\">explanations open here when the lecture pauses. tap the dot by a line in the notes to open its explanation again.</text>"
+
 
     // MARK: Driving it
 
@@ -48,8 +85,12 @@ final class ExplainerPanel: NSObject, NSWindowDelegate, WKNavigationDelegate, WK
         currentID = id
         currentTitle = title
         self.markup = markup
-        place(on: screen ?? NSScreen.main, avoid: avoid)
         call("panel.load(\(Self.js(markup)), {id: \(Self.js(id)), title: \(Self.js(title))})")
+        if dockHost != nil {
+            Log.info("panel: open \(id) \"\(Log.short(title, 60))\" on the board (\(markup.count) chars)")
+            return
+        }
+        place(on: screen ?? NSScreen.main, avoid: avoid)
         if window?.isVisible != true {
             window?.alphaValue = 0
             window?.orderFrontRegardless()
@@ -81,6 +122,12 @@ final class ExplainerPanel: NSObject, NSWindowDelegate, WKNavigationDelegate, WK
     }
 
     func close() {
+        if dockHost != nil {
+            // on the board, closing one explanation leaves the board, not a hole in the window
+            currentID = nil
+            showEmptyBoard()
+            return
+        }
         guard let window, window.isVisible else { return }
         NSAnimationContext.runAnimationGroup({ ctx in ctx.duration = 0.18; window.animator().alphaValue = 0 }) { [weak window] in
             Task { @MainActor in window?.orderOut(nil) }

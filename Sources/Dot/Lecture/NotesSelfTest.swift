@@ -337,6 +337,26 @@ enum NotesSelfTest {
         check(sent(.edit(id: "d2", text: "fixed after class")), "editing in review mode sends edit as live does")
         _ = js("notes._test.blur()")
 
+        // 6: one window: the board beside the notes, with the explainer panel living in it
+        let panes = notes.paneWidthsForTests
+        check(notes.boardHost != nil && abs(panes.notes - NotesWindow.defaultWidth) < 2 && panes.board > 300,
+              "the board sits beside the notes in the same window (notes \(Int(panes.notes)) pt, board \(Int(panes.board)) pt)")
+        let explainer = ExplainerPanel(accentHex: "#ff6b2c")
+        if explainer.available, let host = notes.boardHost {
+            explainer.dock(into: host)
+            explainer.open(id: "selftest", title: "kernel of a map", markup: "<lead>the kernel is what the map sends to 0</lead>", screen: nil)
+            spin(0.6)
+            check(explainer.dockedForTests && !explainer.floatingForTests && explainer.isOpen, "an explanation opens on the board, not in a floating panel")
+            explainer.close()
+            check(explainer.dockedForTests && !explainer.isOpen, "closing it leaves the board in the window")
+            explainer.dock(into: nil)
+            check(!explainer.dockedForTests && !explainer.floatingForTests, "with the window gone the panel goes back to its own window, hidden")
+        } else {
+            check(false, "the explainer panel's page is available to put on the board")
+        }
+        check(NotesMessage(["type": "close"]) == .close, "the saved class's close button closes the whole window")
+        check(!notes.isOnAnyDisplay, "the window is still off every display")
+
         // the course file as a PDF
         let pdf = folder.appendingPathComponent("COURSE 101 notes.pdf")
         let exported = Box<String?>(nil)

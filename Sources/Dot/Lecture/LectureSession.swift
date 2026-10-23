@@ -342,6 +342,9 @@ final class LectureSession {
 
     // MARK: Pictures: board photos and slides
 
+    /// A board photo from elsewhere than his Downloads (the lecture demo's timeline).
+    func addBoardPhoto(_ jpeg: Data) { boardPhoto(jpeg, at: Date()) }
+
     /// A board photo: saved next to the notes, shown in them, and read by the writer on the next cycle.
     private func boardPhoto(_ jpeg: Data, at: Date) {
         guard phase == .live, let name = saveImage(jpeg, prefix: "board", at: at) else { return }
@@ -433,7 +436,7 @@ final class LectureSession {
         case .explain(let id, let text):
             explainers.request(topic: text, why: "he tapped this line in his notes", line: id, context: explainContext(), tapped: true)
         case .showExplain(let id):
-            if let ready = explainers.readyID(forLine: id) { explainers.show(ready) }
+            if let ready = explainers.readyID(forLine: id) { explainers.show(ready) } else { explainers.reshow(line: id) }
         case .source(let id):
             if let found = source(for: id) { window.showSource(id: id, time: found.time, text: found.text) }
             else { window.showSource(id: id, time: "", text: "no transcript for this line") }
@@ -445,6 +448,8 @@ final class LectureSession {
             Task { await addDeadlines(ids) }
         case .end:
             Task { await end() }
+        case .close:
+            break   // the window closes itself
         }
     }
 

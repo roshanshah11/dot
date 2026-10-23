@@ -22,6 +22,8 @@ enum NotesMessage: Equatable {
     case showExplain(id: String)
     /// The deadlines he kept checked (empty: Skip).
     case addDeadlines([String])
+    /// He closed the saved class: the whole window goes.
+    case close
 
     init?(_ body: Any) {
         guard let d = body as? [String: Any], let type = d["type"] as? String else { return nil }
@@ -42,17 +44,19 @@ enum NotesMessage: Equatable {
         case "source": guard let id else { return nil }; self = .source(id: id)
         case "showExplain": guard let id else { return nil }; self = .showExplain(id: id)
         case "addDeadlines": self = .addDeadlines(d["ids"] as? [String] ?? [])
+        case "close": self = .close
         default: return nil
         }
     }
 }
 
-/// The notes window for lecture mode (plan 2026-10-22: "Dot writes, I add"): the class's notes as an outline that Dot
-/// appends to while he types in the same lines, rendered by Resources/board/notes. It docks to the left edge of the
-/// screen he is using (the explainer panel docks right), takes his typing without making Dot the active app, and makes
-/// the course file's PDF after class.
+/// The lecture window (plan 2026-10-22: "Dot writes, I add"; round three the same day: "just one window... the
+/// notes/board everything combined... side by side... one full screen thing. and then if im not looking i can just swipe
+/// and do smth else but then can always come back"). The class's notes on the left, an outline that Dot appends to while
+/// he types in the same lines (Resources/board/notes); the board on the right, where Dot's explainer panel lives while
+/// this window is open (`onBoard`). It fills its own Space, makes the course file's PDF after class, and closes as one.
 @MainActor
-final class NotesWindow: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUIDelegate {
+final class NotesWindow: NSObject, NSWindowDelegate, NSSplitViewDelegate, WKNavigationDelegate, WKUIDelegate {
     /// One line of the notes as the page draws it. `author` is "dot", "him" or "added"; `kind` is "bullet", "image" (a
     /// board photo) or "slide" (`text` is the slide's title); `src` is an image path relative to the course folder; `at`
     /// is the clock time the line came from ("11:42:10"), which gives it a time chip.
@@ -84,9 +88,18 @@ final class NotesWindow: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUID
     }
 
     var frameForTests: CGRect { window?.frame ?? .zero }
+    var paneWidthsForTests: (notes: CGFloat, board: CGFloat) { (web?.frame.width ?? 0, boardHost?.frame.width ?? 0) }
 
-    private var window: NotesPanel?
+    private var window: RoomWindow?
     private var web: WKWebView?
+    private var split: NSSplitView?
+    /// The right side, where the explainer panel's page goes while this window is open.
+    private(set) var boardHost: NSView?
+    /// The board is here (a view) or gone (nil): Talk moves the explainer panel in and out.
+    var onBoard: ((NSView?) -> Void)?
+    /// Shown, it fills its own Space (off in tests, which keep it off every display).
+    var fullScreen = true
+    private var closingFromFullScreen = false
     private var relay: PanelRelay?
     private var files: NotesFiles?
     private var ready = false
@@ -100,6 +113,9 @@ final class NotesWindow: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUID
     private var accentHex: String
 
     static let frameKey = "notesWindowFrame"
+    static let splitKey = "lectureWindowSplit"
+    /// The notes' share of the width.
+    static let defaultSplit: CGFloat = 0.56
     static let defaultWidth: CGFloat = 400
     static let margin: CGFloat = 10
 
@@ -143,11 +159,10 @@ final class NotesWindow: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUID
         call("notes.load(\(Self.json(load)))")
         window?.title = "\(course) notes"
         if window?.isMiniaturized == true { window?.deminiaturize(nil) }
-        if window?.isVisible != true || window?.alphaValue ?? 1 < 1 {
+        if window?.isVisible != true || window?.alphaValue ?? 1 < 1 || closingFromFullScreen {
+            closingFromFullScreen = false
             place()
-            window?.alphaValue = 0
-            window?.orderFrontRegardless()
-            NSAnimationContext.runAnimationGroup { ctx in ctx.duration = 0.2; window?.animator().alphaValue = 1 }
+            present()
         }
         Log.info("notes: show \(course) \(heading) (\(blocks.count) lines)")
     }
@@ -196,14 +211,47 @@ final class NotesWindow: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUID
         call("notes.finished(\(Self.json(["pdf": pdf, "file": file])))")
     }
 
-    /// Back in front where he left it: after he closed or minimized it mid-class ("open my notes").
+    /// Back in front, in its Space, after he closed or minimized it mid-class ("open my notes").
     func bringBack() {
         guard let window else { return }
         generation += 1
+        closingFromFullScreen = false
         if window.isMiniaturized { window.deminiaturize(nil) }
+        if !window.isVisible { place() }
+        present()
+    }
+
+    /// In front with the board beside the notes; a live window takes its own Space (full screen), so he swipes to his
+    /// slides or anything else and back. Tests: in front of nothing, off every display.
+    private func present() {
+        guard let window else { return }
         window.alphaValue = 1
-        window.orderFrontRegardless()
-        window.makeKey()
+        if offscreen { window.orderFrontRegardless(); return }
+        NSApp.activate(ignoringOtherApps: true)
+        window.makeKeyAndOrderFront(nil)
+        if fullScreen, !window.styleMask.contains(.fullScreen) { window.toggleFullScreen(nil) }
+        watchSpaces()
+        syncBoard()
+    }
+
+    /// He is looking at this window (it is up, on the Space in front).
+    var isInView: Bool { window?.isVisible == true && window?.isOnActiveSpace == true && !closingFromFullScreen }
+
+    /// The explainer panel is on the board while he is looking at this window; swiped away, it floats for his own
+    /// questions as usual (the lecture's explainers wait for him to come back).
+    private func syncBoard() {
+        guard !offscreen else { return }
+        onBoard?(isInView ? boardHost : nil)
+    }
+
+    private var spaceObserver: NSObjectProtocol?
+
+    private func watchSpaces() {
+        guard spaceObserver == nil else { return }
+        spaceObserver = NSWorkspace.shared.notificationCenter.addObserver(forName: NSWorkspace.activeSpaceDidChangeNotification, object: nil,
+                                                                          queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated { self?.syncBoard() }
+        }
     }
 
     /// His close button: hidden, not destroyed; a class goes on being written, and "open my notes" brings it back.
@@ -215,11 +263,32 @@ final class NotesWindow: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUID
     func close() {
         call("notes.flush()")   // a line he was mid-way through still reaches Dot
         guard let window, window.isVisible else { return }
+        if window.styleMask.contains(.fullScreen) {
+            // out of its Space first; windowDidExitFullScreen hides it
+            closingFromFullScreen = true
+            window.toggleFullScreen(nil)
+            return
+        }
+        hide()
+    }
+
+    private func hide() {
+        guard let window else { return }
         let closing = generation
         NSAnimationContext.runAnimationGroup({ ctx in ctx.duration = 0.18; window.animator().alphaValue = 0 }) { [weak self, weak window] in
             Task { @MainActor in if self?.generation == closing { window?.orderOut(nil) } }
         }
+        onBoard?(nil)
         Log.info("notes: closed")
+    }
+
+    func windowDidExitFullScreen(_ notification: Notification) {
+        if closingFromFullScreen { closingFromFullScreen = false; hide() }
+    }
+
+    func windowDidEnterFullScreen(_ notification: Notification) {
+        applySplit()
+        Log.info("notes: full screen, notes \(Int(paneWidthsForTests.notes)) pt and board \(Int(paneWidthsForTests.board)) pt")
     }
 
     /// The notes in the order he sees them, with his unsent changes sent first. Dot's lines go above the line he is
@@ -266,22 +335,20 @@ final class NotesWindow: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUID
 
     private func ensureWindow(resources: URL) {
         if window != nil { return }
-        // An ordinary window: a title bar to drag by, close, minimize and zoom, and other windows can go over it ("its
-        // blocking things. u didnt even let me move it around. or minimize it", 2026-10-22; it was a floating strip with
-        // no buttons). In tests it is borderless: the window server pulls a titled window back onto a display.
-        let style: NSWindow.StyleMask = offscreen ? [.borderless, .nonactivatingPanel]
-            : [.titled, .closable, .miniaturizable, .resizable, .nonactivatingPanel]
-        let w = NotesPanel(contentRect: CGRect(x: -20_000, y: -20_000, width: Self.defaultWidth, height: 700),
+        // An ordinary window: a title bar to drag by, close, minimize and full screen, and other windows can go over it
+        // ("its blocking things. u didnt even let me move it around. or minimize it", 2026-10-22; it was a floating strip
+        // with no buttons). In tests it is borderless: the window server pulls a titled window back onto a display.
+        let style: NSWindow.StyleMask = offscreen ? [.borderless] : [.titled, .closable, .miniaturizable, .resizable]
+        let w = RoomWindow(contentRect: CGRect(x: -20_000, y: -20_000, width: Self.defaultWidth * 2, height: 700),
                            styleMask: style, backing: .buffered, defer: false)
         w.title = "Notes"
         w.backgroundColor = Self.ground
         w.hasShadow = true
-        w.isFloatingPanel = false
         w.level = .normal
-        w.collectionBehavior = [.fullScreenAuxiliary]
+        w.collectionBehavior = offscreen ? [] : [.fullScreenPrimary]
         w.hidesOnDeactivate = false
         w.isReleasedWhenClosed = false
-        w.minSize = CGSize(width: 300, height: 320)
+        w.minSize = CGSize(width: 680, height: 420)
         w.sharingType = CardPanel.visibleInRecordings ? .readOnly : .none
         w.delegate = self
 
@@ -291,18 +358,33 @@ final class NotesWindow: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUID
         let relay = PanelRelay()
         relay.onMessage = { [weak self] body in self?.received(body) }
         configuration.userContentController.add(relay, name: "notes")
-        let web = WKWebView(frame: w.contentView?.bounds ?? .zero, configuration: configuration)
-        web.autoresizingMask = [.width, .height]
+        // notes left, the board right; the divider drags, and its place is kept
+        let split = NSSplitView(frame: w.contentView?.bounds ?? .zero)
+        split.isVertical = true
+        split.dividerStyle = .thin
+        split.autoresizingMask = [.width, .height]
+        split.delegate = self
+        let web = WKWebView(frame: CGRect(x: 0, y: 0, width: Self.defaultWidth, height: 700), configuration: configuration)
         web.setValue(false, forKey: "drawsBackground")
         web.navigationDelegate = self
         web.uiDelegate = self
-        w.contentView?.addSubview(web)
+        let board = NSView(frame: CGRect(x: 0, y: 0, width: Self.defaultWidth, height: 700))
+        board.wantsLayer = true
+        board.layer?.backgroundColor = Self.boardGround.cgColor
+        split.addArrangedSubview(web)
+        split.addArrangedSubview(board)
+        w.contentView?.addSubview(split)
         web.load(URLRequest(url: NotesFiles.url(for: resources.appendingPathComponent("notes/notes.html"))))
         window = w
+        self.split = split
+        boardHost = board
         self.web = web
         self.relay = relay
         self.files = files
     }
+
+    /// The explainer panel's ground (it is always dark), under the board before the panel's page is in.
+    private static let boardGround = NSColor(srgbRed: 0.063, green: 0.059, blue: 0.051, alpha: 1)
 
     /// The page's own ground, so nothing flashes before the first paint.
     private static let ground = NSColor(name: nil) { appearance in
@@ -310,32 +392,52 @@ final class NotesWindow: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUID
             ? NSColor(srgbRed: 0.051, green: 0.047, blue: 0.043, alpha: 1) : NSColor(srgbRed: 0.984, green: 0.98, blue: 0.969, alpha: 1)
     }
 
-    /// Where he left it when that is on the screen he is using; else docked to that screen's left edge, full height.
+    /// Out of full screen: where he left it on the screen he is using, else that whole screen. Tests: off every display,
+    /// the notes at their usual width with the board beside them.
     private func place() {
         guard let window else { return }
         placing = true
         defer { placing = false }
         if offscreen {
-            (window as? NotesPanel)?.keepOffscreen = true
-            window.setFrame(CGRect(x: -20_000, y: -20_000, width: Self.defaultWidth, height: 900), display: true)
+            window.keepOffscreen = true
+            window.setFrame(CGRect(x: -20_000, y: -20_000, width: Self.defaultWidth * 2, height: 900), display: true)
+            split?.setPosition(Self.defaultWidth, ofDividerAt: 0)
             return
         }
         let mouse = NSEvent.mouseLocation
         guard let screen = NSScreen.screens.first(where: { NSMouseInRect(mouse, $0.frame, false) }) ?? NSScreen.main else { return }
         let visible = screen.visibleFrame
         let saved = UserDefaults.standard.string(forKey: Self.frameKey).map(NSRectFromString) ?? .zero
-        if saved.width >= 300, visible.contains(CGPoint(x: saved.midX, y: saved.midY)) {
-            window.setFrame(saved.intersection(visible), display: true)
-            return
-        }
-        let width = min(saved.width >= 300 ? saved.width : Self.defaultWidth, visible.width * 0.5)
-        window.setFrame(CGRect(x: visible.minX + Self.margin, y: visible.minY + Self.margin, width: width,
-                               height: visible.height - 2 * Self.margin), display: true)
+        let frame = saved.width >= 680 && visible.contains(CGPoint(x: saved.midX, y: saved.midY)) ? saved.intersection(visible) : visible
+        window.setFrame(frame, display: true)
+        applySplit()
+    }
+
+    /// The divider where he left it (the notes' share of the width).
+    private func applySplit() {
+        guard let split, !offscreen else { return }
+        let saved = UserDefaults.standard.double(forKey: Self.splitKey)
+        let share = saved > 0.2 && saved < 0.8 ? CGFloat(saved) : Self.defaultSplit
+        placing = true
+        split.setPosition((split.bounds.width * share).rounded(), ofDividerAt: 0)
+        placing = false
     }
 
     private func remember() {
-        guard let window, !offscreen, !placing else { return }
+        guard let window, !offscreen, !placing, !window.styleMask.contains(.fullScreen) else { return }
         UserDefaults.standard.set(NSStringFromRect(window.frame), forKey: Self.frameKey)
+    }
+
+    func splitView(_ splitView: NSSplitView, constrainMinCoordinate proposed: CGFloat, ofSubviewAt index: Int) -> CGFloat { max(proposed, 320) }
+    func splitView(_ splitView: NSSplitView, constrainMaxCoordinate proposed: CGFloat, ofSubviewAt index: Int) -> CGFloat {
+        min(proposed, splitView.bounds.width - 320)
+    }
+
+    /// He dragged the divider: keep its place for next time.
+    func splitViewDidResizeSubviews(_ notification: Notification) {
+        guard let split, !offscreen, !placing, NSApp.currentEvent?.type == .leftMouseDragged, split.bounds.width > 0,
+              let notes = split.arrangedSubviews.first else { return }
+        UserDefaults.standard.set(Double(notes.frame.width / split.bounds.width), forKey: Self.splitKey)
     }
 
     func windowDidMove(_ notification: Notification) { remember() }
@@ -396,6 +498,7 @@ final class NotesWindow: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUID
             return
         }
         guard let message = NotesMessage(body) else { Log.warn("notes: unknown message \(Log.short("\(body)", 200))"); return }
+        if message == .close { close() }
         if message == .ready {
             ready = true
             let pending = queued
@@ -432,8 +535,15 @@ final class NotesWindow: NSObject, NSWindowDelegate, WKNavigationDelegate, WKUID
     }
 }
 
-/// Takes his typing without making Dot the active app; ⌘C ⌘V ⌘X ⌘A ⌘Z reach the line he is in (KeyablePanel).
-final class NotesPanel: KeyablePanel {
+/// The lecture window: an ordinary window that can fill a Space; ⌘C ⌘V ⌘X ⌘A ⌘Z reach the line he is in (EditKeys).
+final class RoomWindow: NSWindow {
+    override var canBecomeKey: Bool { true }
+    override var canBecomeMain: Bool { true }
+
+    override func performKeyEquivalent(with event: NSEvent) -> Bool {
+        EditKeys.perform(event, in: self) || super.performKeyEquivalent(with: event)
+    }
+
     /// Tests keep it off every display. A titled window is pulled back onto a screen when it is shown, which put the
     /// replay's notes on his screen for eight minutes (2026-10-22 12:56, "yo get ts off my screen").
     var keepOffscreen = false

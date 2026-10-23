@@ -25,6 +25,8 @@ final class LectureExplainers {
     private var running: [String: ClaudeSession] = [:]
     private var replies: [String: String] = [:]
     private var shownAt = Date.distantPast
+    /// Shown ones by their line, so tapping the line's marker opens one again.
+    private var past: [String: (topic: String, markup: String)] = [:]
     private var counter = 0
 
     static let parallel = 2
@@ -140,8 +142,15 @@ final class LectureExplainers {
         items.remove(at: index)
         shownAt = Date()
         shown += 1
-        if let line = item.line { onMark?(line, "shown") }
+        if let line = item.line { onMark?(line, "shown"); past[line] = (item.topic, markup) }
         Log.info("lecture: explainer \(id) shown: \"\(Log.short(item.topic, 60))\" (\(items.count) waiting)")
+    }
+
+    /// One already shown on this line, open again (he tapped its marker).
+    @discardableResult
+    func reshow(line: String) -> Bool {
+        guard let item = past[line] else { return false }
+        return onShow?(item.topic, item.markup) == true
     }
 
     /// The ready one marked on this line, if any.

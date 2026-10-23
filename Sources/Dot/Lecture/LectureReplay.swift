@@ -13,8 +13,9 @@ enum LectureReplay {
     static func run(_ args: [String]) -> Bool {
         func value(_ flag: String) -> String? { args.firstIndex(of: flag).flatMap { $0 + 1 < args.count ? args[$0 + 1] : nil } }
         let flagged = Set(args.indices.filter { args[$0].hasPrefix("--") }.map { $0 + 1 })
-        let demo = args.contains("--demo") ? LectureDemo.load() : nil
-        if args.contains("--demo"), demo == nil { print("FAIL: no demo.json in \(LectureDemo.root.path)"); return false }
+        let demoName = value("--demo").flatMap { $0.hasPrefix("--") ? nil : $0 }
+        let demo = args.contains("--demo") ? LectureDemo.load(demoName) : nil
+        if args.contains("--demo"), demo == nil { print("FAIL: no \(demoName ?? "default") demo in \(LectureDemo.root.path)"); return false }
         guard let audioPath = demo?.audio ?? args.indices.first(where: { !args[$0].hasPrefix("--") && !flagged.contains($0) }).map({ args[$0] }) else {
             print("usage: Dot --lecture-replay <audio>|--demo [--speed 4] [--course NAME] [--materials FOLDER] [--out FOLDER] [--recall TEXT] [--minutes N] [--from MIN]")
             return false
@@ -54,9 +55,10 @@ enum LectureReplay {
                                      writer: NoteWriter(config: config), window: window, explainers: explainers, now: demo?.day ?? Date())
         session.watchPhotos = false
         if let demo {
-            let slides = LectureDemo.SlideClock(demo) { [weak listener] in listener?.replayPosition ?? 0 }
-            session.screenText = { slides.screenText }
-            session.slideShot = { slides.shot }
+            let timeline = LectureDemo.Timeline(demo) { [weak listener] in listener?.replayPosition ?? 0 }
+            session.screenText = { timeline.screenText }
+            session.slideShot = { timeline.shot }
+            timeline.startBoards { [weak session] jpeg in session?.addBoardPhoto(jpeg) }
             session.meets = demo.meets ?? ""
             session.onAddDeadlines = { items in "demo: \(items.count) would go to Atlas; nothing was added" }
         }

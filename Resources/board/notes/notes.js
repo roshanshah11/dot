@@ -402,7 +402,8 @@
         openSource(l, l.at, "");
         post({type: "source", id: l.id});
       } else if (t.closest(".xdot")) {
-        if (state.marks[l.id] === "ready") post({type: "showExplain", id: l.id});
+        // a ready one opens on the board now; a shown one opens there again
+        if (state.marks[l.id] === "ready" || state.marks[l.id] === "shown") post({type: "showExplain", id: l.id});
       } else if (t.tagName === "IMG" && l.kind !== "bullet") {
         openLightbox(t.src, l.text);
       }
@@ -662,9 +663,9 @@
     head.appendChild(h("span", null, "saved"));
     var close = h("button", null, "close"); close.type = "button";
     close.addEventListener("click", function () {
-      // closes what the class ended with; deadlines he has not answered stay
+      // the class is done: the whole window goes, unless deadlines he has not answered are still up (they stay)
       els.recall.hidden = true; els.saved.hidden = true;
-      if (!els.deadlineBar.hidden && !els.deadlines.hidden) showDock(); else hideDock();
+      if (!els.deadlineBar.hidden && !els.deadlines.hidden) showDock(); else { hideDock(); post({type: "close"}); }
     });
     head.appendChild(close);
     els.saved.appendChild(head);
