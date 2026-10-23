@@ -177,9 +177,10 @@ case "--lecture-replay":
     exit(passed ? 0 : 1)
 case "--lecture-demo":
     // Lecture mode in the running Dot on the recorded class in ~/Dot/talk/lecture-demo, into a sandbox (LectureDemo).
-    func demoValue(_ flag: String) -> String? { arguments.firstIndex(of: flag).flatMap { $0 + 1 < arguments.count ? arguments[$0 + 1] : nil } }
+    let demoArgs = Array(arguments)   // `arguments` is a slice: its indices start at 1
+    func demoValue(_ flag: String) -> String? { demoArgs.firstIndex(of: flag).flatMap { $0 + 1 < demoArgs.count ? demoArgs[$0 + 1] : nil } }
     var demoInfo: [String: String] = ["speed": demoValue("--speed") ?? "2", "from": demoValue("--from") ?? "0"]
-    if arguments.count > 1, !arguments[1].hasPrefix("--") { demoInfo["name"] = arguments[1] }
+    if demoArgs.count > 1, !demoArgs[1].hasPrefix("--") { demoInfo["name"] = demoArgs[1] }
     if arguments.contains("--mute") { demoInfo["mute"] = "1" }
     DistributedNotificationCenter.default().postNotificationName(DotIPC.lectureDemo, object: nil, userInfo: demoInfo, deliverImmediately: true)
     print("sent to Dot: \(demoInfo["name"] ?? "the default") lecture demo at \(demoInfo["speed"]!)x from minute \(demoInfo["from"]!)\(demoInfo["mute"] == nil ? ", out loud" : ", muted")")
