@@ -115,6 +115,18 @@ public enum MarkTrackMath {
         let clipped = r.intersection(window)
         return clipped.isNull ? .null : clipped.integral
     }
+
+    /// The pixel rect of `region` (window points, top-left origin) in a capture of the whole window that came back
+    /// `imageSize` pixels for a window `windowSize` points: nil when they don't overlap. ScreenCaptureKit refused a
+    /// region of a window on his 1x side display (-3811) on 2026-10-24 while the whole window captured fine, so a
+    /// failed region capture takes the whole window and crops it.
+    public static func cropRect(region: CGRect, windowSize: CGSize, imageSize: CGSize) -> CGRect? {
+        guard windowSize.width > 0, windowSize.height > 0, imageSize.width > 0, imageSize.height > 0 else { return nil }
+        let sx = imageSize.width / windowSize.width, sy = imageSize.height / windowSize.height
+        let scaled = CGRect(x: region.minX * sx, y: region.minY * sy, width: region.width * sx, height: region.height * sy).integral
+        let clipped = scaled.intersection(CGRect(origin: .zero, size: imageSize))
+        return clipped.isNull || clipped.width < 1 || clipped.height < 1 ? nil : clipped
+    }
 }
 
 /// A scroll gesture moves content along one axis: NSScrollView scrolls only along the predominant axis

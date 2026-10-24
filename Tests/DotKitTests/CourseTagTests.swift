@@ -34,4 +34,28 @@ final class CourseTagTests: XCTestCase {
         XCTAssertEqual(CourseTag.detect(context: "Preview", content: "PCR: denaturation, primers bind in annealing, then extension by polymerase", among: [math, bio]), bio)
         XCTAssertNil(CourseTag.detect(context: "Safari", content: "what time is it in tokyo", among: [math, bio]))
     }
+
+    /// 10-24: a chat page about bacteria pulled in the math map on browser chrome and sidebar words that only the
+    /// longer math map happened to contain.
+    func testChromeWordsDecideNothing() {
+        let longer = CourseTag(fileName: "subj10100.md", text: """
+        # SUBJ 10100 (Linear Things, Example University): the course map
+        Every other system of equations; a positive definite matrix; the menu of tools containing a basis; Canvas has
+        the problem sets; a subspace and its kernel; eigenvalues of a linear transformation.
+        """)!
+        let shorter = CourseTag(fileName: "subj10200.md", text: """
+        # SUBJ 10200 (Cell Things, Example University): the course map
+        Cells, membranes, peptidoglycan walls, bacteria, antibiotics, staining.
+        """)!
+        let chrome = "Toolbar Bookmarks Reload Canvas Menu containing hidden bookmarks Switch mode, current mode: ChatGPT "
+            + "New chat Library Projects Recents Networking System Design Revise Final Paragraph Research Private Equity "
+            + "SUBJ 10100: notes ch 1 & 2 Explain Gram Positive Negative Antibiotics Chat actions Unpin chat other"
+        XCTAssertNotEqual(CourseTag.detect(context: "Explain Gram Positive Negative Antibiotics - Comet What do you mean by alcohol wash?",
+                                           content: chrome, among: [longer, shorter]), longer)
+        // the subject's own words still decide
+        XCTAssertEqual(CourseTag.detect(context: "Preview", content: "the cell wall is peptidoglycan; bacteria with thick walls hold the staining, antibiotics",
+                                        among: [longer, shorter]), shorter)
+        XCTAssertEqual(CourseTag.detect(context: "Preview", content: "the kernel of a linear transformation is a subspace with a basis; eigenvalues",
+                                        among: [longer, shorter]), longer)
+    }
 }

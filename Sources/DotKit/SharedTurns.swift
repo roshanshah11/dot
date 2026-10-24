@@ -45,9 +45,55 @@ public struct SharedTurns: Sendable {
         }
         var lines = ["said since your last turn, in dot's other conversation (\"it\", \"that\" and \"show me\" may mean these; newest last):"]
         for turn in turns {
-            lines.append("- he asked \"\(short(turn.asked, 160))\"; dot said \"\(short(turn.said, limit))\"")
+            lines.append("- he asked \"\(short(turn.asked, 160))\"; dot said \"\(clip(turn.said, limit))\"")
         }
         return lines
+    }
+
+    /// The last question Dot put to him in either conversation, while it is fresh. Think ends a panel with a check
+    /// question; on 2026-10-24 14:59 he asked talk "what was the question you asked me?" three times and heard
+    /// "i don't think i asked you a question".
+    public func lastQuestion(now: Date, window: TimeInterval = 900) -> (side: Side, question: String, at: Date)? {
+        for turn in turns.reversed() where now.timeIntervalSince(turn.at) <= window {
+            if let q = Self.lastQuestion(in: turn.said) { return (turn.side, q, turn.at) }
+        }
+        return nil
+    }
+
+    /// What was said, cut to about `n` characters with its end kept: the head, then the last question (or the last
+    /// sentence). The first 280 characters alone dropped think's check question, which always comes last.
+    public static func clip(_ text: String, _ n: Int) -> String {
+        let flat = text.replacingOccurrences(of: "\n", with: " ").trimmingCharacters(in: .whitespaces)
+        guard flat.count > n else { return flat }
+        var tail = lastQuestion(in: flat) ?? sentences(flat).last ?? ""
+        let room = max(n / 2, 80)
+        if tail.count > room { tail = "…" + String(tail.suffix(room)) }
+        let head = String(flat.prefix(max(n - tail.count - 3, 40)))
+        return head + " … " + tail
+    }
+
+    /// The last sentence that asks something; nil when none does.
+    static func lastQuestion(in text: String) -> String? {
+        sentences(text).last { $0.hasSuffix("?") }
+    }
+
+    /// The sentences of spoken text, split after . ? or ! and the space that follows.
+    static func sentences(_ text: String) -> [String] {
+        var out: [String] = []
+        var current = ""
+        var chars = Array(text.replacingOccurrences(of: "\n", with: " "))
+        chars.append(" ")
+        for i in 0..<(chars.count - 1) {
+            current.append(chars[i])
+            if ".?!".contains(chars[i]), chars[i + 1] == " " {
+                let s = current.trimmingCharacters(in: .whitespaces)
+                if !s.isEmpty { out.append(s) }
+                current = ""
+            }
+        }
+        let rest = current.trimmingCharacters(in: .whitespaces)
+        if !rest.isEmpty { out.append(rest) }
+        return out
     }
 }
 

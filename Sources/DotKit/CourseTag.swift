@@ -41,7 +41,7 @@ public struct CourseTag: Equatable {
     /// course whose map shares the most distinctive words with `content`, when it is clearly ahead.
     public static func detect(context: String, content: String = "", among courses: [CourseTag]) -> CourseTag? {
         if let named = courses.first(where: { $0.isNamed(in: context) }) { return named }
-        let words = Set(Self.words(context + " " + content))
+        let words = Set(Self.words(context + " " + content)).subtracting(commonWords)
         guard !words.isEmpty, courses.count > 0 else { return nil }
         // a word counts for a course only when no other course's map has it too
         let scored = courses.map { course -> (CourseTag, Int) in
@@ -52,6 +52,41 @@ public struct CourseTag: Equatable {
         if scored.count > 1, scored[1].1 * 2 > best.1 { return nil }
         return best.0
     }
+
+    /// Words that say nothing about a subject: everyday English, school words every course shares, and a browser's
+    /// chrome. On 2026-10-24 a chat page about bacteria scored for the math map on "canvas", "containing", "other",
+    /// "positive" and "system" (a bookmark, "Menu containing hidden bookmarks", sidebar chat titles) because the
+    /// longer map has more ordinary words, and the math map joined a biology conversation.
+    static let commonWords: Set<String> = [
+        // everyday English
+        "about", "above", "after", "again", "against", "almost", "along", "already", "although", "always", "among",
+        "another", "answer", "anything", "around", "because", "become", "before", "begin", "being", "below", "better",
+        "between", "bring", "build", "building", "called", "cannot", "change", "changes", "could", "different", "doing",
+        "during", "early", "either", "enough", "every", "example", "first", "follow", "found", "general", "given",
+        "going", "great", "group", "having", "important", "include", "including", "instead", "itself", "large", "later",
+        "least", "little", "looks", "making", "means", "might", "never", "number", "often", "order", "other", "others",
+        "place", "point", "possible", "positive", "negative", "problem", "quick", "quite", "rather", "really", "right",
+        "second", "seems", "several", "should", "shows", "since", "small", "something", "start", "state", "still",
+        "their", "there", "these", "thing", "things", "think", "those", "though", "three", "through", "today",
+        "together", "under", "until", "using", "various", "where", "which", "while", "whole", "would", "write",
+        "years", "system", "systems", "simple", "connect", "private", "guide", "skills", "practice", "final", "finals",
+        // school words every course has
+        "class", "classes", "course", "courses", "lecture", "lectures", "notes", "review", "study", "homework",
+        "midterm", "exams", "quizzes", "worksheet", "assignment", "assignments", "problems", "question", "questions",
+        "solution", "solutions", "chapter", "section", "reading", "readings", "slides", "syllabus", "office", "hours",
+        "explain", "uchicago", "autumn", "spring", "winter", "summer", "canvas",
+        // a browser's and an app's chrome
+        "button", "buttons", "window", "windows", "toolbar", "bookmark", "bookmarks", "containing", "hidden", "reload",
+        "forward", "search", "share", "sidebar", "settings", "profile", "library", "projects", "recents", "pinned",
+        "unpin", "explore", "plugins", "scheduled", "assistant", "summarize", "webpage", "current", "action", "actions",
+        "comet", "chrome", "safari", "chatgpt", "claude", "google", "gmail", "outlook", "notion", "email", "inbox",
+        "select", "selected", "click", "close", "dialog", "popup", "image", "images", "video", "account", "login",
+        "logout", "password", "update", "upload", "download", "refresh", "enable", "disable", "voice", "dictation",
+        "switch", "toggle", "option", "options", "filter", "display", "screen", "scroll", "pages", "label", "title",
+        "untitled", "document", "documents", "folder", "files", "insert", "format", "tools", "privacy", "terms",
+        "cookie", "cookies", "notifications", "messages", "message", "chats", "people", "static", "statictext",
+        "popupbutton", "remaining"
+    ]
 
     /// Every course map in a context folder.
     public static func load(from folder: URL) -> [CourseTag] {

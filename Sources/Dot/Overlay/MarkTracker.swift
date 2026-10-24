@@ -471,7 +471,19 @@ final class MarkTracker {
         config.width = max(16, Int(region.width))
         config.height = max(16, Int(region.height))
         config.showsCursor = false
-        let image = try? await SCScreenshotManager.captureImage(contentFilter: filter, configuration: config)
+        var image = try? await SCScreenshotManager.captureImage(contentFilter: filter, configuration: config)
+        if image == nil {
+            // a region of a window on his side display failed (-3811) while the whole window captured: crop it here
+            let size = filter.contentRect.size
+            let whole = SCStreamConfiguration()
+            whole.width = max(16, Int(size.width))
+            whole.height = max(16, Int(size.height))
+            whole.showsCursor = false
+            if let full = try? await SCScreenshotManager.captureImage(contentFilter: filter, configuration: whole),
+               let crop = MarkTrackMath.cropRect(region: region, windowSize: size, imageSize: CGSize(width: full.width, height: full.height)) {
+                image = full.cropping(to: crop)
+            }
+        }
         if let dir = ProcessInfo.processInfo.environment["DOT_TRACK_DUMP"], let image {
             let url = URL(fileURLWithPath: dir).appendingPathComponent("capture-\(Int(Date().timeIntervalSince1970 * 1000)).png")
             if let dest = CGImageDestinationCreateWithURL(url as CFURL, "public.png" as CFString, 1, nil) { CGImageDestinationAddImage(dest, image, nil); CGImageDestinationFinalize(dest) }

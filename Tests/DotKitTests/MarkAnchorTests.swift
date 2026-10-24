@@ -107,4 +107,20 @@ final class MarkAnchorTests: XCTestCase {
         XCTAssertGreaterThanOrEqual(r.width, 240)
         XCTAssertTrue(MarkTrackMath.registrationRegion(for: CGRect(x: 2000, y: 2000, width: 10, height: 10), in: window).isNull)
     }
+
+    /// 10-24: a region capture of a window on the 1x side display failed, so the whole window is captured and cropped.
+    func testCropRectFromAWholeWindowCapture() {
+        let window = CGSize(width: 1920, height: 955)
+        let region = CGRect(x: 760, y: 120, width: 240, height: 304)
+        // the whole window at one pixel per point: the crop is the region itself
+        XCTAssertEqual(MarkTrackMath.cropRect(region: region, windowSize: window, imageSize: window), region)
+        // a capture that came back at two pixels per point scales the crop
+        XCTAssertEqual(MarkTrackMath.cropRect(region: region, windowSize: window, imageSize: CGSize(width: 3840, height: 1910)),
+                       CGRect(x: 1520, y: 240, width: 480, height: 608))
+        // a region hanging off the window is clipped to the image; one outside it is nil
+        XCTAssertEqual(MarkTrackMath.cropRect(region: CGRect(x: 1800, y: 900, width: 240, height: 100), windowSize: window, imageSize: window),
+                       CGRect(x: 1800, y: 900, width: 120, height: 55))
+        XCTAssertNil(MarkTrackMath.cropRect(region: CGRect(x: 3000, y: 10, width: 50, height: 50), windowSize: window, imageSize: window))
+        XCTAssertNil(MarkTrackMath.cropRect(region: region, windowSize: .zero, imageSize: window))
+    }
 }

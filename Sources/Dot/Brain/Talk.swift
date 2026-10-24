@@ -1562,9 +1562,10 @@ final class Talk {
             session.meets = order.filter(days.contains).joined(separator: "/")
         }
         session.onAddDeadlines = { [weak self] items in self?.addDeadlinesToAtlas(items, course: course) ?? "atlas isn't reachable from here" }
-        session.onFinished = { [weak self] file, pdf in self?.lectureFinished(file: file, pdf: pdf) }
+        session.onFinished = { [weak self] file, pdf in self?.noteRecentCourse(course); self?.lectureFinished(file: file, pdf: pdf) }
         guard await beginLectureSession(session, courseText: courseText, label: "lecture mode: \(course)", line: "taking notes; End class in the notes when it's over") else { return }
         Log.info("lecture: mode on for \(course) (\(courseTitle))\(cls.map { ", class until \(LectureSession.clock($0.end))" } ?? ", no class on the calendar")")
+        noteRecentCourse(course)
         if Self.courseMapText(label: course, root: config.talkRootURL).isEmpty || !FileManager.default.fileExists(atPath: session.folder.path) {
             prepareCourse(course: course, title: courseTitle, folder: session.folder)
         } else {
@@ -1991,8 +1992,9 @@ final class Talk {
             return
         }
         let started = Date()
-        // "go to the part about x" in a document: Dot's own finder reads the text and highlights it
-        if case .scroll(.toText(let phrase)) = command, context.bundleIdentifier != Hands.cometBundle {
+        // "go to the part about x" in a document: Dot's own finder reads the text and highlights it. A local file in
+        // Comet (his lecture PDF, 10-24 15:19) goes there too: the page script can't search a PDF viewer's text.
+        if case .scroll(.toText(let phrase)) = command, context.bundleIdentifier != Hands.cometBundle || context.documentPath != nil {
             if benchMode, !hands.benchAllows(context) { Log.info("bench: blocked action scroll outside the fixture"); return }
             Log.info("act: scroll \(Log.short(phrase, 60)) handed to the document finder")
             await findInDocument(phrase)
@@ -2001,6 +2003,13 @@ final class Talk {
         let outcome = await hands.perform(command, context: context)
         let ms = Int(Date().timeIntervalSince(started) * 1000)
         Log.info("act: \(command.verb) \(Log.short(command.object, 60)) \(outcome.ok ? "ok" : "fail") \(ms) ms (\(outcome.detail))")
+        // Comet's tab wasn't found: the document finder still reads the page and searches it with the find box,
+        // instead of nothing happening after "i'm scrolling to the line".
+        if case .scroll(.toText(let phrase)) = command, !outcome.ok, outcome.detail.hasPrefix("native find") {
+            Log.info("act: scroll \(Log.short(phrase, 60)) handed to the document finder")
+            await findInDocument(phrase)
+            return
+        }
         if case .setting(let s) = command, outcome.ok { lastSetting = (s, Date()) }
         if let point = outcome.point { overlay.point(at: point, label: Log.short(command.object, 24)) }
         if let commit = outcome.commitLabel {
@@ -2727,6 +2736,10 @@ final class Talk {
         // The other conversation's last exchanges, for "it" and "show me" (2026-10-19 08:58).
         let unseen = shared.unseen(by: kind == .talk ? .talk : .think, now: Date())
         if !unseen.isEmpty { lines.append(contentsOf: SharedTurns.lines(unseen)) }
+        if let asked = shared.lastQuestion(now: Date()) {
+            let minutes = Int(Date().timeIntervalSince(asked.at) / 60)
+            lines.append("dot's last question to him (\(minutes < 1 ? "just now" : "\(minutes) min ago")\(asked.side == .think ? ", with the panel" : "")): \"\(Log.short(asked.question, 300))\"")
+        }
         // His Atlas chats (Telegram, the app, his terminal): one thread of record (10-22).
         if !benchMode { lines.append(contentsOf: AtlasThread.shared.lines()) }
         lines.append("[/context]")
@@ -2753,6 +2766,12 @@ final class Talk {
         block += lines.prefix(45).map { "- \($0)" }
         block.append("[/calendar]")
         return block
+    }
+
+    /// The class lecture mode is on (or just finished) is the course his next questions are about, for two hours,
+    /// unless the screen names another (10-24: his biology questions after class got no course map, then the math one).
+    private func noteRecentCourse(_ label: String) {
+        if let tag = panels.courses.first(where: { $0.label == label }) { lastCourse = (tag.code, Date()) }
     }
 
     /// A course's map joins the conversation once, the first time that course is on screen or named.
@@ -2803,7 +2822,8 @@ final class Talk {
             Log.info("talk: tool \(name) \(Log.short(input.map { "\($0.key)=\($0.value.json)" }.joined(separator: " "), 120))")
             hud.flash(status: "checking \(Self.friendlyTool(name))")
             // A talk turn with a lookup said nothing for 9.8 s (median, to 10-19) after the ack: one line while it looks.
-            if !toolLineSaid, !quietTurn, activeKind == .talk, streamer.spokenSoFar.isEmpty, let what = Self.spokenTool(name) {
+            // Think too: on 10-24 a panel said nothing for 68 and 78 s after "putting it on the panel" while it searched.
+            if !toolLineSaid, !quietTurn, streamer.spokenSoFar.isEmpty, let what = Self.spokenTool(name) {
                 toolLineSaid = true
                 speaker.speak("checking \(what).")
             }

@@ -41,6 +41,34 @@ final class SharedTurnsTests: XCTestCase {
         shared.record(.talk, asked: "  ", said: "\n", at: t0)
         XCTAssertTrue(shared.turns.isEmpty)
     }
+
+    // 10-24 14:59: the panel's spoken answer ended with a check question; talk saw only its first 280 characters.
+    let panelAnswer = "Membrane proteins do six jobs: they move things across, speed up reactions, relay signals inward, join cells together, act as ID tags, and anchor the cell. transport is moving things across. picture a is a channel, and picture b is a pump that burns energy. some membrane proteins are enzymes, lined up like an assembly line. a receptor grabs a signal outside and passes the message inward. so here's a check: when a hormone binds a muscle cell's receptor, which of the six jobs is that?"
+
+    func testTheOtherSidesCheckQuestionSurvivesTheCut() {
+        let clipped = SharedTurns.clip(panelAnswer, 280)
+        XCTAssertLessThanOrEqual(clipped.count, 290)
+        XCTAssertTrue(clipped.hasPrefix("Membrane proteins do six jobs"))
+        XCTAssertTrue(clipped.hasSuffix("which of the six jobs is that?"), clipped)
+        XCTAssertEqual(SharedTurns.clip("short answer.", 280), "short answer.")
+    }
+
+    func testDotsLastQuestionReachesEitherSide() {
+        var shared = SharedTurns()
+        shared.record(.think, asked: "put the six jobs on the panel", said: panelAnswer, at: t0)
+        shared.record(.talk, asked: "can you say it again?", said: "your last question was about the panel. it's open now.", at: t0.addingTimeInterval(45))
+        let asked = shared.lastQuestion(now: t0.addingTimeInterval(60))
+        XCTAssertEqual(asked?.side, .think)
+        XCTAssertEqual(asked?.question, "so here's a check: when a hormone binds a muscle cell's receptor, which of the six jobs is that?")
+        XCTAssertNil(shared.lastQuestion(now: t0.addingTimeInterval(3600)), "an hour later it is not the question he means")
+    }
+
+    func testAQuestionBeforeAClosingLineStillCounts() {
+        // 10-24 15:26: "here's a check: what does the car add to the t cell? and if you meant something else, just tell me."
+        XCTAssertEqual(SharedTurns.lastQuestion(in: "t cells read tags. here's a check: what does the car add? and if you meant something else, just tell me."),
+                       "here's a check: what does the car add?")
+        XCTAssertNil(SharedTurns.lastQuestion(in: "no question here. none at all."))
+    }
 }
 
 final class SpotifySearchTests: XCTestCase {
@@ -94,5 +122,25 @@ final class CostBaselineTests: XCTestCase {
         CostBaseline.save(file, sessionId: "c", total: 3.5, keep: 2)
         XCTAssertNil(CostBaseline.load(file, sessionId: "a"), "the oldest goes")
         XCTAssertEqual(CostBaseline.load(file, sessionId: "c"), 3.5)
+    }
+}
+
+/// 10-24 15:19: "go to my notes on that slide" in the lecture PDF open in Comet. The finder now gets these; the page it
+/// lands on and the phrase it types into the find box come from here.
+final class NotesFinderTests: XCTestCase {
+    let pages = [
+        DocumentPage(number: 1, text: "COURSE 101 CLASS 1\n- biotech: using living things to make products\n- penicillin from a mold, antibiotics from soil bacteria"),
+        DocumentPage(number: 2, text: "- prokaryotes: no nucleus, cell wall (peptidoglycan) surrounds plasma membrane\n- gram positive: thick wall, holds the purple dye"),
+        DocumentPage(number: 3, text: "- decorations on membrane: glycolipid = lipid w carbohydrate attached; glycoprotein = protein w carbohydrate attached\n- other parts on slide: peripheral membrane protein, integral membrane protein,\nchannel protein, cholesterol\n- transmembrane proteins do six jobs"),
+    ]
+
+    func testTheAskedSlideLineLandsOnItsPage() {
+        let query = "other parts on slide: peripheral membrane protein, integral membrane protein, channel protein, cholesterol"
+        let best = DocumentSearch.bestPassages(for: query, in: pages).first
+        XCTAssertEqual(best?.page, 3)
+        XCTAssertGreaterThanOrEqual(best?.score ?? 0, 1.0, "locate needs a score of 1 to move")
+        let phrase = DocumentSearch.distinctivePhrase(in: best?.passage ?? "", preferring: query)
+        XCTAssertFalse(phrase.isEmpty)
+        XCTAssertTrue(pages[2].text.lowercased().replacingOccurrences(of: "\n", with: " ").contains(phrase.lowercased()), phrase)
     }
 }

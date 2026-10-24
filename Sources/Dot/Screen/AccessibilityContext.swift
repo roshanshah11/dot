@@ -83,7 +83,8 @@ enum AccessibilityContext {
 
         guard let window = found else { return context }
         context.windowTitle = string(window, kAXTitleAttribute)
-        if let document = string(window, kAXDocumentAttribute) {
+        let windowDocument = string(window, kAXDocumentAttribute)
+        if let document = windowDocument {
             if document.hasPrefix("http") { context.url = document }
             else if document.hasPrefix("file://"), let fileURL = URL(string: document) { context.documentPath = fileURL.path }
             else if document.hasPrefix("/") { context.documentPath = document }
@@ -116,7 +117,13 @@ enum AccessibilityContext {
             let opensPage = role == "AXWebArea"
             if opensPage { sawPage = true }
 
-            if opensPage, context.url == nil, let url = string(element, "AXURL") { context.url = url }
+            // A browser window's AXDocument names its active tab. The first web area can be Comet's assistant sidecar
+            // or the other half of a split view: on 10-24 15:19 "Notes - Right view" (a PDF) carried the sidecar's url,
+            // so no tab matched and "go to that part of my notes" did nothing.
+            if opensPage, context.url == nil {
+                if let document = windowDocument, document.hasPrefix("file://") { context.url = document }
+                else if let url = string(element, "AXURL"), !Self.isSidecar(url) { context.url = url }
+            }
 
             if interestingRoles.contains(role), let cgFrame = frame(of: element), cgFrame.width >= 4, cgFrame.height >= 4 {
                 let title = bestTitle(element, role: role)
@@ -144,6 +151,9 @@ enum AccessibilityContext {
         context.elements = elements
         return context
     }
+
+    /// Comet's assistant panel, a web area beside the page that is never the page he means.
+    static func isSidecar(_ url: String) -> Bool { url.contains("perplexity.ai/sidecar") }
 
     /// A page's heading or link also lists its own text as a static text in the same place: one entry is enough.
     static func repeatsLabel(role: String, title: String, frame: CGRect, in elements: [AXElementInfo]) -> Bool {
