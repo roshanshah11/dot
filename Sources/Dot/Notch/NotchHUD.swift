@@ -50,7 +50,7 @@ struct AgentRow: Identifiable, Equatable {
     var stackChip: StackChip {
         var chip = StackChip(id: id, kind: kind == .job ? .job : .agent, title: name, line: line, steps: steps, state: chipState,
                              startedAt: startedAt, canStop: canStop, holdUntil: holdUntil)
-        chip.canOpen = id != "lecture"
+        chip.canOpen = id != "lecture" && id != "lecture-offer"
         chip.result = result
         chip.outputs = outputs
         chip.nextActions = nextActions

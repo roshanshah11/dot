@@ -225,6 +225,13 @@ enum Snapshots {
         let unfinished = chip("prep", "Call Prep", "two research passes on Northwind Bank are still running; the questions follow when they come back.", .unfinished, age: 3)
         let unfinishedFolded = chip("prep", "Call Prep", "still running", .unfinished, age: 60)
         let alert = chip("inbox", "Inbox Keeper", "Sam Rivera replied about the COURSE 101 study group and asked for a time.", .attention, age: 2)
+        // 10-23: a class's offer is a card with its button through the first ten minutes, then its avatar until the class ends.
+        var offer = chip("lecture-offer", "COURSE 101", "class is starting · want notes?", .waiting, age: 60)
+        offer.nextActions = [Talk.takeNotesLabel]
+        offer.canOpen = false
+        offer.holdUntil = now.addingTimeInterval(540)
+        var offerLater = offer
+        offerLater.holdUntil = now.addingTimeInterval(-60)
         return [
             ("agent-running-card", make([running])),
             ("agent-folded-avatar", make([folded])),
@@ -236,6 +243,8 @@ enum Snapshots {
             ("muted-done-text", make([muted])),
             ("consent-card", make(Array(many.prefix(2))) { m in m.consent = consent; m.consentWaiting = 1; m.consentShownAt = now }),
             ("notice-card", make([notice])),
+            ("lecture-offer-card", make([offer])),
+            ("lecture-offer-later-avatar", make([offerLater])),
             ("morning-card", make([morning]) { m in m.morningExpanded = true }),
             ("job-running", make([jobRunning])),
             ("job-folded", make([jobFolded])),
