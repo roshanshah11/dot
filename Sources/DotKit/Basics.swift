@@ -127,12 +127,13 @@ public enum AgentModeFilter {
     }
 }
 
-/// His words for an agent: "spawn an agent", "have an agent do it", "a background agent", "can an agent do this". With
+/// His words for an agent: "spawn an agent", "have an agent do it", "a background agent", "can an agent do this", "do this in
+/// a different agent" (10-24: that one ran as a fast job in his tab, with no card in the corner). With
 /// jobs on, nothing else starts one (2026-10-20: "assume everything can get done w the fast model ... if needed i will
 /// say spawn a background agent"). Asking about one, stopping one or saying not to use one is not a request.
 public enum AgentWords {
     static let ask = try! NSRegularExpression(
-        pattern: #"\b(?:spawn|start|spin up|launch|fire up|kick off|get|have|put|send|use|make|create|run|need|want|with|via|through|hand (?:it|this|that)(?: off)? to|give (?:it|this|that) to|pass (?:it|this|that) to)\b[^.?!]{0,20}\b(?:an?|one|some)\s+(?:new |separate |different |background |full |real |proper )?agent\b|\bcan (?:an?|one|some) agent\b|^\W*(?:an?|one)\s+(?:new |separate |background |full )?agent\b(?:\s+(?:that|to|which|who|please)\b|\W*$)"#,
+        pattern: #"\b(?:spawn|start|spin up|launch|fire up|kick off|get|have|put|send|use|make|create|run|need|want|with|via|through|hand (?:it|this|that)(?: off)? to|give (?:it|this|that) to|pass (?:it|this|that) to)\b[^.?!]{0,20}\b(?:an?|one|some)\s+(?:new |separate |different |background |full |real |proper )?agent\b|\bcan (?:an?|one|some) agent\b|\b(?:in|on|into|by|to|through|via|with|using)\s+(?:(?:an?|one)\s+(?:new|separate|different|other|background)|another)\s+agent\b|^\W*(?:an?|one)\s+(?:new |separate |background |full )?agent\b(?:\s+(?:that|to|which|who|please)\b|\W*$)"#,
         options: .caseInsensitive)
     static let negated = try! NSRegularExpression(
         pattern: #"\b(?:don'?t|do not|never|without|no need (?:for|to))\b[^.?!]{0,20}\bagent\b|\b(?:do|does|did) (?:i|you|we) have\b"#,
@@ -145,7 +146,7 @@ public enum AgentWords {
     /// The word before a trailing "agent" that makes it some agent, not his ask: "stop the agent", "call my travel agent".
     static let notTag: Set<String> = ["the", "a", "an", "my", "your", "his", "her", "their", "our", "its", "this", "that", "which",
                                       "what", "each", "every", "no", "any", "travel", "estate", "insurance", "talent", "sports",
-                                      "booking", "leasing", "rental", "secret", "special", "double", "free", "fbi", "user", "ai",
+                                      "booking", "leasing", "rental", "secret", "special", "double", "free", "fbi", "user", "ai", "other",
                                       "support", "customer", "literary", "ticket"]
 
     public static func asksForAgent(_ text: String) -> Bool {

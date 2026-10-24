@@ -69,7 +69,8 @@ final class AgentWordsTests: XCTestCase {
         for t in ["Can you uh spawn an agent and go fetch my uh notes for week four?", "start an agent on it", "have an agent do it",
                   "get an agent on it", "can an agent do this", "spawn a new agent for that", "use a background agent for this",
                   "send this to an agent", "an agent that opens its own browser", "a background agent please", "hand it off to an agent",
-                  "i want a full agent on this", "spin up an agent to make the deck"] {
+                  "i want a full agent on this", "spin up an agent to make the deck",
+                  "You can do this in a different agent and then show it to me.", "do it in another agent", "put this on a separate agent"] {
             XCTAssertTrue(AgentWords.asksForAgent(t), t)
         }
     }
@@ -78,7 +79,8 @@ final class AgentWordsTests: XCTestCase {
         for t in ["what did the agent find", "stop the agent", "is the agent done", "tell the agent to skip week three",
                   "do I have an agent on that", "don't spawn an agent, just open it", "open the class site", "scroll down",
                   "click modules", "find the readings section", "the background agent finished?", "no need for an agent, just do it",
-                  "do it without an agent", "how does an agent work", "open the agents page"] {
+                  "do it without an agent", "how does an agent work", "open the agents page", "what's in an agent",
+                  "talk to the other agent"] {
             XCTAssertFalse(AgentWords.asksForAgent(t), t)
         }
     }
