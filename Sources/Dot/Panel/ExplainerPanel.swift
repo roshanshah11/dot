@@ -43,6 +43,12 @@ final class ExplainerPanel: NSObject, NSWindowDelegate, WKNavigationDelegate, WK
     /// opens in it. nil puts the page back in its own window, hidden.
     private(set) var dockHost: NSView?
 
+    /// The panel's frame while it floats on screen (not docked, not in the Dock), for Dot to keep off it.
+    var floatingFrame: CGRect? {
+        guard dockHost == nil, let window, window.isVisible, !window.isMiniaturized else { return nil }
+        return window.frame
+    }
+
     func dock(into host: NSView?) {
         guard let resources, host !== dockHost else { return }
         ensureWindow(resources: resources)
@@ -88,6 +94,12 @@ final class ExplainerPanel: NSObject, NSWindowDelegate, WKNavigationDelegate, WK
         call("panel.load(\(Self.js(markup)), {id: \(Self.js(id)), title: \(Self.js(title))})")
         if dockHost != nil {
             Log.info("panel: open \(id) \"\(Log.short(title, 60))\" on the board (\(markup.count) chars)")
+            return
+        }
+        // minimized to the Dock: a new explanation brings it back where it was
+        if window?.isMiniaturized == true {
+            window?.deminiaturize(nil)
+            Log.info("panel: open \(id) \"\(Log.short(title, 60))\" back from the Dock (\(markup.count) chars)")
             return
         }
         place(on: screen ?? NSScreen.main, avoid: avoid)
@@ -136,6 +148,17 @@ final class ExplainerPanel: NSObject, NSWindowDelegate, WKNavigationDelegate, WK
         currentID = nil
     }
 
+    /// His minimize button (10-24): to the Dock like any window, or the lecture window when the panel is its board. A new
+    /// explanation, or a click on its Dock tile, brings it back.
+    func minimize() {
+        guard let target = dockHost?.window ?? window, target.isVisible else { return }
+        target.miniaturize(nil)
+        Log.info("panel: minimizing \(currentID ?? "")")
+    }
+
+    func windowDidMiniaturize(_ notification: Notification) { Log.info("panel: in the Dock") }
+    func windowDidDeminiaturize(_ notification: Notification) { Log.info("panel: back from the Dock") }
+
     /// Reopen a saved explanation by id or by words in its title ("the kernel one").
     @discardableResult
     func reopen(matching words: String, screen: NSScreen?) -> Bool {
@@ -160,7 +183,7 @@ final class ExplainerPanel: NSObject, NSWindowDelegate, WKNavigationDelegate, WK
     private func ensureWindow(resources: URL) {
         if window != nil { return }
         let w = PanelWindow(contentRect: CGRect(x: 0, y: 0, width: PanelDock.defaultWidth, height: 600),
-                            styleMask: [.titled, .fullSizeContentView, .resizable, .nonactivatingPanel], backing: .buffered, defer: false)
+                            styleMask: [.titled, .fullSizeContentView, .resizable, .miniaturizable, .nonactivatingPanel], backing: .buffered, defer: false)
         w.titleVisibility = .hidden
         w.titlebarAppearsTransparent = true
         for b in [NSWindow.ButtonType.closeButton, .miniaturizeButton, .zoomButton] { w.standardWindowButton(b)?.isHidden = true }
@@ -251,6 +274,8 @@ final class ExplainerPanel: NSObject, NSWindowDelegate, WKNavigationDelegate, WK
             pending.forEach { call($0) }
         case .close:
             close()
+        case .minimize:
+            minimize()
         case .log(let text):
             Log.warn("panel[\(currentID ?? "")] \(text)")
         default:
@@ -301,7 +326,11 @@ final class PanelWindow: NSPanel {
     override var canBecomeMain: Bool { false }
 
     override func performKeyEquivalent(with event: NSEvent) -> Bool {
-        EditKeys.perform(event, in: self) || super.performKeyEquivalent(with: event)
+        if event.modifierFlags.intersection(.deviceIndependentFlagsMask) == .command, event.charactersIgnoringModifiers == "m" {
+            miniaturize(nil)
+            return true
+        }
+        return EditKeys.perform(event, in: self) || super.performKeyEquivalent(with: event)
     }
 }
 

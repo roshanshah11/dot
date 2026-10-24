@@ -450,3 +450,16 @@ public enum Gratitude {
         return lower.range(of: #"\b(thanks|thank you|thank u|thankyou|thx|ty)\b"#, options: .regularExpression) != nil
     }
 }
+
+/// Dot never sits on its own floating panel (10-24: "my orange circle was on the panel. like it shows up on top"): a spot
+/// that falls on the panel (with the orb's radius around it) moves just past the panel's inner edge, at the same height.
+/// Coordinates are an overlay's (top-left origin).
+public enum PanelKeepOut {
+    public static func spot(_ p: CGPoint, panel: CGRect, screenWidth: CGFloat, orbSize: CGFloat) -> CGPoint {
+        let zone = panel.insetBy(dx: -(orbSize / 2 + 10), dy: -(orbSize / 2 + 4))
+        guard zone.contains(p) else { return p }
+        // the panel docks at the right edge: Dot waits on its left, unless the panel sits on the screen's left half
+        let left = zone.midX > screenWidth / 2 && zone.minX > orbSize
+        return CGPoint(x: left ? zone.minX : zone.maxX, y: p.y)
+    }
+}

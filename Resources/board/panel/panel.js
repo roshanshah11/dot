@@ -739,6 +739,7 @@
     content = document.getElementById("content");
     titleEl = document.getElementById("title");
     document.getElementById("close").addEventListener("click", function () { post({type: "close"}); });
+    document.getElementById("min").addEventListener("click", function () { post({type: "minimize"}); });
     var scroller = document.getElementById("scroller");
     scroller.addEventListener("wheel", function () { panel.userScrolledAt = Date.now(); }, {passive: true});
     document.addEventListener("mouseup", function () {

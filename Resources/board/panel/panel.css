@@ -9,9 +9,9 @@ body { display: flex; flex-direction: column; }
         -webkit-app-region: drag; }
 #title { flex: 1; font-size: 12px; font-weight: 650; letter-spacing: 0.05em; text-transform: uppercase; color: var(--muted);
          white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-#close { -webkit-app-region: no-drag; width: 26px; height: 26px; border-radius: 50%; border: 0; background: rgba(255,255,255,0.06);
+#close, #min { -webkit-app-region: no-drag; width: 26px; height: 26px; border-radius: 50%; border: 0; background: rgba(255,255,255,0.06);
          color: var(--muted); font-size: 17px; line-height: 1; cursor: pointer; }
-#close:hover { background: rgba(255,255,255,0.12); color: var(--ink); }
+#close:hover, #min:hover { background: rgba(255,255,255,0.12); color: var(--ink); }
 #scroller { flex: 1; position: relative; overflow-y: auto; overflow-x: hidden; padding: 6px 20px 40px; scroll-behavior: smooth; }
 #content > .block { margin: 0 0 10px; }
 

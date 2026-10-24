@@ -12,6 +12,8 @@ public enum PanelMessage: Equatable {
     /// He dragged or slid an explainer widget.
     case widget(panel: String, id: String, values: [String: Double])
     case close
+    /// His minimize button (10-24: "give the panel a minimize option").
+    case minimize
     case ready
     /// A page error, for dot.log.
     case log(String)
@@ -39,6 +41,7 @@ public enum PanelMessage: Equatable {
             }
             self = .widget(panel: (d["card"] as? String) ?? panel, id: id, values: values)
         case "close": self = .close
+        case "minimize": self = .minimize
         case "ready": self = .ready
         case "log": self = .log(String(((d["text"] as? String) ?? "").prefix(300)))
         default: return nil
@@ -57,7 +60,7 @@ public enum PanelMessage: Equatable {
         case .widget(_, let id, let values):
             let shown = values.keys.sorted().prefix(6).map { "\($0)=\(Self.trim(values[$0]!))" }.joined(separator: ", ")
             return "he set the \(id) explainer to \(shown)"
-        case .ask, .close, .ready, .log:
+        case .ask, .close, .minimize, .ready, .log:
             return nil
         }
     }

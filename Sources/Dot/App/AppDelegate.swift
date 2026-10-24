@@ -35,6 +35,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func wireAlive() {
         overlay.isQuiet = { [weak self] in self.map { $0.config.quietOnCalls && CallPresence.isOnCall() } ?? false }
         overlay.isRecording = { [weak self] in self.map { $0.talk.lecture.isListening || ($0.murmur?.isRecording ?? false) } ?? false }
+        overlay.keepOut = { [weak self] in self?.talk.panels.panel.floatingFrame }
         overlay.onWake = { [weak self] idle in self?.noticer.quip(idle > 15 * 60 ? .backLong : .backShort) }
         overlay.onPetted = { [weak self] in self?.noticer.quip(.petted) }
         SpeechActivity.onSentence = { [weak self] duration, isLast in

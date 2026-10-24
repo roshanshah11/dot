@@ -103,7 +103,7 @@ final class PanelCoach {
             lastSelection = (text, step, Date())
         case .widget:
             if let line = message.contextLine { lastWidget = (line, Date()) }
-        case .close, .ready, .log:
+        case .close, .minimize, .ready, .log:
             break
         }
     }

@@ -102,6 +102,8 @@ final class CompanionModel: ObservableObject {
     @Published var bubbleVisible = false
     /// Force the bubble to open on one side (true = to the left), while Dot sits beside a card.
     @Published var bubbleFlip: Bool?
+    /// The floating panel on this screen (overlay coordinates): the bubble opens away from it.
+    @Published var panelZone: CGRect?
     @Published var chip: String?
     @Published var tailTo: CGPoint?
     @Published var ring: Ring?
@@ -256,8 +258,11 @@ struct CompanionView: View {
         let parked = model.motion == .parked
         // Spaced for the orb's size (orbSize; these were tuned at 20 px).
         let k = model.orbSize / 20
-        let roomRight = model.position.x + 24 * k + width + 28 <= model.screenSize.width - 12
-        let roomLeft = model.position.x - 20 * k - width - 28 >= 12
+        let panel = model.panelZone
+        let rightLimit = panel.map { $0.minX > model.position.x ? min($0.minX - 8, model.screenSize.width - 12) : model.screenSize.width - 12 } ?? model.screenSize.width - 12
+        let leftLimit = panel.map { $0.maxX < model.position.x ? max($0.maxX + 8, 12) : 12 } ?? 12
+        let roomRight = model.position.x + 24 * k + width + 28 <= rightLimit
+        let roomLeft = model.position.x - 20 * k - width - 28 >= leftLimit
         let flip = model.bubbleFlip.map { $0 ? roomLeft : !roomRight } ?? !roomRight
         let below = model.position.y + 180 < model.screenSize.height
         // A note beside Dot (a greeting, an offer, a short line), and since 10-21 a muted or typed answer a piece at a
@@ -877,6 +882,9 @@ final class OverlayManager {
     var isQuiet: (() -> Bool)?
     /// Whether Dot's lecture ear or Murmur is recording: no antics then either.
     var isRecording: (() -> Bool)?
+    /// The panel's frame while it floats (AppKit screen coordinates): Dot never sits on it (10-24: "my orange circle was on
+    /// the panel"). AppDelegate supplies it.
+    var keepOut: (() -> CGRect?)?
     private var recording = false
     /// Dot woke from its pet routine after `idle` seconds without input: the quip hook.
     var onWake: ((TimeInterval) -> Void)?
@@ -1516,8 +1524,19 @@ final class OverlayManager {
     }
 
     private func clampToScreen(_ p: CGPoint, model: CompanionModel) -> CGPoint {
-        CGPoint(x: min(max(p.x, 24), model.screenSize.width - 24), y: min(max(p.y, 24), model.screenSize.height - 24))
+        var p = p
+        if let i = models.firstIndex(where: { $0 === model }) { p = outside(p, screenFrame: windows[i].screenFrame) }
+        return CGPoint(x: min(max(p.x, 24), model.screenSize.width - 24), y: min(max(p.y, 24), model.screenSize.height - 24))
     }
+
+    /// A spot for Dot (overlay coordinates) moved off the panel: just past the panel's inner edge, at the same height.
+    private func outside(_ p: CGPoint, screenFrame: CGRect) -> CGPoint {
+        guard let panel = keepOut?(), panel.intersects(screenFrame) else { return p }
+        return PanelKeepOut.spot(p, panel: Coordinates.overlayRect(fromScreen: panel, screenFrame: screenFrame), screenWidth: screenFrame.width, orbSize: orbSize)
+    }
+
+    /// Whether the pointer (AppKit screen coordinates) is over the floating panel.
+    private func onPanel(_ mouse: CGPoint) -> Bool { keepOut?()?.contains(mouse) ?? false }
 
     // MARK: Following the cursor
 
@@ -1533,7 +1552,7 @@ final class OverlayManager {
 
     private func followTarget(mouse: CGPoint, screenFrame: CGRect) -> CGPoint {
         let local = Coordinates.overlayPoint(fromScreen: mouse, screenFrame: screenFrame)
-        return CGPoint(x: local.x + followOffset.dx, y: local.y + followOffset.dy)
+        return outside(CGPoint(x: local.x + followOffset.dx, y: local.y + followOffset.dy), screenFrame: screenFrame)
     }
 
     private var tickCount = 0
@@ -1553,6 +1572,13 @@ final class OverlayManager {
         // Picked up or thrown: Dot goes where the hand or the throw takes it (round two).
         if let grab, grab.moved { holdTick(index: grab.index, mouse: mouse) }
         if toss != nil { tossTick(now: now, dt: dt) }
+
+        // where the floating panel is on each screen, for the bubble
+        let panel = keepOut?()
+        for (i, window) in windows.enumerated() {
+            let zone = panel.flatMap { $0.intersects(window.screenFrame) ? Coordinates.overlayRect(fromScreen: $0, screenFrame: window.screenFrame) : nil }
+            if models[i].panelZone != zone { models[i].panelZone = zone }
+        }
 
         if let parked = parkedScreen {
             let model = models[parked]
@@ -1608,7 +1634,8 @@ final class OverlayManager {
     private func unstick(index: Int, model: CompanionModel, mouse: CGPoint, desired: CGPoint, sitsHere: Bool, now: Double) -> Bool {
         let cursor = overlayPoint(mouse, index)
         let far = hypot(cursor.x - model.position.x, cursor.y - model.position.y) > 300
-        guard far, model.phase == .idle, !sitsHere, grab == nil, toss == nil, model.motion != .flying else { farSince[index] = nil; return false }
+        // over the panel the cursor is far from Dot on purpose: Dot waits at the panel's edge
+        guard far, model.phase == .idle, !sitsHere, grab == nil, toss == nil, model.motion != .flying, !onPanel(mouse) else { farSince[index] = nil; return false }
         guard let since = farSince[index] else { farSince[index] = (now, mouse); return false }
         guard now - since.at > 4, hypot(mouse.x - since.mouse.x, mouse.y - since.mouse.y) > 150 else { return false }
         farSince[index] = nil
@@ -1703,7 +1730,7 @@ final class OverlayManager {
     private func hop(_ index: Int, to spot: CGPoint) {
         let model = models[index]
         restingOnOrbSince[index] = nil
-        fly(model: model, to: spot, style: .hop) { [weak self] in
+        fly(model: model, to: outside(spot, screenFrame: windows[index].screenFrame), style: .hop) { [weak self] in
             model.motion = .following
             self?.leashes[index].sit()
             if self?.sitting?.index == index { self?.sitting?.spot = model.position }
@@ -1963,7 +1990,7 @@ final class OverlayManager {
         idleAtPerch = sinceInput + (now - inputReadAt)
         model.chip = nil
         model.tailTo = nil
-        fly(model: model, to: perch.point, style: .trot) { [weak self] in
+        fly(model: model, to: outside(perch.point, screenFrame: frame), style: .trot) { [weak self] in
             guard let self, self.perched else { return }
             model.motion = .perched
             self.animators[index].perched(at: self.clock, edge: perch.edge)

@@ -8,6 +8,8 @@ final class PanelMessageTests: XCTestCase {
         XCTAssertEqual(PanelMessage(["type": "quiz", "panel": "p", "id": "q", "choice": "A"]), .quiz(panel: "p", id: "q", choice: "A", correct: nil))
         XCTAssertEqual(PanelMessage(["type": "ask", "panel": "p", "text": "  why a subspace?  "]), .ask(panel: "p", text: "why a subspace?"))
         XCTAssertNil(PanelMessage(["type": "ask", "text": "   "]))
+        XCTAssertEqual(PanelMessage(["type": "minimize"]), .minimize)
+        XCTAssertNil(PanelMessage.minimize.contextLine)
         XCTAssertEqual(PanelMessage(["type": "selection", "panel": "p", "text": "x₂ = −x₁", "step": 2]), .selection(panel: "p", text: "x₂ = −x₁", step: 2))
         XCTAssertEqual(PanelMessage(["type": "event", "kind": "viz", "card": "kernel", "data": ["id": "kernel-image", "values": ["x": 1, "y": -1, "flag": true]]]),
                        .widget(panel: "kernel", id: "kernel-image", values: ["x": 1, "y": -1]))
