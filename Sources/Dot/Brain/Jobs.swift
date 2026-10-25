@@ -1035,7 +1035,7 @@ final class JobManager {
     // MARK: Queued sends become his cards (02 E)
 
     private func approveScript() -> String? {
-        DotConfig.bundledScript("dot-atlas-approve.py", fallback: "~/Projects/dot-fast/scripts/dot-atlas-approve.py")
+        DotConfig.bundledScript("dot-atlas-approve.py", fallback: "~/Projects/dot/scripts/dot-atlas-approve.py")
     }
 
     /// Runs the approve script off the main thread and hands back its JSON.
@@ -1112,32 +1112,29 @@ final class JobManager {
             Log.info("job[\(job.id)] he pressed the rung \(Log.short(job.rung?.label ?? "", 30)); not a pause")
             return
         }
-        for job in running where job.phase == .paused { scheduleAutoResume(job) }   // still using the tab: wait longer
+        // A paused job waits longer only while he is still using its tab (input elsewhere leaves its 15 s alone).
+        let paused = running.filter { $0.phase == .paused }
         // A behind job is his to ignore: his clicks pause it only after he asked to see its window (10-21 22:38 its window
         // took focus for a moment and his next click paused the flights search).
         // A login waiting on his tick never pauses: the robot box's picture grid takes clicks, its audio test takes keys.
         let candidates = running.filter { $0.phase == .running && !$0.waitingOnHim && ($0.placement == .front || $0.shownAt.map { Date().timeIntervalSince($0) < 180 } == true) }
-        guard !candidates.isEmpty else { return }
+        guard !candidates.isEmpty || !paused.isEmpty else { return }
         inputDebounce?.cancel()
         let work = DispatchWorkItem { [weak self] in
             Task { @MainActor in
                 guard let self else { return }
                 try? await Task.sleep(nanoseconds: 80_000_000)
-                for job in candidates where job.phase == .running && !job.waitingOnHim {
-                    let front = simulated ? job.bundle : NSWorkspace.shared.frontmostApplication?.bundleIdentifier
-                    var focused: Bool?
-                    var inside: Bool?
-                    if job.isBrowserJob {
-                        guard job.page.isBound else { continue }
-                        focused = simulated ? true : await job.page.tabFocused()
-                        if let point, let bounds = await job.page.windowBounds() {
-                            let primary = NSScreen.screens.first?.frame.height ?? 0
-                            inside = bounds.contains(CGPoint(x: point.x, y: primary - point.y))
-                        }
-                        if simulated { inside = true }
+                for job in paused where job.phase == .paused {
+                    guard let at = await self.whereInput(job, point: point, simulated: simulated) else { continue }
+                    if JobPauseRule.inJobTab(input: kind, frontBundle: at.front, jobBundle: job.bundle, isBrowserJob: job.isBrowserJob,
+                                             jobTabFocused: at.focused, pointInJobWindow: at.inside) {
+                        self.scheduleAutoResume(job)
                     }
-                    if JobPauseRule.shouldPause(input: kind, own: false, phase: job.phase, frontBundle: front, jobBundle: job.bundle,
-                                                isBrowserJob: job.isBrowserJob, jobTabFocused: focused, pointInJobWindow: inside) {
+                }
+                for job in candidates where job.phase == .running && !job.waitingOnHim {
+                    guard let at = await self.whereInput(job, point: point, simulated: simulated) else { continue }
+                    if JobPauseRule.shouldPause(input: kind, own: false, phase: job.phase, frontBundle: at.front, jobBundle: job.bundle,
+                                                isBrowserJob: job.isBrowserJob, jobTabFocused: at.focused, pointInJobWindow: at.inside) {
                         self.pause(job, reason: kind == .click ? "he clicked" : "he typed")
                     }
                 }
@@ -1145,6 +1142,22 @@ final class JobManager {
         }
         inputDebounce = work
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.25, execute: work)
+    }
+
+    /// Where his input landed for this job: the app in front and, for a browser job, whether its tab has focus and the
+    /// point is inside its window. Nil for a browser job whose tab isn't bound (nothing to compare).
+    private func whereInput(_ job: Job, point: CGPoint?, simulated: Bool) async -> (front: String?, focused: Bool?, inside: Bool?)? {
+        let front = simulated ? job.bundle : NSWorkspace.shared.frontmostApplication?.bundleIdentifier
+        guard job.isBrowserJob else { return (front, nil, nil) }
+        guard job.page.isBound else { return nil }
+        let focused = simulated ? true : await job.page.tabFocused()
+        var inside: Bool?
+        if let point, let bounds = await job.page.windowBounds() {
+            let primary = NSScreen.screens.first?.frame.height ?? 0
+            inside = bounds.contains(CGPoint(x: point.x, y: primary - point.y))
+        }
+        if simulated { inside = true }
+        return (front, focused, inside)
     }
 
     func pause(_ job: Job, reason: String) {

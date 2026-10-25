@@ -162,6 +162,13 @@ final class JobStateTests: XCTestCase {
         XCTAssertFalse(pause(phase: .paused), "already paused")
         XCTAssertTrue(pause(.key), "a key in the focused job tab")
         XCTAssertFalse(pause(.key, focused: false))
+        // a paused job's wait restarts only for input in its own tab
+        XCTAssertTrue(JobPauseRule.inJobTab(input: .key, frontBundle: "ai.perplexity.comet", jobBundle: "ai.perplexity.comet", isBrowserJob: true, jobTabFocused: true))
+        XCTAssertFalse(JobPauseRule.inJobTab(input: .key, frontBundle: "com.apple.Notes", jobBundle: "ai.perplexity.comet", isBrowserJob: true, jobTabFocused: nil),
+                       "typing in another app leaves the paused job's 15 s alone")
+        XCTAssertFalse(JobPauseRule.inJobTab(input: .click, frontBundle: "ai.perplexity.comet", jobBundle: "ai.perplexity.comet", isBrowserJob: true, jobTabFocused: false),
+                       "another Comet tab")
+        XCTAssertFalse(JobPauseRule.inJobTab(input: .move, frontBundle: "ai.perplexity.comet", jobBundle: "ai.perplexity.comet", isBrowserJob: true, jobTabFocused: true))
         XCTAssertEqual(JobPauseRule.afterPause("go on"), .resume)
         XCTAssertEqual(JobPauseRule.afterPause("what is 17 times 23"), .drop)
     }

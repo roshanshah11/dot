@@ -36,6 +36,14 @@ public enum JobPauseRule {
     public static func shouldPause(input: JobInput, own: Bool, phase: JobPhase, frontBundle: String?, jobBundle: String?,
                                    isBrowserJob: Bool, jobTabFocused: Bool?, pointInJobWindow: Bool? = nil) -> Bool {
         if own || phase != .running { return false }
+        return inJobTab(input: input, frontBundle: frontBundle, jobBundle: jobBundle, isBrowserJob: isBrowserJob,
+                        jobTabFocused: jobTabFocused, pointInJobWindow: pointInJobWindow)
+    }
+
+    /// His click or key landed in the job's app, window and (for a browser job) tab: it pauses a running job, and keeps
+    /// a paused one waiting. Input anywhere else leaves a paused job's auto-resume alone.
+    public static func inJobTab(input: JobInput, frontBundle: String?, jobBundle: String?, isBrowserJob: Bool,
+                                jobTabFocused: Bool?, pointInJobWindow: Bool? = nil) -> Bool {
         guard input == .click || input == .key else { return false }
         guard let front = frontBundle, let job = jobBundle, front == job else { return false }
         if input == .click, pointInJobWindow == false { return false }
