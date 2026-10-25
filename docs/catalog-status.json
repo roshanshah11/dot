@@ -1,8 +1,8 @@
 {
  "counts": {
   "fail": 0,
-  "pass": 364,
-  "total": 364
+  "pass": 386,
+  "total": 386
  },
  "widgets": {
   "absorption-variable-costing-inventory-profit": {
@@ -901,6 +901,14 @@
    "subject": "biology",
    "title": "Guide-directed cutting by Cas9"
   },
+  "cross-product-geometry": {
+   "checked": "2026-10-25T18:18:40",
+   "failures": [],
+   "shows": "Change the lengths and the angle: a \u00d7 b stands perpendicular to both, its length is the parallelogram's area |a||b| sin \u03b8, and b \u00d7 a points the other way",
+   "status": "pass",
+   "subject": "calculus",
+   "title": "Cross product: area and direction"
+  },
   "currency-appreciation": {
    "checked": "2026-10-17T03:33:36",
    "failures": [],
@@ -1565,6 +1573,14 @@
    "subject": "biology",
    "title": "Immune memory: why the second response is faster"
   },
+  "immune-phagocytosis-phagolysosome-digestion": {
+   "checked": "2026-10-25T18:18:40",
+   "failures": [],
+   "shows": "Scrub the minutes after a macrophage swallows a bacterium: lysosomes fuse and bring acid hydrolases, the V-ATPase pumps the lumen down to about pH 4.7, and the bacterium is broken down; block the pump or the fusion and digestion stalls",
+   "status": "pass",
+   "subject": "biology",
+   "title": "Phagolysosome: acid and enzymes digest a microbe"
+  },
   "inclined-plane-acceleration": {
    "checked": "2026-10-17T06:31:41",
    "failures": [],
@@ -1580,6 +1596,38 @@
    "status": "pass",
    "subject": "stats",
    "title": "Independent events: multiply the probabilities"
+  },
+  "innate-versus-adaptive-immune-response-timing": {
+   "checked": "2026-10-25T18:18:40",
+   "failures": [],
+   "shows": "Scrub through an infection day by day: the innate response starts within hours and holds the microbe back, the adaptive response needs days to expand but clears it, and on a second exposure memory cells cut that lag to a day or two",
+   "status": "pass",
+   "subject": "biology",
+   "title": "Innate versus adaptive: who acts when"
+  },
+  "innate-vs-adaptive-immunity": {
+   "checked": "2026-10-25T18:18:40",
+   "failures": [],
+   "shows": "Pick a microbe: innate cells all use the same few receptors for patterns whole groups of microbes share, while adaptive immunity relies on the one rare clone whose receptor fits this strain; meet it again and memory makes that clone common, change its epitope and memory misses",
+   "status": "pass",
+   "subject": "biology",
+   "title": "Innate versus adaptive recognition"
+  },
+  "integrin-cell-matrix-adhesion": {
+   "checked": "2026-10-25T18:18:40",
+   "failures": [],
+   "shows": "Change the spacing of RGD sites on fibronectin, talin and the cations: integrins grip only when talin opens them and Mg2+ fills their metal site, and they build a focal adhesion linked to actin only when the sites are about 70 nm apart or closer",
+   "status": "pass",
+   "subject": "biology",
+   "title": "Integrins: gripping the matrix"
+  },
+  "interferon-antiviral-signaling-between-cells": {
+   "checked": "2026-10-25T18:18:40",
+   "failures": [],
+   "shows": "Step through an infected cell sensing viral RNA, secreting interferon-beta, and its neighbour reading the signal through IFNAR and JAK-STAT to make antiviral proteins that stop the virus; add a viral blocker or remove the receptor and the neighbour gets infected",
+   "status": "pass",
+   "subject": "biology",
+   "title": "Interferon: an infected cell warns its neighbours"
   },
   "joint-marginal-conditional-table": {
    "checked": "2026-10-17T05:36:59",
@@ -2293,6 +2341,14 @@
    "subject": "biology",
    "title": "Fluid mosaic: the parts of a membrane"
   },
+  "plasma-membrane-lateral-fluidity": {
+   "checked": "2026-10-25T18:18:40",
+   "failures": [],
+   "shows": "Pick a molecule and a time: lipids wander microns a second within their leaflet, proteins slower, tethered ones barely, while flipping to the other leaflet takes hours",
+   "status": "pass",
+   "subject": "biology",
+   "title": "Lateral fluidity of the plasma membrane"
+  },
   "plasmid-sticky-end-ligation": {
    "checked": "2026-10-17T03:49:27",
    "failures": [],
@@ -2324,6 +2380,30 @@
    "status": "pass",
    "subject": "linear-algebra",
    "title": "Power iteration: finding the dominant eigenvector"
+  },
+  "pre-mrna-exon-intron-structure": {
+   "checked": "2026-10-25T18:18:40",
+   "failures": [],
+   "shows": "Set the exon count and intron length: drawn to scale, introns take up most of the pre-mRNA, and every intron carries the same GU, branch-point A and AG signals the spliceosome reads",
+   "status": "pass",
+   "subject": "biology",
+   "title": "Pre-mRNA: exons, introns and their signals"
+  },
+  "pre-mrna-intron-splicing": {
+   "checked": "2026-10-25T18:18:40",
+   "failures": [],
+   "shows": "Step through splicing: snRNPs find the GU, the branch-point A and the AG, the A attacks the 5\u2032 splice site to make a lariat, then exon 1 attacks the 3\u2032 splice site and the exons join",
+   "status": "pass",
+   "subject": "biology",
+   "title": "Splicing an intron out of pre-mRNA"
+  },
+  "pre-mrna-processing": {
+   "checked": "2026-10-25T18:18:40",
+   "failures": [],
+   "shows": "Step along with RNA polymerase II: the 5\u2032 end is capped at about 25 nt, introns are spliced out as lariats, the RNA is cut past AAUAAA and given a poly(A) tail, and the finished mRNA leaves the nucleus cap first",
+   "status": "pass",
+   "subject": "biology",
+   "title": "Pre-mRNA processing: cap, splice, tail"
   },
   "present-value-discounting": {
    "checked": "2026-10-17T01:48:09",
@@ -2453,6 +2533,14 @@
    "subject": "biology",
    "title": "Sticky ends: how a restriction enzyme cuts"
   },
+  "retroviral-reverse-transcription-and-integration": {
+   "checked": "2026-10-25T18:18:40",
+   "failures": [],
+   "shows": "Step HIV from RNA to provirus: reverse transcriptase copies RNA into DNA, RNase H clears the RNA, integrase splices the DNA into a chromosome; add a drug to see where it stops and slide RT's error rate",
+   "status": "pass",
+   "subject": "biology",
+   "title": "Retrovirus: reverse transcription and integration"
+  },
   "ribosome-a-p-e-sites": {
    "checked": "2026-10-17T04:09:36",
    "failures": [],
@@ -2477,6 +2565,14 @@
    "subject": "biology",
    "title": "Which strand is the template?"
   },
+  "rna-processing": {
+   "checked": "2026-10-25T18:18:40",
+   "failures": [],
+   "shows": "Switch off the 5\u2032 cap, splicing or the poly(A) tail and see where the message is destroyed; shorten the tail to watch the PABPs drop off until decay begins",
+   "status": "pass",
+   "subject": "biology",
+   "title": "RNA processing: cap, splice, tail"
+  },
   "roc-curve": {
    "checked": "2026-10-17T06:08:52",
    "failures": [],
@@ -2484,6 +2580,14 @@
    "status": "pass",
    "subject": "stats",
    "title": "ROC curve and AUC"
+  },
+  "rough-versus-smooth-endoplasmic-reticulum": {
+   "checked": "2026-10-25T18:18:40",
+   "failures": [],
+   "shows": "Pick a product and step it through its cell: proteins to secrete or embed come off ribosomes on the rough ER; steroids, drug detox and Ca\u00b2\u207a storage belong to the smooth ER",
+   "status": "pass",
+   "subject": "biology",
+   "title": "Rough versus smooth ER"
   },
   "row-reduction-stepper": {
    "checked": "2026-10-17T03:44:55",
@@ -2541,6 +2645,14 @@
    "subject": "biology",
    "title": "Sanger sequencing"
   },
+  "secondary-active-cotransport": {
+   "checked": "2026-10-25T18:18:40",
+   "failures": [],
+   "shows": "Step through a Na\u207a-glucose symporter and change the Na\u207a inside, the membrane voltage and how many Na\u207a ride along: Na\u207a running downhill pays for glucose going uphill, and the Na\u207a/K\u207a pump's ATP keeps that gradient there",
+   "status": "pass",
+   "subject": "biology",
+   "title": "Secondary active transport: Na\u207a-glucose symport"
+  },
   "shifted-inverse-iteration": {
    "checked": "2026-10-17T02:35:01",
    "failures": [],
@@ -2556,6 +2668,14 @@
    "status": "pass",
    "subject": "stats",
    "title": "Side-by-side box plots: center vs spread"
+  },
+  "simple-diffusion-across-membrane": {
+   "checked": "2026-10-25T18:18:40",
+   "failures": [],
+   "shows": "Set the concentration on each side and pick a molecule: small nonpolar molecules slip straight through the lipid bilayer from high to low concentration, with no protein and no ATP, while large polar molecules and ions are kept out",
+   "status": "pass",
+   "subject": "biology",
+   "title": "Simple diffusion across a membrane"
   },
   "simple-pendulum": {
    "checked": "2026-10-17T06:08:13",
@@ -2581,6 +2701,22 @@
    "subject": "stats",
    "title": "Skewness: which way the tail points"
   },
+  "skin-mucus-physical-chemical-barriers": {
+   "checked": "2026-10-25T18:18:40",
+   "failures": [],
+   "shows": "Pick a body surface and breach its physical or chemical barrier: with both intact no microbe reaches living tissue, with one down the other still catches most, and with both down microbes get in",
+   "status": "pass",
+   "subject": "biology",
+   "title": "Skin and mucus: physical and chemical barriers"
+  },
+  "sodium-potassium-active-transport": {
+   "checked": "2026-10-25T18:18:40",
+   "failures": [],
+   "shows": "Step through one pump cycle: 3 Na\u207a bind inside, ATP phosphorylates the pump, it flips to release them outside, 2 K\u207a bind, the phosphate leaves and it flips back; set the number of cycles or add ouabain to jam it",
+   "status": "pass",
+   "subject": "biology",
+   "title": "The sodium-potassium pump"
+  },
   "span-membership": {
    "checked": "2026-10-17T03:44:55",
    "failures": [],
@@ -2588,6 +2724,14 @@
    "status": "pass",
    "subject": "linear-algebra",
    "title": "Is b in the span?"
+  },
+  "spindle-assembly-checkpoint-attachment": {
+   "checked": "2026-10-25T18:18:40",
+   "failures": [],
+   "shows": "Set how many kinetochores still lack microtubules: any unattached kinetochore makes the Mad2 wait signal, APC/C stays off and anaphase waits; at zero the sisters part, and with the checkpoint disabled the cell divides anyway and missegregates",
+   "status": "pass",
+   "subject": "biology",
+   "title": "Spindle checkpoint: waiting for every attachment"
   },
   "standard-deviation": {
    "checked": "2026-10-17T06:33:27",
@@ -2637,6 +2781,22 @@
    "subject": "linear-algebra",
    "title": "Subspace test"
   },
+  "sugar-phosphate-backbone": {
+   "checked": "2026-10-25T18:18:40",
+   "failures": [],
+   "shows": "Change the strand length and switch DNA to RNA: sugars and phosphates alternate, each phosphodiester bond joins one sugar's 3\u2032 carbon to the next one's 5\u2032 carbon, giving the strand a 5\u2032 and a 3\u2032 end and a negative charge on every link",
+   "status": "pass",
+   "subject": "biology",
+   "title": "The sugar-phosphate backbone"
+  },
+  "synaptic-cell-signaling": {
+   "checked": "2026-10-25T18:18:40",
+   "failures": [],
+   "shows": "Step from an action potential arriving at the axon terminal to transmitter crossing the cleft and opening channels on the next cell; set how many vesicles fuse, the size of one, and an excitatory or inhibitory transmitter to see the postsynaptic potential",
+   "status": "pass",
+   "subject": "biology",
+   "title": "Synaptic signaling at a chemical synapse"
+  },
   "system-linear-equations-cases": {
    "checked": "2026-10-17T02:35:01",
    "failures": [],
@@ -2668,6 +2828,22 @@
    "status": "pass",
    "subject": "stats",
    "title": "From a t statistic to a p-value"
+  },
+  "target-cell-receptor-specificity": {
+   "checked": "2026-10-25T18:18:40",
+   "failures": [],
+   "shows": "Send epinephrine or acetylcholine past four cells and raise its concentration: only cells with a matching receptor respond, each subtype makes its own response, and a blocker silences one subtype while another still answers",
+   "status": "pass",
+   "subject": "biology",
+   "title": "Target cells: only matching receptors respond"
+  },
+  "three-prime-poly-a-tail-addition": {
+   "checked": "2026-10-25T18:18:40",
+   "failures": [],
+   "shows": "Step through 3\u2032 end processing: CPSF finds AAUAAA, the RNA is cut 10 to 30 nt downstream, poly(A) polymerase adds A's with no template, and Pol II is released; change the signal, the cut distance and the tail length",
+   "status": "pass",
+   "subject": "biology",
+   "title": "Poly(A) tail: cleavage and polyadenylation"
   },
   "three-statement-flow": {
    "checked": "2026-10-17T02:33:22",
