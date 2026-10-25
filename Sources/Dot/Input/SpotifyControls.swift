@@ -80,7 +80,7 @@ extension Hands {
     }
     /// Spotify's Web API script: its exit code and its one line. 3: not set up, 4: no such device, 5: Spotify refused.
     nonisolated static func spotifyAPI(_ args: [String]) async -> (code: Int32, out: String) {
-        guard let script = DotConfig.bundledScript("dot-spotify-api.py", fallback: "~/Projects/dot-fast/scripts/dot-spotify-api.py") else { return (-1, "no dot-spotify-api.py") }
+        guard let script = DotConfig.bundledScript("dot-spotify-api.py", fallback: "~/Projects/dot/scripts/dot-spotify-api.py") else { return (-1, "no dot-spotify-api.py") }
         let (code, out) = await run("/usr/bin/python3", [script] + args, timeout: 15)
         return (code, out.trimmingCharacters(in: .whitespacesAndNewlines))
     }

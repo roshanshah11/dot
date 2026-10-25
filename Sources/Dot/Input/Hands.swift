@@ -87,7 +87,7 @@ final class Hands {
 
     /// The script's output and exit code, run off the main thread with a deadline.
     nonisolated static func spotifyScript(_ args: [String], env: [String: String], timeout: TimeInterval) async -> (code: Int32, out: String) {
-        guard let script = DotConfig.bundledScript("dot-spotify.sh", fallback: "~/Projects/dot-fast/scripts/dot-spotify.sh") else { return (-1, "no dot-spotify.sh") }
+        guard let script = DotConfig.bundledScript("dot-spotify.sh", fallback: "~/Projects/dot/scripts/dot-spotify.sh") else { return (-1, "no dot-spotify.sh") }
         return await withCheckedContinuation { continuation in
             DispatchQueue.global(qos: .userInitiated).async {
                 let p = Process()

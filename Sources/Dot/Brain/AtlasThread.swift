@@ -23,7 +23,7 @@ final class AtlasThread {
     private var timer: Timer?
 
     private var script: String? {
-        DotConfig.bundledScript("dot-atlas-thread.py", fallback: "~/Projects/dot-fast/scripts/dot-atlas-thread.py")
+        DotConfig.bundledScript("dot-atlas-thread.py", fallback: "~/Projects/dot/scripts/dot-atlas-thread.py")
     }
 
     private static let stamp: ISO8601DateFormatter = {
