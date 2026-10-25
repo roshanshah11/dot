@@ -1,5 +1,6 @@
 import AudioToolbox
 import CoreAudio
+import IOKit
 import Foundation
 
 /// The Mac's audio devices through CoreAudio: which microphone is the default, whether another
@@ -101,6 +102,24 @@ enum AudioDevices {
             let builtIn = AudioObjectGetPropertyData(device, &transport, 0, nil, &kindSize, &kind) == noErr && kind == kAudioDeviceTransportTypeBuiltIn
             return (device, name(of: device), builtIn)
         }
+    }
+
+    /// Bluetooth headphones and earbuds (classic or LE): recording from their mic drops them into headset mode.
+    static func isBluetooth(_ device: AudioDeviceID) -> Bool {
+        var transport = AudioObjectPropertyAddress(mSelector: kAudioDevicePropertyTransportType, mScope: kAudioObjectPropertyScopeGlobal, mElement: kAudioObjectPropertyElementMain)
+        var kind = UInt32(0)
+        var size = UInt32(MemoryLayout<UInt32>.size)
+        guard AudioObjectGetPropertyData(device, &transport, 0, nil, &size, &kind) == noErr else { return false }
+        return kind == kAudioDeviceTransportTypeBluetooth || kind == kAudioDeviceTransportTypeBluetoothLE
+    }
+
+    /// The MacBook's lid is shut (clamshell on an external display): its own mic hears nothing then.
+    static var lidClosed: Bool {
+        let root = IOServiceGetMatchingService(kIOMainPortDefault, IOServiceMatching("IOPMrootDomain"))
+        defer { IOObjectRelease(root) }
+        guard root != 0, let v = IORegistryEntryCreateCFProperty(root, "AppleClamshellState" as CFString, kCFAllocatorDefault, 0)?
+            .takeRetainedValue() as? Bool else { return false }
+        return v
     }
 
     /// Make a device the system's default input (the failover when the chosen mic hears nothing).
