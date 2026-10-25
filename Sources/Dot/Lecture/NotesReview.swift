@@ -66,11 +66,17 @@ final class NotesReview {
         }
     }
 
+    /// Held until it runs: opening another class or course within the 1.5 s releases this review, and the edit the page
+    /// already took must still reach the file. The file is read again first, so the other classes in it keep whatever
+    /// changed since these notes were opened (a later Canvas pass, another class).
     private func save() {
         saveWork?.cancel()
-        let work = DispatchWorkItem { [weak self] in
+        let work = DispatchWorkItem {
             Task { @MainActor in
-                guard let self else { return }
+                self.saveWork = nil   // the work item holds this review: let both go once it has run
+                if let text = try? String(contentsOf: self.fileURL, encoding: .utf8) {
+                    self.file = CourseNotesFile.parse(text, fallbackTitle: "\(self.course) notes")
+                }
                 self.file.upsert(self.notes)
                 try? self.file.markdown.write(to: self.fileURL, atomically: true, encoding: .utf8)
             }

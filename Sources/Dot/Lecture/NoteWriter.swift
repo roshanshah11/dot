@@ -44,11 +44,16 @@ final class NoteWriter {
         // A cycle is a short reply on a long context: thinking would only add seconds.
         options.environment = ["MAX_THINKING_TOKENS": "0"]
         let session = ClaudeSession(label: "lecture", claudePath: config.claudeExecutable, options: options)
-        session.onEvent = { [weak self] event in self?.received(event) }
-        session.onExit = { [weak self] code in
+        // a writer replaced by restartWriter may still report in: only the current one counts
+        session.onEvent = { [weak self, weak session] event in
+            guard let self, let session, self.session === session else { return }
+            self.received(event)
+        }
+        session.onExit = { [weak self, weak session] code in
+            guard let self, let session, self.session === session else { return }
             Log.warn("lecture: note writer exited (\(code))")
-            self?.finish(nil)
-            self?.session = nil
+            self.finish(nil)
+            self.session = nil
         }
         try session.start()
         self.session = session
@@ -104,7 +109,7 @@ final class NoteWriter {
     static func resource(_ name: String) -> String {
         let candidates = [ProcessInfo.processInfo.environment["DOT_LECTURE_DIR"].map { DotConfig.expand($0) + "/" + name },
                           Bundle.main.resourceURL?.appendingPathComponent("lecture/" + name).path,
-                          DotConfig.expand("~/Projects/dot-fast/Resources/lecture/" + name)].compactMap { $0 }
+                          DotConfig.expand("~/Projects/dot/Resources/lecture/" + name)].compactMap { $0 }
         for path in candidates { if let text = try? String(contentsOfFile: path, encoding: .utf8) { return text } }
         Log.warn("lecture: \(name) not found")
         return ""

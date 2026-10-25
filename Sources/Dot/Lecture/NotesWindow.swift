@@ -244,7 +244,7 @@ final class NotesWindow: NSObject, NSWindowDelegate, NSSplitViewDelegate, WKNavi
     }
 
     /// He is looking at this window (it is up, on the Space in front).
-    var isInView: Bool { window?.isVisible == true && window?.isOnActiveSpace == true && !closingFromFullScreen }
+    var isInView: Bool { window?.isVisible == true && window?.isMiniaturized != true && window?.isOnActiveSpace == true && !closingFromFullScreen }
 
     /// The explainer panel is on the board while he is looking at this window; swiped away, it floats for his own
     /// questions as usual (the lecture's explainers wait for him to come back).
@@ -334,6 +334,11 @@ final class NotesWindow: NSObject, NSWindowDelegate, NSSplitViewDelegate, WKNavi
         onBoard?(nil)
         Log.info("notes: closed")
     }
+
+    // In the Dock it is out of view like a swiped-away Space: the panel floats for his questions, and docks again when
+    // the window is back.
+    func windowDidMiniaturize(_ notification: Notification) { syncBoard() }
+    func windowDidDeminiaturize(_ notification: Notification) { syncBoard() }
 
     func windowDidExitFullScreen(_ notification: Notification) {
         if closingFromFullScreen { closingFromFullScreen = false; hide() }

@@ -81,6 +81,8 @@ final class LectureSession {
     var cycleSeconds: TimeInterval = 30
     var cycleWords = 75
     static let gapFillCap = 6
+    /// Which class each notes file has going on now (LectureLive), for a restart mid-class.
+    static var liveFile: URL { DotConfig.peek().talkRootURL.appendingPathComponent("lecture-live.json") }
     static let recallSeconds = 120
     static let whySeconds = 90
     /// A gap this long in the words means the speaker paused: a ready explainer can open.
@@ -100,10 +102,11 @@ final class LectureSession {
         fileURL = folder.appendingPathComponent("\(course) notes.md")
         let existing = (try? String(contentsOf: fileURL, encoding: .utf8)).map { CourseNotesFile.parse($0, fallbackTitle: "\(course) notes") }
         file = existing ?? CourseNotesFile(title: "\(course) notes")
-        // Dot restarted mid-class: today's section on top is this class, picked up where it was.
+        // Dot restarted mid-class: today's section on top is this class, picked up where it was. A class that finished
+        // is a new one (LectureLive): a second talk the same day gets its own number.
         let today = ClassNotes.dateLabel(now)
         if let top = file.sections.first, let head = CourseNotesFile.classHeading(top.components(separatedBy: "\n")[0]), head.date == today,
-           let resumed = ClassNotes.parse(section: top) {
+           let resumed = ClassNotes.parse(section: top), LectureLive.key(for: fileURL.path, in: Self.liveFile) == resumed.key {
             notes = resumed
         } else {
             notes = ClassNotes(number: file.nextClassNumber, date: now)
@@ -145,6 +148,7 @@ final class LectureSession {
         writer.send(first) { _, _ in }
         chunkStart = lectureClock()
         save()
+        LectureLive.set(notes.key, for: fileURL.path, in: Self.liveFile)
         tickTimer = Timer.scheduledTimer(withTimeInterval: 5, repeats: true) { [weak self] _ in
             Task { @MainActor in self?.tick() }
         }
@@ -588,6 +592,7 @@ final class LectureSession {
 
     private func finish() async {
         saveNow()
+        LectureLive.clear(notes.key, for: fileURL.path, in: Self.liveFile)
         writer.stop()
         explainers.stopAll()
         let pdf = await exportPDF()

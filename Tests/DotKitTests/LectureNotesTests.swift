@@ -249,4 +249,21 @@ final class LectureNotesTests: XCTestCase {
         XCTAssertNil(LectureCourses.folder(for: "Unknown Course", aliases: [:], maps: [map], folders: folders))
         XCTAssertEqual(LectureCourses.newFolderName(for: "Intro: Part I/II"), "Intro Part I II")
     }
+
+    func testLectureLiveNamesOnlyTheClassGoingOn() {
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("lecture-live-\(UUID().uuidString).json")
+        defer { try? FileManager.default.removeItem(at: url) }
+        let file = "/tmp/Other lectures/Other lectures notes.md", demo = "/tmp/demo/EXMP notes.md"
+        XCTAssertNil(LectureLive.key(for: file, in: url))
+        LectureLive.set("CLASS 1 (Sun Oct 25)", for: file, in: url)
+        LectureLive.set("CLASS 4 (Sun Oct 25)", for: demo, in: url)
+        XCTAssertEqual(LectureLive.key(for: file, in: url), "CLASS 1 (Sun Oct 25)", "a restart mid-class resumes it")
+        LectureLive.clear("CLASS 9 (Sun Oct 25)", for: file, in: url)
+        XCTAssertEqual(LectureLive.key(for: file, in: url), "CLASS 1 (Sun Oct 25)", "another class's finish leaves it")
+        LectureLive.clear("CLASS 1 (Sun Oct 25)", for: file, in: url)
+        XCTAssertNil(LectureLive.key(for: file, in: url), "finished: a second talk that day is a new class")
+        XCTAssertEqual(LectureLive.key(for: demo, in: url), "CLASS 4 (Sun Oct 25)", "a demo's sandbox file is its own")
+        LectureLive.clear("CLASS 4 (Sun Oct 25)", for: demo, in: url)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: url.path), "nothing going on: no file")
+    }
 }

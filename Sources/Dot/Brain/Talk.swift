@@ -1163,6 +1163,8 @@ final class Talk {
             return
         case .openNotes(let course, let number):
             openCourseNotes(course, classNumber: number)
+            settle()
+            return
         case .recapLecture:
             await recapLecture()
             return
@@ -1655,24 +1657,34 @@ final class Talk {
     /// The after-class pass on a saved class, from its file: new files from Canvas against the notes and the transcript.
     private func recheckPass(_ item: LectureRecheck, folder: URL, files: [String]) async {
         let notesURL = URL(fileURLWithPath: item.notesFile)
-        guard let text = try? String(contentsOf: notesURL, encoding: .utf8) else { return }
-        var file = CourseNotesFile.parse(text, fallbackTitle: "\(item.course) notes")
-        guard let section = file.section(key: item.key), var notes = ClassNotes.parse(section: section) else { return }
         let transcript = (try? String(contentsOfFile: item.transcriptFile, encoding: .utf8)) ?? ""
         let materials = LectureMaterials.gather(folder: folder, notesFile: notesURL, cap: 60_000)
-        let message = AfterClass.message(heading: notes.heading, course: item.title, notes: notes, transcript: transcript,
-                                         transcriptSource: "the class transcript", materials: materials.text, slidePictures: 0)
-            + "\n\nthis is a later pass: these files arrived on Canvas after class: \(files.joined(separator: ", ")). add what they give for what this class covered; leave the rest as it is."
-        guard let reply = await AfterClassPass.ask(config: config, message: message, images: []) else { return }
-        let outcome = AfterClass.apply(reply, to: &notes, titleLocked: true)
-        guard !outcome.added.isEmpty || !outcome.fixed.isEmpty else { Log.info("lecture: canvas re-check for \(item.course) \(item.key): the new files added nothing"); return }
-        // read again: he may have edited the file while the pass ran; only this class's section is replaced
-        if let now = try? String(contentsOf: notesURL, encoding: .utf8) { file = CourseNotesFile.parse(now, fallbackTitle: "\(item.course) notes") }
-        file.upsert(notes)
-        try? file.markdown.write(to: notesURL, atomically: true, encoding: .utf8)
-        let pdf = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Desktop/\(item.course) notes.pdf")
-        try? await NotesWindow().exportPDF(markdown: file.markdown, baseURL: folder, to: pdf)
-        Log.info("lecture: canvas re-check for \(item.course) \(item.key): \(outcome.summary) from \(files.joined(separator: ", "))")
+        // The reply names lines by position (d1, d2, ...) in the section it was given, so it only lands on that same
+        // section: when he edited this class while the pass ran, the pass runs again on his notes as they are now.
+        for attempt in 0..<2 {
+            guard let text = try? String(contentsOf: notesURL, encoding: .utf8) else { return }
+            let file = CourseNotesFile.parse(text, fallbackTitle: "\(item.course) notes")
+            guard let section = file.section(key: item.key), var notes = ClassNotes.parse(section: section) else { return }
+            let message = AfterClass.message(heading: notes.heading, course: item.title, notes: notes, transcript: transcript,
+                                             transcriptSource: "the class transcript", materials: materials.text, slidePictures: 0)
+                + "\n\nthis is a later pass: these files arrived on Canvas after class: \(files.joined(separator: ", ")). add what they give for what this class covered; leave the rest as it is."
+            guard let reply = await AfterClassPass.ask(config: config, message: message, images: []) else { return }
+            // read again: other classes in the file keep whatever changed meanwhile; only this class's section is replaced
+            guard let now = try? String(contentsOf: notesURL, encoding: .utf8) else { return }
+            var fresh = CourseNotesFile.parse(now, fallbackTitle: "\(item.course) notes")
+            guard fresh.section(key: item.key) == section else {
+                Log.info("lecture: canvas re-check for \(item.course) \(item.key): he edited the notes during the pass; \(attempt == 0 ? "running it again" : "his notes stay as they are")")
+                continue
+            }
+            let outcome = AfterClass.apply(reply, to: &notes, titleLocked: true)
+            guard !outcome.added.isEmpty || !outcome.fixed.isEmpty else { Log.info("lecture: canvas re-check for \(item.course) \(item.key): the new files added nothing"); return }
+            fresh.upsert(notes)
+            try? fresh.markdown.write(to: notesURL, atomically: true, encoding: .utf8)
+            let pdf = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Desktop/\(item.course) notes.pdf")
+            try? await NotesWindow().exportPDF(markdown: fresh.markdown, baseURL: folder, to: pdf)
+            Log.info("lecture: canvas re-check for \(item.course) \(item.key): \(outcome.summary) from \(files.joined(separator: ", "))")
+            return
+        }
     }
 
     /// The lecture window: notes left, and on the right the board, where the explainer panel lives while it is open.
