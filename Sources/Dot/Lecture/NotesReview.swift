@@ -53,6 +53,9 @@ final class NotesReview {
         case .add(let id, let after, let depth, let text): if notes.add(id: id, after: after, depth: depth, text: text), !text.isEmpty { save() }
         case .indent(let id, let depth): if notes.indent(id, depth: depth) { save() }
         case .remove(let id): if notes.remove(id) { save() }
+        case .title(let text):
+            let title = text.trimmingCharacters(in: .whitespacesAndNewlines)
+            if title != notes.title { notes.title = title; save() }
         case .source(let id):
             guard let at = notes.block(id)?.at, let i = transcript.firstIndex(where: { $0.clock == at }) ?? transcript.lastIndex(where: { $0.clock < at }) else {
                 window.showSource(id: id, time: "", text: "no transcript for this line")

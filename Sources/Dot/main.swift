@@ -175,6 +175,13 @@ case "--lecture-replay":
     replayApp.finishLaunching()
     let passed = MainActor.assumeIsolated { LectureReplay.run(Array(arguments.dropFirst())) }
     exit(passed ? 0 : 1)
+case "--after-class":
+    // The after-class pass on a saved class, into a scratch copy (AfterClassReplay): never his notes or his Desktop.
+    let afterApp = NSApplication.shared
+    afterApp.setActivationPolicy(.accessory)
+    afterApp.finishLaunching()
+    let afterPassed = MainActor.assumeIsolated { AfterClassReplay.run(Array(arguments.dropFirst())) }
+    exit(afterPassed ? 0 : 1)
 case "--lecture-demo":
     // Lecture mode in the running Dot on the recorded class in ~/Dot/talk/lecture-demo, into a sandbox (LectureDemo).
     let demoArgs = Array(arguments)   // `arguments` is a slice: its indices start at 1

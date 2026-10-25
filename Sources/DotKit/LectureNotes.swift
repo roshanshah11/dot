@@ -16,26 +16,33 @@ public struct NoteBlock: Equatable, Codable, Sendable {
     /// When in class the line came from ("11:42:10"), so a tap shows what was said there. Kept in the file as a
     /// trailing comment no renderer shows.
     public var at: String?
+    /// Dot's line corrected after class from the whole lecture (the after-class pass, 2026-10-25).
+    public var fixed: Bool
 
-    public init(id: String, depth: Int, text: String, author: Author, image: String? = nil, at: String? = nil) {
+    public init(id: String, depth: Int, text: String, author: Author, image: String? = nil, at: String? = nil, fixed: Bool = false) {
         self.id = id; self.depth = max(0, min(NoteBlock.maxDepth, depth)); self.text = text; self.author = author; self.image = image; self.at = at
+        self.fixed = fixed
     }
 
     public static let maxDepth = 3
     /// Lines added after class start with this, in the file and on the page.
     public static let addedMark = "⁺ "
 
+    /// The line in the file. Its trailing comment carries its time and whose it is ("<!--@11:42:10 his-->", "<!--@ his-->" with
+    /// no time), so his lines stay his after a restart and the after-class pass never touches them; no renderer shows it.
     public var markdown: String {
         let indent = String(repeating: "  ", count: depth)
-        let stamp = at.map { " <!--@\($0)-->" } ?? ""
+        let flags = (author == .him ? " his" : "") + (fixed ? " fixed" : "")
+        let stamp = at != nil || !flags.isEmpty ? " <!--@\(at ?? "")\(flags)-->" : ""
         if let image { return indent + "![\(text)](\(image))" + stamp }
         return indent + "- " + (author == .added ? Self.addedMark : "") + text + stamp
     }
 
-    /// A line's text and its trailing time comment apart: "- x <!--@11:42:10-->" -> ("- x", "11:42:10").
-    static func splitStamp(_ line: String) -> (String, String?) {
-        guard let m = line.firstMatch(of: #/\s*<!--@([0-9:]+)-->\s*$/#) else { return (line, nil) }
-        return (String(line[..<m.range.lowerBound]), String(m.1))
+    /// A line's text, its time and its flags apart: "- x <!--@11:42:10 his-->" -> ("- x", "11:42:10", ["his"]).
+    static func splitStamp(_ line: String) -> (String, String?, Set<String>) {
+        guard let m = line.firstMatch(of: #/\s*<!--@([0-9:]*)((?: [a-z]+)*)-->\s*$/#) else { return (line, nil, []) }
+        let at = String(m.1)
+        return (String(line[..<m.range.lowerBound]), at.isEmpty ? nil : at, Set(m.2.split(separator: " ").map(String.init)))
     }
 }
 
@@ -104,6 +111,29 @@ public struct ClassNotes: Equatable, Sendable {
         let clean = text.trimmingCharacters(in: .whitespaces)
         guard !clean.isEmpty, let i = index(id), blocks[i].author == .dot, blocks[i].image == nil, blocks[i].text != clean else { return nil }
         blocks[i].text = clean
+        return blocks[i]
+    }
+
+    /// An added line right after `id` and anything under it, at `depth` (no deeper than one past `id`'s): the after-class
+    /// pass places a run of lines by giving each the one before it. Returns the block it now follows, for the window.
+    @discardableResult
+    public mutating func place(_ text: String, afterSubtreeOf id: String, depth: Int) -> (after: String, block: NoteBlock)? {
+        let clean = text.trimmingCharacters(in: .whitespaces)
+        guard !clean.isEmpty, let i = index(id) else { return nil }
+        let end = endOfSubtree(i)
+        let block = NoteBlock(id: "d\(nextDot)", depth: max(0, min(depth, blocks[i].depth + 1, NoteBlock.maxDepth)), text: clean, author: .added)
+        nextDot += 1
+        blocks.insert(block, at: end)
+        return (blocks[end - 1].id, block)
+    }
+
+    /// After class: Dot's own line corrected from the whole lecture, and marked so. His lines, added lines and pictures never.
+    @discardableResult
+    public mutating func fix(_ id: String, text: String) -> NoteBlock? {
+        let clean = text.trimmingCharacters(in: .whitespaces)
+        guard !clean.isEmpty, let i = index(id), blocks[i].author == .dot, blocks[i].image == nil, blocks[i].text != clean else { return nil }
+        blocks[i].text = clean
+        blocks[i].fixed = true
         return blocks[i]
     }
 
@@ -176,27 +206,30 @@ public struct ClassNotes: Equatable, Sendable {
         }
     }
 
-    /// Back from the file (Dot restarted mid-class): every line counts as Dot's except the added ones.
+    /// Back from the file (Dot restarted mid-class, the after-class pass, reopened notes): his lines by their flag, added
+    /// lines by their mark, the rest Dot's.
     public static func parse(section: String) -> ClassNotes? {
         var lines = section.components(separatedBy: "\n")
         guard let first = lines.first, let head = CourseNotesFile.classHeading(first) else { return nil }
         lines.removeFirst()
         var blocks: [NoteBlock] = []
         for raw in lines where !raw.trimmingCharacters(in: .whitespaces).isEmpty {
-            let (line, stamp) = NoteBlock.splitStamp(raw)
+            let (line, stamp, flags) = NoteBlock.splitStamp(raw)
             let spaces = line.prefix { $0 == " " }.count
             let body = line.dropFirst(spaces)
             let depth = spaces / 2
             let n = blocks.count + 1
+            let fixed = flags.contains("fixed")
             if let m = body.firstMatch(of: #/^!\[(.*)\]\((.+)\)$/#) {
                 blocks.append(NoteBlock(id: "d\(n)", depth: depth, text: String(m.1), author: .dot, image: String(m.2), at: stamp))
             } else if body.hasPrefix("- ") || body.hasPrefix("* ") {
                 var text = String(body.dropFirst(2))
                 let added = text.hasPrefix(NoteBlock.addedMark)
                 if added { text = String(text.dropFirst(NoteBlock.addedMark.count)) }
-                blocks.append(NoteBlock(id: "d\(n)", depth: depth, text: text, author: added ? .added : .dot, at: stamp))
+                let author: NoteBlock.Author = flags.contains("his") ? .him : (added ? .added : .dot)
+                blocks.append(NoteBlock(id: "d\(n)", depth: depth, text: text, author: author, at: stamp, fixed: fixed))
             } else {
-                blocks.append(NoteBlock(id: "d\(n)", depth: depth, text: String(body), author: .dot, at: stamp))
+                blocks.append(NoteBlock(id: "d\(n)", depth: depth, text: String(body), author: flags.contains("his") ? .him : .dot, at: stamp, fixed: fixed))
             }
         }
         return ClassNotes(number: head.number, dateLabel: head.date, title: head.title, blocks: blocks)
@@ -268,6 +301,8 @@ public enum NoteOp: Equatable, Sendable {
     case title(String)
     case explain(topic: String, why: String)
     case addAfter(id: String, text: String)
+    /// The after-class pass: a line under `id`, one level deeper, after anything already under it.
+    case addUnder(id: String, text: String)
     case feedback(String)
     /// The recall's one "why" question.
     case why(String)
@@ -303,6 +338,10 @@ public enum NoteProtocol {
                 if !title.isEmpty { ops.append(.title(title)) } else { ignored.append(raw) }
             } else if let m = body.firstMatch(of: #/^\?\s*([^|]+?)\s*(?:\|\s*(.*))?$/#) {
                 ops.append(.explain(topic: String(m.1), why: m.2.map { String($0).trimmingCharacters(in: .whitespaces) } ?? ""))
+            } else if let m = body.firstMatch(of: #/^\+\s*under\s+([dh]\d+)\s*:\s*(?:[-*]\s+)?(.+)$/#) {
+                var text = String(m.2)
+                if text.hasPrefix(NoteBlock.addedMark) { text = String(text.dropFirst(NoteBlock.addedMark.count)) }
+                ops.append(.addUnder(id: String(m.1), text: text))
             } else if let m = body.firstMatch(of: #/^\+\s*after\s+([dh]\d+|end)\s*:\s*(?:[-*]\s+)?(.+)$/#) {
                 var text = String(m.2)
                 if text.hasPrefix(NoteBlock.addedMark) { text = String(text.dropFirst(NoteBlock.addedMark.count)) }

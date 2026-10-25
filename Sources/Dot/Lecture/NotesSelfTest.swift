@@ -1,6 +1,7 @@
 import AppKit
 import DotKit
 import PDFKit
+import WebKit
 
 /// `Dot --notes-selftest`: the notes window off every display, driven through the page's own handlers the way his
 /// clicks and keys reach them. Dot's lines must land around the line he is typing without moving it, his typing must
@@ -27,8 +28,8 @@ enum NotesSelfTest {
         let messages = Box<[NotesMessage]>([])
         notes.onMessage = { messages.value.append($0) }
         func B(_ id: String, _ text: String, _ depth: Int = 0, _ author: String = "dot", kind: String = "bullet", src: String? = nil,
-               at: String? = nil) -> NotesWindow.Block {
-            NotesWindow.Block(id: id, text: text, depth: depth, author: author, kind: kind, src: src, at: at)
+               at: String? = nil, fixed: Bool = false) -> NotesWindow.Block {
+            NotesWindow.Block(id: id, text: text, depth: depth, author: author, kind: kind, src: src, at: at, fixed: fixed)
         }
         let fixture = [B("d1", "**supply curve**: price up -> quantity supplied up", at: "11:42:10"), B("d2", "firms enter when profit > 0", 1),
                        B("d3", "energy: $E = mc^2$, plain-text too: E = mc^2"), B("h1", "(DO later for practice)", 1, "him"),
@@ -90,6 +91,61 @@ enum NotesSelfTest {
         check(!c1.contains("<!--") && !c1.contains("11:42:30") && c1.contains("stray timestamp"), "an HTML comment in a line is not shown (\"\(c1)\")")
         check(block("c1")["at"] as? String == "11:42:30" && js("document.querySelector('.line[data-id=\"c1\"] .at').textContent") as? String == "11:42",
               "a trailing <!--@11:42:30--> becomes the line's time chip (11:42)")
+
+        // a stamp can carry flags after the time: his, fixed; the time chip is only ever the time
+        notes.apply([.append(B("f1", "COURSE 101 guest talk <!--@11:17:23 his-->")), .append(B("f2", "a line of his typed after class <!--@ his-->")),
+                     .append(B("f3", "15% is a decent chunk of the business <!--@11:50:48 fixed-->"))])
+        spin(0.3)
+        check(block("f1")["at"] as? String == "11:17:23" && block("f1")["author"] as? String == "dot",
+              "<!--@11:17:23 his--> gives the time 11:17:23 (an author sent with the block still decides whose it is)")
+        check(js("document.querySelector('.line[data-id=\"f1\"] .at').textContent") as? String == "11:17"
+              && (js("document.querySelector('.line[data-id=\"f1\"] .text').textContent") as? String) == "COURSE 101 guest talk",
+              "its chip reads 11:17 and the flag never shows in the text")
+        check((block("f2")["at"] as? String ?? "") == "" && js("!document.querySelector('.line[data-id=\"f2\"] .at')") as? Bool == true,
+              "<!--@ his--> is a line with no time (no chip)")
+        check(block("f3")["at"] as? String == "11:50:48" && block("f3")["fixed"] as? Bool == true
+              && js("!!document.querySelector('.line[data-id=\"f3\"] .fixmark')") as? Bool == true, "<!--@11:50:48 fixed--> is a fixed line with its time")
+        notes.apply([.remove("f1"), .remove("f2"), .remove("f3")])
+        spin(0.2)
+
+        // a line the after-class pass corrected: a quiet pencil, "edited after class"; a replace carries the flag
+        notes.apply([.replace(B("d2", "firms enter when profit > 0", 1, fixed: true))])
+        spin(0.2)
+        check(js("var l = document.querySelector('.line[data-id=\"d2\"]'), m = l.querySelector('.fixmark'); l.classList.contains('fixed') && !!m && m.title") as? String
+              == "edited after class", "a fixed block shows its mark, titled \"edited after class\"")
+        check((js("document.querySelector('.line[data-id=\"d2\"] .text').textContent") as? String) == "firms enter when profit > 0",
+              "the mark is not part of the line's text")
+        notes.apply([.replace(B("d2", "firms enter when profit > 0", 1))])
+        spin(0.2)
+        check(js("!document.querySelector('.line[data-id=\"d2\"] .fixmark')") as? Bool == true, "a replace without the flag takes the mark off")
+
+        // the title is his to type: Enter keeps it, Escape puts the old one back, Dot's title waits while he types
+        messages.value.removeAll()
+        check(js("document.querySelector('#title').isContentEditable && document.querySelector('#heading-key').textContent") as? String == "CLASS 3 (Thu Oct 22)",
+              "the title after the fixed CLASS 3 (Thu Oct 22) is editable")
+        _ = js("notes._test.title('COURSE 101')")
+        notes.setTitle("dot's own title")
+        spin(0.2)
+        check(js("notes._test.titleShown()") as? String == "COURSE 101", "Dot's setTitle leaves a title he is typing alone")
+        _ = js("notes._test.title('COURSE 101 guest talk', 'Enter')")
+        check(sent(.title("COURSE 101 guest talk")), "Enter sends title with what he typed")
+        check(js("document.querySelector('#heading').textContent") as? String == "CLASS 3 (Thu Oct 22): COURSE 101 guest talk", "and the heading reads it")
+        messages.value.removeAll()
+        _ = js("notes._test.title('oops', 'Escape')")
+        spin(0.3)
+        check(js("notes._test.titleShown()") as? String == "COURSE 101 guest talk" && !messages.value.contains { if case .title = $0 { return true }; return false },
+              "Escape puts the old title back and sends nothing")
+        check(NotesMessage(["type": "title", "text": "a title"]) == .title("a title"), "the title message parses")
+        notes.setTitle("markets")
+        spin(0.2)
+        check(js("document.querySelector('#heading').textContent") as? String == "CLASS 3 (Thu Oct 22): markets", "out of editing, Dot's setTitle shows")
+
+        // the first click on a window that isn't key reaches the notes (stock WebKit only makes the window key)
+        let point = CGPoint(x: 120, y: 450)
+        check(notes.acceptsFirstMouseForTests(at: point), "the notes page takes the first click on a window that isn't key")
+        let stock = stockFirstMouse(at: point)
+        check(stock == false, "a plain WKWebView there does not (\(stock.map { "\($0)" } ?? "no answer")): the cause of no cursor on click")
+        check(notes.becomeKeyRepairsFocusForTests(), "becoming key hands the keys to the notes page")
 
         // 4: a slide is a small thumbnail with its title; a click opens it large, Esc closes
         check(spin(until: 4) { js("(document.querySelector('.line[data-id=\"s1\"] img') || {}).naturalWidth > 0") as? Bool == true },
@@ -303,6 +359,29 @@ enum NotesSelfTest {
         check((js("document.getElementById('saved').textContent") as? String).map { $0.contains("saved") && $0.contains("~/School/COURSE 101/COURSE 101 notes.pdf") } == true,
               "finished shows saved with both paths")
 
+        // the after-class pass: its line in the saved box, and its lines still land after the class is saved
+        notes.afterClass("after class: re-reading the lecture")
+        spin(0.2)
+        check(js("(document.querySelector('#saved .after-class') || {}).textContent") as? String == "after class: re-reading the lecture",
+              "afterClass shows its line in the saved box")
+        notes.apply([.insertAfter("d1", B("p1", "the pass's line under d1", 1, "added")), .append(B("p2", "and one at the end", 0, "added")),
+                     .replace(B("d2", "firms enter when economic profit > 0 (fixed)", 1, fixed: true))])
+        spin(0.3)
+        let afterIds = order()
+        check(afterIds.firstIndex(of: "p1") == afterIds.firstIndex(of: "d1").map { $0 + 1 } && afterIds.contains("p2")
+              && block("d2")["fixed"] as? Bool == true && js("!!document.querySelector('.line[data-id=\"p2\"]')") as? Bool == true,
+              "insertAfter, append and replace still apply and draw after the class is saved")
+        notes.afterClass("after class: 9 added, 3 fixed")
+        spin(0.2)
+        check(js("document.querySelectorAll('#saved .after-class').length === 1 && document.querySelector('#saved .after-class').textContent") as? String
+              == "after class: 9 added, 3 fixed", "the finished line replaces the running one")
+        _ = js("document.getElementById('dock').hidden = true")
+        notes.afterClass("after class: 9 added, 3 fixed")
+        spin(0.2)
+        check(js("document.getElementById('status').textContent") as? String == "after class: 9 added, 3 fixed", "with the saved box gone, the line is the status")
+        _ = js("document.getElementById('dock').hidden = false")
+        notes.afterClass("after class: 9 added, 3 fixed")
+
         // 6: deadlines heard in class, offered for Atlas
         messages.value.removeAll()
         notes.offerDeadlines([NotesWindow.DeadlineItem(id: "dl1", title: "problem set 4", due: "Fri Oct 30", line: "pset 4 due next fri"),
@@ -431,6 +510,25 @@ enum NotesSelfTest {
             out.append("")
         }
         return out.joined(separator: "\n")
+    }
+
+    /// What a plain WKWebView (a line he can type in, off every display, its window not key) answers for the first click
+    /// at `point`; nil when its page never loaded.
+    private static func stockFirstMouse(at point: CGPoint) -> Bool? {
+        let frame = CGRect(x: -20_000, y: -20_000, width: 800, height: 900)
+        let window = NSWindow(contentRect: frame, styleMask: [.borderless], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        window.sharingType = .none
+        let web = WKWebView(frame: CGRect(origin: .zero, size: frame.size))
+        window.contentView = web
+        window.orderFrontRegardless()
+        defer { window.orderOut(nil) }
+        guard NSScreen.screens.allSatisfy({ !$0.frame.intersects(window.frame) }) else { return nil }
+        web.loadHTMLString("<body style='margin:0'>" + (1...40).map { "<div contenteditable='plaintext-only'>line \($0)</div>" }.joined() + "</body>", baseURL: nil)
+        guard spin(until: 8, { !web.isLoading }) else { return nil }
+        spin(0.3)
+        guard let event = NotesWindow.mouseDown(at: point, in: window) else { return nil }
+        return web.acceptsFirstMouse(for: event)
     }
 
     /// A board photo or slide stand-in.

@@ -11,7 +11,8 @@
   var DEBOUNCE = 700;
 
   var state = {focused: null, focusPosted: undefined, hisCounter: 0, heading: "", title: "", base: "", mode: "live",
-               endArmed: 0, recallEnds: 0, recallTimer: 0, marks: {}, sourceFor: null};
+               endArmed: 0, recallEnds: 0, recallTimer: 0, marks: {}, sourceFor: null,
+               titleEditing: false, titleBefore: "", afterClass: ""};
   var els = {};
 
   function post(msg) {
@@ -64,12 +65,21 @@
   function isLast(l) { return !l.el.nextElementSibling; }
   function editable(l) { return l && l.kind === "bullet"; }
   function kindOf(k) { return k === "image" || k === "slide" ? k : "bullet"; }
-  // A line's text never carries an HTML comment; a timestamp left at its end ("<!--@11:42:10-->") becomes its `at`.
+  // A line's text never carries an HTML comment; a timestamp left at its end ("<!--@11:42:10-->") becomes its `at`. The
+  // stamp can carry flags after the time ("<!--@11:42:10 fixed-->", "<!--@ his-->"); `at` is only ever the time.
   function cleanText(text, at) {
     text = String(text == null ? "" : text);
+    var flags = {};
     var m = /\s*<!--@([^>]*?)-->\s*$/.exec(text);
-    if (m) { text = text.slice(0, m.index); if (!at) at = m[1].trim(); }
-    return {text: text.replace(/<!--[\s\S]*?-->/g, ""), at: at || ""};
+    if (m) {
+      text = text.slice(0, m.index);
+      m[1].trim().split(/\s+/).forEach(function (part) {
+        if (/^\d{1,2}:\d{2}(:\d{2})?$/.test(part)) { if (!at) at = part; }
+        else if (part) flags[part] = true;
+      });
+    }
+    at = String(at || "").trim().split(/\s+/).filter(function (p) { return /^\d{1,2}:\d{2}(:\d{2})?$/.test(p); })[0] || "";
+    return {text: text.replace(/<!--[\s\S]*?-->/g, ""), at: at, flags: flags};
   }
   function clock(at) { var m = /^(\d{1,2}:\d{2})/.exec(at); return m ? m[1] : at; }
   function blankNew(l) { return !l.sent && !l.text; }
@@ -78,8 +88,9 @@
 
   function makeLine(b, sent) {
     var c = cleanText(b.text, b.at);
-    var l = {id: String(b.id || ""), depth: clampDepth(b.depth), text: c.text, at: c.at, author: AUTHORS[b.author] ? b.author : "dot",
-             kind: kindOf(b.kind), src: b.src || "", sent: sent, dirty: false, timer: 0};
+    var author = AUTHORS[b.author] ? b.author : (c.flags.his ? "him" : "dot");
+    var l = {id: String(b.id || ""), depth: clampDepth(b.depth), text: c.text, at: c.at, author: author,
+             kind: kindOf(b.kind), src: b.src || "", sent: sent, dirty: false, timer: 0, fixed: !!b.fixed || !!c.flags.fixed};
     var el = h("div", "line");
     el._line = l; l.el = el;
     el.appendChild(h("span", "bullet"));
@@ -116,6 +127,7 @@
     c.toggle("image", l.kind === "image");
     c.toggle("slide", l.kind === "slide");
     c.toggle("unsent", !l.sent);
+    c.toggle("fixed", !!l.fixed && l.author !== "him");
     l.el.dataset.id = l.id;
   }
   function shown(l) { return l.author === "added" ? l.text.replace(/^⁺\s*/, "") : l.text; }
@@ -153,7 +165,17 @@
     dot.className = "xdot " + s;
     dot.title = s === "ready" ? "an explanation is ready: show it" : s === "queued" ? "an explanation is coming" : "explained";
   }
-  function paint(l) { paintClasses(l); paintText(l); paintTools(l); paintMark(l); }
+  // A line of Dot's the after-class pass corrected: a faint pencil after its text (a line he took over is just his).
+  function paintFix(l) {
+    var mark = l.el.querySelector(".fixmark"), show = l.kind === "bullet" && !!l.fixed && l.author !== "him";
+    if (!show) { if (mark) mark.parentNode.removeChild(mark); return; }
+    if (!mark) {
+      mark = h("span", "fixmark", "✎");
+      mark.title = "edited after class";
+      l.el.insertBefore(mark, l.textEl ? l.textEl.nextSibling : null);
+    }
+  }
+  function paint(l) { paintClasses(l); paintText(l); paintTools(l); paintMark(l); paintFix(l); }
   function fresh(l) {
     l.el.classList.add("fresh");
     setTimeout(function () { l.el.classList.remove("fresh"); }, 700);
@@ -196,6 +218,7 @@
       post({type: "edit", id: l.id, text: l.text});
     }
     paintClasses(l);
+    paintFix(l);
   }
   function flushAll() { lines().forEach(flush); }
   function schedule(l) {
@@ -409,6 +432,25 @@
       }
     });
     els.lightbox.addEventListener("click", closeLightbox);
+    // the title: Enter or leaving it keeps what he typed, Escape puts the old one back
+    els.title.addEventListener("focus", beginTitle);
+    els.title.addEventListener("mousedown", beginTitle);
+    els.title.addEventListener("input", beginTitle);
+    els.title.addEventListener("blur", commitTitle);
+    els.title.addEventListener("keydown", function (e) {
+      if (e.isComposing) return;
+      beginTitle();
+      if (e.key === "Enter") { e.preventDefault(); commitTitle(); els.title.blur(); }
+      else if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); cancelTitle(); els.title.blur(); }
+    });
+    // a pasted title is one line
+    els.title.addEventListener("paste", function (e) {
+      var text = e.clipboardData && e.clipboardData.getData("text/plain");
+      if (text == null) return;
+      e.preventDefault();
+      beginTitle();
+      document.execCommand("insertText", false, text.replace(/\s+/g, " ").trim());
+    });
     document.addEventListener("keydown", function (e) {
       if (e.key !== "Escape") return;
       if (!els.lightbox.hidden) { closeLightbox(); e.preventDefault(); }
@@ -500,6 +542,7 @@
     l.at = c.at;
     if (b.depth != null) l.depth = clampDepth(b.depth);
     if (AUTHORS[b.author]) l.author = b.author;
+    if (b.fixed != null || c.flags.fixed) l.fixed = !!b.fixed || !!c.flags.fixed;
     l.src = b.src || l.src;
     paint(l);
   }
@@ -554,7 +597,10 @@
     els.doc.hidden = true;
     els.course.textContent = data.course || "";
     state.heading = data.heading || "";
+    state.titleEditing = false;
+    els.title.classList.remove("editing");
     setTitle(data.title || "");
+    state.afterClass = "";
     setStatus(data.status || "");
     (data.blocks || []).forEach(function (b) { if (b && b.id) els.lines.appendChild(makeLine(b, true).el); });
     ensureTail();
@@ -566,9 +612,34 @@
     follow();
   }
 
+  // "CLASS 3 (Thu Oct 22): markets": the key is fixed, the title is his to type. Dot's title never lands on a title he is
+  // typing at that moment; it waits until he leaves it (and a title he commits is the one Dot keeps).
   function setTitle(t) {
-    state.title = t || "";
-    els.heading.textContent = state.heading + (state.title ? ": " + state.title : "");
+    state.title = String(t || "").replace(/\s+/g, " ").trim();
+    els.headingKey.textContent = state.heading;
+    if (!state.titleEditing) els.title.textContent = state.title;
+  }
+  function beginTitle() {
+    if (state.titleEditing) return;
+    state.titleEditing = true;
+    state.titleBefore = state.title;
+    els.title.classList.add("editing");
+  }
+  function titleText() { return (els.title.textContent || "").replace(/\s+/g, " ").trim(); }
+  function commitTitle() {
+    if (!state.titleEditing) return;
+    state.titleEditing = false;
+    els.title.classList.remove("editing");
+    var text = titleText(), before = state.titleBefore;
+    state.title = text;
+    els.title.textContent = text;
+    if (text !== before) post({type: "title", text: text});
+  }
+  function cancelTitle() {
+    if (!state.titleEditing) return;
+    state.titleEditing = false;
+    els.title.classList.remove("editing");
+    els.title.textContent = state.title = state.titleBefore;
   }
   function setStatus(t) { els.status.textContent = t || ""; }
   function setAccent(hex) {
@@ -666,6 +737,7 @@
       // the class is done: the whole window goes, unless deadlines he has not answered are still up (they stay)
       els.recall.hidden = true; els.saved.hidden = true;
       if (!els.deadlineBar.hidden && !els.deadlines.hidden) showDock(); else { hideDock(); post({type: "close"}); }
+      paintAfterClass();   // still running or done, its line moves to the status
     });
     head.appendChild(close);
     els.saved.appendChild(head);
@@ -677,8 +749,28 @@
       els.saved.appendChild(a);
     });
     els.saved.hidden = false;
+    paintAfterClass();
     showDock();
   }
+  // The after-class pass's line: under the saved paths while that box is up, else as the status line, so it is there
+  // whenever he looks (the window can be closed while the pass runs).
+  function afterClass(text) {
+    state.afterClass = String(text || "");
+    paintAfterClass();
+  }
+  function paintAfterClass() {
+    var line = els.saved.querySelector(".after-class");
+    if (!state.afterClass) { if (line) line.parentNode.removeChild(line); return; }
+    if (!els.saved.hidden && !els.dock.hidden) {
+      if (!line) { line = h("div", "after-class"); els.saved.appendChild(line); }
+      line.textContent = state.afterClass;
+      showDockRoom();
+    } else {
+      if (line) line.parentNode.removeChild(line);
+      setStatus(state.afterClass);
+    }
+  }
+  function showDockRoom() { els.room.style.height = (els.dock.offsetHeight + 24) + "px"; }
 
   // ---- while class runs: what the ear hears, what was said at a line, explainer markers, slides --------------------------
   // The last ten or so words, cut from the left, so he can see the ear working.
@@ -828,7 +920,7 @@
   function snapshot() {
     flushAll();
     return lines().filter(function (l) { return l.sent; }).map(function (l) {
-      return {id: l.id, depth: l.depth, text: l.text, author: l.author, kind: l.kind, src: l.src || null, at: l.at || null};
+      return {id: l.id, depth: l.depth, text: l.text, author: l.author, kind: l.kind, src: l.src || null, at: l.at || null, fixed: !!l.fixed};
     });
   }
 
@@ -863,20 +955,31 @@
       l.textEl.blur();
       if (state.focused === l) stopEditing(l);
     },
-    focused: function () { return state.focused ? state.focused.id : null; }
+    focused: function () { return state.focused ? state.focused.id : null; },
+    // the title, through the same functions its focus, typing and keys reach
+    title: function (text, key) {
+      beginTitle();
+      if (text != null) els.title.textContent = text;
+      if (key === "Enter") commitTitle();
+      else if (key === "Escape") cancelTitle();
+      return state.titleEditing;
+    },
+    titleShown: function () { return els.title.textContent; }
   };
 
   window.notes = {
     load: load, apply: apply, setTitle: setTitle, status: setStatus, setStatus: setStatus, setAccent: setAccent,
     showRecall: showRecall, recallFeedback: recallFeedback, finished: finished, renderDocument: renderDocument,
     hearing: hearing, showSource: showSource, markExplain: markExplain, offerDeadlines: offerDeadlines, deadlinesAdded: deadlinesAdded,
-    snapshot: snapshot, flush: flushAll, inline: inline, _test: test
+    afterClass: afterClass, snapshot: snapshot, flush: flushAll, inline: inline, _test: test
   };
 
   document.addEventListener("DOMContentLoaded", function () {
     ["lines", "room", "scroller", "course", "heading", "status", "end", "dock", "recall", "countdown", "submit", "skip", "feedback",
      "saved", "doc", "hearing", "source", "lightbox", "deadlines"].forEach(function (id) { els[id] = document.getElementById(id); });
     els.hearingText = document.getElementById("hearing-text");
+    els.headingKey = document.getElementById("heading-key");
+    els.title = document.getElementById("title");
     els.recallHistory = document.getElementById("recall-history");
     els.recallNow = document.getElementById("recall-now");
     els.deadlineList = document.getElementById("deadline-list");

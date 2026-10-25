@@ -7,7 +7,9 @@ import Foundation
 /// explainers built in the background and shown at pauses, the transcript kept as text). The ear's words go to the note
 /// writer about every 30 seconds; its lines land in the notes window and the course's notes file, each stamped with the
 /// moment it came from; he types into the same notes and his lines stay his. At the end: his 3 big ideas, one "why",
-/// feedback, lines added from the slides and readings, announced deadlines offered for Atlas, and the PDF on his Desktop.
+/// feedback, announced deadlines offered for Atlas and the PDF on his Desktop; then the after-class pass (AfterClass) reads
+/// the whole class again, transcribed anew from its audio, with the slides and readings, adds what was missed, fixes
+/// Dot's own wrong lines, and makes the PDF again.
 @MainActor
 final class LectureSession {
     enum Phase: Equatable { case live, closing, recall, why, finishing, done }
@@ -61,6 +63,20 @@ final class LectureSession {
     var onAddDeadlines: (([(due: String, title: String)]) async -> String)?
     /// The class is over: the notes file and the PDF (nil when it could not be made).
     var onFinished: ((URL, URL?) -> Void)?
+    /// The after-class pass is done (its summary line); Dot schedules the Canvas re-checks from here.
+    var onAfterClass: ((String) -> Void)?
+    /// What the after-class pass needs: think's model and the recognizer (nil: the pass is skipped).
+    var config: DotConfig?
+    var transcriber: Transcriber?
+    /// His calendar between two times, as lines (the after-class pass reads the events around the class).
+    var calendarAround: ((Date, Date) -> String)?
+    /// False once another class has the window: this one's pass then writes the file only.
+    var ownsWindow = true
+    /// He typed the title himself: Dot's own title never replaces it (10-25: "i tried to type a title and it didnt work").
+    private var hisTitle = false
+    /// The class audio transcribed again, started the moment class ends (it runs during the recall).
+    private var retranscription: Task<String?, Never>?
+    private var keptAudio: (url: URL, owned: Bool)?
 
     var cycleSeconds: TimeInterval = 30
     var cycleWords = 75
@@ -215,6 +231,11 @@ final class LectureSession {
             lines += notes.tail()
         }
         if final { lines.append("this is the end of the class: finish any thought left open.") }
+        // the title by minute 10 (10-25's writer sent none in 69 cycles); his own words for it come first
+        if notes.title.isEmpty, minutes >= 10 {
+            let his = notes.blocks.first { $0.author == .him }.map { " (his first line: \"\($0.text)\")" } ?? ""
+            lines.append("the class has no title yet: send `## title` in this reply\(his).")
+        }
         let sentEdits = edits.count
         sentChars = feedEnd
         lastCycleAt = Date()
@@ -264,14 +285,15 @@ final class LectureSession {
                 ops2.append(.replace(Self.windowBlock(block)))
                 rewritten += 1
             case .title(let title):
+                guard !hisTitle else { continue }
                 notes.title = title
-                window.setTitle(title)
+                if ownsWindow { window.setTitle(title) }
             case .explain(let topic, let why):
                 guard live else { continue }
                 // the explainer is built in the background while the lecture goes on; it opens at the next pause
                 if !ops2.isEmpty { window.apply(ops2); ops2 = [] }
                 explainers.request(topic: topic, why: why, line: lastLine ?? notes.blocks.last?.id, context: explainContext(), tapped: false)
-            case .addAfter(let id, let text):
+            case .addAfter(let id, let text), .addUnder(let id, let text):
                 guard added < Self.gapFillCap else { continue }
                 if let placed = notes.addAfter(id, text: text) { ops2.append(.insertAfter(placed.after, Self.windowBlock(placed.block))); added += 1 }
             case .feedback(let line):
@@ -437,6 +459,14 @@ final class LectureSession {
             explainers.request(topic: text, why: "he tapped this line in his notes", line: id, context: explainContext(), tapped: true)
         case .showExplain(let id):
             if let ready = explainers.readyID(forLine: id) { explainers.show(ready) } else { explainers.reshow(line: id) }
+        case .title(let text):
+            let title = text.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard title != notes.title else { break }
+            notes.title = title
+            hisTitle = !title.isEmpty
+            edits.append(title.isEmpty ? "he cleared the class title" : "he titled the class: \"\(title)\" (keep it; never send ## title now)")
+            Log.info("lecture: he titled the class \"\(Log.short(title, 60))\"")
+            save()
         case .source(let id):
             if let found = source(for: id) { window.showSource(id: id, time: found.time, text: found.text) }
             else { window.showSource(id: id, time: "", text: "no transcript for this line") }
@@ -468,6 +498,7 @@ final class LectureSession {
         photos?.stop()
         window.setStatus("wrapping up")
         _ = await listener.stop()
+        startRetranscription()
         // the last stretch; once more if the reply didn't come (a fresh writer gets the same words)
         for attempt in 0..<2 where attempt == 0 || !newSpeech().isEmpty {
             var waited = 0
@@ -492,7 +523,7 @@ final class LectureSession {
         DispatchQueue.main.asyncAfter(deadline: .now() + .seconds(seconds + 30), execute: work)
     }
 
-    /// His 3 big ideas (nil: skipped or timed out): feedback and one "why", or straight on to the gap-fill.
+    /// His 3 big ideas (nil: skipped or timed out): feedback and one "why", or straight on to the rest.
     func recall(_ text: String?) async {
         guard phase == .recall else { return }
         recallTimer?.cancel()
@@ -527,23 +558,9 @@ final class LectureSession {
     }
 
     private func wrapUp() async {
-        await gapFill()
         await findDeadlines()
         await finish()
-    }
-
-    private func gapFill() async {
-        let materials = LectureMaterials.gather(folder: folder, notesFile: fileURL, cap: 30_000)
-        guard !materials.text.isEmpty, !notes.blocks.isEmpty else {
-            Log.info("lecture: no slides or readings in \(folder.lastPathComponent) to fill gaps from")
-            return
-        }
-        window.setStatus("checking the notes against \(materials.files.count) file(s)")
-        let message = "[gap-fill]\n" + NoteWriter.resource("notes-gapfill.md") + "\n\nslides and readings:\n" + materials.text
-            + "\n\nthe whole class's notes, with ids:\n" + notes.tail(1000).joined(separator: "\n")
-            + "\nlast block: \(notes.blocks.last?.id ?? "none") (use +after end: for a line after everything)"
-        let reply = await ask(message)
-        if let reply { Log.info("lecture: gap-fill \(apply(reply, live: false)) from \(materials.files.joined(separator: ", "))") }
+        await afterClass()
     }
 
     /// Announced dates, offered for Atlas with a box he checks (Atlas alerts on a deadline at once, so he picks).
@@ -573,20 +590,86 @@ final class LectureSession {
         saveNow()
         writer.stop()
         explainers.stopAll()
-        let desktop = pdfFolder.appendingPathComponent("\(course) notes.pdf")
-        var pdf: URL? = desktop
-        do {
-            try await window.exportPDF(markdown: file.markdown, baseURL: folder, to: desktop)
-        } catch {
-            Log.warn("lecture: pdf failed: \(error)")
-            pdf = nil
-        }
+        let pdf = await exportPDF()
         listener.discardTranscript()   // the ear's own 3-minute file; the class's transcript is kept in the course folder
         phase = .done
-        window.finished(pdf: pdf?.path ?? "", file: fileURL.path)
-        window.setStatus("saved · \(notes.blocks.count) lines")
+        if ownsWindow {
+            window.finished(pdf: pdf?.path ?? "", file: fileURL.path)
+            window.setStatus("saved · \(notes.blocks.count) lines")
+        }
         Log.info("lecture: saved \(fileURL.lastPathComponent)\(pdf.map { " and \($0.path)" } ?? ""); \(explainers.shown) explainer(s); transcript \(transcriptURL.lastPathComponent)")
         onFinished?(fileURL, pdf)
+    }
+
+    /// The PDF on his Desktop: a course's whole file, or for a talk that isn't a course (no class on the calendar) just this
+    /// talk, named after its title (10-25: every talk went into one "Other lectures notes.pdf").
+    @discardableResult
+    private func exportPDF() async -> URL? {
+        let single = course == LectureCourses.otherLectures
+        let url = pdfFolder.appendingPathComponent(single ? AfterClassPass.pdfName(course: course, title: notes.title, dateLabel: notes.dateLabel) : "\(course) notes.pdf")
+        let markdown = single ? CourseNotesFile(title: notes.title.isEmpty ? notes.key : notes.title, sections: [notes.markdown]).markdown : file.markdown
+        do {
+            try await window.exportPDF(markdown: markdown, baseURL: folder, to: url)
+            if single, let old = lastPDF, old != url { try? FileManager.default.removeItem(at: old) }   // the title changed after class
+            lastPDF = url
+            return url
+        } catch {
+            Log.warn("lecture: pdf failed: \(error)")
+            return nil
+        }
+    }
+    private var lastPDF: URL?
+
+    // MARK: After class (his ask 2026-10-25: "going through it again to add anything it missed")
+
+    /// The kept audio goes to the recognizer at once, so the new transcript is ready by the time the recall is done.
+    private func startRetranscription() {
+        keptAudio = listener.takeKeptAudio()
+        guard let audio = keptAudio, let transcriber else { return }
+        let began = startedAt, file = transcriptURL, title = "\(course) \(notes.key)"
+        retranscription = Task { @MainActor in
+            await AfterClassPass.retranscribe(audio: audio.url, began: began, transcriber: transcriber, title: title, into: file)
+        }
+    }
+
+    /// One read of the whole class against the notes: what was missed goes in (marked added), Dot's own wrong or unsure
+    /// lines are fixed (marked), his lines are never touched; then the file and the PDF again, and the audio is deleted.
+    func afterClass() async {
+        let line = await runAfterClass()
+        if let audio = keptAudio, audio.owned { LectureAudio.discard(audio.url) }
+        keptAudio = nil
+        if let line { showAfterClass(line) }
+        onAfterClass?(line ?? "after class: skipped")
+    }
+
+    /// The pass itself; its summary line, or nil when there was nothing to do it with.
+    private func runAfterClass() async -> String? {
+        guard let config, !notes.blocks.isEmpty else { return nil }
+        showAfterClass("after class: re-reading the lecture")
+        let fresh = await retranscription?.value
+        let transcript = fresh ?? (try? String(contentsOf: transcriptURL, encoding: .utf8)) ?? ""
+        guard !transcript.isEmpty else { return "after class: no transcript to read" }
+        let materials = LectureMaterials.gather(folder: folder, notesFile: fileURL, cap: 60_000)
+        let pictures = AfterClassPass.slidePictures(notes, folder: folder)
+        let message = AfterClass.message(heading: notes.heading, course: courseTitle == course ? course : "\(course), \(courseTitle)", notes: notes,
+                                         transcript: transcript, transcriptSource: fresh != nil ? "transcribed again from the class audio" : "the live machine transcript",
+                                         materials: materials.text, slidePictures: pictures.count, calendar: calendarAround?(startedAt, Date()) ?? "")
+        guard let reply = await AfterClassPass.ask(config: config, message: message, images: pictures) else {
+            return "after class: the pass didn't come back; the notes are as they were"
+        }
+        let outcome = AfterClass.apply(reply, to: &notes, titleLocked: hisTitle)
+        if ownsWindow {
+            window.apply(outcome.added.map { .insertAfter($0.after, Self.windowBlock($0.block)) } + outcome.fixed.map { .replace(Self.windowBlock($0)) })
+            if let title = outcome.title { window.setTitle(title) }
+        }
+        saveNow()
+        await exportPDF()
+        Log.info("lecture: \(outcome.summary)\(outcome.title.map { ", titled \"\($0)\"" } ?? "") from \(fresh != nil ? "the audio" : "the live transcript")\(materials.files.isEmpty ? "" : " and \(materials.files.joined(separator: ", "))")")
+        return outcome.summary
+    }
+
+    private func showAfterClass(_ line: String) {
+        if ownsWindow { window.afterClass(line) }
     }
 
     // MARK: Saving
@@ -611,7 +694,7 @@ final class LectureSession {
     static func windowBlock(_ b: NoteBlock) -> NotesWindow.Block {
         let kind = b.image == nil ? "bullet" : (b.image!.contains("/slide-") ? "slide" : "image")
         let text = kind == "slide" && b.text.hasPrefix("slide: ") ? String(b.text.dropFirst(7)) : b.text
-        return NotesWindow.Block(id: b.id, text: text, depth: b.depth, author: b.author.rawValue, kind: kind, src: b.image, at: b.at)
+        return NotesWindow.Block(id: b.id, text: text, depth: b.depth, author: b.author.rawValue, kind: kind, src: b.image, at: b.at, fixed: b.fixed)
     }
 
     /// A new slide, not the same one read again: under 70 percent of its words shared.

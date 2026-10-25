@@ -42,17 +42,29 @@ final class LectureListener {
     private(set) var replayPosition = 0.0
     /// A replay ran out of audio.
     var onReplayEnded: (() -> Void)?
+    /// Lecture mode keeps the class audio, on this Mac only, until the after-class pass has transcribed it again (his
+    /// pick 2026-10-25); `owned` is false for a replay's own recording, which is never deleted.
+    private(set) var keptAudio: (url: URL, owned: Bool)?
+    private var keepAudio = false
+    private var replayURL: URL?
     var onStatus: ((String) -> Void)?
 
     init(transcriber: Transcriber) { self.transcriber = transcriber }
 
     /// `replay`: a recorded lecture played into the recognizer instead of the microphone, `speed` times real time, from
     /// `from` seconds in, and out loud when `audible` (Dot --lecture-replay and --lecture-demo: lecture mode without a class).
-    func start(title: String, replay: URL? = nil, speed: Double = 1, from: Double = 0, audible: Bool = false) async -> Bool {
+    func start(title: String, replay: URL? = nil, speed: Double = 1, from: Double = 0, audible: Bool = false, keepAudio: Bool = false) async -> Bool {
         guard !isListening else { return true }
+        self.keepAudio = keepAudio
+        replayURL = replay
+        keptAudio = nil
         do {
             let fresh = try await makeStream()
-            if let replay { pump(replay, speed: speed, from: from, audible: audible) } else { _ = try recorder.start(stream: fresh) }
+            if let replay { pump(replay, speed: speed, from: from, audible: audible) }
+            else {
+                let recording = try recorder.start(stream: fresh)
+                if keepAudio { LectureAudio.noteRecording(recording) }
+            }
             replaying = replay != nil
             stream = fresh
         } catch {
@@ -94,7 +106,10 @@ final class LectureListener {
         pumpTask = nil
         player?.stop()
         player = nil
-        if !replaying, let url = try? recorder.stop().url { try? FileManager.default.removeItem(at: url) }
+        if !replaying, let url = try? recorder.stop().url {
+            if keepAudio, let kept = LectureAudio.keep(url) { keptAudio = (kept, true) } else { try? FileManager.default.removeItem(at: url) }
+        }
+        if replaying, keepAudio, let replayURL { keptAudio = (replayURL, false) }
         if let stream {
             let tail = liveText, done = confirmedInSegment
             if let text = try? await stream.finish(), !text.trimmingCharacters(in: .whitespaces).isEmpty { appendSegment(text); feedRest(of: text, confirmed: done) }
@@ -264,4 +279,10 @@ final class LectureListener {
     }
 
     var transcriptFile: URL? { fileURL }
+
+    /// The kept class audio, handed over once (the after-class pass deletes it when it's done).
+    func takeKeptAudio() -> (url: URL, owned: Bool)? {
+        defer { keptAudio = nil }
+        return keptAudio
+    }
 }

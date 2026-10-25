@@ -242,6 +242,8 @@ final class Talk {
     // MARK: Warm up
 
     func warmUp() {
+        LectureAudio.cleanUp()
+        startRecheckTimer()
         Task.detached { [transcriber] in
             do {
                 try await transcriber.warmUp()
@@ -1542,9 +1544,11 @@ final class Talk {
             aliases[named] = picked
             LectureAliases.save(aliases)
         }
-        let course = folder ?? (named.isEmpty ? "Other lectures" : LectureCourses.newFolderName(for: named))
-        let courseTitle = named.isEmpty ? (windowTitle.isEmpty ? course : "\(course): \(Log.short(windowTitle, 60))") : named
-        let ok = await lecture.start(title: course, replay: replay, speed: replaySpeed)
+        let course = folder ?? (named.isEmpty ? LectureCourses.otherLectures : LectureCourses.newFolderName(for: named))
+        // the window in front names a talk only when it's the talk's slides (10-25 it was "Instagram - Comet")
+        let slides = LectureSlides.looksLikeSlides(bundle: context.bundleIdentifier, title: windowTitle, url: context.url)
+        let courseTitle = named.isEmpty ? (windowTitle.isEmpty || !slides ? course : "\(course): \(Log.short(windowTitle, 60))") : named
+        let ok = await lecture.start(title: course, replay: replay, speed: replaySpeed, keepAudio: true)
         guard ok else {
             hud.flash(status: "lecture mode: i couldn't open the microphone", for: 6)
             Log.warn("lecture: mode failed to start: no microphone")
@@ -1555,6 +1559,16 @@ final class Talk {
                                          endsAt: cls?.end, courseText: courseText).session
         session.screenText = { [weak self] in await self?.lectureScreenText() ?? "" }
         session.slideShot = { await SlideShot.capture() }
+        session.config = config
+        session.transcriber = transcriber
+        session.calendarAround = { [weak self] from, to in
+            LectureCalendarNotes.lines(self?.localCalendar.items(days: 1, now: from.addingTimeInterval(-3600)) ?? [], from: from, to: to)
+        }
+        session.onAfterClass = { [weak self, weak session] _ in
+            guard let self, let session else { return }
+            self.finishingLectures.removeAll { $0 === session }
+            if !named.isEmpty { self.scheduleRechecks(course: course, title: named, session: session) }
+        }
         if !named.isEmpty, let upcoming = localCalendar.items(days: 14, now: now) {
             let day = DateFormatter(); day.dateFormat = "EEE"; day.locale = Locale(identifier: "en_US_POSIX")
             let order = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
@@ -1562,15 +1576,103 @@ final class Talk {
             session.meets = order.filter(days.contains).joined(separator: "/")
         }
         session.onAddDeadlines = { [weak self] items in self?.addDeadlinesToAtlas(items, course: course) ?? "atlas isn't reachable from here" }
-        session.onFinished = { [weak self] file, pdf in self?.noteRecentCourse(course); self?.lectureFinished(file: file, pdf: pdf) }
+        session.onFinished = { [weak self, weak session] file, pdf in
+            // the after-class pass still runs on this one: it stays alive until it's done
+            if let session { self?.finishingLectures.append(session) }
+            self?.noteRecentCourse(course)
+            self?.lectureFinished(file: file, pdf: pdf)
+        }
+        // a class still finishing its after-class pass gives the window to this one
+        for older in finishingLectures { older.ownsWindow = false }
         guard await beginLectureSession(session, courseText: courseText, label: "lecture mode: \(course)", line: "taking notes; End class in the notes when it's over") else { return }
         Log.info("lecture: mode on for \(course) (\(courseTitle))\(cls.map { ", class until \(LectureSession.clock($0.end))" } ?? ", no class on the calendar")")
         noteRecentCourse(course)
+        // a talk that isn't a class has no Canvas course or course map to look for (10-25's prep agent went looking)
+        guard !named.isEmpty else { return }
         if Self.courseMapText(label: course, root: config.talkRootURL).isEmpty || !FileManager.default.fileExists(atPath: session.folder.path) {
             prepareCourse(course: course, title: courseTitle, folder: session.folder)
         } else {
             prepareCourse(course: course, title: courseTitle, folder: session.folder, mapOnly: false, readingsOnly: true)
         }
+    }
+
+    // MARK: After class: Canvas re-checks (his pick 2026-10-25)
+
+    /// Classes whose after-class pass is still running after he closed them.
+    private var finishingLectures: [LectureSession] = []
+    private var recheckTimer: Timer?
+    private var recheckFile: URL { config.talkRootURL.appendingPathComponent("lecture-rechecks.json") }
+
+    private func scheduleRechecks(course: String, title: String, session: LectureSession) {
+        var items = LectureRechecks.load(recheckFile).filter { !($0.course == course && $0.key == session.notes.key) }
+        for due in LectureRechecks.times(classEnded: Date()) {
+            items.append(LectureRecheck(course: course, title: title, key: session.notes.key, notesFile: session.fileURL.path,
+                                        transcriptFile: session.transcriptURL.path, due: due))
+        }
+        LectureRechecks.save(items, to: recheckFile)
+        Log.info("lecture: canvas re-checks for \(course) \(session.notes.key) at \(LectureRechecks.times(classEnded: Date()).map { LectureSession.clock($0) }.joined(separator: " and "))")
+    }
+
+    private func startRecheckTimer() {
+        recheckTimer?.invalidate()
+        recheckTimer = Timer.scheduledTimer(withTimeInterval: 600, repeats: true) { [weak self] _ in
+            Task { @MainActor in await self?.runRechecks() }
+        }
+        Task { await runRechecks() }
+    }
+
+    /// A due re-check sends the Canvas job; one sent long enough ago compares the folder, and new files get the pass.
+    private func runRechecks() async {
+        var items = LectureRechecks.load(recheckFile)
+        guard !items.isEmpty, !benchMode else { return }
+        let now = Date()
+        var changed = false
+        for i in items.indices.reversed() {
+            let item = items[i]
+            let folder = URL(fileURLWithPath: item.notesFile).deletingLastPathComponent()
+            // the class going on now writes this file: it waits
+            if lectureSession?.fileURL.path == item.notesFile || finishingLectures.contains(where: { $0.fileURL.path == item.notesFile }) { continue }
+            if item.started == nil, item.due <= now {
+                guard now.timeIntervalSince(item.due) < 12 * 3600 else { items.remove(at: i); changed = true; continue }   // Dot was off all day
+                items[i].before = (try? FileManager.default.contentsOfDirectory(atPath: folder.path)) ?? []
+                items[i].started = now
+                changed = true
+                let day = CourseNotesFile.classHeading("## " + item.key)?.date
+                prepareCourse(course: item.course, title: item.title, folder: folder, mapOnly: false, readingsOnly: true, day: day)
+                Log.info("lecture: canvas re-check for \(item.course) \(item.key) sent")
+            } else if let started = item.started, now.timeIntervalSince(started) >= LectureRechecks.jobWait {
+                items.remove(at: i)
+                changed = true
+                let fresh = LectureRechecks.newFiles(before: item.before, now: (try? FileManager.default.contentsOfDirectory(atPath: folder.path)) ?? [],
+                                                     readable: LectureMaterials.readable)
+                guard !fresh.isEmpty else { Log.info("lecture: canvas re-check for \(item.course) \(item.key): nothing new"); continue }
+                await recheckPass(item, folder: folder, files: fresh)
+            }
+        }
+        if changed { LectureRechecks.save(items, to: recheckFile) }
+    }
+
+    /// The after-class pass on a saved class, from its file: new files from Canvas against the notes and the transcript.
+    private func recheckPass(_ item: LectureRecheck, folder: URL, files: [String]) async {
+        let notesURL = URL(fileURLWithPath: item.notesFile)
+        guard let text = try? String(contentsOf: notesURL, encoding: .utf8) else { return }
+        var file = CourseNotesFile.parse(text, fallbackTitle: "\(item.course) notes")
+        guard let section = file.section(key: item.key), var notes = ClassNotes.parse(section: section) else { return }
+        let transcript = (try? String(contentsOfFile: item.transcriptFile, encoding: .utf8)) ?? ""
+        let materials = LectureMaterials.gather(folder: folder, notesFile: notesURL, cap: 60_000)
+        let message = AfterClass.message(heading: notes.heading, course: item.title, notes: notes, transcript: transcript,
+                                         transcriptSource: "the class transcript", materials: materials.text, slidePictures: 0)
+            + "\n\nthis is a later pass: these files arrived on Canvas after class: \(files.joined(separator: ", ")). add what they give for what this class covered; leave the rest as it is."
+        guard let reply = await AfterClassPass.ask(config: config, message: message, images: []) else { return }
+        let outcome = AfterClass.apply(reply, to: &notes, titleLocked: true)
+        guard !outcome.added.isEmpty || !outcome.fixed.isEmpty else { Log.info("lecture: canvas re-check for \(item.course) \(item.key): the new files added nothing"); return }
+        // read again: he may have edited the file while the pass ran; only this class's section is replaced
+        if let now = try? String(contentsOf: notesURL, encoding: .utf8) { file = CourseNotesFile.parse(now, fallbackTitle: "\(item.course) notes") }
+        file.upsert(notes)
+        try? file.markdown.write(to: notesURL, atomically: true, encoding: .utf8)
+        let pdf = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Desktop/\(item.course) notes.pdf")
+        try? await NotesWindow().exportPDF(markdown: file.markdown, baseURL: folder, to: pdf)
+        Log.info("lecture: canvas re-check for \(item.course) \(item.key): \(outcome.summary) from \(files.joined(separator: ", "))")
     }
 
     /// The lecture window: notes left, and on the right the board, where the explainer panel lives while it is open.
@@ -1686,8 +1788,13 @@ final class Talk {
                                                   said: "saved \(file.path)" + (pdf.map { " and \($0.lastPathComponent)" } ?? "")) }
     }
 
-    /// The words on the screen he's looking at (a slide, a page), for the note writer; Dot's own windows aren't in it.
+    /// The slide on the screen he's looking at, for the note writer and the ear's word list; "" when the window in front
+    /// isn't slides (a deck, a PDF, a lecture page). On 10-25 his Instagram feed went to the writer as "slide on his screen"
+    /// and its words into the recognizer, which then heard "like" as "Liked" 223 times. Dot's own windows aren't in it.
     private func lectureScreenText() async -> String {
+        guard let front = NSWorkspace.shared.frontmostApplication, front.processIdentifier != ProcessInfo.processInfo.processIdentifier else { return "" }
+        let ax = AccessibilityContext.capture(maxElements: 0, timeBudget: 0.12)
+        guard LectureSlides.looksLikeSlides(bundle: front.bundleIdentifier, title: ax.windowTitle, url: ax.url) else { return "" }
         guard let shots = try? await ScreenCapture.captureAll(maxDimension: 1600, includeOtherScreens: false),
               let shot = shots.first(where: { $0.isCursorScreen }) ?? shots.first else { return "" }
         return await TextRecognizer.recognize(jpeg: shot.jpeg).split(separator: "\n").joined(separator: " / ")
@@ -1783,9 +1890,9 @@ final class Talk {
 
     /// A behind job, silent: today's slides and readings from Canvas into the course folder, and a course map when the
     /// course has none, so the notes spell terms right and the gap-fill has something to check against.
-    private func prepareCourse(course: String, title: String, folder: URL, mapOnly: Bool = false, readingsOnly: Bool = false) {
+    private func prepareCourse(course: String, title: String, folder: URL, mapOnly: Bool = false, readingsOnly: Bool = false, day: String? = nil) {
         guard config.jobsEnabled, !benchMode else { return }
-        let today = ClassNotes.dateLabel(Date())
+        let today = day ?? ClassNotes.dateLabel(Date())
         var steps: [String] = []
         if !mapOnly {
             steps.append("with Atlas's canvas tools only (canvas_courses, canvas_find, canvas_readings, canvas_download; never open a page), find the slides, notes and readings for today's class (\(today)) of \(title) and download any not already in \(folder.path) into that folder (keep their names)")

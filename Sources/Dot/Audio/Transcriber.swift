@@ -1,3 +1,5 @@
+import AVFoundation
+import DotKit
 import FluidAudio
 import Foundation
 
@@ -36,6 +38,19 @@ actor Transcriber {
         var state = try TdtDecoderState()
         let result = try await asr.transcribe(wavURL, decoderState: &state, language: nil)
         return result.text.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    /// A whole class recording (lecture mode's after-class pass): FluidAudio reads a long file from disk in chunks, and
+    /// the token timings become half-minute paragraphs. No term boost: the live one's word list garbled 10-25's talk.
+    func transcribeLong(url: URL) async throws -> (paragraphs: [(start: TimeInterval, text: String)], audioSeconds: TimeInterval) {
+        let asr = try await ensureLoaded()
+        var state = try TdtDecoderState()
+        let result = try await asr.transcribe(url, decoderState: &state, language: nil)
+        let tokens = (result.tokenTimings ?? []).map { TranscriptParagraphs.Token(text: $0.token, start: $0.startTime) }
+        let paragraphs = tokens.isEmpty ? [(start: 0.0, text: result.text)] : TranscriptParagraphs.group(tokens)
+        // a long file's result reports no duration: the file's own length
+        let seconds = (try? AVAudioFile(forReading: url)).map { Double($0.length) / $0.processingFormat.sampleRate } ?? result.duration
+        return (paragraphs.filter { !$0.text.isEmpty }, seconds)
     }
 
     private func keep(_ models: AsrModels) { self.models = models }

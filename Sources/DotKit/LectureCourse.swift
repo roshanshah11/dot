@@ -57,6 +57,9 @@ public enum LectureCalendar {
 }
 
 public enum LectureCourses {
+    /// The folder for a lecture that isn't a class on his calendar (a club talk, a guest speaker).
+    public static let otherLectures = "Other lectures"
+
     /// The School folder a course's notes go in: his saved answer first, then a course map naming it, then a folder whose
     /// name is the course or its code. Nil: Dot asks a small model once and saves the answer.
     public static func folder(for course: String, aliases: [String: String], maps: [CourseTag], folders: [String]) -> String? {
@@ -77,7 +80,7 @@ public enum LectureCourses {
     public static func newFolderName(for course: String) -> String {
         let cleaned = course.replacingOccurrences(of: #"[/:\\.]"#, with: " ", options: .regularExpression)
             .split(separator: " ").joined(separator: " ")
-        return cleaned.isEmpty ? "Other lectures" : String(cleaned.prefix(60))
+        return cleaned.isEmpty ? otherLectures : String(cleaned.prefix(60))
     }
 }
 

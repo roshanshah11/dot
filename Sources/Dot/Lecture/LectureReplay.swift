@@ -39,7 +39,8 @@ enum LectureReplay {
             try? FileManager.default.copyItem(at: source, to: folder.appendingPathComponent(source.lastPathComponent))
         }
         let config = DotConfig.peek()
-        let listener = LectureListener(transcriber: Transcriber())
+        let transcriber = Transcriber()
+        let listener = LectureListener(transcriber: transcriber)
         let window = NotesWindow()
         window.offscreen = true
         let explainers = LectureExplainers(config: config, course: course)
@@ -65,8 +66,13 @@ enum LectureReplay {
         // the clock runs `speed` times faster here: cycles, pauses and explainers go by lecture time, not wall time
         session.clockScale = speed
         session.pdfFolder = out   // never his Desktop
+        // the after-class pass too: the replay's own recording stands in for the class audio (and is never deleted)
+        session.config = config
+        session.transcriber = transcriber
         var finished: (URL, URL?)?
+        var afterClass: String?
         session.onFinished = { file, pdf in finished = (file, pdf) }
+        session.onAfterClass = { line in afterClass = line }
         let started = Date()
         var ok = false
         let runLoop = { (until: () -> Bool, seconds: Double) in
@@ -78,7 +84,7 @@ enum LectureReplay {
         var startDone = false
         Task { @MainActor in
             defer { startDone = true }
-            ok = await listener.start(title: course, replay: audio, speed: speed, from: from)
+            ok = await listener.start(title: course, replay: audio, speed: speed, from: from, keepAudio: true)
             guard ok else { print("FAIL: the recognizer didn't start"); return }
             let courseText = value("--course-map").flatMap { try? String(contentsOfFile: DotConfig.expand($0), encoding: .utf8) }
                 ?? (demo != nil ? Talk.courseMapText(label: course, root: config.talkRootURL) : "")
@@ -107,6 +113,9 @@ enum LectureReplay {
             if session.phase == .why { await session.whyAnswered(value("--why") ?? "") }
         }
         runLoop({ finished != nil }, 600)
+        print("\n==== live notes saved; the after-class pass runs")
+        runLoop({ afterClass != nil }, 1200)
+        print("\n==== \(afterClass ?? "after class: no result in 20 min")")
         print("\n==== notes (\(session.notes.blocks.count) lines)\n" + session.notes.markdown)
         print("\n==== explain triggers (\(explains.count))\n" + explains.joined(separator: "\n"))
         if let (file, pdf) = finished {

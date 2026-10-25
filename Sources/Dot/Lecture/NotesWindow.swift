@@ -24,6 +24,8 @@ enum NotesMessage: Equatable {
     case addDeadlines([String])
     /// He closed the saved class: the whole window goes.
     case close
+    /// He typed the class's title in the heading (empty: he cleared it).
+    case title(String)
 
     init?(_ body: Any) {
         guard let d = body as? [String: Any], let type = d["type"] as? String else { return nil }
@@ -45,6 +47,7 @@ enum NotesMessage: Equatable {
         case "showExplain": guard let id else { return nil }; self = .showExplain(id: id)
         case "addDeadlines": self = .addDeadlines(d["ids"] as? [String] ?? [])
         case "close": self = .close
+        case "title": self = .title(text)
         default: return nil
         }
     }
@@ -59,7 +62,8 @@ enum NotesMessage: Equatable {
 final class NotesWindow: NSObject, NSWindowDelegate, NSSplitViewDelegate, WKNavigationDelegate, WKUIDelegate {
     /// One line of the notes as the page draws it. `author` is "dot", "him" or "added"; `kind` is "bullet", "image" (a
     /// board photo) or "slide" (`text` is the slide's title); `src` is an image path relative to the course folder; `at`
-    /// is the clock time the line came from ("11:42:10"), which gives it a time chip.
+    /// is the clock time the line came from ("11:42:10"), which gives it a time chip. `fixed` is a line of Dot's that the
+    /// after-class pass corrected (a quiet "edited after class" mark).
     struct Block: Encodable {
         var id, text: String
         var depth: Int
@@ -67,6 +71,7 @@ final class NotesWindow: NSObject, NSWindowDelegate, NSSplitViewDelegate, WKNavi
         var kind: String
         var src: String?
         var at: String? = nil
+        var fixed: Bool = false
     }
 
     /// A deadline heard in class, offered for Atlas after it. `line` is the notes line it came from.
@@ -211,6 +216,10 @@ final class NotesWindow: NSObject, NSWindowDelegate, NSSplitViewDelegate, WKNavi
         call("notes.finished(\(Self.json(["pdf": pdf, "file": file])))")
     }
 
+    /// The after-class pass's one line ("after class: re-reading the lecture", then "after class: 9 added, 3 fixed"): in
+    /// the saved box when it is up, else as the status. Hidden or not, it is there when he opens the window again.
+    func afterClass(_ line: String) { call("notes.afterClass(\(Self.json(line)))") }
+
     /// Back in front, in its Space, after he closed or minimized it mid-class ("open my notes").
     func bringBack() {
         guard let window else { return }
@@ -241,7 +250,51 @@ final class NotesWindow: NSObject, NSWindowDelegate, NSSplitViewDelegate, WKNavi
     /// questions as usual (the lecture's explainers wait for him to come back).
     private func syncBoard() {
         guard !offscreen else { return }
-        onBoard?(isInView ? boardHost : nil)
+        let inView = isInView
+        onBoard?(inView ? boardHost : nil)
+        guard inView != wasInView else { return }
+        wasInView = inView
+        guard inView, let window else { Log.info("notes: swiped away"); return }
+        Log.info("notes: in view (Dot \(NSApp.isActive ? "active" : "not active"), window \(window.isKeyWindow ? "key" : "not key"))")
+        // Swiped back to its full-screen Space, the only thing there is this window: the keys he types are for the notes.
+        // Dot is an accessory app and the swipe does not always make it active, so his typing went to the app he came
+        // from and a click only activated the window (2026-10-25, "no cursor on click"). Out of full screen, sharing a
+        // desktop with his other apps, it never takes focus on its own.
+        if window.styleMask.contains(.fullScreen), !NSApp.isActive || !window.isKeyWindow {
+            NSApp.activate(ignoringOtherApps: true)
+            window.makeKeyAndOrderFront(nil)
+        }
+        focusNotes()
+    }
+    private var wasInView = false
+
+    /// The notes page is what takes his keys while this window is key, unless he is in the board (an explanation).
+    private func focusNotes() {
+        guard let window, let web else { return }
+        let responder = window.firstResponder
+        if let view = responder as? NSView, view === web || view.isDescendant(of: web) { return }
+        if let board = boardHost, let view = responder as? NSView, view.isDescendant(of: board) { return }
+        window.makeFirstResponder(web)
+    }
+
+    func windowDidBecomeKey(_ notification: Notification) {
+        focusNotes()
+        Log.info("notes: key (Dot \(NSApp.isActive ? "active" : "not active"), first responder \(Self.describe(window?.firstResponder)))")
+    }
+
+    func windowDidResignKey(_ notification: Notification) {
+        // the new key window is known a moment later
+        DispatchQueue.main.async {
+            let now = NSApp.keyWindow.map { "Dot's \(type(of: $0))" } ?? (NSWorkspace.shared.frontmostApplication?.localizedName ?? "another app")
+            Log.info("notes: resigned key (now \(now))")
+        }
+    }
+
+    /// The first responder as a class name ("NotesWebView", "the window"), for the log.
+    static func describe(_ responder: NSResponder?) -> String {
+        guard let responder else { return "none" }
+        if responder is NSWindow { return "the window" }
+        return String(describing: type(of: responder))
     }
 
     private var spaceObserver: NSObjectProtocol?
@@ -299,7 +352,7 @@ final class NotesWindow: NSObject, NSWindowDelegate, NSSplitViewDelegate, WKNavi
             guard let id = row["id"] as? String else { return nil }
             return Block(id: id, text: row["text"] as? String ?? "", depth: (row["depth"] as? NSNumber)?.intValue ?? 0,
                          author: row["author"] as? String ?? "dot", kind: row["kind"] as? String ?? "bullet", src: row["src"] as? String,
-                         at: row["at"] as? String)
+                         at: row["at"] as? String, fixed: (row["fixed"] as? NSNumber)?.boolValue ?? false)
         }
     }
 
@@ -307,6 +360,27 @@ final class NotesWindow: NSObject, NSWindowDelegate, NSSplitViewDelegate, WKNavi
     func evaluate(_ js: String, completion: @escaping (Any?, Error?) -> Void) {
         guard ready, let web else { completion(nil, nil); return }
         web.evaluateJavaScript(js) { value, error in completion(value, error) }
+    }
+
+    /// The self-test: whether a mouse-down at `point` (in the window) reaches the notes page when the window is not key.
+    func acceptsFirstMouseForTests(at point: CGPoint) -> Bool {
+        guard let window, let web, let event = Self.mouseDown(at: point, in: window) else { return false }
+        return web.acceptsFirstMouse(for: event)
+    }
+
+    /// The self-test: with the window itself as first responder, becoming key hands the keys back to the notes page.
+    func becomeKeyRepairsFocusForTests() -> Bool {
+        guard let window, let web else { return false }
+        window.makeFirstResponder(nil)
+        windowDidBecomeKey(Notification(name: NSWindow.didBecomeKeyNotification, object: window))
+        return window.firstResponder === web
+    }
+
+    var notesViewForTests: WKWebView? { web }
+
+    static func mouseDown(at point: CGPoint, in window: NSWindow) -> NSEvent? {
+        NSEvent.mouseEvent(with: .leftMouseDown, location: point, modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime,
+                           windowNumber: window.windowNumber, context: nil, eventNumber: 0, clickCount: 1, pressure: 1)
     }
 
     /// The window as drawn in light or dark, for the self-test's pictures.
@@ -364,7 +438,7 @@ final class NotesWindow: NSObject, NSWindowDelegate, NSSplitViewDelegate, WKNavi
         split.dividerStyle = .thin
         split.autoresizingMask = [.width, .height]
         split.delegate = self
-        let web = WKWebView(frame: CGRect(x: 0, y: 0, width: Self.defaultWidth, height: 700), configuration: configuration)
+        let web = NotesWebView(frame: CGRect(x: 0, y: 0, width: Self.defaultWidth, height: 700), configuration: configuration)
         web.setValue(false, forKey: "drawsBackground")
         web.navigationDelegate = self
         web.uiDelegate = self
@@ -478,7 +552,7 @@ final class NotesWindow: NSObject, NSWindowDelegate, NSSplitViewDelegate, WKNavi
     private func call(_ js: String) {
         if js.hasPrefix("notes.load(") {
             replay = [js]
-        } else if let setter = ["notes.status(", "notes.setTitle(", "notes.setAccent("].first(where: js.hasPrefix) {
+        } else if let setter = ["notes.status(", "notes.setTitle(", "notes.setAccent(", "notes.afterClass("].first(where: js.hasPrefix) {
             // the status ticks every few seconds: only the latest of each setter is worth replaying
             replay.removeAll { $0.hasPrefix(setter) }
             replay.append(js)
@@ -499,6 +573,8 @@ final class NotesWindow: NSObject, NSWindowDelegate, NSSplitViewDelegate, WKNavi
         }
         guard let message = NotesMessage(body) else { Log.warn("notes: unknown message \(Log.short("\(body)", 200))"); return }
         if message == .close { close() }
+        // where his caret is, so a "can't type" shows in the log (the page sends this once per line he enters or leaves)
+        if case .focus(let id) = message { Log.info(id.map { "notes: he is in \($0)" } ?? "notes: left the line") }
         if message == .ready {
             ready = true
             let pending = queued
@@ -532,6 +608,25 @@ final class NotesWindow: NSObject, NSWindowDelegate, NSSplitViewDelegate, WKNavi
     static func json<T: Encodable>(_ value: T) -> String {
         guard let data = try? JSONEncoder().encode(value), let text = String(data: data, encoding: .utf8) else { return "null" }
         return text
+    }
+}
+
+/// The notes page's view. WebKit lets the first click on a window that isn't key only make it key (its acceptsFirstMouse
+/// is false unless a drag could start), so in a Space he swiped back to, a click on a line gave no cursor (2026-10-25).
+/// Here the first click lands: it activates Dot, makes the window key and puts the caret where he clicked.
+final class NotesWebView: WKWebView {
+    private var lastClickLog = Date.distantPast
+
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+
+    override func mouseDown(with event: NSEvent) {
+        if Date().timeIntervalSince(lastClickLog) > 2 {
+            lastClickLog = Date()
+            Log.info("notes: click (window \(window?.isKeyWindow == true ? "key" : "not key"), Dot \(NSApp.isActive ? "active" : "not active"), "
+                     + "first responder \(NotesWindow.describe(window?.firstResponder)))")
+        }
+        if let window, window.firstResponder !== self { window.makeFirstResponder(self) }
+        super.mouseDown(with: event)
     }
 }
 
