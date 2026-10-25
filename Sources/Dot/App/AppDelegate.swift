@@ -592,6 +592,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         stack.setVisibleInRecordings(config.showInRecordings)
         ActionBarPanel.visibleInRecordings = config.showInRecordings
         CardPanel.visibleInRecordings = config.showInRecordings
+        // last, so a window on the iMac display ends shown whatever the setters above did (CaptureGuard)
+        CaptureGuard.visibleInRecordings = config.showInRecordings
+        CaptureGuard.start()
+        CaptureGuard.sweep()
     }
 
     /// The stack's buttons (04). Agent chips reach AgentManager and Home; job chips are 02's, which wires them

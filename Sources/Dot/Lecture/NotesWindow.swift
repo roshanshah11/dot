@@ -424,6 +424,7 @@ final class NotesWindow: NSObject, NSWindowDelegate, NSSplitViewDelegate, WKNavi
         w.isReleasedWhenClosed = false
         w.minSize = CGSize(width: 680, height: 420)
         w.sharingType = CardPanel.visibleInRecordings ? .readOnly : .none
+        CaptureGuard.follow(w)   // made once: a later toggle must reach it too
         w.delegate = self
 
         let configuration = WKWebViewConfiguration()
