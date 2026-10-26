@@ -40,8 +40,13 @@ final class RoutineScheduler {
         guard config.routines else { Log.info("routines: off in config"); return }
         agents.routineOutcome = { [weak self] slug, failed, note in self?.outcome(slug: slug, failed: failed, note: note) }
         timer = Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { [weak self] _ in
-            Task { @MainActor in self?.tick() }
+            Task { @MainActor in
+                self?.tick()
+                // the week ahead rolls forward, and a rule he just installed is found (AG-22)
+                if let self, Date().timeIntervalSince(self.wakesSyncedAt) > 1800 { self.syncWakes() }
+            }
         }
+        syncWakes()
         Log.info("routines: \(book.routines.count) on file, \(book.routines.filter { !$0.paused }.count) active")
         DispatchQueue.main.asyncAfter(deadline: .now() + 20) { [weak self] in self?.tick() }
     }
@@ -121,6 +126,8 @@ final class RoutineScheduler {
 
     private func run(_ routine: Routine, now: Date, byHand: Bool) {
         waitingOffline.remove(routine.id)
+        // Due while the Mac slept or Dot was closed (AG-22): it runs once now and says it is late.
+        let late = !byHand && WakePlan.isLate(due: routine.nextRun, now: now)
         book.markStarted(routine.id, at: now)
         save()
         inFlight[routine.agent] = routine.id
@@ -129,6 +136,12 @@ final class RoutineScheduler {
         let mode = routine.runMode
         var note = "This is a scheduled \(mode == .watch ? "watch" : "report") run (\(routine.schedule.words); \(when)), not a fresh ask: do the task, report what changed since the last run, and say so plainly if nothing did. Keep the reply short; it lands in your thread for him to read later."
         if mode == .watch { note += " " + Self.watchNote }
+        if late {
+            let f = DateFormatter()
+            f.dateFormat = "h:mm a"
+            note += " This run is late: it was due at \(f.string(from: routine.nextRun)) while the Mac was asleep or Dot was closed; say so in one clause."
+            Log.info("routines: \(routine.id) is late (due \(routine.nextRun))")
+        }
         agents.handoff(brief: brief, agentName: routine.agentName, context: nil, shots: nil, note: note, routine: true, routineMode: mode)
         Log.info("routines: ran \(routine.id) (\(routine.agent), \(mode.rawValue))\(byHand ? " by hand" : "")")
         onChanged?()
@@ -158,6 +171,112 @@ final class RoutineScheduler {
     private func save() {
         do { try book.save(to: url) } catch { Log.error("routines: could not save: \(error)") }
         onChanged?()
+        syncWakes()
+    }
+
+    // MARK: Waking the Mac for routines (parity AG-22)
+
+    /// Whether his sudoers rule lets Dot ask pmset for wakes (`/etc/sudoers.d/dot-pmset`); checked on each sync.
+    private(set) var wakeRule = false
+    private var wakesSyncedAt = Date.distantPast
+    private var wakeSyncPending = false
+    private var wakesURL: URL { config.dotHome.appendingPathComponent(".wakes.json") }
+    static let wakeOwner = "Dot"
+
+    /// What Home says under the routines (nil with none active).
+    var wakeLine: String? {
+        let active = book.routines.filter { !$0.paused }
+        return WakePlan.homeLine(ruleInstalled: wakeRule, activeRoutines: active.count, overnight: active.contains { WakePlan.isOvernight($0.nextRun) })
+    }
+
+    /// The one command that installs the rule (Home copies it; the rule file sits beside Dot's settings).
+    var wakeInstallCommand: String {
+        let file = config.dotHome.appendingPathComponent("dot-pmset")
+        if !FileManager.default.fileExists(atPath: file.path) {
+            try? WakePlan.sudoersRule(user: NSUserName()).write(to: file, atomically: true, encoding: .utf8)
+        }
+        return WakePlan.installCommand(ruleFile: file.path)
+    }
+
+    /// The wakes the routines need, asked of pmset two minutes before each next run; the ones Dot asked for that no
+    /// routine needs any more are cancelled. Without his rule nothing is asked and routines wait for the Mac to wake.
+    func syncWakes() {
+        guard !wakeSyncPending else { return }
+        wakeSyncPending = true
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2) { [weak self] in
+            guard let self else { return }
+            self.wakeSyncPending = false
+            let now = Date()
+            let wanted = self.config.routines ? WakePlan.wakes(nextRuns: self.book.routines.filter { !$0.paused }.map(\.nextRun), now: now) : []
+            let recordedURL = self.wakesURL
+            let recorded = ((try? JSONDecoder().decode([Double].self, from: Data(contentsOf: recordedURL))) ?? []).map { Date(timeIntervalSince1970: $0) }
+            self.wakesSyncedAt = now
+            DispatchQueue.global(qos: .utility).async {
+                let rule = Self.wakeRuleInstalled()
+                var kept = recorded
+                if rule, !(wanted.isEmpty && recorded.isEmpty) {
+                    let listed = WakePlan.scheduled(pmsetOutput: Self.output("/usr/bin/pmset", ["-g", "sched"]) ?? "").filter { $0.type == "wake" }.map(\.at)
+                    let mine = recorded.filter { r in listed.contains { abs($0.timeIntervalSince(r)) < 1 } }
+                    let (add, cancel) = WakePlan.changes(wanted: wanted, scheduled: mine, now: now)
+                    kept = mine.filter { $0 > now && !cancel.contains($0) }
+                    for date in cancel {
+                        let ok = Self.sudoPmset(["schedule", "cancel", "wake", WakePlan.pmsetDate(date), Self.wakeOwner])
+                        Log.info("routines: wake at \(WakePlan.pmsetDate(date)) \(ok ? "cancelled" : "couldn't be cancelled")")
+                    }
+                    for date in add where !listed.contains(where: { abs($0.timeIntervalSince(date)) < 60 }) {
+                        if Self.sudoPmset(["schedule", "wake", WakePlan.pmsetDate(date), Self.wakeOwner]) {
+                            kept.append(date)
+                            Log.info("routines: the Mac wakes at \(WakePlan.pmsetDate(date)) for a routine")
+                        } else {
+                            Log.warn("routines: pmset refused a wake at \(WakePlan.pmsetDate(date))")
+                        }
+                    }
+                }
+                if let data = try? JSONEncoder().encode(kept.sorted().map(\.timeIntervalSince1970)) { try? data.write(to: recordedURL, options: .atomic) }
+                DispatchQueue.main.async { [weak self] in
+                    guard let self else { return }
+                    if self.wakeRule != rule { Log.info("routines: wake rule \(rule ? "found" : "not installed"); \(rule ? "Dot wakes the Mac for routines" : "routines wait while the Mac sleeps")") }
+                    self.wakeRule = rule
+                    self.onChanged?()
+                }
+            }
+        }
+    }
+
+    /// The rule allows `sudo -n pmset schedule wake` (no password, no prompt).
+    nonisolated static func wakeRuleInstalled() -> Bool {
+        let p = Process()
+        p.executableURL = URL(fileURLWithPath: "/usr/bin/sudo")
+        p.arguments = ["-n", "-l", "/usr/bin/pmset", "schedule", "wake", "01/01/30 00:00:00", wakeOwner]
+        p.standardOutput = FileHandle.nullDevice
+        p.standardError = FileHandle.nullDevice
+        do { try p.run() } catch { return false }
+        p.waitUntilExit()
+        return p.terminationStatus == 0
+    }
+
+    nonisolated static func sudoPmset(_ args: [String]) -> Bool {
+        let p = Process()
+        p.executableURL = URL(fileURLWithPath: "/usr/bin/sudo")
+        p.arguments = ["-n", "/usr/bin/pmset"] + args
+        p.standardOutput = FileHandle.nullDevice
+        p.standardError = FileHandle.nullDevice
+        do { try p.run() } catch { return false }
+        p.waitUntilExit()
+        return p.terminationStatus == 0
+    }
+
+    nonisolated static func output(_ path: String, _ args: [String]) -> String? {
+        let p = Process()
+        p.executableURL = URL(fileURLWithPath: path)
+        p.arguments = args
+        let pipe = Pipe()
+        p.standardOutput = pipe
+        p.standardError = FileHandle.nullDevice
+        do { try p.run() } catch { return nil }
+        let data = pipe.fileHandleForReading.readDataToEndOfFile()
+        p.waitUntilExit()
+        return String(data: data, encoding: .utf8)
     }
 
     /// What a watch run is told on top of the run note (07).

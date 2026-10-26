@@ -11,8 +11,9 @@ import Foundation
 /// the brief, and his own adds and removes from Home (`.dot/tools.json`). A server Dot has not seen yet is not denied
 /// (the list of known servers grows from each session's init line).
 public enum AgentTools {
-    /// Always kept: Atlas (his chief of staff's tools) and the computer-use servers (an agent's hands).
-    public static let always: Set<String> = ["atlas", "cua-driver", "cua-computer-use", "computer-use", "cmux-cua"]
+    /// Always kept: Atlas (his chief of staff's tools), the computer-use servers (an agent's hands) and Dot's own
+    /// `dot-agents` (notes to other agents, pictures).
+    public static let always: Set<String> = ["atlas", "cua-driver", "cua-computer-use", "computer-use", "cmux-cua", "dot-agents"]
 
     /// Servers chosen when the brief talks about their work (claude.ai connectors by their tool prefix).
     public static let rules: [(server: String, words: [String])] = [

@@ -139,6 +139,9 @@ final class HomeModel: ObservableObject {
     /// Round six: rules, routines and spend for the Agents page.
     @Published var rules = AgentRules.standard
     @Published var routines: [Routine] = []
+    /// Whether routines wake the Mac (AG-22), in a sentence; nil with no active routines.
+    @Published var wakeLine: String?
+    @Published var wakeRule = false
     @Published var spend: [String: Double] = [:]
     var scheduler: RoutineScheduler? {
         didSet {
@@ -201,6 +204,8 @@ final class HomeModel: ObservableObject {
 
     func refreshRoutines() {
         routines = scheduler?.routines ?? []
+        wakeLine = scheduler?.wakeLine
+        wakeRule = scheduler?.wakeRule ?? false
         rules = agentManager.rules
         spend = ledger.spendByAgent(since: Date().addingTimeInterval(-7 * 86400))
     }
@@ -740,6 +745,14 @@ struct HomeView: View {
             HStack(spacing: 8) {
                 Image(systemName: "arrow.turn.down.right").font(.system(size: 10)).foregroundStyle(.secondary).frame(width: 14)
                 Text("offered next: \(entry.text)").font(.system(size: 11.5)).foregroundStyle(.secondary).lineLimit(1)
+                Spacer()
+            }
+            .padding(.leading, 6)
+        case "note":
+            // A note between agents, or from him through Dot (AG-18): "from Scout: ..." or "to Writer: ...".
+            HStack(alignment: .top, spacing: 8) {
+                Image(systemName: entry.text.hasPrefix("to ") ? "note.text.badge.plus" : "note.text").font(.system(size: 10)).foregroundStyle(accent).frame(width: 14)
+                Text("note \(entry.text)").font(.system(size: 11.5)).foregroundStyle(.secondary).lineLimit(3).textSelection(.enabled)
                 Spacer()
             }
             .padding(.leading, 6)

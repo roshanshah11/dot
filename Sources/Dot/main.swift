@@ -11,6 +11,40 @@ case "--gate":
 case "--hands-mcp":
     // A job's `dot` tools (the fast lane): stdio MCP in, relayed to the running Dot over the control socket.
     HandsMCPServer.run(Array(arguments.dropFirst()))
+case "--agent-mcp":
+    // An agent's own tools (`dot-agents`: note_to, list_agents, make_image), relayed to the running Dot.
+    AgentMCPServer.run(Array(arguments.dropFirst()))
+case "--agent-start", "--agent-status", "--agent-list", "--agent-tell", "--agent-note":
+    // Agents from outside (parity AG-19): start one, tell it something, leave it a note, or read where they stand.
+    // Exit 0 done, 2 usage, 3 no answer from Dot, 4 Dot refused (no such agent).
+    let flag = arguments.first!
+    let json = arguments.contains("--json")
+    let command: AgentCommand
+    switch AgentCommand.parse(flag: flag, Array(arguments.dropFirst())) {
+    case .success(let c): command = c
+    case .failure(let usage): print(usage.description); exit(2)
+    }
+    let path = ProcessInfo.processInfo.environment[ControlServer.pathVariable].flatMap { $0.isEmpty ? nil : $0 }
+        ?? (NSHomeDirectory() as NSString).appendingPathComponent("Dot/control.sock")
+    guard let reply = try? UnixSocketClient.send(command.request, to: path, timeout: 15) else {
+        print(json ? "{\"error\":\"no answer from Dot at \(path)\"}" : "agents: no answer from Dot at \(path)")
+        exit(3)
+    }
+    if let error = reply["error"] as? String {
+        print(json ? (String(data: (try? JSONSerialization.data(withJSONObject: ["error": error])) ?? Data(), encoding: .utf8) ?? "{}") : "agents: \(error)")
+        exit(4)
+    }
+    let rows = AgentStatus.decode(reply["agents"])
+    if json {
+        if reply["agents"] != nil { print(AgentStatus.json(rows)) } else {
+            print(String(data: (try? JSONSerialization.data(withJSONObject: ["ok": true, "text": reply["text"] as? String ?? ""], options: [.sortedKeys])) ?? Data(), encoding: .utf8) ?? "{}")
+        }
+    } else if let text = reply["text"] as? String {
+        print(text)
+    } else {
+        print(rows.isEmpty ? (command == .status(name: nil) ? "no agents are working right now" : "no agents") : rows.map(\.line).joined(separator: "\n"))
+    }
+    exit(0)
 case "--router-mcp":
     // The tool router (IN-03): one MCP server under its own name, started on first use, restarted when it dies, and
     // a call past its time handed back as a handle (router_check).
@@ -127,6 +161,11 @@ case "--help", "-h":
       Dot --router-selftest [--quick] [--no-claude]    the router against a fake server, then Claude Code and the job gate
       Dot --host [list]        the agent host that keeps agents running across a relaunch (launchd runs it)
       Dot --jobs [--json]      what an install would interrupt now (exit 0 idle, 1 busy, 3 no answer)
+      Dot --agent-start <name> "<brief>" [--quiet]   start (or follow up with) an agent in the running Dot; --quiet: no chime or voice [--json]
+      Dot --agent-status [name]            where an agent stands: state, last step, next, files, spend today [--json]
+      Dot --agent-list                     every agent's status [--json]
+      Dot --agent-tell <name> "<message>" [--quiet]  pass an agent a message, like a typed follow-up [--json]
+      Dot --agent-note <to> "<text>" [--from <name>]   leave an agent a note for its next step or turn [--json]
       Dot --version
 
     Hold control+option and talk; drag while holding to draw a box to ask about.

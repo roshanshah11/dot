@@ -1083,6 +1083,12 @@ final class AgentVoiceTests: XCTestCase {
         XCTAssertEqual(parsed.tags, [.tell(agent: "Inbox Keeper", message: "also check the spam folder")])
         XCTAssertEqual(TagParser.parse("stopping it. [STOP_AGENT:Email]").tags, [.stopAgent(name: "Email")])
         XCTAssertEqual(TagParser.parse("[STOP_AGENT:]").tags, [])
+        // AG-18: a note starts no work; its text keeps its own colons
+        let note = TagParser.parse("I'll leave it for Scout. [NOTE:Scout:use the Q3 numbers: the 10-Q, not the deck]")
+        XCTAssertEqual(note.spoken, "I'll leave it for Scout.")
+        XCTAssertEqual(note.tags, [.note(agent: "Scout", text: "use the Q3 numbers: the 10-Q, not the deck")])
+        XCTAssertFalse(DotTag.note(agent: "a", text: "b").isVisual)
+        XCTAssertEqual(TagParser.parse("[NOTE:Scout:]").tags, [])
     }
 
     /// One Dot (10-22): talk routes his words to a live job by id; the message keeps its own colons.

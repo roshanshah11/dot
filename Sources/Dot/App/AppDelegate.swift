@@ -135,6 +135,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             reply(report.wire)
         }
         if control.isRunning { talk.jobs.socketPath = control.path }
+        // Agents from outside (parity AG-19): `Dot --agent-start | --agent-status | --agent-list | --agent-tell | --agent-note`.
+        control.register("agent") { [weak self] request, reply in
+            guard let self else { reply(["error": "dot is quitting"]); return }
+            guard let command = AgentCommand.from(request: request) else { reply(["error": "not an agent request"]); return }
+            reply(self.agents.control(command))
+        }
+        // An agent's own tools (AG-18 note_to and list_agents, AG-14 make_image), from `Dot --agent-mcp`.
+        control.register("agent-tool") { [weak self] request, reply in
+            guard let self else { reply(["error": "dot is quitting"]); return }
+            self.agents.agentTool(agent: request["agent"] as? String ?? "", tool: request["tool"] as? String ?? "",
+                                  args: request["args"] as? [String: Any] ?? [:], reply: reply)
+        }
         noticer = Noticer(config: config, atlas: atlas, overlay: overlay, jev: jev)
         noticer.onSuggest = { [weak self] suggestion in Task { @MainActor in self?.talk.offerSuggestion(suggestion) } }
         // Quips and an offer's "ok, later." wait while Dot is busy, a lecture is heard or Murmur records.
@@ -163,6 +175,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Agents edit their own routines by title (TC-06) and see the full list each turn (TC-07).
         agents.onRoutineCommand = { [weak self] slug, name, command in self?.routines.apply(command, agent: slug, agentName: name) }
         agents.routineList = { [weak self] slug in self?.routines.listLine(for: slug) ?? "" }
+        agents.nextRoutine = { [weak self] slug in
+            guard let next = self?.routines.routines(for: slug).filter({ !$0.paused }).min(by: { $0.nextRun < $1.nextRun }) else { return nil }
+            let f = DateFormatter()
+            f.dateFormat = Calendar.current.isDateInToday(next.nextRun) ? "h:mm a" : "EEE h:mm a"
+            return "routine \"\(next.displayTitle)\" at \(f.string(from: next.nextRun))"
+        }
         morning = MorningSuggestions(config: config, atlas: atlas, hud: hud, agents: agents)
         // A scout brief's "do it" hands the brief over (run one) and registers its routine (MB-03).
         morning.addRoutine = { [weak self] name, when, brief in

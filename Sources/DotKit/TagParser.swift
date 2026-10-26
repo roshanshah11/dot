@@ -17,6 +17,7 @@ import Foundation
 ///   [AGENT:brief]                  hand the task to a background agent
 ///   [NEW_AGENT:name:brief]         create a named agent for this kind of work, then hand off
 ///   [TELL:name:message]            pass a message to an agent he already has (a follow-up, a change, a question)
+///   [NOTE:name:text]               leave an agent a note for its next step or turn, starting no work (AG-18)
 ///   [STOP_AGENT:name]              stop that agent's work now
 ///   [THINK]                        the question deserves the stronger model; Dot re-asks it
 ///   [FIND:phrase]                  find the phrase in the document in front, scroll to it and highlight it
@@ -51,6 +52,8 @@ public enum DotTag: Equatable {
     case newAgent(name: String, brief: String)
     /// A message for an agent he already has, by name (round seven, G2).
     case tell(agent: String, message: String)
+    /// [NOTE:name:text]: a note for an agent's next step or turn that starts no work now (parity AG-18).
+    case note(agent: String, text: String)
     /// [JOB:id:message]: his words for a job that's running or paused (one Dot routes them, 10-22); "stop" stops it.
     case jobMessage(id: String, message: String)
     /// Stop that agent now (round seven, G2: a stop used to be a click only).
@@ -98,7 +101,7 @@ public extension DotTag {
     var isVisual: Bool {
         switch self {
         case .point, .highlight, .target, .hover, .shape, .card, .reveal, .step, .clearBoard, .type, .web, .find, .stock, .place, .images, .ink, .inkEdit, .figure: return true
-        case .pointNone, .agent, .newAgent, .tell, .jobMessage, .stopAgent, .routine, .think, .act: return false
+        case .pointNone, .agent, .newAgent, .tell, .note, .jobMessage, .stopAgent, .routine, .think, .act: return false
         }
     }
 
@@ -134,13 +137,13 @@ public struct ParsedResponse: Equatable {
 }
 
 public enum TagParser {
-    static let tagNames = ["POINT", "HIGHLIGHT", "TARGET", "HOVER", "SHAPE", "CARD", "REVEAL", "STEP", "CLEAR_BOARD", "TYPE", "WEB", "FIND", "STOCK", "PLACE", "IMAGES", "AGENT", "NEW_AGENT", "TELL", "STOP_AGENT", "JOB", "ROUTINE", "THINK", "OPEN", "SCROLL", "KEY", "CLICK", "INSERT", "GO", "PLAY", "SETTING", "SPOTIFY",
+    static let tagNames = ["POINT", "HIGHLIGHT", "TARGET", "HOVER", "SHAPE", "CARD", "REVEAL", "STEP", "CLEAR_BOARD", "TYPE", "WEB", "FIND", "STOCK", "PLACE", "IMAGES", "AGENT", "NEW_AGENT", "TELL", "NOTE", "STOP_AGENT", "JOB", "ROUTINE", "THINK", "OPEN", "SCROLL", "KEY", "CLICK", "INSERT", "GO", "PLAY", "SETTING", "SPOTIFY",
                            "WRITE", "LABEL", "NUM", "FRAME", "UNDERLINE", "STRIKE", "CHECK", "CROSS", "CONNECT", "TRACE", "STICKY", "PHOTO",
                            "TYPE_TEXT", "EDIT", "ERASE", "UNDO", "ADD", "FIGURE"]
 
     // swiftlint:disable:next force_try
     static let pattern = try! NSRegularExpression(
-        pattern: #"\[(POINT|HIGHLIGHT|TARGET|HOVER|SHAPE|CARD|REVEAL|STEP|CLEAR_BOARD|TYPE_TEXT|TYPE|WEB|FIND|STOCK|PLACE|IMAGES|AGENT|NEW_AGENT|TELL|STOP_AGENT|JOB|ROUTINE|THINK|OPEN|SCROLL|KEY|CLICK|INSERT|GO|PLAY|SETTING|SPOTIFY|WRITE|LABEL|NUM|FRAME|UNDERLINE|STRIKE|CHECK|CROSS|CONNECT|TRACE|STICKY|PHOTO|EDIT|ERASE|UNDO|ADD|FIGURE)(?::([^\]]*))?\]"#,
+        pattern: #"\[(POINT|HIGHLIGHT|TARGET|HOVER|SHAPE|CARD|REVEAL|STEP|CLEAR_BOARD|TYPE_TEXT|TYPE|WEB|FIND|STOCK|PLACE|IMAGES|AGENT|NEW_AGENT|TELL|NOTE|STOP_AGENT|JOB|ROUTINE|THINK|OPEN|SCROLL|KEY|CLICK|INSERT|GO|PLAY|SETTING|SPOTIFY|WRITE|LABEL|NUM|FRAME|UNDERLINE|STRIKE|CHECK|CROSS|CONNECT|TRACE|STICKY|PHOTO|EDIT|ERASE|UNDO|ADD|FIGURE)(?::([^\]]*))?\]"#,
         options: []
     )
 
@@ -268,6 +271,11 @@ public enum TagParser {
                 .map { String($0).trimmingCharacters(in: .whitespacesAndNewlines) }
             guard parts.count == 2, !parts[0].isEmpty, !parts[1].isEmpty else { return nil }
             return .tell(agent: parts[0], message: parts[1])
+        case "NOTE":
+            let parts = payload.split(separator: ":", maxSplits: 1, omittingEmptySubsequences: false)
+                .map { String($0).trimmingCharacters(in: .whitespacesAndNewlines) }
+            guard parts.count == 2, !parts[0].isEmpty, !parts[1].isEmpty else { return nil }
+            return .note(agent: parts[0], text: parts[1])
         case "JOB":
             let parts = payload.split(separator: ":", maxSplits: 1, omittingEmptySubsequences: false)
                 .map { String($0).trimmingCharacters(in: .whitespacesAndNewlines) }

@@ -3557,6 +3557,17 @@ final class Talk {
                     // No agent by that name yet: the message founds one, the way NEW_AGENT does.
                     startAgent(brief: message, name: name)
                 }
+            case .note(let name, let text):
+                // A note starts no work (AG-18): the agent reads it at its next step, or at the top of its next turn.
+                let fits = AgentAddress.candidates(named: name, in: addressBook)
+                if fits.count == 1 {
+                    let sent = agents.leaveNote(from: "him", to: fits[0].slug, text: text)
+                    hud.flash(status: sent.ok ? "note left for \(fits[0].name)" : sent.line, for: 4)
+                } else {
+                    let names = fits.map { $0.name.lowercased() }
+                    hud.flash(status: fits.isEmpty ? "no agent called \(name) to leave a note for" : "which one: \(names.joined(separator: " or "))?", for: 6)
+                    Log.warn("note tag for \"\(name)\" fits \(fits.count) agents")
+                }
             case .stopAgent(let name):
                 if let agent = AgentAddress.agent(named: name, in: addressBook) {
                     agents.stop(agent.slug)

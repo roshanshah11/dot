@@ -31,6 +31,8 @@ final class AgentManager {
         /// says Notify: yes or asks him something.
         var routineMode: RoutineMode?
         var isWatchRun: Bool { isRoutine && routineMode == .watch }
+        /// Started from outside with `--quiet` (AG-19): its result lands like a routine's, with no chime and no voice.
+        var quietReport = false
         /// What he allowed for the rest of this task ("Allow for this task"), by allowanceKey; a new
         /// brief starts with none.
         var allowances: Set<String> = []
@@ -268,7 +270,7 @@ final class AgentManager {
     @discardableResult
     func handoff(brief: String, agentName: String?, context: ScreenContext?, shots: [ScreenShot]?,
                  extraImages: [(data: Data, mediaType: String)] = [], note: String? = nil, routine: Bool = false, agent known: Agent? = nil,
-                 fresh: Bool = false, routineMode: RoutineMode? = nil) -> Agent {
+                 fresh: Bool = false, routineMode: RoutineMode? = nil, outside: Bool = false, quiet: Bool = false) -> Agent {
         let agent: Agent
         if let known {
             agent = known
@@ -279,7 +281,8 @@ final class AgentManager {
         } else {
             agent = ensureAgent(named: agentName ?? "Dot")
         }
-        if !routine { lastAddressed = agent.slug }
+        // Started from outside (AG-19: Atlas, a script, another agent): his next unnamed follow-up still goes where it went.
+        if !routine, !outside { lastAddressed = agent.slug }
         // 07: follow-ups the last turn folded in no longer make an idle agent look busy.
         runs[agent.slug]?.session.settleFoldedMessages()
         let run: Run
@@ -318,16 +321,19 @@ final class AgentManager {
         run.steps = []
         run.helpers = 0
         run.isRoutine = routine
+        run.quietReport = quiet
         run.routineMode = routine ? (routineMode ?? .report) : nil
         run.allowances = []
         run.turnsOwed = 1
         activities[agent.slug] = .thinking
-        if !routine { Chimes.shared.play(.launch) }
+        if !routine, !outside { Chimes.shared.play(.launch) }
         run.outputBaseline = TurnArtifacts.listing(of: agent.outputFolder)
         if run.isWatchRun { Log.info("agent[\(agent.slug)] watch run: no chip while it works") }
         showRow(run.row(Log.short(brief, 90)), for: run)
 
         var text = brief
+        // Notes other agents left while it was idle (AG-18), read at the top of this turn.
+        if let notes = AgentNote.block(takePendingNotes(agent)) { text = notes + "\n\n" + brief }
         var contextLines: [String] = []
         if let about = atlas?.profileBlock(), !about.isEmpty { contextLines.append(about) }
         if let today = atlas?.shortBlock(), !today.isEmpty { contextLines.append(today) }
@@ -415,10 +421,17 @@ final class AgentManager {
         }
         options.maxTurns = 200
         options.mcpConfigPath = config.mcpConfigPath(config.agentMCPConfig)
-        // IN-03: the agent's servers through the router under their own names, so the gate and deny lists are unchanged.
-        if config.routeTools, let path = options.mcpConfigPath, let data = FileManager.default.contents(atPath: path) {
-            let file = config.agentsRootURL.appendingPathComponent(".mcp/\(agent.slug).json")
-            if RouterMCPServer.writeRouted(data, to: file, deny: options.disallowedTools) != nil { options.mcpConfigPath = file.path }
+        // AG-18, AG-14: its own `dot-agents` server (note_to, list_agents, make_image), added to the servers it inherits;
+        // IN-03: those servers through the router under their own names, so the gate and deny lists are unchanged.
+        let base = options.mcpConfigPath.flatMap { FileManager.default.contents(atPath: $0) }
+        let file = config.agentsRootURL.appendingPathComponent(".mcp/\(agent.slug).json")
+        if let data = AgentMCPWire.adding(to: base, executable: Gate.executablePath, agent: agent.slug, socket: controlSocket) {
+            if config.routeTools, RouterMCPServer.writeRouted(data, to: file, deny: options.disallowedTools) != nil {
+                options.mcpConfigPath = file.path
+            } else {
+                try? FileManager.default.createDirectory(at: file.deletingLastPathComponent(), withIntermediateDirectories: true)
+                if (try? data.write(to: file, options: .atomic)) != nil { options.mcpConfigPath = file.path }
+            }
         }
         options.strictMCP = false
         options.settingSources = nil
@@ -612,7 +625,10 @@ final class AgentManager {
         let shown = files.isEmpty ? Array(outputs.prefix(4)) : files
         // How it reports (decided item 22, DotKit AgentReport): a muted Mac or a call gets the line as text on a card
         // held for reading time, never a voice; a question gets a "!" card that holds.
-        let quiet = run.isRoutine   // a scheduled run lands in the thread without a chime or a word (HeyClicky's routines do the same)
+        // A scheduled run lands in the thread without a chime or a word (HeyClicky's routines do the same); so does a
+        // quiet start from outside (AG-19).
+        let quiet = run.isRoutine || run.quietReport
+        let wasRoutine = run.isRoutine
         let unprompted = run.turnsOwed == 0
         let onCall = config.quietOnCalls && CallPresence.isOnCall()
         let report = AgentReport.decide(speakResults: config.speakAgentResults, routineMode: quiet ? (run.routineMode ?? .report) : nil, notify: parsed.notify,
@@ -661,7 +677,8 @@ final class AgentManager {
         if !quiet || report.chip == .alert, !unprompted { reportedAt[agent.slug] = Date() }
         if !unprompted { AtlasThread.shared.record(kind: "agent", asked: "\(agent.name): \(Log.short(run.lastBrief, 200))", said: (failed ? "failed: " : "") + summary) }
         run.isRoutine = false
-        if quiet { routineOutcome?(agent.slug, failed, failed ? summary : nil) }
+        run.quietReport = false
+        if wasRoutine { routineOutcome?(agent.slug, failed, failed ? summary : nil) }
         // On a call or a muted Mac the result waits in the stack: no chime, no voice (FX-11, decided item 22).
         if report.chime { Chimes.shared.play(failed ? .failed : .done) }
         activities[agent.slug] = nil
@@ -730,6 +747,8 @@ final class AgentManager {
     private func permission(_ request: PermissionRequest, run: Run, completion: @escaping (Bool, String?) -> Void) {
         // A router handle's result (IN-03): the call it collects already passed this gate.
         if RouterCore.isCheck(request.toolName) { completion(true, nil); return }
+        // Its own `dot-agents` tools (AG-18, AG-14): a note lands in another agent's folder, a picture in its own output/.
+        if request.toolName.hasPrefix("mcp__\(AgentMCPWire.server)__") { completion(true, nil); return }
         // Atlas's permissions (his call 2026-10-21): a prompt Claude Code still sends, or a call from a session started
         // guarded, is answered at once; only Atlas's deny list refuses. No card, no Jev, no allowances.
         if config.permissionsMode == .atlas {
@@ -1368,6 +1387,180 @@ final class AgentManager {
         let waiting = busy.filter { agent in cards.contains { $0.agentId == agent.slug } }
         let lead = waiting.isEmpty ? "" : "\(waiting.count == 1 ? "one thing needs" : "\(waiting.count) things need") you. "
         return lead + busy.prefix(3).map(one).joined(separator: " ")
+    }
+
+    // MARK: From outside (parity AG-19) and notes between agents (AG-18)
+
+    /// An agent's next routine run in words ("routine at 6 am tomorrow"); AppDelegate sets it.
+    var nextRoutine: ((String) -> String?)?
+
+    /// An agent by slug or name, any case.
+    func find(_ nameOrSlug: String) -> Agent? {
+        let key = nameOrSlug.trimmingCharacters(in: .whitespaces).lowercased()
+        guard !key.isEmpty else { return nil }
+        let all = roster()
+        return all.first { $0.slug == key } ?? all.first { $0.name.lowercased() == key } ?? all.first { $0.slug == Self.slugify(key) }
+    }
+
+    /// Where each agent stands (`Dot --agent-status`, `--agent-list`, list_agents).
+    func statuses(_ agents: [Agent]) -> [AgentStatus] {
+        let spend = ledger.spendByAgent(since: Calendar.current.startOfDay(for: Date()))
+        let cards = hud.openConsents
+        let time = DateFormatter()
+        time.dateFormat = "h:mm a"
+        return agents.map { agent in
+            let run = runs[agent.slug]
+            let done = finishedAt[agent.slug]
+            var state = AgentStatus.State.idle
+            var step = ""
+            var next: String?
+            if let card = cards.first(where: { $0.agentId == agent.slug }) {
+                state = .waiting
+                step = run?.lastLine ?? ""
+                next = "his yes to \(card.title)"
+            } else if let run, run.isWorking {
+                state = .working
+                step = run.lastLine
+            } else if let done, Date().timeIntervalSince(done) < 6 * 3600 {
+                state = .finished
+                step = "finished at \(time.string(from: done))"
+            }
+            if next == nil { next = nextRoutine?(agent.slug) }
+            let result = lastResults[agent.slug].map(Self.firstSentence)
+                ?? AgentVoice.lastFinding(in: transcript(for: agent, limit: 150)).map(Self.firstSentence)
+            return AgentStatus(name: agent.name, slug: agent.slug, state: state, lastStep: step, next: next,
+                               files: outputFiles(for: agent).prefix(5).map(\.path), spendTodayUSD: spend[agent.slug] ?? 0,
+                               startedAt: run?.startedAt, finishedAt: done, result: result, notesWaiting: pendingNotes(agent).count)
+        }
+    }
+
+    /// A control socket request from `Dot --agent-*` (AG-19). Starts and tells are his asks made through another
+    /// program: they run like a typed follow-up, without taking over his last-addressed agent or chiming the launch.
+    func control(_ command: AgentCommand) -> [String: Any] {
+        func rows(_ agents: [Agent]) -> [String: Any] { ["ok": true, "agents": AgentStatus.wire(statuses(agents))] }
+        switch command {
+        case .list:
+            return rows(roster())
+        case .status(let name?):
+            guard let agent = find(name) else { return ["error": "no agent named \(name)"] }
+            return rows([agent])
+        case .status(nil):
+            let busy = roster().filter { agent in
+                runs[agent.slug]?.isWorking == true || hud.hasConsent(agent: agent.slug)
+                    || finishedAt[agent.slug].map { Date().timeIntervalSince($0) < 6 * 3600 } == true
+            }
+            return rows(busy)
+        case .start(let name, let brief, let quiet):
+            let known = find(name)
+            let agent = handoff(brief: brief, agentName: known?.name ?? name, context: nil, shots: nil,
+                                note: "Started from outside Dot (Atlas, a script or another agent) with `Dot --agent-start`; report as you always do.",
+                                agent: known, outside: true, quiet: quiet)
+            Log.info("agent[\(agent.slug)] started from outside: \(Log.short(brief))")
+            return rows([agent])
+        case .tell(let name, let message, let quiet):
+            guard let agent = find(name) else { return ["error": "no agent named \(name)"] }
+            handoff(brief: message, agentName: agent.name, context: nil, shots: nil, agent: agent, outside: true, quiet: quiet)
+            Log.info("agent[\(agent.slug)] told from outside: \(Log.short(message))")
+            return rows([agent])
+        case .note(let from, let to, let text):
+            let sent = leaveNote(from: from, to: to, text: text)
+            return sent.ok ? ["ok": true, "text": sent.line] : ["error": sent.line]
+        }
+    }
+
+    /// One agent leaves another a note (note_to, `--agent-note`, [NOTE:name:text] from talk with `from` "him"): kept in
+    /// the receiver's notes.md, in both threads, and given to it now if it is working, else at the top of its next turn.
+    func leaveNote(from: String, to: String, text: String) -> (ok: Bool, line: String) {
+        let receiver = find(to)
+        let sender = from == "him" ? nil : find(from)
+        let senderName = sender?.name ?? (from == "him" ? "Roshan (through Dot)" : from)
+        let run = receiver.flatMap { runs[$0.slug] }
+        let working = run.map { $0.session.isRunning && $0.isWorking } ?? false
+        let delivery = AgentNote.delivery(from: sender?.slug ?? from, to: receiver?.slug ?? to, exists: receiver != nil, working: working, text: text)
+        if case .refused(let why) = delivery { return (false, "not sent: \(why)") }
+        guard let receiver else { return (false, "not sent: no agent named \(to)") }
+        let note = AgentNote(from: senderName, to: receiver.name, text: text.trimmingCharacters(in: .whitespacesAndNewlines))
+        let notesFile = receiver.folder.appendingPathComponent("notes.md")
+        if let handle = try? FileHandle(forWritingTo: notesFile) {
+            defer { try? handle.close() }
+            _ = try? handle.seekToEnd()
+            try? handle.write(contentsOf: Data(note.markdown().utf8))
+        } else {
+            try? ("# Notes left for \(receiver.name)\n\n" + note.markdown()).write(to: notesFile, atomically: true, encoding: .utf8)
+        }
+        appendTranscript(receiver, role: "note", text: "from \(senderName): \(note.text)")
+        if let sender { appendTranscript(sender, role: "note", text: "to \(receiver.name): \(note.text)") }
+        if delivery == .now, let run {
+            // Claude Code hands it to the turn at its next step, like his own mid-turn message; a result it causes on
+            // its own is unprompted (no chime, no word).
+            run.step(Log.short("note from \(senderName): \(note.text)", 90))
+            hud.upsertAgent(liveRow(run, run.lastLine))
+            run.session.send(text: note.message)
+            Log.info("agent[\(receiver.slug)] note from \(senderName) delivered mid-turn")
+            return (true, "\(receiver.name) is working; it gets the note at its next step.")
+        }
+        var waiting = pendingNotes(receiver)
+        waiting.append(note)
+        savePendingNotes(waiting, for: receiver)
+        Log.info("agent[\(receiver.slug)] note from \(senderName) kept for its next turn (\(waiting.count) waiting)")
+        return (true, "\(receiver.name) isn't working now; the note is at the top of its next turn.")
+    }
+
+    private func pendingNotesFile(_ agent: Agent) -> URL { agent.folder.appendingPathComponent(".dot/notes-pending.json") }
+
+    private func pendingNotes(_ agent: Agent) -> [AgentNote] {
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        return (try? decoder.decode([AgentNote].self, from: Data(contentsOf: pendingNotesFile(agent)))) ?? []
+    }
+
+    private func savePendingNotes(_ notes: [AgentNote], for agent: Agent) {
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        try? FileManager.default.createDirectory(at: pendingNotesFile(agent).deletingLastPathComponent(), withIntermediateDirectories: true)
+        if let data = try? encoder.encode(notes) { try? data.write(to: pendingNotesFile(agent), options: .atomic) }
+    }
+
+    private func takePendingNotes(_ agent: Agent) -> [AgentNote] {
+        let notes = pendingNotes(agent)
+        if !notes.isEmpty { try? FileManager.default.removeItem(at: pendingNotesFile(agent)) }
+        return notes
+    }
+
+    /// A call from an agent's `dot-agents` server (`Dot --agent-mcp`).
+    func agentTool(agent slug: String, tool: String, args: [String: Any], reply: @escaping ([String: Any]) -> Void) {
+        guard let agent = roster().first(where: { $0.slug == slug }) else { reply(["error": "no agent \(slug)"]); return }
+        switch tool {
+        case "note_to":
+            let sent = leaveNote(from: agent.slug, to: args["agent"] as? String ?? "", text: args["text"] as? String ?? "")
+            reply(["text": sent.line, "isError": !sent.ok])
+        case "list_agents":
+            let others = statuses(roster().filter { $0.slug != agent.slug })
+            reply(["text": others.isEmpty ? "no other agents" : others.map(\.line).joined(separator: "\n")])
+        case "make_image":
+            switch ImageRequest.make(prompt: args["prompt"] as? String ?? "", aspect: args["aspect"] as? String, file: args["file"] as? String) {
+            case .failure(let problem):
+                reply(["text": "not made: \(problem.why)", "isError": true])
+            case .success(let request):
+                appendTranscript(agent, role: "progress", text: "making a picture: \(Log.short(request.prompt, 120))")
+                ImageMaker.shared.make(request, into: agent.outputFolder, config: config) { [weak self] result in
+                    switch result {
+                    case .success(let made):
+                        self?.appendTranscript(agent, role: "artifact", text: made.file.lastPathComponent)
+                        self?.ledger.record(kind: "image", agent: agent.slug, model: made.model,
+                                            result: ResultInfo(sessionId: nil, subtype: "image", isError: false, costUSD: made.costUSD, durationMs: 0,
+                                                               durationApiMs: 0, numTurns: 1, inputTokens: 0, outputTokens: 0, cacheReadTokens: 0,
+                                                               cacheCreationTokens: 0, resultText: nil),
+                                            summary: Log.short(request.prompt, 200))
+                        reply(["text": "saved \(made.file.path) (\(made.model), \(made.bytes / 1024) KB)"])
+                    case .failure(let problem):
+                        reply(["text": "not made: \(problem.why)", "isError": true])
+                    }
+                }
+            }
+        default:
+            reply(["error": "no tool \(tool)"])
+        }
     }
 
     private static func output(of executable: String, _ arguments: [String]) -> String? {

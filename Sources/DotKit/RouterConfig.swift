@@ -2,8 +2,8 @@ import Foundation
 
 /// An MCP config with its stdio servers fronted by the router (IN-03). Each routed entry keeps its name and its own
 /// settings (timeout, alwaysLoad) and runs `<dot> --router-mcp --server <name> --spec <spec file>`; the real entry moves
-/// to the spec file, which only the router reads. Dot's own hands (`--hands-mcp`) stay direct: they answer in under a
-/// second and a job's page and clicks wait on them. Servers that are not stdio (http, sse) pass through.
+/// to the spec file, which only the router reads. Dot's own servers (`--hands-mcp`, `--agent-mcp`) stay direct: they
+/// answer through the running Dot, and a job's page and clicks wait on them. Servers that are not stdio (http, sse) pass through.
 public enum RouterConfig {
     public static let flag = "--router-mcp"
 
@@ -43,12 +43,12 @@ public enum RouterConfig {
         return Wrapped(config: config, spec: specData, routed: spec.keys.sorted())
     }
 
-    /// A stdio server that isn't Dot's own hands.
+    /// A stdio server that isn't one of Dot's own.
     static func routable(_ entry: [String: Any]) -> Bool {
         guard entry["command"] is String else { return false }
         if let type = entry["type"] as? String, type != "stdio" { return false }
         let args = entry["args"] as? [String] ?? []
-        return !args.contains("--hands-mcp") && !args.contains(flag)
+        return !args.contains("--hands-mcp") && !args.contains("--agent-mcp") && !args.contains(flag)
     }
 
     /// Seconds before a call becomes a handle: 20, or less when the server's own timeout is shorter, so Claude Code

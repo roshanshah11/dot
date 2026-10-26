@@ -89,6 +89,23 @@ struct AgentsPage: View {
             } else {
                 ForEach(model.routines) { routine in routineRow(routine) }
             }
+            if let line = model.wakeLine {
+                // AG-22: whether the Mac wakes for them, and the one command that makes it.
+                HStack(alignment: .firstTextBaseline, spacing: 8) {
+                    Image(systemName: model.wakeRule ? "alarm" : "moon.zzz").foregroundStyle(.secondary).frame(width: 18)
+                    Text(line).font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                    if !model.wakeRule, let command = model.scheduler?.wakeInstallCommand {
+                        Button("Copy the command") {
+                            NSPasteboard.general.clearContents()
+                            NSPasteboard.general.setString(command, forType: .string)
+                            routineNote = "copied: paste it in Terminal and type your password once"
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 6) { routineNote = nil }
+                        }
+                        .controlSize(.small)
+                        .help(command)
+                    }
+                }
+            }
             Divider().padding(.vertical, 4)
             VStack(alignment: .leading, spacing: 8) {
                 Text("New routine").font(.system(size: 12.5, weight: .semibold))

@@ -63,6 +63,11 @@ struct DotConfig: Codable {
     var routeTools = true
     /// Talk over Dot to cut it off (parity AU-01): off until the live headset test passes on his Mac (04-voice.md).
     var talkOverDot = false
+    /// make_image (parity AG-14): OpenRouter image-output models in order of preference (picked 2026-10-26 from
+    /// OpenRouter's list: Nano Banana 2.1, then GPT-5.4 Image 2); the newest image model when none is listed any more.
+    var imageModels = ["google/gemini-nano-banana-2.1", "openai/gpt-5.4-image-2"]
+    /// Where OPENROUTER_API_KEY lives when it is not in the environment (dotenv format, `export` allowed).
+    var imageKeyFile = "~/.secrets.env"
     /// Course terms and names the recognizer should write his way (one per line, "heard => correct").
     var dictionaryFile = "~/.config/dot/dictionary.txt"
     /// Where Murmur keeps its dictation history, read for "what did i say in the meeting".
@@ -278,6 +283,8 @@ struct DotConfig: Codable {
         stackSide = get(.stackSide, d.stackSide)
         routeTools = get(.routeTools, d.routeTools)
         talkOverDot = get(.talkOverDot, d.talkOverDot)
+        imageModels = get(.imageModels, d.imageModels)
+        imageKeyFile = get(.imageKeyFile, d.imageKeyFile)
         dictionaryFile = get(.dictionaryFile, d.dictionaryFile)
         murmurHistoryFile = get(.murmurHistoryFile, d.murmurHistoryFile)
         murmurLogDirectory = get(.murmurLogDirectory, d.murmurLogDirectory)
