@@ -987,7 +987,7 @@ final class AgentVoiceTests: XCTestCase {
         XCTAssertNil(AgentAddress.find(in: "tell me about the discount rate", roster: roster))
         XCTAssertNil(AgentAddress.find(in: "dot, what's on my screen", roster: roster))
         XCTAssertNil(AgentAddress.find(in: "stop emailing professors so late", roster: roster))
-        XCTAssertNil(AgentAddress.find(in: "what's the email from sebastian about", roster: roster))
+        XCTAssertNil(AgentAddress.find(in: "what's the email from sam about", roster: roster))
     }
 
     func testAgentNamedInPassing() {

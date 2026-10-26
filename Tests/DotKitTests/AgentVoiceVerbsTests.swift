@@ -15,7 +15,7 @@ final class AgentVoiceVerbsTests: XCTestCase {
         XCTAssertEqual(AgentAddress.find(in: "show me inbox keeper's thread", roster: roster), .init(slug: "inbox-keeper", intent: .open))
         XCTAssertEqual(AgentAddress.find(in: "open the deck email made", roster: roster), .init(slug: "email", intent: .openArtifact, detail: "deck"))
         XCTAssertEqual(AgentAddress.find(in: "pull up the sheet that deck shop built", roster: roster), .init(slug: "deck-shop", intent: .openArtifact, detail: "sheet"))
-        XCTAssertNil(AgentAddress.find(in: "open the email from sebastian", roster: roster))
+        XCTAssertNil(AgentAddress.find(in: "open the email from sam", roster: roster))
         XCTAssertNil(AgentAddress.find(in: "open safari", roster: roster))
     }
 
