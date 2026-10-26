@@ -69,6 +69,42 @@ natural log, as in JavaScript and Python; `log10` is base ten). Nothing else (no
 access, no assignment outside `set`). Braces whose contents do not parse and evaluate stay exactly as written, and math
 (`$...$`) is never interpolated, so set notation like `{(1,0), (2,0)}` and LaTeX braces are safe.
 
+## Job pages
+A background job keeps a live page (`page.md`) in this same language: the blocks above plus the ones below. Dot loads
+it with `panel.load(markup, {id, title, version})`; `version` (a string) rides on every message a control posts, so
+Dot can drop a click made on a stale page. The controls (todo, form, review, letter) need an `id` on the block and on
+each row: one without renders but is inert (dimmed, posts nothing). A control posts once, then stays off until the
+next load. At most 30 rows or fields render in a block; posted strings are cut at 2000 characters.
+| tag | what it is | attributes |
+|---|---|---|
+| `<status>` | the job's run line, a pill with a colored dot | `tone="good|warn|danger|info|muted"` (default info) |
+| `<tiles>` / `<tile>` | stat tiles, 2 or 3 to a row | tile: `label`, `value`, `tone="good|warn|danger|info|accent|muted"`, `note="+3 today"` |
+| `<todo id>` / `<item id done>` | a checklist; ticking a box flips it at once and tells Dot | item: `done="true|false"`, `mark` |
+| `<form id submit="Save">` / `<field>` | a small form; the button sends every field | field: `name`, `label`, `type="text|textarea|number|date|choice"`, `options="a,b,c"` (choice), `value`, `required` |
+| `<letter id proposal>` | a draft the job wants sent, with Send and Edit | `id`, `proposal="p_7f3a"`; always closed: `<letter id="l1" proposal="p_7f3a"></letter>` |
+| `<review id>` / `<item id reason>` | rows to approve or reject, each with an optional one-line reason, then Done | item: `reason="why it is listed"`, `mark` |
+| `<timeline>` / `<day>` | a vertical timeline | day: `date="Mon 27"`, `title`; the body is ordinary markup |
+| `<countdown>` | "3d 4h left", "5h 12m left", "overdue by 2h"; updates each minute, amber inside a day, red once late | `to="2026-10-30T17:00:00-05:00"`, `label="due"` |
+| `<progress>` | a bar with its label and percent | `value` (0 to 1, clamped), `label="3 of 8"`, `tone` (default accent) |
+| `<sticky>` | a paper note stuck to the page | |
+
+- Row marks: `mark="pick|out|new|needs|done|now"` on an `<item>` (in a list, todo or review) or a `<tr>` adds a small
+  badge: pick (chosen), out (ruled out: the row is muted and struck), new, needs (needs him, amber), done (green),
+  now (in progress, accent with a pulsing dot).
+- A required field left empty blocks the button with a note naming it. A choice field sends the picked option.
+- Letter: the page never supplies the draft's words. Anything written inside `<letter>` is ignored; the card says
+  "loading the draft" until Dot calls `panel.letter("l1", {to, subject, body, state})` with
+  `state="pending|sent|withdrawn|expired"`. It shows to, subject and body as plain text (the body keeps its line
+  breaks), with Send and Edit only while pending; other states show a muted line. The fill is kept by letter id, so a
+  re-render or reload of the same page keeps it (a fill made for another page or another proposal is not shown).
+- Light look: the job blocks read only the panel's color tokens; `data-theme="light"` on `<html>` switches them.
+
 ## Messages the panel sends Dot
 `{type:"quiz", panel, id, choice, correct}`, `{type:"ask", panel, text}`, `{type:"selection", panel, text, step}`,
 `{type:"event", kind:"viz", data:{id, values}, card}` (a dragged widget), `{type:"close"}`, `{type:"ready"}`.
+
+From a job page, each with `event` (a fresh 12-character id per press) and `version` (from the load):
+`{type:"page_tick", panel, object:"t1", item:"i1", done:true, event, version}`,
+`{type:"page_form", panel, object:"f1", fields:{"dates":"...", "who":"..."}, event, version}` (every value a string),
+`{type:"page_review", panel, object:"r1", decisions:[{item:"a", approve:true, reason:"..."}], event, version}` (only the
+rows he decided; `reason` may be ""), `{type:"page_letter", panel, object:"l1", proposal:"p_7f3a", choice:"send|edit", event, version}`.

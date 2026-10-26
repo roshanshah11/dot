@@ -131,7 +131,10 @@
   }
 
   // ---- state for the panel ---------------------------------------------------------------------------------------
-  var panel = {id: "", title: "", markup: "", blocks: [], vars: {}, quiz: {}, bindings: [], step: null, userScrolledAt: 0, loaded: {}};
+  // job pages: version is the page.md version Dot loaded; sent holds the controls that posted since that load; drafts
+  // what he typed into an unsent form or review; letters the drafts Dot filled in by letter id (they outlive a load)
+  var panel = {id: "", title: "", markup: "", blocks: [], vars: {}, quiz: {}, bindings: [], step: null, userScrolledAt: 0, loaded: {},
+               version: "", sent: {}, drafts: {}, letters: {}};
   var content, titleEl;
 
   function post(msg) {
@@ -141,8 +144,9 @@
   window.addEventListener("error", function (e) { post({type: "log", text: String(e.message || e) }); });
 
   // ---- markup in --------------------------------------------------------------------------------------------------
-  var SELF = "state|viz|slider|divider|spacer|image|cite|plot|chart|vec|dot|badge|chip|br|hr";
-  var VOID = "state|viz|slider|divider|spacer|image|plot|chart|vec|dot";
+  // <letter> is never VOID: what is written inside it must stay inside it, where nothing reads it
+  var SELF = "state|viz|slider|divider|spacer|image|cite|plot|chart|vec|dot|badge|chip|br|hr|tile|field|countdown|progress|letter";
+  var VOID = "state|viz|slider|divider|spacer|image|plot|chart|vec|dot|tile|field|countdown|progress";
   function preprocess(markup) {
     var escapeMath = function (m) { return m.replace(/</g, "&lt;").replace(/>/g, "&gt;"); };
     var mathAll = new RegExp(MATH_SPAN.source, "g");
@@ -156,7 +160,7 @@
       .replace(new RegExp("<(" + VOID + ")(?=[\\s>])([^<>]*?)>(?!\\s*</\\1>)", "gi"), "<$1$2></$1>");
   }
   var INLINE = /^(b|strong|i|em|span|code|mark|small|sup|sub|a)$/i;
-  var BLOCKISH = /^(lead|dot-title|text|p|steps|step|quiz|followups|box|row|grid|callout|quote|table|svg|viz|chart|plot|list|ul|ol|dot-math|dot-caption|divider|hr|image|img|cite|state|slider|show|hide|each|h1|h2|h3|h4)$/i;
+  var BLOCKISH = /^(lead|dot-title|text|p|steps|step|quiz|followups|box|row|grid|callout|quote|table|svg|viz|chart|plot|list|ul|ol|dot-math|dot-caption|divider|hr|image|img|cite|state|slider|show|hide|each|h1|h2|h3|h4|todo|tiles|form|letter|review|timeline|progress|status|sticky)$/i;
   function hoist(n, out) {
     // an unclosed <b> wraps everything after it: keep its inline part, lift the blocks it swallowed back to the top
     if (n.nodeType === 1 && INLINE.test(n.tagName) && Array.from(n.children).some(function (c) { return BLOCKISH.test(c.tagName); })) {
@@ -233,7 +237,7 @@
         var marker = a("marker") || (tag === "ol" ? "number" : "bullet");
         e = h(marker === "number" ? "ol" : "ul", "list marker-" + marker);
         return renderChildren(src, e, ctx);
-      case "item": case "li": return renderChildren(src, h("li"), ctx);
+      case "item": case "li": e = renderChildren(src, h("li"), ctx); markRow(src, e); return e;
       case "callout": e = h("div", "callout tone-" + (TONES.indexOf(a("tone")) >= 0 ? a("tone") : "info")); return renderChildren(src, e, ctx);
       case "quote": case "blockquote":
         e = h("blockquote", "quote"); renderChildren(src, e, ctx);
@@ -270,6 +274,16 @@
       case "viz": return vizNode(src);
       case "quiz": return quizNode(src, ctx);
       case "followups": return followupsNode(src);
+      case "todo": return todoNode(src, ctx);
+      case "tiles": return tilesNode(src);
+      case "form": return formNode(src, ctx);
+      case "letter": return letterNode(src, ctx);
+      case "review": return reviewNode(src, ctx);
+      case "timeline": return timelineNode(src, ctx);
+      case "countdown": return countdownNode(src);
+      case "progress": return progressNode(src);
+      case "status": e = h("div", "status tone-" + toneOf(a("tone"), "info")); h("span", "status-dot", e); renderChildren(src, h("span", "status-text", e), ctx); return e;
+      case "sticky": return renderChildren(src, h("div", "sticky"), ctx);
       case "state":
         var name = a("name");
         if (name && !Object.prototype.hasOwnProperty.call(panel.vars, name)) {
@@ -315,6 +329,7 @@
         var c = h(tag, cell.hasAttribute("num") ? "num" : null, tr);
         renderChildren(cell, c, ctx);
       });
+      if (tr.firstChild) markRow(r, tr, tr.firstChild);
     });
     return wrap;
   }
@@ -612,6 +627,228 @@
     return row;
   }
 
+  // ---- job pages -------------------------------------------------------------------------------------------------
+  // A background job keeps a live page (page.md) in this language. Its controls post page_* messages with a fresh
+  // event id and the version Dot loaded; a control posts once, then stays off until the next load. A block or row
+  // with no id renders but is inert. At most 30 rows render in a block; every posted string is cut at 2000 characters.
+  var MAXROWS = 30, PAGE_TONES = ["good", "warn", "danger", "info", "accent", "muted"];
+  var MARKS = {pick: "pick", out: "out", "new": "new", needs: "needs you", done: "done", now: "now"};
+  function has(o, k) { return Object.prototype.hasOwnProperty.call(o, k); }
+  function cap(s) { return String(s == null ? "" : s).slice(0, 2000); }
+  function toneOf(v, d) { return PAGE_TONES.indexOf(v) >= 0 ? v : d; }
+  function put(tag, cls, parent, s) { var e = h(tag, cls, parent); e.textContent = s; return e; }
+  function rowsOf(src, tag) { return Array.from(src.children).filter(function (c) { return c.tagName.toLowerCase() === tag; }).slice(0, MAXROWS); }
+  function eventId() { var b = new Uint8Array(12); crypto.getRandomValues(b); return Array.from(b, function (x) { return (x % 36).toString(36); }).join(""); }
+  function pagePost(key, value, msg) { panel.sent[key] = value; msg.event = eventId(); msg.version = panel.version; post(msg); }
+  function draftOf(key, live) { return live ? (panel.drafts[key] = panel.drafts[key] || {}) : {}; }
+  function markRow(src, row, into) {
+    var m = src.getAttribute("mark");
+    if (!m || !has(MARKS, m)) return;
+    row.classList.add("is-" + m);
+    put("span", "mark mark-" + m, into || row, MARKS[m]);
+  }
+
+  function todoNode(src, ctx) {
+    var id = src.getAttribute("id"), box = h("div", "todo");
+    ctx.page = true; box.dataset.id = id || "";
+    rowsOf(src, "item").forEach(function (it) {
+      var iid = it.getAttribute("id"), key = "tick\n" + id + "\n" + iid, done = it.getAttribute("done"), live = !!(id && iid);
+      var row = h("label", "todo-item" + (live ? "" : " page-off"), box), cb = h("input", "todo-box", row), t = h("span", "todo-text", row);
+      row.dataset.item = iid || ""; cb.type = "checkbox";
+      // a tick he made shows until the next load brings the page's own answer
+      cb.checked = has(panel.sent, key) ? panel.sent[key] : done !== null && done !== "false";
+      cb.disabled = !live || has(panel.sent, key);
+      renderChildren(it, t, ctx); markRow(it, row);
+      row.classList.toggle("done", cb.checked);
+      cb.addEventListener("change", function () {
+        row.classList.toggle("done", cb.checked); cb.disabled = true;
+        pagePost(key, cb.checked, {type: "page_tick", object: cap(id), item: cap(iid), done: cb.checked});
+      });
+    });
+    return box;
+  }
+
+  function tilesNode(src) {
+    // descendants, not children: a <tile> written without its slash is closed by preprocess, a stray nesting is not
+    var tiles = Array.from(src.querySelectorAll("tile")).slice(0, MAXROWS), n = tiles.length, wrap = h("div", "tiles");
+    wrap.style.gridTemplateColumns = "repeat(" + (n === 4 ? 2 : Math.max(1, Math.min(3, n))) + ", minmax(0, 1fr))";
+    tiles.forEach(function (t) {
+      var e = h("div", "tile" + (toneOf(t.getAttribute("tone")) ? " tone-" + t.getAttribute("tone") : ""), wrap);
+      put("div", "tile-value", e, t.getAttribute("value") || "");
+      put("div", "tile-label", e, t.getAttribute("label") || "");
+      if (t.getAttribute("note")) put("div", "tile-note", e, t.getAttribute("note"));
+    });
+    return wrap;
+  }
+
+  var fieldSeq = 0;
+  function formNode(src, ctx) {
+    var id = src.getAttribute("id"), key = "form\n" + id, sent = has(panel.sent, key), d = draftOf(key, !!id), box = h("div", "pform" + (id ? "" : " page-off")), fields = [];
+    ctx.page = true; box.dataset.id = id || "";
+    Array.from(src.querySelectorAll("field")).slice(0, MAXROWS).forEach(function (f) {
+      var name = f.getAttribute("name") || "", type = f.getAttribute("type") || "text", req = f.hasAttribute("required"), label = f.getAttribute("label") || name;
+      var wrap = h("div", "pfield" + (req ? " req" : ""), box), lab = put("label", "pfield-label", wrap, label);
+      wrap.dataset.name = name; wrap.dataset.type = type;
+      if (req) put("span", "pfield-req", lab, "required");
+      var val = has(d, name) ? d[name] : cap(f.getAttribute("value")), get;
+      if (type === "choice") {
+        var opts = (f.getAttribute("options") || "").split(",").map(function (s) { return s.trim(); }).filter(Boolean).slice(0, MAXROWS), row = h("div", "pfield-choices", wrap);
+        if (opts.indexOf(val) < 0) val = "";
+        row.setAttribute("role", "radiogroup"); row.setAttribute("aria-label", label);
+        var paint = function () { Array.from(row.children).forEach(function (b) { b.classList.toggle("on", b.dataset.value === val); b.setAttribute("aria-checked", b.dataset.value === val); }); };
+        opts.forEach(function (o) {
+          var b = put("button", "pchoice", row, o); b.type = "button"; b.dataset.value = o; b.disabled = !id || sent; b.setAttribute("role", "radio");
+          b.addEventListener("click", function () { val = d[name] = o; wrap.classList.remove("missing"); paint(); });
+        });
+        paint(); get = function () { return val; };
+      } else {
+        var input = h(type === "textarea" ? "textarea" : "input", "pfield-input", wrap);
+        if (type !== "textarea") input.type = type === "number" || type === "date" ? type : "text";
+        input.id = lab.htmlFor = "pf" + (++fieldSeq); input.maxLength = 2000; input.value = val; input.disabled = !id || sent;
+        // WebKit draws an empty date as today's date: dim it so an unset date does not read as set
+        input.classList.toggle("empty", !input.value);
+        input.addEventListener("input", function () { d[name] = input.value; input.classList.toggle("empty", !input.value); wrap.classList.remove("missing"); });
+        get = function () { return input.value; };
+      }
+      fields.push({name: name, label: label, req: req, get: get, wrap: wrap});
+    });
+    var bar = h("div", "page-bar", box), note = h("span", "page-note", bar), btn = put("button", "btn primary", bar, src.getAttribute("submit") || "Submit");
+    btn.type = "button"; btn.disabled = !id || sent;
+    if (sent) note.textContent = "Sent.";
+    btn.addEventListener("click", function () {
+      var missing = fields.filter(function (f) { var miss = f.req && !f.get().trim(); f.wrap.classList.toggle("missing", miss); return miss; });
+      if (missing.length) { note.textContent = "Fill in " + missing.map(function (f) { return f.label; }).join(", ") + " first."; note.classList.add("warn"); return; }
+      var out = {};
+      fields.forEach(function (f) { if (f.name) out[cap(f.name)] = cap(f.get()); });
+      Array.from(box.querySelectorAll("button, input, textarea")).forEach(function (c) { c.disabled = true; });
+      note.textContent = "Sent."; note.classList.remove("warn");
+      pagePost(key, true, {type: "page_form", object: cap(id), fields: out});
+    });
+    return box;
+  }
+
+  function reviewNode(src, ctx) {
+    var id = src.getAttribute("id"), key = "review\n" + id, sent = has(panel.sent, key), d = draftOf(key, !!id), box = h("div", "review"), rows = [];
+    ctx.page = true; box.dataset.id = id || "";
+    rowsOf(src, "item").forEach(function (it) {
+      var iid = it.getAttribute("id"), live = !!(id && iid), s = live ? (d[iid] = d[iid] || {approve: null, reason: ""}) : {approve: null, reason: ""};
+      var row = h("div", "review-row" + (live ? "" : " page-off"), box), main = h("div", "review-main", row), t = h("div", "review-text", main);
+      row.dataset.item = iid || "";
+      renderChildren(it, t, ctx); markRow(it, row, t);
+      if (it.getAttribute("reason")) put("div", "review-why", main, it.getAttribute("reason"));
+      var note = h("input", "review-note", main), acts = h("div", "review-acts", row);
+      note.type = "text"; note.placeholder = "reason (optional)"; note.maxLength = 2000; note.value = s.reason;
+      var yes = put("button", "review-yes", acts, "✓"), no = put("button", "review-no", acts, "✕");
+      var paint = function () {
+        yes.classList.toggle("on", s.approve === true); no.classList.toggle("on", s.approve === false);
+        yes.setAttribute("aria-pressed", s.approve === true); no.setAttribute("aria-pressed", s.approve === false);
+        row.classList.toggle("approved", s.approve === true); row.classList.toggle("rejected", s.approve === false);
+        note.hidden = s.approve === null;
+      };
+      [[yes, true, "approve"], [no, false, "reject"]].forEach(function (c) {
+        c[0].type = "button"; c[0].title = c[2]; c[0].setAttribute("aria-label", c[2]); c[0].disabled = !live || sent;
+        c[0].addEventListener("click", function () { s.approve = s.approve === c[1] ? null : c[1]; paint(); });
+      });
+      note.disabled = !live || sent;
+      note.addEventListener("input", function () { s.reason = note.value; });
+      paint();
+      if (live && !rows.some(function (r) { return r.id === iid; })) rows.push({id: iid, s: s});
+    });
+    var bar = h("div", "page-bar", box), msg = h("span", "page-note", bar), done = put("button", "btn primary", bar, "Done");
+    done.type = "button"; done.disabled = !id || sent;
+    if (sent) msg.textContent = "Sent.";
+    done.addEventListener("click", function () {
+      var picked = rows.filter(function (r) { return r.s.approve !== null; });
+      if (!picked.length) { msg.textContent = "Approve or reject one first."; msg.classList.add("warn"); return; }
+      Array.from(box.querySelectorAll("button, input")).forEach(function (c) { c.disabled = true; });
+      msg.textContent = "Sent."; msg.classList.remove("warn");
+      pagePost(key, true, {type: "page_review", object: cap(id), decisions: picked.map(function (r) { return {item: cap(r.id), approve: r.s.approve, reason: cap(r.s.reason.trim())}; })});
+    });
+    return box;
+  }
+
+  // A letter is a draft the job wants sent. Its words come only from Dot (panel.letter), never from the page: nothing
+  // written inside <letter> is read, so a page cannot show him one draft while Dot holds another.
+  var LETTER_STATE = {pending: ["needs you", "warn"], sent: ["sent", "good"], withdrawn: ["withdrawn", "muted"], expired: ["expired", "muted"]};
+  var LETTER_DONE = {sent: "Sent.", withdrawn: "Withdrawn: this draft will not be sent.", expired: "Expired: this draft is out of date."};
+  function letterNode(src, ctx) {
+    var card = h("div", "letter");
+    ctx.page = true; card.dataset.id = src.getAttribute("id") || ""; card.dataset.proposal = src.getAttribute("proposal") || "";
+    paintLetter(card);
+    return card;
+  }
+  function paintLetter(card) {
+    var id = card.dataset.id, prop = card.dataset.proposal, key = "letter\n" + id, f = id && has(panel.letters, id) ? panel.letters[id] : null;
+    // a fill belongs to the page it was made for, and to the proposal on the card when Dot made it
+    if (f && (f.panel !== panel.id || (f.proposal !== null && f.proposal !== prop))) f = null;
+    while (card.firstChild) card.removeChild(card.firstChild);
+    var head = h("div", "letter-head", card), st = f && (LETTER_STATE[f.state] || [f.state || "unknown", "muted"]);
+    put("span", "letter-kicker", head, "Draft");
+    if (!f) { put("p", "letter-wait", card, "loading the draft…"); return; }
+    put("span", "mark tone-" + st[1], head, st[0]);
+    [["To", f.to], ["Subject", f.subject]].forEach(function (kv) { var r = h("div", "letter-line", card); put("span", "letter-k", r, kv[0]); put("span", "letter-v", r, kv[1]); });
+    put("div", "letter-body", card, f.body);
+    if (f.state !== "pending") { put("p", "letter-done", card, LETTER_DONE[f.state] || "This draft cannot be sent from here."); return; }
+    var bar = h("div", "page-bar", card), live = !!(id && prop), off = !live || has(panel.sent, key);
+    if (!live) card.classList.add("page-off");
+    [["send", "Send"], ["edit", "Edit"]].forEach(function (c) {
+      var b = put("button", "btn" + (c[0] === "send" ? " primary" : ""), bar, c[1]); b.type = "button"; b.disabled = off; b.dataset.choice = c[0];
+      b.addEventListener("click", function () {
+        if (has(panel.sent, key)) return;
+        Array.from(bar.children).forEach(function (x) { x.disabled = true; });
+        pagePost(key, true, {type: "page_letter", object: cap(id), proposal: cap(prop), choice: c[0]});
+      });
+    });
+  }
+  function fillLetter(id, fill) {
+    fill = fill || {}; id = String(id);
+    var str = function (v) { return Array.isArray(v) ? v.join(", ") : v == null ? "" : String(v); };
+    var cards = Array.from(content.querySelectorAll(".letter")).filter(function (c) { return c.dataset.id === id; });
+    panel.letters[id] = {to: str(fill.to), subject: str(fill.subject), body: str(fill.body), state: str(fill.state), panel: panel.id,
+                         proposal: typeof fill.proposal === "string" ? fill.proposal : cards.length ? cards[0].dataset.proposal : null};
+    cards.forEach(paintLetter);
+  }
+
+  function timelineNode(src, ctx) {
+    var box = h("div", "timeline");
+    rowsOf(src, "day").forEach(function (d) {
+      var row = h("div", "tl-day", box), main;
+      put("div", "tl-date", row, d.getAttribute("date") || "");
+      main = h("div", "tl-main", row);
+      if (d.getAttribute("title")) put("div", "tl-title", main, d.getAttribute("title"));
+      renderChildren(d, h("div", "tl-body", main), ctx);
+    });
+    return box;
+  }
+
+  function countdownNode(src) {
+    var e = h("span", "countdown"), to = Date.parse(src.getAttribute("to") || "");
+    e.dataset.to = isNaN(to) ? "" : String(to);
+    if (src.getAttribute("label")) { put("span", "cd-label", e, src.getAttribute("label")); e.appendChild(document.createTextNode(" ")); }
+    h("span", "cd-left", e);
+    tickCountdown(e);
+    return e;
+  }
+  function spanOf(ms, fine) {
+    var m = Math.max(1, Math.floor(ms / 60000)), d = Math.floor(m / 1440), hr = Math.floor(m % 1440 / 60), mi = m % 60;
+    return d ? d + "d" + (fine && hr ? " " + hr + "h" : "") : hr ? hr + "h" + (fine && mi ? " " + mi + "m" : "") : mi + "m";
+  }
+  function tickCountdown(e) {
+    var left = e.querySelector(".cd-left"), ms = e.dataset.to ? +e.dataset.to - Date.now() : NaN;
+    left.textContent = isNaN(ms) ? "no date" : ms > 0 ? spanOf(ms, true) + " left" : "overdue by " + spanOf(-ms, false);
+    e.classList.toggle("soon", ms > 0 && ms < 864e5); e.classList.toggle("late", ms <= 0);
+  }
+  setInterval(function () { if (content) Array.from(content.querySelectorAll(".countdown")).forEach(tickCountdown); }, 60000);
+
+  function progressNode(src) {
+    var v = Math.max(0, Math.min(1, parseFloat(src.getAttribute("value")) || 0)), e = h("div", "progress tone-" + toneOf(src.getAttribute("tone"), "accent"));
+    var head = h("div", "progress-head", e);
+    put("span", "progress-label", head, src.getAttribute("label") || "");
+    put("span", "progress-pct", head, Math.round(v * 100) + "%");
+    h("div", "progress-fill", h("div", "progress-track", e)).style.width = (v * 100) + "%";
+    return e;
+  }
+
   // ---- the reactive pieces ---------------------------------------------------------------------------------------
   function refresh() { panel.blocks.forEach(function (b) { b.bindings.forEach(function (f) { try { f(); } catch (e) { console.error(e); } }); }); }
   function sliderNode(src, ctx) {
@@ -709,7 +946,7 @@
       if (r) dom.appendChild(r);
       if (old) content.replaceChild(dom, old.dom); else content.appendChild(dom);
       typeset(dom);
-      keep.push({key: key, dom: dom, bindings: ctx.bindings});
+      keep.push({key: key, dom: dom, bindings: ctx.bindings, page: !!ctx.page});
     });
     for (var j = nodes.length; j < panel.blocks.length; j++) panel.blocks[j].dom.remove();
     panel.blocks = keep;
@@ -727,9 +964,16 @@
 
   function load(markup, opts) {
     opts = opts || {};
-    panel.id = opts.id || panel.id || "panel";
+    var id = opts.id || panel.id || "panel";
+    // every page control is live again; what he typed into an unsent form survives a reload of the same page
+    Object.keys(panel.sent).forEach(function (k) { delete panel.drafts[k]; });
+    if (id !== panel.id) panel.drafts = {};
+    panel.sent = {};
+    panel.version = opts.version == null ? "" : String(opts.version);
+    panel.id = id;
     panel.title = opts.title || "";
     if (opts.reset !== false) { panel.blocks.forEach(function (b) { b.dom.remove(); }); panel.blocks = []; panel.vars = {}; panel.quiz = {}; panel.step = null; }
+    panel.blocks.forEach(function (b) { if (b.page) b.key = null; });   // a kept page block would keep its spent controls
     titleEl.textContent = panel.title;
     panel.markup = markup || "";
     renderAll();
@@ -752,6 +996,7 @@
     document.addEventListener("viz:change", function (e) { post({type: "event", kind: "viz", data: e.detail, card: panel.id}); });
     post({type: "ready"});
     if (window.__pendingLoad) { load(window.__pendingLoad.markup, window.__pendingLoad.opts); }
+    (window.__pendingLetters || []).forEach(function (l) { fillLetter(l[0], l[1]); });
   });
 
   window.panel = {
@@ -761,6 +1006,8 @@
     setStep: function (n) { setStep(+n); },
     vars: function () { return Object.assign({}, panel.vars); },
     markup: function () { return panel.markup; },
+    // Dot fills a job page's <letter id> with the draft it holds: {to, subject, body, state: "pending|sent|withdrawn|expired"}
+    letter: function (id, fill) { if (!content) { (window.__pendingLetters = window.__pendingLetters || []).push([id, fill]); return; } fillLetter(id, fill); },
     _evaluate: evaluate
   };
 })();
