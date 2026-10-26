@@ -8,6 +8,9 @@ struct AXElementInfo: Equatable {
     let role: String
     let title: String
     let frame: CGRect
+    /// A switch, checkbox or radio button's state (the done check reads it, parity CU-03); nil for other roles.
+    var on: Bool? = nil
+    var enabled = true
 }
 
 struct ScreenContext {
@@ -134,7 +137,16 @@ enum AccessibilityContext {
                     let chromeFull = !inPage && (sawPage || browser) && chromeCount >= chromeCap
                     if visible, !chromeFull, !seenFrames.contains(key), !Self.repeatsLabel(role: role, title: title, frame: akFrame, in: elements) {
                         seenFrames.insert(key)
-                        elements.append(AXElementInfo(role: role, title: String(title.prefix(60)), frame: akFrame))
+                        var info = AXElementInfo(role: role, title: String(title.prefix(60)), frame: akFrame)
+                        if Self.stateRoles.contains(role) {
+                            var value: CFTypeRef?
+                            if AXUIElementCopyAttributeValue(element, kAXValueAttribute as CFString, &value) == .success, let n = value as? NSNumber { info.on = n.intValue != 0 }
+                        }
+                        if Self.stateRoles.contains(role) || role == "AXButton" {
+                            var enabled: CFTypeRef?
+                            if AXUIElementCopyAttributeValue(element, kAXEnabledAttribute as CFString, &enabled) == .success, let b = enabled as? Bool { info.enabled = b }
+                        }
+                        elements.append(info)
                         if !inPage { chromeCount += 1 }
                     }
                 }
@@ -151,6 +163,8 @@ enum AccessibilityContext {
         context.elements = elements
         return context
     }
+
+    static let stateRoles: Set<String> = ["AXCheckBox", "AXSwitch", "AXToggle", "AXRadioButton"]
 
     /// Comet's assistant panel, a web area beside the page that is never the page he means.
     static func isSidecar(_ url: String) -> Bool { url.contains("perplexity.ai/sidecar") }

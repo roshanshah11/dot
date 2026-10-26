@@ -204,6 +204,8 @@ extension JobManager {
         job.endLine = ""
         job.rung = nil
         job.repeatNudged = false
+        job.checked = false
+        job.checkFailures = 0
         job.pendingDone = nil
         job.lastEventAt = Date()
         if !jobs.contains(where: { $0 === job }) { adopt(job) }

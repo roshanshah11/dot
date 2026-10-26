@@ -58,7 +58,7 @@ def main():
                  "never hand it to an agent", "waiting for your yes on the card",
                  "read ~/Dot/jobs/PROFILE.md", "never type a password, an id number or payment details. submit stays his.",
                  "a login page: call login", "read ~/Dot/jobs/PAGE.md once before its first write",
-                 "never tick, fill or decide his controls yourself", "call howto_save", "ask_front_step"]:
+                 "never tick, fill or decide his controls yourself", "call howto_save", "ask_front_step", "end a finished job with a check: line"]:
         if line not in job: failures.append(f"job prompt lacks: {line}")
     print(f"talk off {len(off)} chars, talk on {len(on)} chars, job {len(job)} chars")
     for f in failures: print("FAIL", f)

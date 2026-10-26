@@ -72,6 +72,9 @@ final class JobManager {
         var letterStates: [String: String] = [:]
         /// Each letter's words as the proposal store last gave them (a sent proposal leaves the pending list).
         var letterWords: [String: ProposalCard] = [:]
+        /// The done check (CU-03): passed on its end, and how many times it failed.
+        var checked = false
+        var checkFailures = 0
         /// One step on his screen he allowed a behind job (J5, ask_front_step): that app until the time runs out.
         var frontStep: (bundle: String, name: String, until: Date)?
         var frontStepLive: Bool { frontStep.map { Date() < $0.until } ?? false }
@@ -526,9 +529,70 @@ final class JobManager {
     }
 
     private func complete(_ job: Job, _ info: ResultInfo) {
-        let text = (info.resultText ?? job.lastLine).trimmingCharacters(in: .whitespacesAndNewlines)
+        let raw = (info.resultText ?? job.lastLine).trimmingCharacters(in: .whitespacesAndNewlines)
+        // The done check (CU-03): its check: lines are verified on a fresh look before it may count as done.
+        let (checks, text) = DoneCheck.split(raw)
         let blocked = text.lowercased().hasPrefix("blocked:") || text.lowercased().contains("\nblocked:")
         let failed = info.isError || blocked
+        if !checks.isEmpty, !failed {
+            Task { @MainActor in
+                guard job.phase.isLive else { return }
+                let results = await self.verify(job, checks)
+                let missed = results.filter { !$0.passed }
+                Log.info("job[\(job.id)] check: " + results.map { "\($0.check) \($0.passed ? "passed" : "FAILED") (\($0.saw))" }.joined(separator: "; "))
+                guard missed.isEmpty else {
+                    job.checkFailures += 1
+                    let saw = missed.map { "\($0.check): \($0.saw)" }.joined(separator: "; ")
+                    if job.checkFailures <= 1 {
+                        job.session?.send(text: "[check] not done: \(saw). look again and finish it, then end with the check again; if it can't be done, end with blocked: and why.")
+                        self.publish(job)
+                    } else {
+                        self.finish(job, failed: true, line: "it said done, but dot's check didn't pass: \(saw)", stopReason: nil, result: info)
+                    }
+                    return
+                }
+                job.checked = true
+                self.completeChecked(job, info, text: text, failed: false, blocked: false)
+            }
+            return
+        }
+        completeChecked(job, info, text: text, failed: failed, blocked: blocked)
+    }
+
+    /// What a fresh look shows for each check: the page (url, words, a control's state) or his app's window (AX), and
+    /// files on disk (a relative path is the job's folder).
+    func verify(_ job: Job, _ checks: [DoneCheck]) async -> [(check: DoneCheck, passed: Bool, saw: String)] {
+        var seen = DoneCheck.Seen()
+        var states: [String: DoneCheck.Seen.Element] = [:]
+        let labels = checks.filter { $0.kind == .element }.map(\.target)
+        if job.isBrowserJob, !job.frontStepLive, job.page.isBound {
+            seen.url = (await job.page.evaluate("location.href") as? String) ?? ""
+            seen.text = ((await job.page.evaluate("document.body ? document.body.innerText : ''") as? String) ?? "") + " " + ((await job.page.evaluate("document.title") as? String) ?? "")
+            for label in labels { if let state = await job.page.controlState(label) { states[label] = state } }
+        } else if !job.isBrowserJob || job.frontStepLive {
+            let c = AccessibilityContext.capture(maxElements: 250)
+            if c.bundleIdentifier == job.nativeBundle {
+                seen.url = c.url ?? ""
+                seen.text = ([c.windowTitle, c.selectedText].compactMap { $0 } + c.elements.map(\.title)).joined(separator: "\n")
+                for label in labels {
+                    let want = label.lowercased()
+                    if let e = c.elements.first(where: { $0.title.lowercased() == want }) ?? c.elements.first(where: { $0.title.lowercased().contains(want) }) {
+                        states[label] = DoneCheck.Seen.Element(on: e.on, enabled: e.enabled)
+                    }
+                }
+            }
+        }
+        seen.element = { states[$0] }
+        let folder = job.folder
+        seen.fileSize = { path in
+            let expanded = DotConfig.expand(path)
+            let url = expanded.hasPrefix("/") ? URL(fileURLWithPath: expanded) : folder.appendingPathComponent(expanded)
+            return (try? FileManager.default.attributesOfItem(atPath: url.path)[.size] as? NSNumber)?.intValue
+        }
+        return checks.map { c in let r = c.verify(seen); return (c, r.passed, r.saw) }
+    }
+
+    private func completeChecked(_ job: Job, _ info: ResultInfo, text: String, failed: Bool, blocked: Bool) {
         // Files for his folders: "saved: <output path> -> <folder>".
         var copied: [String] = []
         for line in text.components(separatedBy: .newlines) {
@@ -1488,6 +1552,7 @@ final class JobManager {
         chip.canOpen = false
         chip.hasPage = job.livePage != nil
         chip.canRetry = JobRetry.canRetry(job.phase, endLine: job.endLine)
+        chip.checked = job.checked
         chip.outputs = job.outputs
         if !job.endLine.isEmpty { chip.result = job.endLine }
         stack.upsert(chip)

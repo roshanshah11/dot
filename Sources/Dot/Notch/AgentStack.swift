@@ -56,6 +56,8 @@ struct StackChip: Identifiable {
     var hasPage = false
     /// A failed, stopped or cut-off job: Retry carries on where it stopped (J3).
     var canRetry = false
+    /// The done check passed (parity CU-03): the card says "checked".
+    var checked = false
     var result: String? = nil
     var outputs: [URL] = []
     var nextActions: [String] = []
@@ -657,6 +659,10 @@ struct StackChipView: View {
                     HStack(spacing: 5) {
                         Circle().fill(tone).frame(width: 6, height: 6)
                         Text(AgentChip.stateWord(chip.state, kind: chip.kind)).font(.system(size: 11, weight: .medium)).foregroundStyle(tone)
+                        if chip.checked, chip.state == .done {
+                            Label("checked", systemImage: "checkmark.seal").font(.system(size: 10.5, weight: .medium)).foregroundStyle(NotchInk.good)
+                                .help("Dot looked again and the result is there")
+                        }
                         if chip.state == .running || chip.state == .paused {
                             Text(NotchHUDView.elapsed(since: chip.startedAt)).font(.system(size: 10.5, design: .monospaced)).foregroundStyle(text.opacity(0.4))
                         }

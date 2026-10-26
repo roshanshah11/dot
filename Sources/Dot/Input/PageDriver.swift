@@ -425,6 +425,33 @@ final class PageDriver {
 
     // MARK: Look
 
+    /// A control's state by its label (the done check, parity CU-03): a checkbox, switch, radio, tab or pressed button;
+    /// nil when no visible control has that label.
+    func controlState(_ label: String) async -> DoneCheck.Seen.Element? {
+        guard let data = try? JSONSerialization.data(withJSONObject: [label]), let arg = String(data: data, encoding: .utf8) else { return nil }
+        let js = """
+        (function(label){
+          const norm = s => (s||'').toLowerCase().replace(/\\s+/g,' ').trim(); const want = norm(label);
+          const els = Array.from(document.querySelectorAll('input,button,select,textarea,a,[role=switch],[role=checkbox],[role=radio],[role=button],[role=tab],[aria-pressed],[aria-checked]'));
+          function name(e){ let n = e.getAttribute('aria-label') || '';
+            if (!n && e.id) { const l = document.querySelector('label[for="' + CSS.escape(e.id) + '"]'); if (l) n = l.innerText; }
+            if (!n && e.closest('label')) n = e.closest('label').innerText;
+            if (!n) n = e.innerText || e.value || e.title || ''; return norm(n); }
+          const shown = e => !!(e.offsetWidth || e.offsetHeight || e.getClientRects().length);
+          const hit = els.find(e => shown(e) && name(e) === want) || els.find(e => shown(e) && name(e).includes(want));
+          if (!hit) return null;
+          let on = null;
+          if (hit.type === 'checkbox' || hit.type === 'radio') on = hit.checked;
+          else if (hit.hasAttribute('aria-checked')) on = hit.getAttribute('aria-checked') === 'true';
+          else if (hit.hasAttribute('aria-pressed')) on = hit.getAttribute('aria-pressed') === 'true';
+          else if (hit.hasAttribute('aria-selected')) on = hit.getAttribute('aria-selected') === 'true';
+          return {on: on, enabled: !(hit.disabled || hit.getAttribute('aria-disabled') === 'true')};
+        })(\(arg)[0])
+        """
+        guard let r = await evaluate(js) as? [String: Any] else { return nil }
+        return DoneCheck.Seen.Element(on: r["on"] as? Bool, enabled: r["enabled"] as? Bool ?? true)
+    }
+
     func look(all: Bool = false, text: Bool = false, shot: Bool = false) async -> (text: String, image: String?) {
         guard let s = sessionId else { return ("(no page yet: open one first)", nil) }
         let meta = await evaluate("({url: location.href, title: document.title, h: innerHeight})") as? [String: Any] ?? [:]
