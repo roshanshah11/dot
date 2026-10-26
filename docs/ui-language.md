@@ -17,6 +17,7 @@ shows literally, and a `"` inside one ends it.
 | `<text>` | a paragraph (plain text between tags is also a paragraph) | `size="xs|sm|md|lg"`, `color`, `weight="regular|medium|bold"`, `align` |
 | `<b> <i> <code> <mark>` | inline emphasis, code, highlight | |
 | `<math>` | display math without the `$$` | |
+| `<pre>` | a code block, coloured by highlight.js (Python, Swift, SQL, shell, R, JS/TS, JSON, YAML, C-family, Rust, Go and more); without `lang` it is coloured only when the guess is confident | `lang="python"` |
 | `<list>` / `<item>` | a list | `marker="bullet|number|check"` |
 | `<callout>` | a boxed aside | `tone="info|good|warn|danger"` |
 | `<quote>` | a quoted passage (from his notes, a paper) | `cite="where it is from"` |

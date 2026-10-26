@@ -58,7 +58,24 @@ enum SelfTest {
         dictationWatch(check)
         chords(check)
         regionClip(check)
+        markdownCode(check)
         return ok
+    }
+
+    /// VI-08: a fenced block in the Markdown reader comes out coloured by its language; a block naming none that reads
+    /// like prose stays plain.
+    static func markdownCode(_ check: (String, Bool) -> Void) {
+        let text = "# Code\n\n```python\ndef pv(cash, rate, years):\n    # discounted back\n    return cash / (1 + rate) ** years\n```\n\n```\nthe result was 68.06 and nothing else\n```\n"
+        let script = "JSON.stringify({hljs: !!window.hljs, coloured: document.querySelectorAll('pre code.hljs').length, keyword: document.querySelectorAll('.hljs-keyword').length, "
+            + "comment: document.querySelectorAll('.hljs-comment').length, number: document.querySelectorAll('.hljs-number').length, "
+            + "colour: (document.querySelector('.hljs-keyword') ? getComputedStyle(document.querySelector('.hljs-keyword')).color : '')})"
+        guard let json = MarkdownViewer.probe(text, script: script) as? String, let data = json.data(using: .utf8),
+              let page = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return check("the Markdown reader loaded", false) }
+        check("highlight.js loads in the Markdown reader", page["hljs"] as? Bool == true)
+        check("the python block is coloured and the prose block is not (\(page["coloured"] ?? 0) coloured)", page["coloured"] as? Int == 1)
+        check("keywords, comments and numbers get their colour (\(page["colour"] ?? "none"))",
+              (page["keyword"] as? Int ?? 0) >= 2 && (page["comment"] as? Int ?? 0) == 1 && (page["number"] as? Int ?? 0) >= 1
+              && !((page["colour"] as? String) ?? "").isEmpty && (page["colour"] as? String) != "rgb(31, 35, 40)" && (page["colour"] as? String) != "rgb(227, 227, 227)")
     }
 
     /// HA-01: the clip a circled region becomes, pasted the way apps read it (on a private pasteboard: his clipboard is

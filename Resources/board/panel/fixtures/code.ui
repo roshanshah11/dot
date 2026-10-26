@@ -1,0 +1,9 @@
+<!-- expect: pre.hljs:1 .hljs-keyword .hljs-string .hljs-number .hljs-comment -->
+<lead>Discounting one cash flow, in Python</lead>
+<pre lang="python">def pv(cash, rate, years):
+    # one cash flow, discounted back to today
+    return cash / (1 + rate) ** years
+
+print(f"{pv(100, 0.08, 5):.2f}")  # "68.06"</pre>
+<text color="muted">With no lang, a block is coloured only when highlight.js is confident:</text>
+<pre>the result was 68.06 and nothing else</pre>

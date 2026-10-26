@@ -302,7 +302,17 @@
         if (e.tagName === "A") { e.href = href; e.target = "_blank"; }
         return renderChildren(src, e, ctx);
       case "h1": case "h2": case "h3": case "h4": e = h("h3", "title " + (tag === "h4" ? "sm" : "md")); return renderChildren(src, e, ctx);
-      case "pre": e = h("pre"); e.textContent = src.textContent; return e;
+      case "pre":
+        // code colours (VI-08): <pre lang="python"> through highlight.js; with no lang, only a confident guess colours it
+        e = h("pre");
+        var code = src.textContent, lang = (a("lang") || "").toLowerCase();
+        if (window.hljs && code.trim()) {
+          try {
+            var lit = lang ? (hljs.getLanguage(lang) ? hljs.highlight(code, {language: lang, ignoreIllegals: true}) : null) : hljs.highlightAuto(code);
+            if (lit && (lang || lit.relevance >= 5)) { e.innerHTML = lit.value; e.className = "hljs"; e.dataset.lang = lit.language || lang; return e; }
+          } catch (err) {}
+        }
+        e.textContent = code; return e;
       default:
         // anything unknown renders what is inside it, never a blank box
         var frag = document.createDocumentFragment();

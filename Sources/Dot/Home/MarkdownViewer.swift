@@ -16,7 +16,9 @@ enum MarkdownViewer {
     /// The installed app's board first; a bundle built before the reader existed has no
     /// marked.min.js, so the source checkout is the fallback, as it is for the board.
     fileprivate static let resources: URL? = {
-        let candidates = [Bundle.main.resourceURL?.appendingPathComponent("board"),
+        // DOT_BOARD_DIR points a dev build at a worktree's Resources/board, as it does for the board
+        let candidates = [ProcessInfo.processInfo.environment["DOT_BOARD_DIR"].map { URL(fileURLWithPath: DotConfig.expand($0)) },
+                          Bundle.main.resourceURL?.appendingPathComponent("board"),
                           URL(fileURLWithPath: DotConfig.expand("~/Projects/dot/Resources/board"))].compactMap { $0 }
         let found = candidates.first { FileManager.default.fileExists(atPath: $0.appendingPathComponent("vendor/marked.min.js").path) }
         if found == nil { Log.warn("markdown: marked.min.js not found; the reader shows plain text") }
@@ -55,6 +57,28 @@ enum MarkdownViewer {
         }
         show(file: file)
         windows[key]?.scrollToEnd()
+    }
+
+    /// `Dot --selftest`: `text` in a reader window off every display, and what `script` says about the page once it has
+    /// loaded (nil when it never did). Nothing shows and nothing is recorded.
+    static func probe(_ text: String, script: String, seconds: Double = 8) -> Any? {
+        let window = MarkdownWindow()
+        window.sharingType = .none
+        window.setFrameOrigin(NSPoint(x: -30_000, y: -30_000))
+        window.orderFrontRegardless()
+        defer { window.orderOut(nil); window.close() }
+        window.show(text: text, title: "probe", baseURL: nil, file: nil)
+        var answer: Any?
+        var asked = false, done = false
+        let until = Date().addingTimeInterval(seconds)
+        while !done, Date() < until {
+            if window.isLoaded, !asked {
+                asked = true
+                window.evaluate(script) { answer = $0; done = true }
+            }
+            RunLoop.main.run(mode: .default, before: Date(timeIntervalSinceNow: 0.05))
+        }
+        return answer
     }
 
     static func isMarkdown(_ url: URL) -> Bool {
@@ -267,6 +291,12 @@ private final class MarkdownWindow: NSWindow, WKNavigationDelegate {
         onClose?()
     }
 
+    var isLoaded: Bool { loaded }
+
+    func evaluate(_ script: String, completion: @escaping (Any?) -> Void) {
+        web.evaluateJavaScript(script) { value, _ in completion(value) }
+    }
+
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
         loaded = true
         if endOnLoad { endOnLoad = false; scrollToEnd() }
@@ -378,6 +408,7 @@ private enum MarkdownPage {
         let scripts = resources == nil ? "" : #"""
         <link rel="stylesheet" href="\#(asset("katex/katex.min.css"))">
         <script src="\#(asset("vendor/marked.min.js"))"></script>
+        <script src="\#(asset("vendor/highlight.min.js"))"></script>
         <script src="\#(asset("katex/katex.min.js"))"></script>
         """#
         // Agent-written Markdown may carry raw html; only the bundled scripts and this page's
@@ -396,11 +427,15 @@ private enum MarkdownPage {
         :root {
           --fg: #1f2328; --muted: #59636e; --bg: #ffffff; --line: #d1d9e0; --soft: #f6f8fa;
           --code: rgba(129, 139, 152, 0.15); --link: #c4501b; --select: rgba(255, 107, 43, 0.25);
+          --hl-keyword: #7c3aed; --hl-string: #15803d; --hl-number: #b45309; --hl-title: #2563eb; --hl-type: #0f766e;
+          --hl-attr: #dc2626; --hl-comment: #6e7781;
         }
         @media (prefers-color-scheme: dark) {
           :root {
             --fg: #e3e3e3; --muted: #9a9a9a; --bg: #1e1e1e; --line: #3b3b3b; --soft: #262626;
             --code: rgba(255, 255, 255, 0.09); --link: #ff8a50; --select: rgba(255, 107, 43, 0.35);
+            --hl-keyword: #c084fc; --hl-string: #4ade80; --hl-number: #fbbf24; --hl-title: #60a5fa; --hl-type: #2dd4bf;
+            --hl-attr: #f87171; --hl-comment: #8b8b8b;
           }
         }
         html { background: var(--bg); }
@@ -433,6 +468,16 @@ private enum MarkdownPage {
         code { background: var(--code); padding: 0.15em 0.4em; border-radius: 5px; }
         pre { background: var(--soft); border: 1px solid var(--line); border-radius: 8px; padding: 14px 16px; overflow-x: auto; line-height: 1.5; }
         pre code { background: none; padding: 0; border-radius: 0; font-size: inherit; }
+        /* code colours (VI-08): highlight.js names the spans, the same palette as Dot's panel colours them */
+        .hljs-keyword, .hljs-selector-tag, .hljs-doctag, .hljs-meta .hljs-keyword { color: var(--hl-keyword); }
+        .hljs-string, .hljs-regexp, .hljs-addition, .hljs-char { color: var(--hl-string); }
+        .hljs-number, .hljs-literal, .hljs-symbol, .hljs-bullet { color: var(--hl-number); }
+        .hljs-title, .hljs-section, .hljs-name { color: var(--hl-title); }
+        .hljs-type, .hljs-built_in, .hljs-title.class_, .hljs-selector-class { color: var(--hl-type); }
+        .hljs-attr, .hljs-attribute, .hljs-property, .hljs-variable, .hljs-template-variable { color: var(--hl-attr); }
+        .hljs-comment, .hljs-quote, .hljs-meta { color: var(--hl-comment); }
+        .hljs-comment, .hljs-quote, .hljs-emphasis { font-style: italic; }
+        .hljs-deletion { color: var(--hl-attr); } .hljs-strong { font-weight: 700; }
         table { border-collapse: collapse; display: block; width: max-content; max-width: 100%; overflow-x: auto; font-variant-numeric: tabular-nums; }
         th, td { border: 1px solid var(--line); padding: 6px 13px; }
         th { font-weight: 600; background: var(--soft); }
@@ -502,6 +547,17 @@ private enum MarkdownPage {
               const pre = document.createElement('pre');
               pre.textContent = text;
               doc.replaceChildren(pre);
+            }
+            // Code colours (VI-08): a fenced block's language, or a confident guess when it names none.
+            if (window.hljs) {
+              doc.querySelectorAll('pre code').forEach(el => {
+                try {
+                  const m = /language-([\w+#-]+)/.exec(el.className);
+                  const lit = m ? (hljs.getLanguage(m[1]) ? hljs.highlight(el.textContent, {language: m[1], ignoreIllegals: true}) : null)
+                                : hljs.highlightAuto(el.textContent);
+                  if (lit && (m || lit.relevance >= 5)) { el.innerHTML = lit.value; el.classList.add('hljs'); }
+                } catch (e) {}
+              });
             }
             // marked leaves headings without ids; GitHub-style ids keep a table of contents working.
             const seen = {};

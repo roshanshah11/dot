@@ -296,7 +296,9 @@ MIT. Built by Roshan Shah.
 
 Cards are real web pages. `Resources/board/vendor` bundles D3, anime.js, Chart.js, three.js
 (classic build) with OrbitControls, 3Dmol.js, Mermaid, JSXGraph, smiles-drawer and matter.js, all
-MIT or BSD, loaded on demand by `Board.need(...)`; KaTeX typesets math. Ready-made pieces are
+MIT or BSD, loaded on demand by `Board.need(...)`; KaTeX typesets math, and highlight.js 11.12.0 (BSD-3, the
+standard bundle from the npm registry, sha512 checked) colours code in the explainer panel and the Markdown reader.
+Ready-made pieces are
 classes on a div (`.plot`, `.chart`, `.mermaid`, `.helix`, `.molecule` with a PDB id fetched from
 RCSB, `.sequence`, `canvas.smiles`, `.jsx`, `.diagram`, `.timeline`, `.compare`, `.grid`,
 `.callout`, `.quiz`, `.annot`, `.figure`), and a card may carry its own script for anything else.
