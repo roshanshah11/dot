@@ -109,6 +109,7 @@ enum RouterSelfTest {
         var cacheFiles: [URL] = []
         protocolChecks(exe: exe, dir: dir, quick: quick, cacheFiles: &cacheFiles)
         if !arguments.contains("--no-claude") { claudeChecks(exe: exe, dir: dir, cacheFiles: &cacheFiles) }
+        if !arguments.contains("--no-agents") { agentChecks(exe: exe, dir: dir) }
         for f in cacheFiles { try? FileManager.default.removeItem(at: f) }
         print(failures == 0 ? "router-selftest: all checks passed (\(dir.path))" : "router-selftest: \(failures) failed (\(dir.path))")
         exit(failures == 0 ? 0 : 1)
@@ -123,9 +124,10 @@ enum RouterSelfTest {
         private var lines: [[String: Any]] = []
         private var buffer = Data()
 
-        init(_ exe: String, _ args: [String]) throws {
+        init(_ exe: String, _ args: [String], env: [String: String] = [:]) throws {
             process.executableURL = URL(fileURLWithPath: exe)
             process.arguments = args
+            if !env.isEmpty { process.environment = ProcessInfo.processInfo.environment.merging(env) { $1 } }
             process.standardInput = input
             process.standardOutput = output
             process.standardError = FileHandle(forWritingAtPath: "/dev/null")
@@ -263,6 +265,46 @@ enum RouterSelfTest {
         r2.call(3, "search", ["q": "lazy"])
         check(text(r2.wait(id: 3, timeout: 15)) == "results for lazy" && starts().count == 3, "A8 the first call starts it")
         r2.close()
+    }
+
+    // MARK: C. The agents' own servers
+
+    /// C. The agents' real mcp.json, routed as AgentManager routes it: each server lists the same tools through the
+    /// router as direct, less the agents' denied tools, plus router_check.
+    static func agentChecks(exe: String, dir: URL) {
+        let config = DotConfig.load(save: false)
+        guard let path = config.mcpConfigPath(config.agentMCPConfig), let data = FileManager.default.contents(atPath: path),
+              let servers = (try? JSONSerialization.jsonObject(with: data) as? [String: Any])?["mcpServers"] as? [String: Any] else {
+            print("SKIP C: no agent mcp config"); return
+        }
+        let deny = MainActor.assumeIsolated { AgentManager.disallowedAgentTools } + ["mcp__dot"]
+        let file = dir.appendingPathComponent("agent.json")
+        guard let routedNames = RouterMCPServer.writeRouted(data, to: file, deny: deny),
+              let routedData = FileManager.default.contents(atPath: file.path),
+              let routed = (try? JSONSerialization.jsonObject(with: routedData) as? [String: Any])?["mcpServers"] as? [String: Any] else {
+            check(false, "C the agents' config routes"); return
+        }
+        for name in routedNames.sorted() {
+            guard let real = servers[name] as? [String: Any], let front = routed[name] as? [String: Any] else { continue }
+            func list(_ command: String, _ args: [String], _ env: [String: String]) -> (names: [String], ms: Int) {
+                guard let p = try? Peer(command.contains("/") ? command : "/usr/bin/env", (command.contains("/") ? [] : [command]) + args, env: env) else { return ([], 0) }
+                defer { p.close(); if p.process.isRunning { p.process.terminate() } }
+                let t0 = Date()
+                p.send(["jsonrpc": "2.0", "id": 1, "method": "initialize", "params": ["protocolVersion": "2025-06-18", "capabilities": [String: Any](), "clientInfo": ["name": "selftest", "version": "1"]]])
+                _ = p.wait(id: 1, timeout: 30)
+                p.send(["jsonrpc": "2.0", "method": "notifications/initialized"])
+                p.send(["jsonrpc": "2.0", "id": 2, "method": "tools/list"])
+                let tools = ((p.wait(id: 2, timeout: 30)?["result"] as? [String: Any])?["tools"] as? [[String: Any]]) ?? []
+                return (tools.compactMap { $0["name"] as? String }.sorted(), Int(Date().timeIntervalSince(t0) * 1000))
+            }
+            let env = (real["env"] as? [String: Any] ?? [:]).mapValues { "\($0)" }
+            let direct = list(real["command"] as? String ?? "", (real["args"] as? [Any] ?? []).map { "\($0)" }, env)
+            let through = list(front["command"] as? String ?? "", front["args"] as? [String] ?? [], [:])
+            let deniedHere = Set(deny.compactMap { $0.hasPrefix("mcp__\(name)__") ? String($0.dropFirst("mcp__\(name)__".count)) : nil })
+            let expected = Set(direct.names).subtracting(deniedHere).union([RouterCore.checkTool])
+            check(!direct.names.isEmpty && Set(through.names) == expected,
+                  "C \(name): \(direct.names.count) tools direct (\(direct.ms) ms), \(through.names.count) routed (\(through.ms) ms), \(Set(direct.names).intersection(deniedHere).count) denied left out")
+        }
     }
 
     // MARK: B. Claude Code and the job gate, direct and routed
