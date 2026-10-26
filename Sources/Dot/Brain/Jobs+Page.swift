@@ -292,16 +292,24 @@ extension JobManager {
         guard !what.isEmpty else { return ("error: say what the step is", true, nil) }
         if job.bench { return ("bench: he would be asked \"\(what)\"; carry on without it", false, nil) }
         guard let presentCard else { return ("error: dot can't ask him right now; end with blocked: and name the step", true, nil) }
+        // His clicks while the card is up (on it, or doing the step himself) are the answer, not a pause (10-26: his click in
+        // the file picker paused the job, the card's yes went nowhere, and the job gave up 15 s later).
+        job.waitingOnHim = true
+        defer { job.waitingOnHim = false }
+        let dismiss = dismissCard
         let answer: Bool = await withCheckedContinuation { continuation in
             var answered = false
+            let cardId = UUID()
             func finish(_ yes: Bool) {
                 guard !answered else { return }
                 answered = true
+                dismiss?(cardId)
                 continuation.resume(returning: yes)
             }
-            let card = ConsentCard(agentId: "job-\(job.id)", agent: "dot", title: "one step on your screen",
+            var card = ConsentCard(id: cardId, agentId: "job-\(job.id)", agent: "dot", title: "one step on your screen",
                                    detail: what + (app.map { "\n(in \($0))" } ?? ""), guarded: false,
                                    onAllow: { finish(true) }, onDeny: { finish(false) })
+            card.onWithdraw = { finish(false) }
             Log.info("job[\(job.id)] asks for a step on his screen: \(Log.short(what, 100))")
             presentCard(card)
             DispatchQueue.main.asyncAfter(deadline: .now() + 300) { finish(false) }

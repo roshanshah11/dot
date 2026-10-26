@@ -23,8 +23,9 @@ enum HandsMCPServer {
                 continue
             }
             // A download waits up to 120 s for the file; everything else answers well inside 60.
-            // login can wait up to 10 minutes on his tick on a robot box (JobManager.tickWait), then reads the page.
-            let timeout: TimeInterval = name == "download" ? 130 : name == "login" ? 720 : 60
+            // login can wait up to 10 minutes on his tick on a robot box (JobManager.tickWait), then reads the page;
+            // ask_front_step up to 5 minutes on his answer to its card.
+            let timeout: TimeInterval = name == "download" ? 130 : name == "login" ? 720 : name == "ask_front_step" ? 320 : 60
             let result: [String: Any]
             do {
                 let reply = try UnixSocketClient.send(["verb": "hands", "job": job, "tool": name, "args": args], to: path, timeout: timeout)

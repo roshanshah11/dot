@@ -163,6 +163,7 @@ bottom with the date. "His ask" quotes the message that created the item.
 
 ## Done
 
+- [x] 2026-10-26 The failed trek-form resume upload (job zyayw6, 290 s, ended blocked), his asks ("why didnt it work and why did it take SO damn long", "yes please make all of the fixes"): upload takes the upload button and hands the file to the page's own file box (chooser caught, no Mac picker; bench page upload.html); jobs read PROFILE.md and Atlas before any search, and the gate refuses find, rg, Glob and Grep over his whole home or vault; a pause holds the next dot call instead of interrupting the session, so a running search keeps its result; ask_front_step holds his clicks while its card is up and waits past 60 s; answered job cards leave, and a job's cards go when it ends.
 - [x] 2026-10-15 Math mode: course map, proof coaching, python checks, quiz cards, homework guard (docs: README).
 - [x] 2026-10-15 HeyClicky observed session recorded and analyzed (docs/heyclicky-session-2026-10-15.md).
 - [x] 2026-10-15 CuaDriver permissions confirmed granted; stale note removed.

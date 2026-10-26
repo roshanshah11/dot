@@ -32,6 +32,7 @@ site.
 | `jobs.html` | "Applied jobs": 12 placeholder rows including "Northwind Bank, Summer Analyst"; a search box (`input type=search role=searchbox`, id `job-q`) that filters as you type and on Enter |
 | `job.html?id=N` | the page a row opens (a GET of it means a row was opened) |
 | `form.html` | "Name" field (id `name`), Email, Message, and the buttons Export (`export`), Submit application (`submit`), Apply (`apply`); none navigates |
+| `upload.html` | "Northwind Trek acceptance": question 1's Upload file button with its file input hidden beside it (as Microsoft Forms builds it), question 2's Add attachment button whose input exists only once pressed; each shows `Attached: <name>` on change |
 
 Known depths on `long.html` (section tops as a fraction of the 5936 px page, the same at 800 and 1200 px
 wide and 900 px tall, so about 6.6 screens):

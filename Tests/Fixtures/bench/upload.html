@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Dot bench - Upload</title>
+<link rel="icon" href="data:,">
+<link rel="stylesheet" href="bench.css">
+</head>
+<body>
+<header class="bench-nav"><strong>Dot bench</strong><a href="index.html">Home</a><a href="apply.html">Apply</a><a href="form.html">Application form</a></header>
+<main>
+<h1>Northwind Trek acceptance</h1>
+<p class="lede">Two upload questions the way Microsoft Forms and newer forms build them: a button in front, the real file input hidden or made only on the press. Nothing here is sent anywhere.</p>
+<section class="question" id="q1">
+  <h2>1. Upload your updated resume titled with your full name</h2>
+  <div class="upload">
+    <button type="button" id="upload-resume" aria-label="Upload file File number limit: 1 Allowed file types: PDF">Upload file</button>
+    <input type="file" id="resume-file" accept=".pdf" style="display:none" aria-label="resume file">
+  </div>
+  <p class="status" id="resume-status" aria-live="polite">No file yet</p>
+</section>
+<section class="question" id="q2">
+  <h2>2. Upload your signed waiver</h2>
+  <div class="upload">
+    <button type="button" id="upload-waiver">Add attachment</button>
+  </div>
+  <p class="status" id="waiver-status" aria-live="polite">No file yet</p>
+</section>
+<p><button type="button" id="next" class="primary">Next</button></p>
+<script>
+(function () {
+  function shown(input, status) {
+    input.addEventListener('change', function () {
+      var f = input.files && input.files[0];
+      document.getElementById(status).textContent = f ? 'Attached: ' + f.name : 'No file yet';
+    });
+  }
+  var resume = document.getElementById('resume-file');
+  shown(resume, 'resume-status');
+  document.getElementById('upload-resume').addEventListener('click', function () { resume.click(); });
+  // The waiver's input exists only once the button is pressed, outside the question, as some upload widgets do.
+  document.getElementById('upload-waiver').addEventListener('click', function () {
+    var input = document.createElement('input');
+    input.type = 'file';
+    input.accept = '.pdf';
+    input.style.display = 'none';
+    document.body.appendChild(input);
+    shown(input, 'waiver-status');
+    input.click();
+  });
+})();
+</script>
+<script src="bench.js"></script>
+</body>
+</html>

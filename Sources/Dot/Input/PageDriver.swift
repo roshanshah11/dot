@@ -157,6 +157,10 @@ final class PageDriver {
     private var downloadsEnabled = false
     /// Files this job downloaded, which `upload` may use.
     private(set) var downloaded: [String] = []
+    /// A file chooser the page opened while Dot held choosers (Page.setInterceptFileChooserDialog): the backend node of
+    /// the file input it was for (0 when the page gave none), and when.
+    private var caughtChooser: Int?
+    private var lastChooser: (node: Int, at: Date)?
     /// The password Dot's login filled (memory only, gone at finish) and the fields it went into: no text a job reads
     /// carries either (10-22).
     var secret: String?
@@ -333,6 +337,8 @@ final class PageDriver {
             if session == sessionId { mainFrameLoading = false }
         case "Page.javascriptDialogOpening":
             if session == sessionId { leaveDialog = (params["type"] as? String) == "beforeunload" || leaveDialog }
+        case "Page.fileChooserOpened":
+            if session == sessionId { caughtChooser = params["backendNodeId"] as? Int ?? 0 }
         case "Target.targetCreated":
             // A page this tab opened (target=_blank) becomes the job's tab.
             if let info = params["targetInfo"] as? [String: Any], info["type"] as? String == "page", let opener = info["openerId"] as? String,
@@ -478,6 +484,11 @@ final class PageDriver {
            frames > 0 {
             note = (note.map { $0 + "\n" } ?? "") + "(part of this page is in a frame dot can't read yet: \(frames) frame\(frames == 1 ? "" : "s"); say so if what he wants is in it)"
         }
+        // A file input kept hidden behind an upload button has no ref of its own (10-26, Microsoft Forms).
+        if let hiddenFiles = await evaluate("Array.from(document.querySelectorAll('input[type=file]')).filter(e => { const r = e.getBoundingClientRect(); return r.width < 2 || r.height < 2 || getComputedStyle(e).visibility === 'hidden'; }).length", timeout: 1) as? Int,
+           hiddenFiles > 0 {
+            note = (note.map { $0 + "\n" } ?? "") + "(a file box hides behind an upload button here: attach with upload on that button's ref, in one step)"
+        }
         let snap = PageSnapshot.format(url: url, title: title, items: items, viewportHeight: viewport, all: all, note: note, hidden: secretNodes)
         refs = snap.refs
         var out = snap.text
@@ -607,10 +618,30 @@ final class PageDriver {
         if (t.info["onTop"] as? Bool) == false {
             return .error("something covers \(name) (\(t.info["covering"] as? String ?? "?")); close it first")
         }
-        guard let x = t.info["x"] as? Double, let y = t.info["y"] as? Double, await mouseClick(x: x, y: y) else { return .error("the click didn't go through") }
-        await settle()
+        guard let x = t.info["x"] as? Double, let y = t.info["y"] as? Double else { return .error("the click didn't go through") }
+        // Choosers are caught while the click lands: an upload button opens no Mac file window, which no Dot tool can
+        // drive (10-26: the resume upload clicked "Upload file", the Mac picker opened, and the job ended blocked).
+        let (clicked, chooser) = await catchingChooser { await self.mouseClick(x: x, y: y) }
+        guard clicked else { return .error("the click didn't go through") }
         if leaveDialog { return .stopped("the page asks to leave; his call", his: "leave page") }
+        if let chooser {
+            if chooser > 0 { lastChooser = (chooser, Date()) }
+            return .ok("that opened a file picker; dot caught it, so no Mac file window opened. put the file in with upload on \(ref ?? "this button")", point: pt)
+        }
         return .ok("clicked \(name)", point: pt)
+    }
+
+    /// `act` (a click) with the page's file choosers caught instead of opened, then the page settled: whether it acted,
+    /// and the backend node of the file input a chooser opened for (0 when the page named none).
+    private func catchingChooser(_ act: () async -> Bool) async -> (acted: Bool, chooser: Int?) {
+        guard let s = sessionId else { return (false, nil) }
+        caughtChooser = nil
+        let catching = await cdp.send("Page.setInterceptFileChooserDialog", ["enabled": true], session: s) != nil
+        let acted = await act()
+        if acted { await settle() }
+        if catching { _ = await cdp.send("Page.setInterceptFileChooserDialog", ["enabled": false], session: s) }
+        defer { caughtChooser = nil }
+        return (acted, caughtChooser)
     }
 
     /// The control he presses himself (click with his: true): found and ringed, never pressed.
@@ -831,19 +862,71 @@ final class PageDriver {
         return Result(status: .ok, detail: "it opened in the viewer; saved a copy at \(path)", savedPath: path)
     }
 
-    /// A file into a file input: only one he named, one the job made, or one it downloaded.
+    /// The file input a ref stands for: the input itself, a label's control, one inside it, or (maxDepth > 0) the one
+    /// hidden beside an upload button, in the nearest of `maxDepth` enclosing blocks holding exactly one. Null when none.
+    static let fileInputFunction = """
+    function(maxDepth) {
+      const isFile = e => !!e && e.tagName === 'INPUT' && e.type === 'file' && !e.disabled;
+      if (isFile(this)) return this;
+      if (this.tagName === 'LABEL' && isFile(this.control)) return this.control;
+      for (let p = this, depth = 0; p && p !== document.documentElement && depth <= maxDepth; p = p.parentElement, depth++) {
+        const all = Array.from(p.querySelectorAll('input[type=file]')).filter(isFile);
+        if (all.length === 1) return all[0];
+        if (all.length > 1) return null;
+      }
+      return null;
+    }
+    """
+
+    private func fileInputNode(_ objectId: String, maxDepth: Int) async -> Int? {
+        guard let s = sessionId,
+              let found = await cdp.send("Runtime.callFunctionOn", ["objectId": objectId, "functionDeclaration": Self.fileInputFunction,
+                                                                     "arguments": [["value": maxDepth]], "returnByValue": false], session: s),
+              let input = (found["result"] as? [String: Any])?["objectId"] as? String,
+              let described = await cdp.send("DOM.describeNode", ["objectId": input], session: s) else { return nil }
+        return (described["node"] as? [String: Any])?["backendNodeId"] as? Int
+    }
+
+    /// A file into a file input: only one he named, one the job made, or one it downloaded. The ref may be the input or
+    /// the upload button in front of it: Microsoft Forms and most new forms show a button and keep the real input at
+    /// display: none, so it never gets a ref (10-26: the resume upload went to the button and failed in 5 ms). For a
+    /// button, Dot presses it with the page's file chooser caught, so the page itself names its input and no Mac file
+    /// window opens; the input hidden right beside it is the fallback.
     func upload(ref: String, path: String, allowed: Bool) async -> Result {
         guard let s = sessionId else { return .error("no page yet") }
         guard let t = await resolve(ref: ref, label: nil, fields: false) else { return .error("no \(ref) now; look again") }
         guard allowed else { return .stopped("pick the file yourself: dot only uploads a file you named or one this job made", his: "file input", point: await point(t.info)) }
         guard FileManager.default.fileExists(atPath: path) else { return .error("no file at \(path)") }
-        guard let node = await cdp.send("DOM.requestNode", ["objectId": t.objectId], session: s), let nodeId = node["nodeId"] as? Int else {
-            _ = await cdp.send("DOM.getDocument", ["depth": 0], session: s)
-            return .error("couldn't reach the file input")
+        let file = (path as NSString).lastPathComponent
+        var node = await fileInputNode(t.objectId, maxDepth: 0)
+        if node == nil, let last = lastChooser, Date().timeIntervalSince(last.at) < 120 { node = last.node }
+        if node == nil {
+            switch verdict(t.info) {
+            case .his(let what): return .stopped("his to press: \(what)", his: what, point: await point(t.info))
+            case .unnamed: return .stopped("that button has no name, so it's his: name it or leave it", his: "unnamed button", point: await point(t.info))
+            case .ok: break
+            }
+            if let x = t.info["x"] as? Double, let y = t.info["y"] as? Double {
+                let (_, chooser) = await catchingChooser { await self.mouseClick(x: x, y: y) }
+                if let chooser {
+                    guard chooser > 0 else { return .stopped("this page's file picker takes no file from dot; he picks \(file) himself", his: "file picker", point: await point(t.info)) }
+                    node = chooser
+                }
+            }
         }
-        guard await cdp.send("DOM.setFileInputFiles", ["files": [path], "nodeId": nodeId], session: s) != nil else { return .error("the file didn't attach") }
+        if node == nil { node = await fileInputNode(t.objectId, maxDepth: 3) }
+        guard let node else { return .error("\(ref) isn't a file box and pressing it opened none; find the upload button or file box and use that ref") }
+        guard await cdp.send("DOM.setFileInputFiles", ["files": [path], "backendNodeId": node], session: s) != nil else {
+            return .error("the file didn't attach (\(cdp.lastError ?? "no reason given"))")
+        }
+        lastChooser = nil
         await settle(limit: 2)
-        return .ok("attached \((path as NSString).lastPathComponent)")
+        if let resolved = await cdp.send("DOM.resolveNode", ["backendNodeId": node], session: s),
+           let id = (resolved["object"] as? [String: Any])?["objectId"] as? String,
+           let held = await callOn(id, "function() { return {n: this.files ? this.files.length : -1}; }"), (held["n"] as? Int) == 0 {
+            return .error("the page dropped \(file) after it attached; look, then try once more or ring the upload button for him")
+        }
+        return .ok("attached \(file)")
     }
 
     /// Bring the job's window in front of him.

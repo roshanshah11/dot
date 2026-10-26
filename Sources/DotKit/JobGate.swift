@@ -137,6 +137,7 @@ public enum JobGate {
             return inside(p, root) ? .allow : .deny("edit only files in your own folder; " + saveInOutput)
         case "Bash":
             if c.bench { return .deny(benchOnly) }
+            if case .string(let command)? = input["command"], let why = wideSearch(command: command, context: c) { return .deny(why) }
             if atlasWay {
                 guard case .string(let command)? = input["command"] else { return .deny("no command") }
                 return atlasBash(command)
@@ -150,6 +151,8 @@ public enum JobGate {
             if atlasWay { return .allow }   // the deny list above is the only fence
             if let p = path(input).map(resolve(c)), secretRoots(c).contains(where: { inside(p, $0) }) { return .deny("that file is private") }
             return .allow
+        case "Glob", "Grep":
+            return wideSearch(tool: tool, input: input, context: c).map { .deny($0) } ?? .allow
         default:
             return readTools.contains(tool) ? .allow : .deny(notInJob)
         }
@@ -491,6 +494,60 @@ public enum JobGate {
             guard p.hasPrefix(root + "/") else { return .deny("rm only inside your own folder") }
         }
         return .allow
+    }
+
+    // MARK: Wide searches
+
+    public static let wideSearchLine = "that searches his whole home or vault, which takes minutes: ask atlas search or recent_files first, or search the one folder it lives in (~/Dot/jobs/PROFILE.md says where his documents are)"
+
+    /// The roots no search starts from: the disk, his home and the vault (10-26: two finds over the vault, cut off at 58 and
+    /// 81 s, and two 20 s Glob timeouts were 179 s of a 290 s resume upload; the full find takes 114 s).
+    static func isWideRoot(_ raw: String, _ c: JobGateContext) -> Bool {
+        var p = raw
+        for h in ["${HOME}", "$HOME"] where p == h || p.hasPrefix(h + "/") { p = c.home + p.dropFirst(h.count); break }
+        let resolved = resolve(c)(p)
+        return ["/", "/Users", c.home, c.vault].map(ConsentPolicy.canonical).contains(resolved)
+    }
+
+    /// A shell search (find, fd, rg, ag, grep -r, ls -R, tree) that starts at a wide root, in any segment.
+    static func wideSearch(command: String, context c: JobGateContext) -> String? {
+        let (segments, subs) = split(command)
+        for sub in subs { if let why = wideSearch(command: sub, context: c) { return why } }
+        for segment in segments {
+            var words = ShellSegment.words(segment)
+            while let first = words.first, ["env", "nohup", "time", "command", "builtin", "exec", "sudo"].contains((first as NSString).lastPathComponent)
+                    || (first.contains("=") && !first.hasPrefix("-") && !first.hasPrefix("=")) {
+                words.removeFirst()
+            }
+            guard let first = words.first else { continue }
+            var args = Array(words.dropFirst())
+            let flagged = { (letters: String) in args.contains { a in a.hasPrefix("-") && !a.hasPrefix("--") && a.contains { letters.contains($0) } } }
+            var roots: [String] = []
+            switch (first as NSString).lastPathComponent {
+            case "find", "gfind":
+                while let a = args.first, ["-H", "-L", "-P", "-E", "-X", "-d", "-s", "-x"].contains(a) { args.removeFirst() }
+                roots = Array(args.prefix { !$0.hasPrefix("-") && $0 != "(" && $0 != "!" })
+            case "fd", "fdfind", "rg", "ag", "tree":
+                roots = args.filter { !$0.hasPrefix("-") }
+            case "grep", "egrep", "ggrep":
+                if flagged("rR") || args.contains("--recursive") { roots = args.filter { !$0.hasPrefix("-") } }
+            case "ls", "gls":
+                if flagged("R") || args.contains("--recursive") { roots = args.filter { !$0.hasPrefix("-") } }
+            default: break
+            }
+            if roots.contains(where: { isWideRoot($0, c) }) { return wideSearchLine }
+        }
+        return nil
+    }
+
+    /// Glob or Grep rooted at a wide root: its path, or for a Glob with no path, the fixed head of an absolute pattern.
+    static func wideSearch(tool: String, input: [String: AnyCodableValue], context c: JobGateContext) -> String? {
+        if case .string(let p)? = input["path"], !p.isEmpty { return isWideRoot(p, c) ? wideSearchLine : nil }
+        guard tool == "Glob", case .string(let pattern)? = input["pattern"], pattern.hasPrefix("/") || pattern.hasPrefix("~") || pattern.hasPrefix("$HOME"),
+              let g = pattern.firstIndex(where: { "*?[{".contains($0) }) else { return nil }
+        let head = String(pattern[..<g])
+        let dir = head.hasSuffix("/") ? String(head.dropLast()) : (head as NSString).deletingLastPathComponent
+        return isWideRoot(dir.isEmpty ? "/" : dir, c) ? wideSearchLine : nil
     }
 
     /// Top-level segments of a command (split on unquoted | ; & and newlines) and the bodies of its command

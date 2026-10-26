@@ -267,6 +267,8 @@ final class Talk {
         }
         jobs.talkIsIdle = { [weak self] in self.map { $0.phase == .idle && !$0.speaker.isSpeaking } ?? true }
         jobs.presentCard = { [weak hud] card in hud?.present(card, chime: true) }
+        jobs.dismissCard = { [weak hud] id in hud?.dismissConsent(id: id) }
+        jobs.withdrawCards = { [weak hud] agent in hud?.withdrawConsent(agent: agent) }
         jobs.jev = jev
         NSWorkspace.shared.notificationCenter.addObserver(forName: NSWorkspace.didActivateApplicationNotification, object: nil, queue: .main) { [weak self] note in
             guard let app = note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication else { return }

@@ -115,6 +115,10 @@ final class JobManager {
     var onRoutine: ((String, String, String) -> Void)?
     /// Shows a consent card (the stack once 04 lands; the notch's consent path until then).
     var presentCard: ((ConsentCard) -> Void)?
+    /// Takes an answered card down, and a finished job's open cards with it (10-26: the "one step on your screen" card
+    /// stayed up after its job ended, and Allow or Not now couldn't clear it).
+    var dismissCard: ((UUID) -> Void)?
+    var withdrawCards: ((String) -> Void)?
     /// Jev's injection check on page text (the agents' PostToolUse check isn't in a job's path).
     var jev: Jev?
     /// The top-right stack (04): a behind job is a chip there; front jobs get none.
@@ -138,7 +142,8 @@ final class JobManager {
     static var allowedTools: [String] {
         let reads = DotConfig.talkAtlasTools.filter { !DotConfig.talkWriteTools.contains($0) }.map { "mcp__atlas__\($0)" }
             .filter { !Talk.guestTools.contains($0) }
-        return ["mcp__dot", "WebSearch", "WebFetch", "Skill", "Glob", "Grep", "TodoWrite"] + reads
+        // Glob and Grep outside the job folder ask the gate, which refuses a search of his whole home or vault (10-26).
+        return ["mcp__dot", "WebSearch", "WebFetch", "Skill", "TodoWrite"] + reads
     }
 
     var running: [Job] { jobs.filter { $0.phase.isLive } }
@@ -679,6 +684,7 @@ final class JobManager {
         guard job.phase.isLive else { return }
         job.phase = stopReason != nil ? .stopped : (failed ? .failed : .done)
         job.endedAt = Date()
+        withdrawCards?("job-\(job.id)")
         job.endLine = line
         job.pendingDone?.cancel()
         if !job.bench {
@@ -789,9 +795,25 @@ final class JobManager {
         let tool = request["tool"] as? String ?? ""
         let args = request["args"] as? [String: Any] ?? [:]
         guard let job = job(id) else { reply(["text": "error: no job \(id) (it ended)", "isError": true]); return }
-        if job.phase == .paused { reply(["text": "paused: he is using the tab; stop and wait", "isError": true]); return }
         if job.phase.isTerminal { reply(["text": "stopped: the job is over; end your turn", "isError": true]); return }
         Task { @MainActor in
+            // While he uses the tab the call is held, not the session interrupted: a search or a file step running when he
+            // clicked keeps its result (10-26: two vault searches, 58 and 81 s, were thrown away by pauses). Held under the
+            // bridge's 60 s; a look held through the pause then reads the page as he left it.
+            let held = job.phase == .paused
+            if held {
+                let deadline = Date().addingTimeInterval(Self.heldCallSeconds)
+                while job.phase == .paused, Date() < deadline { try? await Task.sleep(nanoseconds: 200_000_000) }
+                if job.phase.isTerminal { reply(["text": "stopped: the job is over; end your turn", "isError": true]); return }
+                if job.phase == .paused {
+                    reply(["text": "paused: he is still using the tab, so nothing was done. call look to keep waiting; dot holds it until he stops", "isError": true])
+                    return
+                }
+                if tool != "look" {
+                    reply(["text": "[resume] he used the tab while this waited, so it wasn't done: look first (the page may have changed; keep what he typed), then carry on", "isError": true])
+                    return
+                }
+            }
             let started = Date()
             let (text, isError, image) = await self.perform(job, tool: tool, args: args)
             if !job.firstActLogged, tool != "look", let asked = job.askedAt {
@@ -799,7 +821,8 @@ final class JobManager {
                 Log.info("job[\(job.id)] first action \(Int(Date().timeIntervalSince(asked) * 1000)) ms")
             }
             _ = started
-            var out: [String: Any] = ["text": job.page.scrub(text), "isError": isError]
+            let said = held ? "[resume] he used the tab; this is the page as he left it (keep what he typed).\n" + text : text
+            var out: [String: Any] = ["text": job.page.scrub(said), "isError": isError]
             if let image { out["image"] = image }
             reply(out)
         }
@@ -811,6 +834,8 @@ final class JobManager {
 
     func perform(_ job: Job, tool: String, args: [String: Any]) async -> (String, Bool, String?) {
         let started = Date()
+        // drive's clicks come straight here: a pause stops the loop at its next click (the session isn't interrupted).
+        if job.phase == .paused, tool != "look" { return ("paused: he is using the tab, so nothing was done", true, nil) }
         if tool == "click", args["his"] as? Bool == true, !job.isBrowserJob {
             let ref = str(args, "ref")
             let frame = ref.flatMap { job.nativeFrames[$0] }
@@ -1211,9 +1236,11 @@ final class JobManager {
     func present(_ card: ProposalCard, job: Job, session: String) {
         let pid8 = String(card.proposal.prefix(8))
         var answered = false
-        let consent = ConsentCard(agentId: "job-\(job.id)", agent: "dot", title: card.title, detail: card.detail, guarded: card.guarded, onAllow: { [weak self, weak job] in
+        let cardId = UUID()
+        let consent = ConsentCard(id: cardId, agentId: "job-\(job.id)", agent: "dot", title: card.title, detail: card.detail, guarded: card.guarded, onAllow: { [weak self, weak job] in
             guard let self, !answered else { return }
             answered = true
+            self.dismissCard?(cardId)
             self.runApprove(["approve", "--session", session, "--proposal", card.proposal, "--digest", card.digest]) { code, json in
                 let status = ((json as? [String: Any])?["status"] as? String) ?? ((json as? [String: Any])?["error"] as? String) ?? "error \(code)"
                 Log.info("proposal: card \(pid8) \(card.operation) allowed \(status)")
@@ -1224,6 +1251,7 @@ final class JobManager {
         }, onDeny: { [weak self, weak job] in
             guard let self, !answered else { return }
             answered = true
+            self.dismissCard?(cardId)
             self.runApprove(["deny", "--session", session, "--proposal", card.proposal, "--digest", card.digest]) { code, json in
                 let status = ((json as? [String: Any])?["status"] as? String) ?? "error \(code)"
                 Log.info("proposal: card \(pid8) \(card.operation) denied \(status)")
@@ -1296,7 +1324,7 @@ final class JobManager {
     func pause(_ job: Job, reason: String) {
         guard let next = job.phase.next(.paused) else { return }
         job.phase = next
-        job.session?.interrupt()
+        // No interrupt: the step in flight finishes and its result is kept; the next dot call waits in `hands` (10-26).
         Log.info("job[\(job.id)] paused (\(reason))")
         say("paused while you use the tab; i'll carry on \(Int(Self.autoResumeSeconds)) seconds after you stop, or say go on.", job: job, start: false, short: true)
         scheduleAutoResume(job)
@@ -1306,6 +1334,8 @@ final class JobManager {
     /// He clicked or typed in a job's tab and then left it alone: the job carries on by itself (10-21: a pause that only
     /// "go on" ended looked like a stuck Dot).
     static let autoResumeSeconds: TimeInterval = 15
+    /// How long a dot call made while he uses the tab is held for him to stop (under the hands bridge's 60 s).
+    static let heldCallSeconds: TimeInterval = 45
 
     private func scheduleAutoResume(_ job: Job) {
         job.autoResume?.cancel()
@@ -1326,7 +1356,11 @@ final class JobManager {
         job.autoResume?.cancel()
         job.autoResume = nil
         job.phase = next
-        job.session?.send(text: "[resume] he used the tab and \(why). continue where you left off; look first, the page may have changed, and keep what he typed.")
+        // A turn still running has its next dot call held, and that call says he used the tab; a turn that ended while
+        // paused gets the message to carry on.
+        if job.session?.turnInFlight != true {
+            job.session?.send(text: "[resume] he used the tab and \(why). continue where you left off; look first, the page may have changed, and keep what he typed.")
+        }
         Log.info("job[\(job.id)] resumed")
         publish(job)
     }

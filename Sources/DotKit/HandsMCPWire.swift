@@ -54,7 +54,7 @@ public enum HandsMCPWire {
          schema(["for": str, "ms": ["type": "integer"]])),
         ("download", "Click a download link or button by ref and wait for the file; returns where it was saved (his Downloads).",
          schema(["ref": str], required: ["ref"])),
-        ("upload", "Put a file into a file input by ref: only a file he named, one you made in your output folder, or one you downloaded in this job.",
+        ("upload", "Put a file into a file box by ref: the file box, or the upload button in front of it (dot finds the hidden box; call upload on the button directly, never click it first). Only a file he named, one you made in your output folder, or one you downloaded in this job.",
          schema(["ref": str, "path": str], required: ["ref", "path"])),
         ("show", "Bring your window in front of him (what \"show me\" does).", schema([:])),
         ("login", "Log in on this page with his saved login for this exact site. Dot fills it itself (you never see the password), points at a robot box and waits for his tick, then presses log in.",

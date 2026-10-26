@@ -358,6 +358,32 @@ final class JobGateTests: XCTestCase {
         XCTAssertEqual(decide("Read", ["file_path": "~/.ssh/config"], a), .allow, "only Atlas's list fences reads")
     }
 
+    // 10-26: a resume upload spent 179 of its 290 s on finds and Globs over the whole vault.
+    func testSearchOfHisWholeHomeOrVaultIsRefused() {
+        for c in [ctx(), ctx(permissions: .atlas)] {
+            for cmd in ["find ~/roshan ~/Downloads -iname '*resume*.pdf'",
+                        "ls -t ~/Downloads ~/roshan 2>/dev/null | head -0; find ~/roshan -name '*.pdf' -exec ls -lT {} +",
+                        "find -L $HOME -name x.pdf", "find / -name x", "find \(home) -maxdepth 6 -name x",
+                        "rg --files ~/roshan | grep -i resume", "grep -ri resume ~", "ls -R ~/roshan", "fd resume ~",
+                        "echo $(find ~/roshan -name x)", "env LC_ALL=C find ${HOME}/roshan -name x"] {
+                XCTAssertEqual(bash(cmd, c), .deny(JobGate.wideSearchLine), cmd)
+            }
+            for cmd in ["find ~/roshan/Career/Resumes -name '*.pdf'", "find . -name x", "ls -t ~/Downloads ~/roshan", "ls -la ~",
+                        "rg -n Northwind ~/Downloads | head -20", "grep -i resume ~/roshan/Career/Resumes/Current/README.md",
+                        "find output -type f"] {
+                XCTAssertNotEqual(bash(cmd, c), .deny(JobGate.wideSearchLine), cmd)
+            }
+            XCTAssertEqual(decide("Glob", ["pattern": "**/*esume*.pdf", "path": "\(home)/roshan"], c), .deny(JobGate.wideSearchLine))
+            XCTAssertEqual(decide("Glob", ["pattern": "Career/**/*esume*.pdf", "path": "~/roshan/"], c), .deny(JobGate.wideSearchLine))
+            XCTAssertEqual(decide("Glob", ["pattern": "~/roshan/**/*.pdf"], c), .deny(JobGate.wideSearchLine))
+            XCTAssertEqual(decide("Grep", ["pattern": "resume", "path": home], c), .deny(JobGate.wideSearchLine))
+            XCTAssertEqual(decide("Glob", ["pattern": "*.pdf", "path": "\(home)/roshan/Career/Resumes/Current"], c), .allow)
+            XCTAssertEqual(decide("Glob", ["pattern": "~/roshan/Career/Resumes/*.pdf"], c), .allow)
+            XCTAssertEqual(decide("Glob", ["pattern": "**/*.pdf"], c), .allow, "no path: the job's own folder")
+            XCTAssertEqual(decide("Grep", ["pattern": "Northwind", "path": "~/Downloads"], c), .allow)
+        }
+    }
+
     func testAtlasPermissionsKeepAtlasDenyList() {
         let a = ctx(permissions: .atlas)
         for path in ["~/roshan/Atlas/private/keys.json", "\(home)/roshan/Atlas/private", "~/.atlas-browser/Default/Cookies"] {
