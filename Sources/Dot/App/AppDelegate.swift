@@ -172,6 +172,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         home = HomeWindowController(agents: agents, ledger: ledger, config: config, atlas: atlas)
         home.speakSample = { [weak self] text in SpeakLog.as("sample") { self?.speaker.speak(text) } }
         home.onSettingsChanged = { [weak self] changed in Task { @MainActor in self?.applySettings(changed) } }
+        home.onStartTask = { [weak self] text in self?.talk.startTask(fromHome: text) ?? false }
         routines = RoutineScheduler(config: config, agents: agents, hud: hud)
         routines.canRun = { [weak self] in
             guard let self else { return false }

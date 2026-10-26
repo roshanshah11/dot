@@ -12,6 +12,7 @@ extension Snapshots {
         var out: [(String, NSImage)] = []
         if let image = fileCards(in: folder) { out.append(("file-cards", image)) }
         if let image = faces() { out.append(("faces", image)) }
+        out += thread(in: folder)
         return out
     }
 
@@ -52,6 +53,86 @@ extension Snapshots {
             .frame(width: 820, height: 640, alignment: .topLeading)
             .background(Color(nsColor: .windowBackgroundColor))
         return drawHosted(NSHostingView(rootView: sheet), size: CGSize(width: 820, height: 640), wait: 3)
+    }
+
+    /// The real Home window on a sample agent in a temp root (its own home-state store, so nothing of his is read or
+    /// written): a thread with a tapback, file cards, a kept draft and prompt cards; the same with the focus pane open;
+    /// an empty thread's starters; and the tapback bar as hovering shows it.
+    private static func thread(in folder: URL) -> [(String, NSImage)] {
+        let realState = HomeState.shared
+        HomeState.shared = HomeState(url: folder.appendingPathComponent("home-state.sqlite"))
+        defer { HomeState.shared = realState }
+        var config = DotConfig.peek()
+        config.agentsRoot = folder.appendingPathComponent("agents").path
+        config.agentRulesFile = folder.appendingPathComponent("rules.json").path
+        let scout = folder.appendingPathComponent("agents/scout")
+        try? FileManager.default.createDirectory(at: scout.appendingPathComponent(".dot"), withIntermediateDirectories: true)
+        try? FileManager.default.createDirectory(at: scout.appendingPathComponent("output"), withIntermediateDirectories: true)
+        try? FileManager.default.createDirectory(at: folder.appendingPathComponent("agents/option/.dot"), withIntermediateDirectories: true)
+        try? "# Scout\n\n## Persona\nScout watches for hackathons, fellowships and their deadlines, and keeps the event list current.\n"
+            .write(to: scout.appendingPathComponent("CLAUDE.md"), atomically: true, encoding: .utf8)
+        try? "# Option\n\n## Persona\nOption finds the best product to buy and compares prices; he buys.\n"
+            .write(to: folder.appendingPathComponent("agents/option/CLAUDE.md"), atomically: true, encoding: .utf8)
+        try? XLSXSample.data.write(to: scout.appendingPathComponent("output/hackathons.xlsx"))
+        try? samplePDF().write(to: scout.appendingPathComponent("output/northwind_brief.pdf"))
+        let iso = ISO8601DateFormatter()
+        func at(_ minutesAgo: Double) -> String { iso.string(from: Date().addingTimeInterval(-minutesAgo * 60)) }
+        let answer = "Found 4 hackathons you can still enter: **HackMIT** (Nov 8), **TreeHacks** (Feb 14), **UChicago Hacks** (Jan 24) and **CalHacks** (Nov 15). The list with deadlines is in hackathons.xlsx."
+        let rows: [[String: String]] = [
+            ["ts": at(40), "role": "user", "text": "find hackathons I can still apply to this fall"],
+            ["ts": at(39.5), "role": "tool", "text": "Searching the web for hackathons fall 2026"],
+            ["ts": at(38), "role": "tool", "text": "Writing hackathons.xlsx"],
+            ["ts": at(37), "role": "assistant", "text": answer],
+            ["ts": at(37), "role": "artifact", "text": "hackathons.xlsx"],
+            ["ts": at(37), "role": "artifact", "text": "northwind_brief.pdf"],
+            ["ts": at(37), "role": "result", "text": "success in 41000 ms, $0.084"],
+            ["ts": at(12), "role": "user", "text": "which one is closest?"],
+            ["ts": at(11), "role": "assistant", "text": "UChicago Hacks, on campus. Want me to put its deadline in Atlas?"],
+            ["ts": at(11), "role": "result", "text": "success in 6000 ms, $0.012"],
+        ]
+        let lines = rows.compactMap { (try? JSONSerialization.data(withJSONObject: $0)).map { String(decoding: $0, as: UTF8.self) } }.joined(separator: "\n") + "\n"
+        try? lines.write(to: scout.appendingPathComponent(".dot/transcript.jsonl"), atomically: true, encoding: .utf8)
+        let state = HomeState.shared
+        state.react(turn: TranscriptRow.legacyID(ts: rows[3]["ts"]!, kind: "assistant", text: answer), thread: "agent:scout", emoji: "👍", text: answer)
+        state.saveDraft(thread: "agent:scout", text: "Yes, add UChicago Hacks to Atlas, and draft a two-line note to the organizers asking about team size.", attachments: [])
+        state.savePromptCard(.init(id: "a", title: "Weekly deadline sweep", text: "Check every deadline due in the next 7 days and list them by date.", color: "blue", ord: 1))
+        state.savePromptCard(.init(id: "b", title: "New fellowships", text: "Any new fellowships for sophomores since last week?", color: "green", ord: 2))
+        state.savePromptCard(.init(id: "c", title: "Chicago events", text: "Tech events in Chicago this week.", color: "purple", ord: 3))
+
+        let ledger = Ledger(url: folder.appendingPathComponent("ledger.jsonl"))
+        let agents = AgentManager(config: config, hud: NotchHUD(), speaker: MuteSpeaker(), ledger: ledger)
+        let model = HomeModel(agents: agents, ledger: ledger, config: config, atlas: AtlasBridge(config: config))
+        model.reload()
+        var out: [(String, NSImage)] = []
+        let size = CGSize(width: 1240, height: 760)
+        func shot(_ name: String) {
+            // the window paints its background in the real app; offscreen the view must, in one appearance
+            for (suffix, look) in [("", NSAppearance.Name.darkAqua), ("-light", .aqua)] {
+                let view = HomeView(model: model).frame(width: size.width, height: size.height).background(Color(nsColor: .windowBackgroundColor))
+                let host = NSHostingView(rootView: view)
+                host.appearance = NSAppearance(named: look)
+                if let image = drawHosted(host, size: size, wait: 2.5) { out.append((name + suffix, image)) }
+            }
+        }
+        if let agent = model.agents.first(where: { $0.slug == "scout" }) { model.select(agent) }
+        shot("thread")
+        model.focusOpen = true
+        shot("focus")
+        model.focusOpen = false
+        if let agent = model.agents.first(where: { $0.slug == "option" }) { model.composer = ""; model.select(agent) }
+        shot("starters")
+        let bar = VStack(alignment: .leading, spacing: 14) {
+            TapbackBar(current: "👍") { _ in }
+            HStack(alignment: .top) {
+                Text("UChicago Hacks, on campus. Want me to put its deadline in Atlas?").font(.system(size: 13))
+                    .padding(.horizontal, 12).padding(.vertical, 8)
+                    .background(Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 14))
+                    .overlay(alignment: .topTrailing) { TapbackBadge(emoji: "❓").offset(x: 10, y: -10) }
+            }
+        }
+        .padding(24).frame(width: 520, height: 140, alignment: .topLeading).background(Color(nsColor: .windowBackgroundColor))
+        if let image = drawHosted(NSHostingView(rootView: bar), size: CGSize(width: 520, height: 140), wait: 0.3) { out.append(("tapbacks", image)) }
+        return out
     }
 
     /// Every mood (HO-16) with symbols from the rule table (HO-15), as rail rows, in light and dark.
@@ -125,4 +206,12 @@ extension Snapshots {
         context.closePDF()
         return data as Data
     }
+}
+
+/// A speaker that says nothing, for snapshots.
+private final class MuteSpeaker: TTSProvider {
+    var isSpeaking: Bool { false }
+    var onFinishedAll: (() -> Void)?
+    func speak(_ sentence: String, onStart: (() -> Void)?) { onStart?() }
+    func stop() {}
 }

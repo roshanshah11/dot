@@ -25,6 +25,12 @@ final class HomeWindowController {
         set { model.onSettingsChanged = newValue }
     }
 
+    /// Starts a behind job from the focus pane's text (HO-10); false when it couldn't.
+    var onStartTask: ((String) -> Bool)? {
+        get { model.onStartTask }
+        set { model.onStartTask = newValue }
+    }
+
     /// The routine scheduler, for the Agents page.
     var scheduler: RoutineScheduler? {
         get { model.scheduler }
@@ -155,6 +161,14 @@ final class HomeModel: ObservableObject {
     @Published var moods: [String: AgentMood] = [:]
     @Published var icons: [String: String] = [:]
     @Published var iconPicks: [String: String] = [:]
+    /// The open thread's tapbacks by turn key (HO-06).
+    @Published var reactions: [String: String] = [:]
+    /// The focus pane (HO-10): one long draft beside the thread.
+    @Published var focusOpen = false
+    @Published var focusNote: String?
+    var onStartTask: ((String) -> Bool)?
+    /// Saved prompts as cards (HO-11).
+    @Published var promptCards: [HomeState.PromptCard] = []
     @Published var settings: DotConfig
     @Published var settingsNote: String?
     @Published var renaming: AgentManager.Agent?
@@ -263,6 +277,7 @@ final class HomeModel: ObservableObject {
         refreshRoutines()
         agents = agentManager.roster()
         refreshIcons()
+        promptCards = HomeState.shared.promptCards()
         if selected == nil || !agents.contains(where: { $0.slug == selected?.slug }) { selected = agents.first }
         refreshLive()
         select(selected)
@@ -283,6 +298,51 @@ final class HomeModel: ObservableObject {
         icons = out
     }
 
+    // MARK: Composer extras (HO-06, HO-10, HO-11)
+
+    /// A tapback on one of its messages; the same one again takes it back. The agent hears it at its next turn.
+    func react(_ entry: TranscriptEntry, _ emoji: String) {
+        guard let selected, !entry.key.isEmpty else { return }
+        let thread = ThreadID.agent(selected.slug)
+        let next = reactions[entry.key] == emoji ? nil : emoji
+        HomeState.shared.react(turn: entry.key, thread: thread, emoji: next, text: AgentResult.parse(entry.text).body)
+        reactions = HomeState.shared.reactions(thread: thread)
+    }
+
+    /// The focus pane's Send task: a behind job from the draft, which then clears.
+    func startTask() {
+        let text = composer.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty else { return }
+        if onStartTask?(text) == true {
+            composer = ""
+            focusNote = "Started as a job. Its card is in the notch."
+        } else {
+            focusNote = "Dot couldn't start that job."
+        }
+    }
+
+    func savePrompt() {
+        let text = composer.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty, !promptCards.contains(where: { $0.text == text }) else { return }
+        let title = text.split(whereSeparator: \.isWhitespace).prefix(5).joined(separator: " ")
+        let colors = PromptCardsBar.palette.map(\.name)
+        HomeState.shared.savePromptCard(.init(id: UUID().uuidString, title: title, text: text, color: colors[promptCards.count % colors.count],
+                                              ord: (promptCards.map(\.ord).max() ?? 0) + 1))
+        promptCards = HomeState.shared.promptCards()
+    }
+
+    func setPromptColor(_ card: HomeState.PromptCard, _ color: String) {
+        var changed = card
+        changed.color = color
+        HomeState.shared.savePromptCard(changed)
+        promptCards = HomeState.shared.promptCards()
+    }
+
+    func deletePrompt(_ card: HomeState.PromptCard) {
+        HomeState.shared.deletePromptCard(card.id)
+        promptCards = HomeState.shared.promptCards()
+    }
+
     func setIcon(_ agent: AgentManager.Agent, _ symbol: String?) {
         HomeState.shared.setAgentIcon(agent.slug, symbol)
         refreshIcons()
@@ -301,6 +361,8 @@ final class HomeModel: ObservableObject {
         selected = agent
         guard let agent else { entries = []; claudeMD = ""; runs = []; outputs = []; previewURL = nil; return }
         entries = agentManager.transcriptEntries(for: agent)
+        if let thread { reactions = HomeState.shared.reactions(thread: thread) }
+        if switching { focusNote = nil }
         if switching, let thread {
             let saved = HomeState.shared.scroll(thread: thread)
             restore = ScrollRestore.decide(savedAnchor: saved.anchor, savedNewest: saved.newest, turns: entries.map(\.key))
@@ -476,6 +538,8 @@ struct HomeView: View {
     @ObservedObject var model: HomeModel
     @State private var showingNew = false
     @State private var openSteps: Set<String> = []
+    /// The message the pointer is over, for its tapback bar (HO-06).
+    @State private var hovered: Int?
 
     private let accent = HomeStyle.accent
 
@@ -487,7 +551,10 @@ struct HomeView: View {
             case .agent:
                 if let agent = model.selected {
                     thread(agent)
-                    if model.showOutputs {
+                    if model.focusOpen {
+                        Divider()
+                        FocusPane(model: model, agent: agent).frame(width: 420)
+                    } else if model.showOutputs {
                         Divider()
                         outputsColumn(agent).frame(width: 300)
                     }
@@ -703,7 +770,9 @@ struct HomeView: View {
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 10) {
                     if model.entries.isEmpty {
-                        Text("Nothing yet. Hold shift as well to send it to an agent, or type below.").font(.callout).foregroundStyle(.secondary).padding(.top, 20)
+                        // Three first messages from what it's for (HO-09); a tap puts one in the composer.
+                        StarterMessages(agentName: agent.name, starters: AgentLook.starters(symbol: model.icons[agent.slug] ?? SkillAvatar.fallback)) { model.composer = $0 }
+                            .padding(.top, 20)
                     }
                     ForEach(model.items) { item in entryView(item) }
                     if running {
@@ -799,6 +868,21 @@ struct HomeView: View {
                     Text(Self.markdown(body)).font(.system(size: 13)).textSelection(.enabled)
                         .padding(.horizontal, 12).padding(.vertical, 8)
                         .background(Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 14))
+                        // HO-06: hover for five tapbacks; the one he picked sits on the corner.
+                        .overlay(alignment: .topTrailing) {
+                            if let mine = model.reactions[entry.key] {
+                                TapbackBadge(emoji: mine).offset(x: 10, y: -10)
+                            }
+                        }
+                        .overlay(alignment: .topLeading) {
+                            if hovered == entry.id {
+                                TapbackBar(current: model.reactions[entry.key]) { model.react(entry, $0) }.offset(y: -30)
+                            }
+                        }
+                        .onHover { inside in
+                            if inside { hovered = entry.id } else if hovered == entry.id { hovered = nil }
+                        }
+                        .zIndex(hovered == entry.id ? 1 : 0)
                     // Past a screenful the bubble loses tables, math and headings; the reader keeps them.
                     if body.count > 600 { readButton { read(message: body, at: entry.time) }.padding(.leading, 6) }
                 }
@@ -969,6 +1053,7 @@ struct HomeView: View {
 
     private func composer(_ agent: AgentManager.Agent) -> some View {
         VStack(alignment: .leading, spacing: 6) {
+            PromptCardsBar(model: model)
             if !model.attachments.isEmpty {
                 HStack(spacing: 6) {
                     ForEach(model.attachments, id: \.self) { url in
@@ -991,6 +1076,15 @@ struct HomeView: View {
                     .padding(.horizontal, 12).padding(.vertical, 9)
                     .background(Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 12))
                     .onSubmit { model.send() }
+                Button {
+                    withAnimation(.easeOut(duration: 0.18)) { model.focusOpen.toggle() }
+                } label: {
+                    Image(systemName: model.focusOpen ? "arrow.down.right.and.arrow.up.left" : "arrow.up.left.and.arrow.down.right")
+                        .font(.system(size: 11, weight: .semibold)).frame(width: 30, height: 30)
+                        .background(Color.primary.opacity(0.06), in: Circle())
+                }
+                .buttonStyle(.plain).foregroundStyle(.secondary)
+                .help("Focus: write a long draft beside the thread, then send it here or start it as a job")
                 Button {
                     model.send()
                 } label: {

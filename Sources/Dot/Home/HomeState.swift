@@ -7,7 +7,8 @@ import SQLite3
 /// agents' transcripts are never written here or from here.
 @MainActor
 final class HomeState {
-    static let shared = HomeState(url: URL(fileURLWithPath: NSHomeDirectory()).appendingPathComponent("Dot/home-state.sqlite"))
+    /// A var only so `Dot --snapshot` can point Home at a throwaway store.
+    static var shared = HomeState(url: URL(fileURLWithPath: NSHomeDirectory()).appendingPathComponent("Dot/home-state.sqlite"))
     static let schemaVersion = 2
 
     private var db: OpaquePointer?

@@ -334,6 +334,8 @@ final class AgentManager {
         var text = brief
         // Notes other agents left while it was idle (AG-18), read at the top of this turn.
         if let notes = AgentNote.block(takePendingNotes(agent)) { text = notes + "\n\n" + brief }
+        // His tapbacks in Home since its last turn (HO-06): feedback it reads first.
+        if let reactions = Tapback.block(HomeState.shared.takeUntold(thread: ThreadID.agent(agent.slug))) { text = reactions + "\n\n" + text }
         var contextLines: [String] = []
         if let about = atlas?.profileBlock(), !about.isEmpty { contextLines.append(about) }
         if let today = atlas?.shortBlock(), !today.isEmpty { contextLines.append(today) }

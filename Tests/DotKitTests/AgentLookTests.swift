@@ -39,3 +39,26 @@ final class AgentLookTests: XCTestCase {
         XCTAssertEqual(AgentLook.symbol(name: "Option", brief: AgentLook.brief(claudeMD: text, template: template, founding: "")), "cart")
     }
 }
+
+final class HomeKitTests: XCTestCase {
+    func testTapbackBlock() {
+        XCTAssertNil(Tapback.block([]))
+        let long = String(repeating: "word ", count: 40)
+        let block = Tapback.block([("👍", "Found 4 hackathons:\nHackMIT, ..."), ("❓", long)])!
+        XCTAssertTrue(block.hasPrefix("[reactions] "), block)
+        XCTAssertTrue(block.contains("- 👍 (good) to \"Found 4 hackathons: HackMIT, ...\""), block)
+        XCTAssertTrue(block.contains("- ❓ (unclear to him) to \""), block)
+        XCTAssertTrue(block.contains("…\""), "a long message is cut")
+        XCTAssertEqual(Tapback.choices.count, 5)
+    }
+
+    func testStartersForEverySymbol() {
+        for symbol in SkillAvatar.choices {
+            let s = AgentLook.starters(symbol: symbol)
+            XCTAssertEqual(s.count, 3, symbol)
+            XCTAssertEqual(Set(s).count, 3, symbol)
+            XCTAssertTrue(s.allSatisfy { !$0.contains("\u{2014}") && $0.count <= 48 }, "\(symbol): \(s)")
+        }
+        XCTAssertNotEqual(AgentLook.starters(symbol: "cart"), AgentLook.starters(symbol: SkillAvatar.fallback))
+    }
+}

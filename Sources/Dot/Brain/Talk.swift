@@ -2227,6 +2227,16 @@ final class Talk {
         return atlas + mine
     }
 
+    /// A task he wrote out in Home's focus pane (parity HO-10): a behind job with its card in the notch; nothing is said,
+    /// since he is typing, not talking.
+    @discardableResult
+    func startTask(fromHome text: String) -> Bool {
+        let goal = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !goal.isEmpty else { return false }
+        Log.info("job: from Home's focus pane: \(Log.short(goal, 80))")
+        return jobs.start(goal: goal, placement: .behind, context: .empty, askedAt: Date(), bench: false, hisWords: goal, announce: false) != nil
+    }
+
     /// Start a job; Dot says its own start line unless talk already said one.
     private func startJob(goal: String, placement: JobPlacement, words: String, announce: Bool = true) {
         phase = .idle
