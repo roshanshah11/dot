@@ -65,6 +65,8 @@ extension Snapshots {
         var config = DotConfig.peek()
         config.agentsRoot = folder.appendingPathComponent("agents").path
         config.agentRulesFile = folder.appendingPathComponent("rules.json").path
+        config.dictionaryFile = folder.appendingPathComponent("dictionary.txt").path
+        try? "# dot's dictionary\nUChicago\ntype safe => TypeSafe\n".write(toFile: config.dictionaryFile, atomically: true, encoding: .utf8)
         let scout = folder.appendingPathComponent("agents/scout")
         try? FileManager.default.createDirectory(at: scout.appendingPathComponent(".dot"), withIntermediateDirectories: true)
         try? FileManager.default.createDirectory(at: scout.appendingPathComponent("output"), withIntermediateDirectories: true)
@@ -98,6 +100,9 @@ extension Snapshots {
         state.savePromptCard(.init(id: "a", title: "Weekly deadline sweep", text: "Check every deadline due in the next 7 days and list them by date.", color: "blue", ord: 1))
         state.savePromptCard(.init(id: "b", title: "New fellowships", text: "Any new fellowships for sophomores since last week?", color: "green", ord: 2))
         state.savePromptCard(.init(id: "c", title: "Chicago events", text: "Tech events in Chicago this week.", color: "purple", ord: 3))
+        state.addDictationCandidate(DictationCandidate(heard: "roth say", correct: "Rothesay"), app: "Mail")
+        state.addDictationCandidate(DictationCandidate(heard: "roth say", correct: "Rothesay"), app: "Notes")
+        state.addDictationCandidate(DictationCandidate(heard: "center view", correct: "Centerview"), app: "Comet")
 
         let ledger = Ledger(url: folder.appendingPathComponent("ledger.jsonl"))
         let agents = AgentManager(config: config, hud: NotchHUD(), speaker: MuteSpeaker(), ledger: ledger)
@@ -121,6 +126,10 @@ extension Snapshots {
         model.focusOpen = false
         if let agent = model.agents.first(where: { $0.slug == "option" }) { model.composer = ""; model.select(agent) }
         shot("starters")
+        // DI-05: the Dictation page with two corrections waiting for his Add
+        model.page = .dictation
+        shot("dictation")
+        model.page = .agent
         // HO-01: Home dropped down from the notch, the compact layout under its black band
         if let agent = model.agents.first(where: { $0.slug == "scout" }) { model.select(agent) }
         let drop = CGSize(width: 960, height: 600)

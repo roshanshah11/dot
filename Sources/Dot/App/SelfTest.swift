@@ -55,7 +55,42 @@ enum SelfTest {
         editKeys(check)
         stepAside(check, hud: hud)
         quietInFocus(check)
+        dictationWatch(check)
         return ok
+    }
+
+    /// DI-05: the correction watch over a scripted field. His fix inside the range, then five quiet seconds, gives a
+    /// candidate; typing elsewhere, a fix of a word into a different word, or nothing at all give none.
+    static func dictationWatch(_ check: (String, Bool) -> Void) {
+        func run(_ reads: [DictationWatch.Read], seconds: [TimeInterval]) -> (DictationCandidate?, Bool) {
+            let value = "Hi, meet at the you chicago library"
+            guard let tracker = DictationEditTracker(value: value, start: 4, inserted: "meet at the you chicago library") else { return (nil, false) }
+            var queue = reads
+            let start = Date()
+            let watch = DictationWatch(tracker: tracker, app: "Mail", dictionary: DictationDictionary(), now: start) {
+                queue.isEmpty ? DictationWatch.Read(focused: true, value: nil) : queue.removeFirst()
+            }
+            var found: DictationCandidate?
+            watch.onCandidate = { found = $0 }
+            for t in seconds where watch.tick(now: start.addingTimeInterval(t)) {}
+            return (found, watch.finished)
+        }
+        let typing = ["Hi, meet at the  chicago library", "Hi, meet at the U chicago library", "Hi, meet at the UChicago library"]
+        let fix = typing.map { DictationWatch.Read(focused: true, value: $0) }
+        let settle = Array(repeating: DictationWatch.Read(focused: true, value: "Hi, meet at the UChicago library"), count: 30)
+        let (found, done) = run(fix + settle, seconds: (0..<33).map { Double($0) * 0.25 })
+        check("his fix inside the range becomes a candidate after five quiet seconds", found == DictationCandidate(heard: "you chicago", correct: "UChicago") && done)
+        let (early, open) = run(fix + settle, seconds: (0..<10).map { Double($0) * 0.25 })
+        check("not before the five seconds", early == nil && !open)
+        let away = fix + [DictationWatch.Read(focused: false, value: nil)]
+        check("a fix then a click elsewhere still counts (it was seen while focused)", run(away, seconds: (0..<6).map { Double($0) * 0.25 }).0 != nil)
+        let elsewhere = [DictationWatch.Read(focused: true, value: "Hey, meet at the you chicago library"),
+                         DictationWatch.Read(focused: true, value: "Hey, meet at the UChicago library")] + settle
+        let (none, ended) = run(elsewhere, seconds: (0..<30).map { Double($0) * 0.25 })
+        check("typing before the range ends the watch with no candidate", none == nil && ended)
+        let untouched = Array(repeating: DictationWatch.Read(focused: true, value: "Hi, meet at the you chicago library"), count: 400)
+        let (nothing, timedOut) = run(untouched, seconds: (0...364).map { Double($0) * 0.25 })
+        check("no edit: nothing, and the watch stops at ninety seconds", nothing == nil && timedOut)
     }
 
     /// S1: a Focus keeps Dot quiet like a call does, and the setting turns that off. The live read runs too (it must
@@ -69,7 +104,8 @@ enum SelfTest {
         check("Quiet in Focus off: a Focus alone is not quiet", Quiet.now(config) == onCall)
         FocusPresence.override = nil
         let live = FocusPresence.isOn()
-        check("the live Focus read agrees with the menu bar (\(live ? "on" : "off"))", live == FocusSignal.isOn(StepAside.liveWindows()))
+        check("the live Focus read agrees with Control Center (\(live ? "on" : "off"))",
+              live == FocusSignal.isOn(StepAside.liveWindows(), preferences: FocusPresence.preferences()))
     }
 
     /// NO-04: a fake Spotlight in the window list fades the notch and the orb's overlay (marks and ink are drawn there)

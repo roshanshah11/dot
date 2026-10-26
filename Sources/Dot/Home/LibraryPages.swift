@@ -12,6 +12,8 @@ final class DictionaryEditor: ObservableObject {
     @Published var entries: [DictionaryFile.Entry] = []
     @Published private(set) var comments: [String] = []
     @Published var note: String?
+    /// Corrections he typed over Dot's dictation (DI-05), waiting for his Add or Dismiss.
+    @Published private(set) var suggestions: [HomeState.DictationSuggestion] = []
     private var loaded = DictionaryFile()
     private(set) var path = ""
 
@@ -24,6 +26,33 @@ final class DictionaryEditor: ObservableObject {
     }
 
     func revert() { read(path) }
+
+    func loadSuggestions() { suggestions = HomeState.shared.dictationCandidates() }
+
+    /// His Add: one line appended to the file (unsaved edits here are kept, as with any line Dot appends).
+    func accept(_ s: HomeState.DictationSuggestion) {
+        guard !path.isEmpty else { return }
+        let line = DictationDictionary.line(forHeard: s.heard, correct: s.correct)
+        let url = URL(fileURLWithPath: path)
+        let existing = (try? String(contentsOf: url, encoding: .utf8)) ?? ""
+        do {
+            try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try (existing.isEmpty || existing.hasSuffix("\n") ? existing : existing + "\n").appending(line + "\n").write(to: url, atomically: true, encoding: .utf8)
+        } catch {
+            note = "could not write the dictionary: \(error.localizedDescription)"
+            return
+        }
+        HomeState.shared.resolveDictationCandidate(s.candidate, "added")
+        if !dirty { read(path) }
+        loadSuggestions()
+        note = "added: \(line)"
+        Log.info("dictionary: added \(line) from a correction he typed")
+    }
+
+    func dismiss(_ s: HomeState.DictationSuggestion) {
+        HomeState.shared.resolveDictationCandidate(s.candidate, "dismissed")
+        loadSuggestions()
+    }
 
     func add() { entries.append(DictionaryFile.Entry(heard: "", correct: "")) }
 
@@ -108,12 +137,30 @@ struct DictationPage: View {
                 Text(path.replacingOccurrences(of: NSHomeDirectory(), with: "~")).font(.caption.monospaced()).foregroundStyle(.tertiary)
                 if let note = editor.note { Text(note).font(.caption).foregroundStyle(.secondary) }
             }
+            if !editor.suggestions.isEmpty {
+                HomeSection("From your corrections") {
+                    Text("Words you fixed by hand right after dictating them. Add one to write it your way from now on.")
+                        .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                    ForEach(editor.suggestions) { s in
+                        HStack(spacing: 8) {
+                            Text(s.heard).foregroundStyle(.secondary).strikethrough(true, color: .secondary.opacity(0.6))
+                            Image(systemName: "arrow.right").font(.caption2).foregroundStyle(.tertiary)
+                            Text(s.correct).fontWeight(.medium)
+                            Text([s.app, s.seen > 1 ? "\(s.seen) times" : nil].compactMap { $0?.isEmpty == false ? $0 : nil }.joined(separator: " · "))
+                                .font(.caption).foregroundStyle(.tertiary)
+                            Spacer()
+                            Button("Dismiss") { editor.dismiss(s) }.controlSize(.small)
+                            Button("Add") { editor.accept(s) }.controlSize(.small).buttonStyle(.borderedProminent).tint(HomeStyle.accent)
+                        }
+                    }
+                }
+            }
             HomeSection("Typed questions") {
                 SettingToggle("Read typed answers aloud", detail: "answers to typed questions are spoken as well as shown in the notch", isOn: $model.settings.speakTypedAnswers)
             }
             SettingsSaveBar(model: model, pending: editor.dirty) { editor.save() }
         }
-        .onAppear { editor.load(path: path) }
+        .onAppear { editor.load(path: path); editor.loadSuggestions() }
     }
 
     private func row(_ entry: DictionaryFile.Entry) -> some View {

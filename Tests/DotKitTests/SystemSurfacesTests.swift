@@ -60,4 +60,13 @@ final class FocusSignalTests: XCTestCase {
         XCTAssertFalse(FocusSignal.isOn(bar + [item("FocusModes", y: 300, h: 400)]), "Control Center's Focus panel is not the menu bar item")
         XCTAssertFalse(FocusSignal.isOn(bar + [item("FocusModes", owner: "Comet")]))
     }
+
+    func testControlCentersRecord() {
+        // His preferences on 2026-10-26, no Focus on: the CC keys for the always-shown items, none for Focus.
+        let usual: [String: Any] = ["NSStatusItem VisibleCC Clock": 1, "NSStatusItem VisibleCC WiFi": 1, "NSStatusItem VisibleCC BentoBox-0": 1]
+        XCTAssertFalse(FocusSignal.isOn([], preferences: usual))
+        XCTAssertTrue(FocusSignal.isOn([], preferences: usual.merging(["NSStatusItem VisibleCC FocusModes": 1]) { $1 }), "full screen: no windows, the record holds")
+        XCTAssertTrue(FocusSignal.isOn([], preferences: ["NSStatusItem Visible FocusModes": NSNumber(value: true)]), "the pre-26 key")
+        XCTAssertFalse(FocusSignal.isOn([], preferences: ["NSStatusItem VisibleCC FocusModes": 0]))
+    }
 }

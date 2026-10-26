@@ -87,6 +87,8 @@ final class Talk {
     let lecture: LectureListener
     private var dictionary = DictationDictionary()
     private var dictionaryLoadedAt = Date.distantPast
+    /// The last dictation's field, watched for his correction (DI-05).
+    private var dictationWatch: DictationWatch?
     /// The answer goes to the notch as text (a typed question, a muted Mac) instead of a bubble.
     private var textSurface = false
     private var lastMessage = ""
@@ -851,6 +853,8 @@ final class Talk {
     /// Hold control and fn: what he says lands in the field he is typing in.
     private func beginDictation() {
         guard phase == .idle else { return }
+        dictationWatch?.finish("a new dictation")
+        dictationWatch = nil
         quietTurn = false
         let live = config.streamingTranscription ? readyStream : nil
         readyStream = nil
@@ -907,19 +911,40 @@ final class Talk {
             }
             try? FileManager.default.removeItem(at: stopped.url)
             loadDictionaryIfNeeded()
-            let cleaned = dictionary.apply(to: SpeechText.dictated(text))
-            guard !cleaned.isEmpty else { hud.flash(status: "didn't catch that"); return }
-            hud.model.transcript = cleaned
-            let secure = TextInjection.focusedRole() == "AXSecureTextField"
+            // DI-01/02: the field first (app, page, label, the text around the cursor), then the cleanup fitted to it.
+            let context = DictationContext.read()
+            let cleaned = DictationCleanup.clean(text, field: context.field, dictionary: dictionary)
+            guard !cleaned.trimmingCharacters(in: .whitespaces).isEmpty else { hud.flash(status: "didn't catch that"); return }
+            hud.model.transcript = cleaned.trimmingCharacters(in: .whitespaces)
+            let secure = context.field.role == "AXSecureTextField"
             let method = TextInjection.insert(cleaned)
+            if method != .clipboard { watchCorrections(context, inserted: cleaned) }
             switch method {
             case .accessibility: hud.flash(status: "typed it", for: 2)
             case .paste: hud.flash(status: "pasted it", for: 2)
             case .clipboard: hud.flash(status: secure ? "that's a password field, so it's on your clipboard instead" : "on your clipboard, press command v", for: 6)
             }
             hud.set(phase: .hidden)
-            Log.info("dictation (\(method.rawValue)): \(Log.short(cleaned, 120))")
-            TranscriptLog.append(kind: .dictation, you: cleaned, dot: nil, app: AccessibilityContext.frontmostAppName(), extra: ["via": method.rawValue])
+            Log.info("dictation (\(method.rawValue)) into \(context.field.role.isEmpty ? "?" : context.field.role)\(context.field.label.isEmpty ? "" : " \"\(Log.short(context.field.label, 40))\""): \(Log.short(cleaned, 120))")
+            TranscriptLog.append(kind: .dictation, you: cleaned.trimmingCharacters(in: .whitespaces), dot: nil, app: AccessibilityContext.frontmostAppName(), extra: ["via": method.rawValue])
+        }
+    }
+
+    /// DI-05: after the text lands (a paste lands a beat later), watch that field for his own fix of it. A fix becomes
+    /// a candidate in Home > Dictation; only his Add there makes it a rule.
+    private func watchCorrections(_ context: DictationContext, inserted: String, attempt: Int = 0) {
+        guard context.element != nil, context.location != nil else { return }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { [weak self] in
+            guard let self else { return }
+            guard let watch = DictationWatch.live(context, inserted: inserted, dictionary: self.dictionary) else {
+                if attempt < 5 { self.watchCorrections(context, inserted: inserted, attempt: attempt + 1) }
+                else { Log.info("dictation: not watching (the text isn't where it was put, or the field can't be read)") }
+                return
+            }
+            watch.onCandidate = { candidate in HomeState.shared.addDictationCandidate(candidate, app: context.field.app) }
+            self.dictationWatch?.finish("a new dictation")
+            self.dictationWatch = watch
+            watch.start()
         }
     }
 

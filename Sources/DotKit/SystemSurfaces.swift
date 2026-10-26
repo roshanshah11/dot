@@ -82,13 +82,32 @@ public enum SystemSurfaces {
     }
 }
 
-/// Whether a Focus (Do Not Disturb, Work, Sleep...) is on (parity S1), read off the menu bar: Control Center puts its
-/// Focus item up while one is on. Apple's Focus API needs an entitlement only a provisioned app carries, and the
-/// DoNotDisturb database is closed to apps without Full Disk Access, so the menu bar is the signal Dot can read.
+/// Whether a Focus (Do Not Disturb, Work, Sleep...) is on (parity S1). Control Center shows its Focus item while one
+/// is on (its menu bar setting "When Active", the default) and records that in its preferences as
+/// `NSStatusItem Visible[CC] FocusModes`; that record holds in full screen, where the menu bar and its items are off
+/// screen (2026-10-26: cmux full screen, no status item windows at all). The item's window in the menu bar is the
+/// second signal. Apple's Focus API needs an entitlement only a provisioned app carries, and the DoNotDisturb database
+/// is closed without Full Disk Access. With the setting on "Always" the record is always 1: Settings' Quiet in Focus
+/// switch is the way out.
 public enum FocusSignal {
     public static let itemNames: Set<String> = ["FocusModes", "Focus"]
+    public static let preferenceDomain = "com.apple.controlcenter"
+    /// macOS 26 writes the CC form; Monterey to Sonoma the plain one.
+    public static let preferenceKeys = ["NSStatusItem VisibleCC FocusModes", "NSStatusItem Visible FocusModes"]
 
-    public static func isOn(_ windows: [SystemWindow]) -> Bool {
+    public static func isOn(_ windows: [SystemWindow], preferences: [String: Any] = [:]) -> Bool {
+        let recorded = preferenceKeys.contains { key in
+            switch preferences[key] {
+            case let n as NSNumber: return n.boolValue
+            case let b as Bool: return b
+            case let i as Int: return i != 0
+            default: return false
+            }
+        }
+        return recorded || menuItem(windows)
+    }
+
+    static func menuItem(_ windows: [SystemWindow]) -> Bool {
         windows.contains { w in
             (w.owner == "Control Center" || w.owner == "ControlCenter") && itemNames.contains(w.name) && w.layer >= 0 && w.alpha > 0.05
                 && w.frame.minY < 40 && w.frame.height <= 40 && w.frame.width > 0

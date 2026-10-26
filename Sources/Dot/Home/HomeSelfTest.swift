@@ -44,6 +44,15 @@ enum HomeSelfTest {
             s.setAgentIcon("option", "cart")
             s.setAgentIcon("option", nil)
             check(s.agentIcons() == ["scout": "calendar"], "an icon pick is kept; Automatic takes it back")
+            let jev = DictationCandidate(heard: "you chicago", correct: "UChicago")
+            s.addDictationCandidate(jev, app: "Mail")
+            s.addDictationCandidate(jev, app: "Notes")
+            s.addDictationCandidate(DictationCandidate(heard: "typesafe", correct: "TypeSafe"), app: "Notes")
+            check(s.dictationCandidates().map(\.seen) == [2, 1] && s.dictationCandidates().first?.correct == "UChicago",
+                  "a correction seen twice counts twice and sorts first")
+            s.resolveDictationCandidate(jev, "dismissed")
+            s.addDictationCandidate(jev, app: "Mail")
+            check(s.dictationCandidates().map(\.correct) == ["TypeSafe"], "a dismissed candidate stays dismissed when he makes the same fix again")
         }
         // reopening keeps everything and doesn't migrate twice
         let again = HomeState(url: url)
@@ -65,8 +74,10 @@ enum HomeSelfTest {
         }
         let upgraded = HomeState(url: old)
         upgraded.setAgentIcon("option", "cart")
-        check(upgraded.version == 2 && upgraded.draft(thread: "agent:option").text == "kept across the upgrade" && upgraded.agentIcons() == ["option": "cart"],
-              "a schema 1 store upgrades to 2 and keeps its drafts")
+        upgraded.addDictationCandidate(DictationCandidate(heard: "jeff", correct: "Jev"), app: "Notes")
+        check(upgraded.version == HomeState.schemaVersion && upgraded.draft(thread: "agent:option").text == "kept across the upgrade"
+              && upgraded.agentIcons() == ["option": "cart"] && upgraded.dictationCandidates().count == 1,
+              "a schema 1 store upgrades to \(HomeState.schemaVersion) and keeps its drafts")
         // the storage contract on the real log: every row gets an id, nothing written
         let log = TranscriptLog.directory.appendingPathComponent("transcripts.jsonl")
         if let before = try? Data(contentsOf: log) {

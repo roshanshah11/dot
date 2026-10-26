@@ -1,8 +1,8 @@
 import AppKit
 import DotKit
 
-/// Is a Focus on (parity S1)? The menu bar's Focus item, read off the window list and cached for two seconds like
-/// CallPresence (the callers poll).
+/// Is a Focus on (parity S1)? Control Center's record of its Focus item, then the item in the window list (FocusSignal
+/// says why both); cached for two seconds like CallPresence (the callers poll).
 @MainActor
 enum FocusPresence {
     private static var lastCheck = Date.distantPast
@@ -14,10 +14,21 @@ enum FocusPresence {
         if let override { return override }
         if Date().timeIntervalSince(lastCheck) < 2 { return lastAnswer }
         lastCheck = Date()
-        let answer = FocusSignal.isOn(StepAside.liveWindows())
+        let answer = FocusSignal.isOn(StepAside.liveWindows(), preferences: preferences())
         if answer != lastAnswer { Log.info("focus: \(answer ? "a Focus is on; Dot stays quiet" : "Focus off")") }
         lastAnswer = answer
         return answer
+    }
+
+    /// Control Center's Focus keys, read fresh (another app's preferences are cached until synchronized).
+    static func preferences() -> [String: Any] {
+        let domain = FocusSignal.preferenceDomain as CFString
+        CFPreferencesAppSynchronize(domain)
+        var out: [String: Any] = [:]
+        for key in FocusSignal.preferenceKeys {
+            if let value = CFPreferencesCopyAppValue(key as CFString, domain) { out[key] = value }
+        }
+        return out
     }
 }
 

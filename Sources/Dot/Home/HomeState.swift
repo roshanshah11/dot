@@ -3,13 +3,14 @@ import Foundation
 import SQLite3
 
 /// Home's own state (parity batch 6 storage contract), in ~/Dot/home-state.sqlite with a schema version: the draft and
-/// scroll place per thread (HO-07, HO-08), reactions per turn (HO-06), prompt cards (HO-11). The talk log and the
+/// scroll place per thread (HO-07, HO-08), reactions per turn (HO-06), prompt cards (HO-11), agent icons (HO-15) and
+/// dictionary candidates from his corrections (DI-05). The talk log and the
 /// agents' transcripts are never written here or from here.
 @MainActor
 final class HomeState {
     /// A var only so `Dot --snapshot` can point Home at a throwaway store.
     static var shared = HomeState(url: URL(fileURLWithPath: NSHomeDirectory()).appendingPathComponent("Dot/home-state.sqlite"))
-    static let schemaVersion = 2
+    static let schemaVersion = 3
 
     private var db: OpaquePointer?
     private let transient = unsafeBitCast(-1, to: sqlite3_destructor_type.self)
@@ -38,6 +39,13 @@ final class HomeState {
             exec("""
             CREATE TABLE IF NOT EXISTS agent_icons(slug TEXT PRIMARY KEY, symbol TEXT NOT NULL);
             INSERT OR REPLACE INTO meta(key, value) VALUES('schema', '2');
+            """)
+        }
+        if version < 3 {
+            exec("""
+            CREATE TABLE IF NOT EXISTS dictation_candidates(heard TEXT NOT NULL, correct TEXT NOT NULL, app TEXT NOT NULL DEFAULT '',
+                seen INTEGER NOT NULL DEFAULT 1, last REAL NOT NULL, state TEXT NOT NULL DEFAULT 'open', PRIMARY KEY(heard, correct));
+            INSERT OR REPLACE INTO meta(key, value) VALUES('schema', '3');
             """)
         }
     }
@@ -169,6 +177,40 @@ final class HomeState {
     func setAgentIcon(_ slug: String, _ symbol: String?) {
         if let symbol { run("INSERT OR REPLACE INTO agent_icons(slug, symbol) VALUES(?, ?)", [slug, symbol]) }
         else { run("DELETE FROM agent_icons WHERE slug = ?", [slug]) }
+    }
+
+    // MARK: Dictionary candidates (DI-05)
+
+    struct DictationSuggestion: Identifiable, Equatable {
+        let heard: String
+        let correct: String
+        let app: String
+        let seen: Int
+        var id: String { heard + "\u{1}" + correct }
+        var candidate: DictationCandidate { DictationCandidate(heard: heard, correct: correct) }
+    }
+
+    /// A correction he typed: counted again if it is already open; one he dismissed or added stays that way.
+    func addDictationCandidate(_ c: DictationCandidate, app: String) {
+        run("""
+        INSERT INTO dictation_candidates(heard, correct, app, seen, last) VALUES(?, ?, ?, 1, ?)
+        ON CONFLICT(heard, correct) DO UPDATE SET seen = seen + 1, last = excluded.last, app = excluded.app WHERE state = 'open'
+        """, [c.heard, c.correct, app, Date().timeIntervalSince1970])
+    }
+
+    func dictationCandidates() -> [DictationSuggestion] {
+        var out: [DictationSuggestion] = []
+        run("SELECT heard, correct, app, seen FROM dictation_candidates WHERE state = 'open' ORDER BY seen DESC, last DESC LIMIT 50", []) { st in
+            if let h = Self.text(st, 0), let c = Self.text(st, 1) {
+                out.append(DictationSuggestion(heard: h, correct: c, app: Self.text(st, 2) ?? "", seen: Int(sqlite3_column_int64(st, 3))))
+            }
+        }
+        return out
+    }
+
+    /// "added" or "dismissed": either way it leaves the list and doesn't come back.
+    func resolveDictationCandidate(_ c: DictationCandidate, _ state: String) {
+        run("UPDATE dictation_candidates SET state = ? WHERE heard = ? AND correct = ?", [state, c.heard, c.correct])
     }
 
     var version: Int { Int(scalar("SELECT value FROM meta WHERE key = 'schema'") ?? "0") ?? 0 }
