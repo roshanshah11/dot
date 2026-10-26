@@ -64,6 +64,53 @@ case "--skill-avatars":
         print("\(SkillAvatar.symbol(name: skill.name, description: skill.description).padding(toLength: 40, withPad: " ", startingAt: 0)) \(skill.name)")
     }
     exit(0)
+case "--xlsx-dump":
+    // H3: what the notch viewer reads from a workbook, read only. --json prints every cell (for comparing with openpyxl).
+    let rest = Array(arguments.dropFirst())
+    guard let path = rest.first(where: { !$0.hasPrefix("--") }) else { print("usage: Dot --xlsx-dump <file.xlsx> [--json]"); exit(2) }
+    let started = Date()
+    let book: XLSXWorkbook
+    do { book = try XLSXWorkbook(url: URL(fileURLWithPath: (path as NSString).expandingTildeInPath)) } catch {
+        print("can't read \(path): \(error)"); exit(1)
+    }
+    let ms = Int(Date().timeIntervalSince(started) * 1000)
+    if rest.contains("--json") {
+        func value(_ v: XLSXCell.Value) -> Any {
+            switch v {
+            case .number(let n): return n
+            case .text(let t): return t
+            case .bool(let b): return b
+            case .error(let e): return ["error": e]
+            case .empty: return NSNull()
+            }
+        }
+        let sheets: [[String: Any]] = book.sheets.map { sheet in
+            ["name": sheet.name, "hidden": sheet.hidden, "rows": sheet.rowCount, "columns": sheet.columnCount,
+             "frozen": [sheet.frozenRows, sheet.frozenColumns], "truncated": sheet.truncated,
+             "merges": sheet.merges.map { "\(XLSXRef.column($0.firstColumn))\($0.firstRow + 1):\(XLSXRef.column($0.lastColumn))\($0.lastRow + 1)" },
+             "cells": sheet.cells.map { c -> [String: Any] in
+                 var row: [String: Any] = ["ref": "\(XLSXRef.column(c.column))\(c.row + 1)", "value": value(c.value), "shown": c.shown,
+                                           "format": c.style.format]
+                 if let f = c.formula { row["formula"] = f }
+                 return row
+             }]
+        }
+        let data = try! JSONSerialization.data(withJSONObject: ["ms": ms, "date1904": book.date1904, "sheets": sheets], options: [.sortedKeys])
+        print(String(decoding: data, as: UTF8.self))
+        exit(0)
+    }
+    print("\(book.sheets.count) sheets in \(ms) ms")
+    for sheet in book.sheets {
+        print("\n== \(sheet.name)\(sheet.hidden ? " (hidden)" : ""): \(sheet.rowCount) x \(sheet.columnCount), \(sheet.cells.count) cells, frozen \(sheet.frozenRows) rows \(sheet.frozenColumns) cols, \(sheet.merges.count) merges\(sheet.truncated ? ", TRUNCATED" : "")")
+        for r in 0..<min(sheet.rowCount, 25) {
+            let line = (0..<min(sheet.columnCount, 8)).map { c -> String in
+                let text = sheet.cell(row: r, column: c)?.shown ?? ""
+                return String(text.prefix(14)).padding(toLength: 15, withPad: " ", startingAt: 0)
+            }.joined()
+            if !line.trimmingCharacters(in: .whitespaces).isEmpty { print(String(format: "%3d ", r + 1) + line) }
+        }
+    }
+    exit(0)
 case "--skill-draft":
     // SK-02 without Home: Dot --skill-draft "<links>" "<purpose>" prints the drafted SKILL.md and its problems; saves nothing.
     let rest = Array(arguments.dropFirst())
@@ -211,6 +258,7 @@ case "--help", "-h":
       Dot --agent-archive <name>           stop an agent and move its folder to agents/.archive [--json]
       Dot --agent-suggest                  the weekly agent-suggestion sweep, printed now (no card)
       Dot --skill-avatars                  each skill's picture by Dot's rule table
+      Dot --xlsx-dump <file.xlsx> [--json] what the file viewer reads from a workbook (read only)
       Dot --skill-draft "<links>" "<purpose>"   draft a SKILL.md from links and print it (saves nothing)
       Dot --agent-tell <name> "<message>" [--quiet]  pass an agent a message, like a typed follow-up [--json]
       Dot --agent-note <to> "<text>" [--from <name>]   leave an agent a note for its next step or turn [--json]
