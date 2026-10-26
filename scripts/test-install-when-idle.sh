@@ -64,6 +64,14 @@ NOW=$(date '+%Y-%m-%d %H:%M:%S')
 log_case message-text-says-lectures "$NOW.000 INFO atlas thread: 6 atlas turns; newest terminal: i finished the lectures" 0
 log_case lecture-still-on "2026-10-25 09:00:00.000 INFO lecture: mode on for BIOS 11140, class" 1
 log_case spare-is-not-a-job "$NOW.000 INFO job: spare ready in 15 ms" 0
+log_case spare-warming-is-not-a-job "$NOW.000 INFO job: spare warming
+$NOW.001 INFO session[job:kfzwy3] started pid 40526 model sonnet cwd /tmp/kfzwy3
+$NOW.002 INFO job[kfzwy3] bash on (atlas permissions)
+$NOW.003 INFO job: spare ready in 11 ms" 0
+log_case claimed-spare-is-a-job "$NOW.000 INFO job: spare warming
+$NOW.001 INFO session[job:kfzwy3] started pid 40526 model sonnet cwd /tmp/kfzwy3
+$NOW.002 INFO job[kfzwy3] bash on (atlas permissions)
+$NOW.004 INFO job[kfzwy3] started: book the room" 1
 
 rm -rf "$TMP"
 (( fails == 0 )) && echo "all cases passed" || { echo "$fails failed"; exit 1 }

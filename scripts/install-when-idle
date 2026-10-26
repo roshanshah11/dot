@@ -50,18 +50,27 @@ try:
 except OSError:
     print("busy: no Dot log to read"); sys.exit(1)
 now = dt.datetime.now(); started = {}; ended = set(); recent = []; lecture_on = False
+# The warm spare: the session that starts right after "job: spare warming" is idle until a job claims it.
+spares = set(); warming = False
 # Matched on the component tag after the level ("INFO job[ab12cd] started"), never on message text.
 TAG = re.compile(r"\S+ \S+ \w+ (job\[\w+\]|agent\[[^\]]*\]|lecture:|turn\[[^\]]*\])")
 for l in lines:
     m = re.match(r"(\d{4}-\d\d-\d\d \d\d:\d\d:\d\d)", l)
     if not m: continue
     t = dt.datetime.strptime(m.group(1), "%Y-%m-%d %H:%M:%S")
+    if re.search(r" INFO job: spare warming", l): warming = True
+    s = re.search(r" INFO session\[job:(\w+)\] started", l)
+    if s:
+        if warming: spares.add(s.group(1))
+        warming = False
     j = re.search(r" INFO job\[(\w+)\] (started|done|failed|stopped)", l)
     if j:
         (started.__setitem__(j.group(1), t) if j.group(2) == "started" else ended.add(j.group(1)))
     if re.search(r" lecture: (listening|mode on|demo on)", l): lecture_on = True
     if re.search(r" lecture: (stopped after|ended after|mode off|demo off)", l): lecture_on = False
     tag = TAG.match(l)
+    spare = tag and re.fullmatch(r"job\[(\w+)\]", tag.group(1))
+    if spare and spare.group(1) in spares and spare.group(1) not in started: continue
     if tag and now - t < dt.timedelta(minutes=2 if tag.group(1).startswith("turn[") else 15):
         recent.append(l[:140])
 open_jobs = [k for k, t in started.items() if k not in ended and now - t < dt.timedelta(hours=24)]
