@@ -115,7 +115,7 @@ final class AgentWireTests: XCTestCase {
         XCTAssertNil(WakePlan.homeLine(ruleInstalled: false, activeRoutines: 0, overnight: false))
         XCTAssertTrue(WakePlan.homeLine(ruleInstalled: false, activeRoutines: 2, overnight: true)!.hasPrefix("Routines wait while the Mac sleeps"))
         XCTAssertEqual(WakePlan.homeLine(ruleInstalled: true, activeRoutines: 1, overnight: false), "Dot wakes the Mac two minutes before each routine.")
-        XCTAssertTrue(WakePlan.homeLine(ruleInstalled: true, activeRoutines: 1, overnight: true)!.contains("plugged in"))
+        XCTAssertTrue(WakePlan.homeLine(ruleInstalled: true, activeRoutines: 1, overnight: true)!.contains("keep the lid open and the Mac plugged in"))
         var cal = Calendar(identifier: .gregorian)
         cal.timeZone = TimeZone(identifier: "America/Chicago")!
         XCTAssertTrue(WakePlan.isOvernight(cal.date(from: DateComponents(year: 2026, month: 10, day: 27, hour: 6))!, calendar: cal))

@@ -251,7 +251,9 @@ public enum WakePlan {
         guard ruleInstalled else {
             return "Routines wait while the Mac sleeps: one due then runs once when it wakes, marked late. To wake the Mac for them, install the wake rule (one sudo rule, pmset only)."
         }
-        return "Dot wakes the Mac two minutes before each routine." + (overnight ? " Keep it plugged in for overnight ones: on battery with the lid shut it can't wake for them." : "")
+        // A shut lid sleeps the Mac whatever an app asks (IOPMLib: idle-sleep assertions don't hold against a lid close or
+        // in dark wake); seen 2026-10-26, a lid-shut Mac on power froze an agent's turn for 16 minutes of maintenance sleep.
+        return "Dot wakes the Mac two minutes before each routine." + (overnight ? " For overnight ones keep the lid open and the Mac plugged in: with the lid shut it falls back asleep before a routine can finish." : "")
     }
 
     /// An overnight run: between 11 pm and 7 am.
