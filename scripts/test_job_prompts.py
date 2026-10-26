@@ -6,7 +6,7 @@ config without writing it back).
 
 - `--prompt talk --jobs off` is the old talk prompt: none of the jobs lines, all of the old doing lines;
 - `--prompt talk --jobs on` has every jobs line and none of the replaced ones;
-- `--prompt job` is under 6000 characters and carries the CLAUDE.md override line, the blocked: ending and the
+- `--prompt job` is under 7000 characters and carries the CLAUDE.md override line, the blocked: ending and the
   PROFILE.md line for his own details in a form.
 """
 import os, subprocess, sys
@@ -53,11 +53,12 @@ def main():
     for line in NEW:
         if line in off: failures.append(f"flag off has a jobs line: {line}")
         if line not in on: failures.append(f"flag on lacks: {line}")
-    if len(job) >= 6000: failures.append(f"job prompt is {len(job)} chars (limit 6000)")
+    if len(job) >= 7000: failures.append(f"job prompt is {len(job)} chars (limit 7000)")
     for line in ["his CLAUDE.md's browser and texting routes don't apply", 'end with one sentence starting "blocked:"',
                  "never hand it to an agent", "waiting for your yes on the card",
                  "read ~/Dot/jobs/PROFILE.md", "never type a password, an id number or payment details. submit stays his.",
-                 "a login page: call login"]:
+                 "a login page: call login", "read ~/Dot/jobs/PAGE.md once before its first write",
+                 "never tick, fill or decide his controls yourself", "call howto_save", "ask_front_step"]:
         if line not in job: failures.append(f"job prompt lacks: {line}")
     print(f"talk off {len(off)} chars, talk on {len(on)} chars, job {len(job)} chars")
     for f in failures: print("FAIL", f)

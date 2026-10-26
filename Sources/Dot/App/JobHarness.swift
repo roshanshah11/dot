@@ -15,6 +15,9 @@ enum JobHarness {
         // --then pause-resume | pause-drop | stop: what "he" does after the job's first action (J7, J8, J9 headless).
         // --then tick | click-tick | stop-wait: what he does while a login waits on the robot box (10-22): ticks it; clicks
         // first (which must not pause it), then ticks; or stops the job (which must never press log in).
+        // --then page-tick | retry (parity J2, J3): he ticks the first open todo item on the job's page (live or ended),
+        // and the page must show it; or he stops the job after its second step and presses Retry, which must carry on
+        // in the same session and folder.
         var then: String?
         while let flag = rest.first, flag.hasPrefix("--") {
             rest.removeFirst()
@@ -69,6 +72,7 @@ enum JobHarness {
         MainActor.assumeIsolated {
             var config = DotConfig.load(save: false)
             config.jobSpare = false
+            JobManager.installPageGuide()
             let manager = JobManager(config: config, overlay: nil, speaker: nil, ledger: nil)
             let server = ControlServer(path: socket)
             server.register("hands") { request, reply in manager.hands(request, reply) }
@@ -93,6 +97,20 @@ enum JobHarness {
         var waitSeenAt: Date?
         var clickedAt: Date?
         let waitStages = ["tick", "click-tick", "stop-wait"]
+        var tapped: (todo: String, item: String, version: String)?
+        var stoppedSession: String?
+        var retried = false
+        /// The page's first todo item not yet done, by id.
+        func openItem(_ page: JobPage) -> (String, String)? {
+            for todo in page.objects where todo.kind == .todo {
+                for row in todo.rows where !itemDone(page.markup, row.id) { return (todo.id, row.id) }
+            }
+            return nil
+        }
+        func itemDone(_ markup: String, _ item: String) -> Bool {
+            markup.range(of: #"<item\b[^>]*\bid="\#(NSRegularExpression.escapedPattern(for: item))"[^>]*\bdone="true""#, options: .regularExpression) != nil
+                || markup.range(of: #"<item\b[^>]*\bdone="true"[^>]*\bid="\#(NSRegularExpression.escapedPattern(for: item))""#, options: .regularExpression) != nil
+        }
         func tick(_ job: JobManager.Job) {
             Log.info("harness: he ticks the robot box")
             Task { @MainActor in
@@ -102,6 +120,31 @@ enum JobHarness {
         while Date() < deadline {
             RunLoop.main.run(until: Date().addingTimeInterval(0.2))
             let live = MainActor.assumeIsolated { jobs?.running.isEmpty == false }
+            // A page tick or a Retry picks an ended job back up: one more turn of the loop for those.
+            let more: Bool = MainActor.assumeIsolated {
+                guard !live, let then, let manager = jobs, let job = manager.jobs.last else { return false }
+                switch then {
+                case "page-tick" where tapped == nil:
+                    manager.refreshPage(job)
+                    guard let page = job.livePage, let (todo, item) = openItem(page) else {
+                        Log.info("harness: the job ended with no open todo item on its page (\(job.pageProblem ?? (job.livePage == nil ? "no page.md" : "all done")))")
+                        return false
+                    }
+                    Log.info("harness: he ticks \(todo) \(item) on the ended job's page (version \(page.version))")
+                    tapped = (todo, item, page.version)
+                    manager.pageMessage(.pageTick(panel: "job-\(job.id)", object: todo, item: item, done: true, event: "bench-tick", version: page.version), job: job)
+                    return true
+                case "retry" where stoppedSession != nil && !retried:
+                    retried = true
+                    Log.info("harness: Retry on the stopped job (session \(stoppedSession!))")
+                    manager.retry(job)
+                    Log.info("harness: Retry runs in session \(job.session?.sessionId ?? "?"), \(job.session?.sessionId == stoppedSession ? "the same" : "a NEW one")")
+                    return job.phase.isLive
+                default:
+                    return false
+                }
+            }
+            if more { continue }
             if !live { finished = true; break }
             guard let then else { continue }
             MainActor.assumeIsolated {
@@ -126,6 +169,20 @@ enum JobHarness {
                 case 2 where clickedAt.map({ Date().timeIntervalSince($0) > 1.5 }) == true:
                     Log.info("harness: after his click the job is \(job.phase.rawValue)")
                     tick(job)
+                    stage = 9
+                case 0 where then == "page-tick":
+                    manager.refreshPage(job)
+                    guard let page = job.livePage, let (todo, item) = openItem(page) else { break }
+                    Log.info("harness: he ticks \(todo) \(item) on the live page (version \(page.version))")
+                    tapped = (todo, item, page.version)
+                    manager.pageMessage(.pageTick(panel: "job-\(job.id)", object: todo, item: item, done: true, event: "bench-tick", version: page.version), job: job)
+                    // the same tap again (a double click) must be dropped
+                    manager.pageMessage(.pageTick(panel: "job-\(job.id)", object: todo, item: item, done: true, event: "bench-tick", version: page.version), job: job)
+                    stage = 9
+                case 0 where then == "retry" && job.steps.count >= 2:
+                    stoppedSession = job.session?.sessionId
+                    Log.info("harness: stop after step \(job.steps.count) (session \(stoppedSession ?? "?"))")
+                    manager.stop(job, reason: "his stop")
                     stage = 9
                 case 0 where !waitStages.contains(then) && job.steps.count >= 2:
                     if then == "stop" {
@@ -154,6 +211,16 @@ enum JobHarness {
             }
         }
         MainActor.assumeIsolated {
+            if let tapped, let job = jobs?.jobs.last {
+                jobs?.refreshPage(job)
+                let shows = job.livePage.map { itemDone($0.markup, tapped.item) } ?? false
+                Log.info("harness: after the tick the page \(shows ? "shows" : "does NOT show") \(tapped.todo) \(tapped.item) done (version \(job.livePage?.version ?? "-"))")
+                print("page-tick: \(shows ? "the page shows the tick" : "the page does not show the tick")")
+            }
+            if retried, let job = jobs?.jobs.last {
+                let same = job.session?.sessionId == stoppedSession
+                print("retry: \(same ? "same session" : "NEW session") \(job.session?.sessionId ?? "?"), folder \(job.folder.path), \(job.phase.rawValue): \(job.endLine)")
+            }
             if !finished { jobs?.stopAll(reason: "harness timeout") }
             print(jobs?.statusLine() ?? "")
             control?.stop()

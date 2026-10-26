@@ -22,7 +22,12 @@ extension JobManager {
         watched.forEach { refreshPage($0) }
     }
 
-    func pageFile(_ job: Job) -> URL { job.folder.appendingPathComponent("page.md") }
+    /// page.md in the job's folder (the [job] message names it); one saved in output/ by habit is read too.
+    func pageFile(_ job: Job) -> URL {
+        let page = job.folder.appendingPathComponent("page.md")
+        let saved = job.folder.appendingPathComponent("output/page.md")
+        return !FileManager.default.fileExists(atPath: page.path) && FileManager.default.fileExists(atPath: saved.path) ? saved : page
+    }
 
     /// Read page.md if it changed: the window shows the new version, the chip its run line or headline, and a page Dot
     /// can't show goes back to the job once per problem.

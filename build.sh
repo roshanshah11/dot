@@ -48,6 +48,8 @@ rm -rf "$APP/Contents/Resources/sounds"
 cp -R Resources/sounds "$APP/Contents/Resources/sounds"
 rm -rf "$APP/Contents/Resources/fonts"
 cp -R Resources/fonts "$APP/Contents/Resources/fonts"
+rm -rf "$APP/Contents/Resources/jobs"
+cp -R Resources/jobs "$APP/Contents/Resources/jobs"
 rm -rf "$APP/Contents/Resources/lecture"
 cp -R Resources/lecture "$APP/Contents/Resources/lecture"
 # SwiftPM resource bundles (FluidAudio ships none today; copy whatever exists).

@@ -155,6 +155,7 @@ final class JobManager {
 
     func warm() {
         guard config.jobsEnabled else { return }
+        Self.installPageGuide()
         DispatchQueue.main.asyncAfter(deadline: .now() + 10) { [weak self] in
             guard let self else { return }
             let spare = { [weak self] in
@@ -167,6 +168,21 @@ final class JobManager {
         Timer.scheduledTimer(withTimeInterval: 600, repeats: true) { [weak self] _ in
             Task { @MainActor in self?.recycleSpare() }
         }
+    }
+
+    /// ~/Dot/jobs/PAGE.md, the page blocks a job reads before its first page.md (parity J1), from the bundle (or the
+    /// source tree in a dev build); rewritten only when it differs.
+    static func installPageGuide() {
+        let candidates = [Bundle.main.resourceURL?.appendingPathComponent("jobs/PAGE.md"),
+                          URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
+                              .deletingLastPathComponent().deletingLastPathComponent().appendingPathComponent("Resources/jobs/PAGE.md")].compactMap { $0 }
+        guard let source = candidates.first(where: { FileManager.default.fileExists(atPath: $0.path) }),
+              let text = try? String(contentsOf: source, encoding: .utf8) else { Log.warn("job: no PAGE.md to install"); return }
+        let target = root.appendingPathComponent("PAGE.md")
+        guard (try? String(contentsOf: target, encoding: .utf8)) != text else { return }
+        try? FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        do { try text.write(to: target, atomically: true, encoding: .utf8); Log.info("job: PAGE.md installed") }
+        catch { Log.warn("job: PAGE.md: \(error.localizedDescription)") }
     }
 
     private func recycleSpare() {
@@ -365,7 +381,7 @@ final class JobManager {
         }
         jobs.append(job)
         job.phase = job.phase.next(.started) ?? .running
-        var first = "[job] id \(job.id), placement \(placement.rawValue), output folder \(job.folder.appendingPathComponent("output").path), now: \(Talk.nowLine())"
+        var first = "[job] id \(job.id), placement \(placement.rawValue), output folder \(job.folder.appendingPathComponent("output").path), page \(job.folder.appendingPathComponent("page.md").path), now: \(Talk.nowLine())"
         if placement == .front {
             first += "\nin front: app \(context.appName ?? "?"), window \"\(Log.short(context.windowTitle ?? "", 100))\"\(context.url.map { ", url \($0)" } ?? "")"
             if comet { first += " (dot is bound to this tab)" }
