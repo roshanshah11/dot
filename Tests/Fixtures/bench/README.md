@@ -119,6 +119,7 @@ chrome; assumes no bottom bar and 100% zoom).
                          [--ledger ~/Dot/ledger.sqlite] [--max-spend 10] [--out-dir ~/Dot/selftests/basics]
                          [--timeout 30] [--settle 3] [--think-timeout 90] [--require-idle 600]
                          [--shot-scale 1.0] [--no-launch] [--keep-comet]
+    scripts/dot-bench.py --timings [--since 2026-10-26] [--dot-log ~/Library/Logs/Dot/dot.log]
 
 Before the first ask it checks, and stops on any failure:
 1. the Dot binary contains the bench strings (`--bench` or `ask: received bench=`). An old Dot would read
@@ -203,6 +204,11 @@ mouse, per-row cost) in `results-<stamp>.json`, both in `--out-dir`. Exit status
 Event predicates: string values are regexes (any element of a list field may match), booleans and numbers
 compare exactly, and `{"gte": 300}`, `lte`, `gt`, `lt`, `eq`, `re`, `absent` are operators.
 
+`--timings` runs nothing: it reads Dot's log and prints the median and p90 of the two waits Dot logs on real
+turns (parity TI-01, TI-02), first audio split by where the clock started. Bench turns are quiet, so a bench
+run reports first audio only for rows that spoke; each row's `timings` and the report's Timings lines carry
+both. No target is enforced.
+
 ## The dot.log line contract
 
 Lines are `YYYY-MM-DD HH:MM:SS.mmm LEVEL message` in local time; a line without that prefix continues the
@@ -217,6 +223,8 @@ previous message. Messages the runner reads:
 | `bench: would spawn agent <name>` | bench mode stopped an agent from starting |
 | `bench: blocked action <verb> <reason>` | bench mode refused an action (e.g. the fixture is not in front) |
 | `turn[talk] first sentence <ms> ms` | the first sentence of a talk turn is ready |
+| `speech: first-audio <ms> ms from release\|ask` | the first sentence started playing, timed from the key coming up on a spoken question (`release`) or from a typed or keyless question arriving (`ask`); once per spoken turn |
+| `walkthrough: ring-to-ring <ms> ms (step <n>, <how>)` | the next ring went up `<ms>` after the last ringed step was clicked, rested on, or clicked by Dot |
 | `talk: interrupted` | a newer request cut the turn in flight |
 | `jev[route] ...` and `route...` | the route decision (a fixed-phrase route may log `route: phrase <verb> ...`) |
 | `jev: nothing asked (...)` | the ignore route: no turn |

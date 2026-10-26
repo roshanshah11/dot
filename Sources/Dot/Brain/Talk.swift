@@ -534,6 +534,7 @@ final class Talk {
 
     private func endListening(heldFor: TimeInterval) {
         guard phase == .listening else { return }
+        let releasedAt = TurnTiming.now
         let heardFirst = bargeWords
         bargeWords = nil
         bargeStarted = nil
@@ -561,6 +562,7 @@ final class Talk {
             return
         }
         if heldFor >= 1.2, peak < 0.002 { microphoneHeardNothing(named: inputName) }
+        TurnTiming.firstAudio.released(at: releasedAt)
         phase = .transcribing
         hud.set(phase: .transcribing)
         overlay.setPhase(.thinking)
@@ -575,6 +577,7 @@ final class Talk {
             } catch {
                 Log.error("transcription failed: \(error)")
                 hud.flash(error: "Speech recognition failed: \(error.localizedDescription)")
+                TurnTiming.firstAudio.cancel()
                 phase = .idle
                 settle()
                 return
@@ -584,10 +587,12 @@ final class Talk {
             let whole = heardFirst.map { BargeDetector.merge(heard: $0, recorded: text) } ?? text
             let spoken = dictionary.apply(to: whole.trimmingCharacters(in: .whitespacesAndNewlines))
             if spoken.count < 2, region != nil {
+                TurnTiming.firstAudio.cancel()
                 showRegionBar()
                 return
             }
             guard spoken.count >= 2 else {
+                TurnTiming.firstAudio.cancel()
                 hud.flash(status: "didn't catch that")
                 phase = .idle
                 settle()
@@ -1096,6 +1101,7 @@ final class Talk {
     private func ask(_ text: String, typed: Bool) async {
         Log.info("ask: received bench=\(benchMode ? 1 : 0) \(typed ? "typed" : "spoken") text=\(Log.short(text, 120))")
         askReceivedAt = Date()
+        TurnTiming.firstAudio.asked(at: TurnTiming.now, typed: typed)
         askGeneration += 1
         if !typed, !benchMode { dryRun = false }
         doIntent = false
@@ -1135,6 +1141,7 @@ final class Talk {
                 Log.info("\(place.rawValue) mode: the answer goes to the notch as text")
             }
         }
+        if quietTurn { TurnTiming.firstAudio.cancel() }
         Log.info("context: app \(context.appName ?? "?") window \(Log.short(context.windowTitle ?? "", 60)) url \(context.url != nil) selected \(context.selectedText?.count ?? 0) elements \(context.elements.count) shots \(shots.count)\(region != nil ? " box" : "")")
 
         // Held shift but said "stop the email agent" or "is inbox keeper done": that is for Dot, not a
@@ -4065,6 +4072,7 @@ final class Talk {
         }
         watchForStall(step: step)
         overlay.target(at: target, radius: screenRadius, label: label, hover: hover)
+        TurnTiming.ringShown(step: step)
         hud.flash(status: "step \(step): \(hover ? "rest on" : "click") \(label)", for: 6)
         hud.upsertAgent(AgentRow(id: "walkthrough", name: next.driving ? "dot is clicking" : "walkthrough", line: "step \(step): \(hover ? "rest on" : "click") \(label)",
                                  state: .running, kind: .walkthrough, steps: Array(next.history.suffix(3)), canStop: true, startedAt: walkthroughStartedAt ?? Date()))
@@ -4189,6 +4197,7 @@ final class Talk {
         step.awaitingNextStep = true
         step.history.append("\(step.step). \(how) \(step.label)")
         walkthrough = step
+        TurnTiming.rings.stepDone(at: TurnTiming.now, how: how)
         overlay.completeRing()
         hud.flash(status: "saw that, looking", for: 3)
         stopSpeaking()
@@ -4318,6 +4327,7 @@ final class Talk {
     private func endWalkthrough(reason: String) {
         guard walkthrough != nil else { return }
         Log.info("walkthrough: ended (\(reason))")
+        TurnTiming.rings.reset()
         if let run = goRun, walkthrough?.driving == true {
             let ms = Int(Date().timeIntervalSince(run.started) * 1000)
             let finished = reason == "the model gave a step with no target"

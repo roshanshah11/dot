@@ -257,7 +257,8 @@ refused, agents are logged instead of started, and actions run only on the bench
 served by `scripts/bench-server.py`, with a throwaway Comet from `scripts/bench-comet.sh`; port 9222 is refused).
 `scripts/dot-bench.py` runs a list of bench rows one at a time and checks the route, the action, the page's own
 event log and the latency from the `ask: received`, `act:` and `first sentence` log lines. See
-Tests/Fixtures/bench/README.md.
+Tests/Fixtures/bench/README.md. `scripts/dot-bench.py --timings` reads Dot's log instead and prints the
+median wait from the key coming up to Dot's first sound, and from one walkthrough ring to the next.
 
 `Dot --ask --quiet "show me around this page"` runs a turn with the bubble and the marks but
 no speech (beats pace themselves), and `Dot --ask --drive "how do i ..."` lets Dot click the

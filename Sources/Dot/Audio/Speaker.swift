@@ -66,8 +66,12 @@ enum SpeechActivity {
     nonisolated(unsafe) static var latest: (duration: TimeInterval?, at: TimeInterval)?
 
     static func sentence(duration: TimeInterval?, isLast: Bool) {
-        latest = (duration, ProcessInfo.processInfo.systemUptime)
-        DispatchQueue.main.async { onSentence?(duration, isLast) }
+        let at = ProcessInfo.processInfo.systemUptime
+        latest = (duration, at)
+        DispatchQueue.main.async {
+            onSentence?(duration, isLast)
+            MainActor.assumeIsolated { TurnTiming.heard(at: at) }
+        }
     }
 
     /// The length of the sentence that started in the last `seconds`, when it was measured.
@@ -78,6 +82,22 @@ enum SpeechActivity {
 
     static func level(_ level: Double, metered: Bool) {
         DispatchQueue.main.async { onLevel?(level, metered) }
+    }
+}
+
+/// The two measured waits (parity TI-01, TI-02), logged for the bench and `dot-bench.py --timings`.
+@MainActor
+enum TurnTiming {
+    static var firstAudio = FirstAudioClock()
+    static var rings = RingClock()
+    static var now: TimeInterval { ProcessInfo.processInfo.systemUptime }
+
+    static func heard(at: TimeInterval) {
+        if let wait = firstAudio.heard(at: at) { Log.info(FirstAudioClock.line(ms: wait.ms, from: wait.from)) }
+    }
+
+    static func ringShown(step: Int) {
+        if let line = rings.ringShown(at: now, step: step) { Log.info(line) }
     }
 }
 

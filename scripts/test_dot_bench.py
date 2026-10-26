@@ -7,7 +7,7 @@ Stdlib only. Nothing here talks to Dot, Safari or any Comet: the dot.log snippet
 line contract of Tests/Fixtures/bench/README.md), the WebSocket peer is a local fake server, and the
 bench server runs on a free port with a temporary log.
 """
-import importlib.util, json, os, re, socket, sqlite3, struct, subprocess, sys, tempfile, threading, time, unittest
+import contextlib, importlib.util, io, json, os, re, socket, sqlite3, struct, subprocess, sys, tempfile, threading, time, unittest
 import urllib.request
 from pathlib import Path
 
@@ -201,6 +201,53 @@ class Measures(unittest.TestCase):
                              'point(x: 120, y: 340, label: "export", screen: nil)\n'
                              '2026-10-19 02:00:01.000 INFO beat 2 (quiet): target(x: 50, y: 60, radius: 20, label: "x", screen: nil) click it')
         self.assertEqual(db.tag_points(lines), [('point', 120, 340), ('target', 50, 60)])
+
+
+class Timings(unittest.TestCase):
+    LOG = (
+        '2026-10-26 09:00:00.000 INFO ask: received bench=0 spoken text=what is this\n'
+        '2026-10-26 09:00:01.840 INFO speech: first-audio 1840 ms from release\n'
+        '2026-10-26 09:05:00.000 INFO speech: first-audio 900 ms from ask\n'
+        '2026-10-26 09:06:00.000 INFO speech: first-audio 1200 ms from release\n'
+        '2026-10-26 09:10:00.000 INFO walkthrough: ring-to-ring 2750 ms (step 2, clicked)\n'
+        '2026-10-26 09:10:05.000 INFO walkthrough: ring-to-ring 3100 ms (step 3, rested on)\n'
+        '2026-10-26 09:10:06.000 INFO speech: first-audio soon from release\n')
+
+    def test_parse(self):
+        t = db.timings(db.parse_log(self.LOG))
+        self.assertEqual(t['first_audio'], [{'ms': 1840, 'from': 'release'}, {'ms': 900, 'from': 'ask'}, {'ms': 1200, 'from': 'release'}])
+        self.assertEqual(t['ring_to_ring_ms'], [2750, 3100])
+        self.assertEqual(db.timings(snippet(SIMPLE_TALK)), {'first_audio': [], 'ring_to_ring_ms': []})
+
+    def test_spread(self):
+        self.assertIsNone(db.spread([]))
+        self.assertEqual(db.spread([1840, 900, 1200]), {'n': 3, 'median_ms': 1200, 'p90_ms': 1840})
+
+    def test_report_and_since(self):
+        out = db.timings_report(self.LOG)
+        self.assertIn('first audio: median 1200 ms, p90 1840 ms over 3 turns', out)
+        self.assertIn('from the key coming up: median 1520 ms', out)
+        self.assertIn('from a typed question: median 900 ms', out)
+        self.assertIn('ring to ring: median 2925 ms, p90 3100 ms over 2 steps', out)
+        self.assertIn('ring to ring: none logged', db.timings_report(self.LOG, since='2026-10-27'))
+
+    def test_markdown_reports_timings(self):
+        rows = [{'id': '1', 'kind': 'regression', 'pass': True, 'latency_ms': 800, 'reasons': [],
+                 'timings': {'first_audio': [{'ms': 700, 'from': 'ask'}], 'ring_to_ring_ms': []}},
+                {'id': '2', 'kind': 'regression', 'pass': True, 'latency_ms': 900, 'reasons': []}]
+        md = db.markdown({'stamp': 'x'}, rows)
+        self.assertIn('- first audio: median 700 ms, p90 700 ms over 1 turns', md)
+        self.assertIn('  - from a typed question: median 700 ms', md)
+        self.assertIn('- ring to ring: none logged', md)
+
+    def test_cli(self):
+        with tempfile.TemporaryDirectory() as d:
+            log = Path(d) / 'dot.log'
+            log.write_text(self.LOG)
+            buf = io.StringIO()
+            with contextlib.redirect_stdout(buf):
+                self.assertEqual(db.main(['--timings', '--dot-log', str(log)]), 0)
+            self.assertIn('ring to ring: median 2925 ms', buf.getvalue())
 
 
 class Assertions(unittest.TestCase):

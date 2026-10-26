@@ -156,6 +156,9 @@ RE_JOB_STEP = re.compile(r'^job\[([^\]]+)\] step (\d+) ')
 RE_JOB_POINT = re.compile(r'^job\[([^\]]+)\] (point|rang target)\(x: (-?\d+), y: (-?\d+)\)')
 RE_JOB_COST = re.compile(r'^job\[[^\]]+\] (?:done|failed|stopped)\b.*?\$([0-9.]+)')
 RE_DRY = re.compile(r'^dry-run: ')
+# The parity timings (TI-01, TI-02): reported, never enforced.
+RE_FIRST_AUDIO = re.compile(r'^speech: first-audio (\d+) ms from (release|ask)$')
+RE_RING = re.compile(r'^walkthrough: ring-to-ring (\d+) ms \(step (\d+), ([^)]*)\)$')
 
 
 def is_route_line(msg):
@@ -170,7 +173,7 @@ def is_terminal(msg):
 
 
 RELEVANT = ('turn[', 'act: ', 'bench: ', 'beat ', 'talk: ', 'agent[', 'ask: ', 'jev[route]', 'jev: ', 'route', 'job[', 'job:',
-            'dry-run', 'proposal:', 'speak:')
+            'dry-run', 'proposal:', 'speak:', 'speech: first-audio', 'walkthrough: ring-to-ring')
 
 
 def log_spend(lines):
@@ -304,6 +307,43 @@ def latency_ms(lines, end_regex=None, ask_index=0):
         if end.search(l.msg):
             return int(round((l.ts - t0) * 1000))
     return None
+
+
+def timings(lines):
+    """The waits Dot logs (parity TI-01, TI-02): first audio per spoken turn, from the key coming up (release) or a
+    typed or keyless question arriving (ask), and ring to ring per walkthrough step."""
+    first = [{'ms': int(m.group(1)), 'from': m.group(2)} for l in lines for m in [RE_FIRST_AUDIO.match(l.msg)] if m]
+    rings = [int(m.group(1)) for l in lines for m in [RE_RING.match(l.msg)] if m]
+    return {'first_audio': first, 'ring_to_ring_ms': rings}
+
+
+def spread(values):
+    """{n, median_ms, p90_ms} of a list of ms, or None when it is empty."""
+    if not values:
+        return None
+    s = sorted(values)
+    return {'n': len(s), 'median_ms': int(statistics.median(s)), 'p90_ms': s[max(0, int(round(0.9 * len(s))) - 1)]}
+
+
+def timing_summary(first, rings):
+    """Lines for a report, from timings() lists merged over rows or a whole log."""
+    def says(sp, what):
+        return 'median %d ms, p90 %d ms over %d %s' % (sp['median_ms'], sp['p90_ms'], sp['n'], what) if sp else 'none logged'
+    out = ['first audio: ' + says(spread([f['ms'] for f in first]), 'turns')]
+    for src, name in (('release', 'from the key coming up'), ('ask', 'from a typed question')):
+        sp = spread([f['ms'] for f in first if f['from'] == src])
+        if sp:
+            out.append('  %s: %s' % (name, says(sp, 'turns')))
+    out.append('ring to ring: ' + says(spread(rings), 'steps'))
+    return out
+
+
+def timings_report(text, since=None):
+    """`--timings`: the medians over his real turns in Dot's log, from `since` (YYYY-MM-DD) on."""
+    lines = [l for l in parse_log(text) if not since or l.stamp[:10] >= since]
+    t = timings(lines)
+    span = '%s to %s' % (lines[0].stamp[:16], lines[-1].stamp[:16]) if lines else 'an empty log'
+    return '\n'.join(['Dot timings, %s (no target enforced)' % span] + timing_summary(t['first_audio'], t['ring_to_ring_ms']))
 
 
 def said_lines(lines):
@@ -1672,7 +1712,7 @@ class Runner:
         checks = evaluate(row.get('expect'), ctx)
         spend_after = ledger_total(self.args.ledger)
         res.update({
-            'pass': all(c['ok'] for c in checks), 'latency_ms': lat, 'checks': checks,
+            'pass': all(c['ok'] for c in checks), 'latency_ms': lat, 'checks': checks, 'timings': timings(lines),
             'reasons': [('%s: %s' % (c['name'], c['detail'])) for c in checks if not c['ok']],
             'wait': notes, 'cost_usd': log_spend(lines) + (0 if spend_before is None or spend_after is None else round(spend_after - spend_before, 4)),
             'front_before': front_before, 'front_after': front_after, 'mouse_before': mouse_before, 'mouse_after': mouse_after,
@@ -1765,6 +1805,10 @@ def markdown(meta, results):
     reg = [r for r in n if r.get('kind') == 'regression']
     lines += ['', 'Passed %d of %d run rows; regression rows %d of %d.' % (
         sum(1 for r in n if r.get('pass')), len(n), sum(1 for r in reg if r.get('pass')), len(reg))]
+    first = [f for r in results for f in (r.get('timings') or {}).get('first_audio', [])]
+    rings = [ms for r in results for ms in (r.get('timings') or {}).get('ring_to_ring_ms', [])]
+    lines += ['', 'Timings (reported, no target; bench turns are quiet, so first audio comes from rows that spoke):']
+    lines += [('  - ' if l.startswith('  ') else '- ') + l.strip() for l in timing_summary(first, rings)]
     return '\n'.join(lines) + '\n'
 
 
@@ -1831,7 +1875,16 @@ def main(argv=None):
     ap.add_argument('--shot-scale', type=float, default=1.0, help='screenshot pixels per screen point, for point_in_element')
     ap.add_argument('--no-launch', action='store_true', help='never start the bench server or the bench Comet')
     ap.add_argument('--keep-comet', action='store_true', help='leave a bench Comet this run started running')
+    ap.add_argument('--timings', action='store_true', help="print first-audio and ring-to-ring medians from Dot's log; runs nothing")
+    ap.add_argument('--since', default=None, help='with --timings: only lines from this date on (YYYY-MM-DD)')
     args = ap.parse_args(argv)
+    if args.timings:
+        path = Path(args.dot_log).expanduser()
+        if not path.exists():
+            print('bench: no log at %s' % path, file=sys.stderr)
+            return 2
+        print(timings_report(path.read_text(errors='replace'), args.since))
+        return 0
     args.base = (args.base or 'http://127.0.0.1:%d' % args.port).rstrip('/')
     try:
         check_port(args.comet_port)
