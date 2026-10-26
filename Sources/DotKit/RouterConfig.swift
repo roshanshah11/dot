@@ -48,7 +48,7 @@ public enum RouterConfig {
         guard entry["command"] is String else { return false }
         if let type = entry["type"] as? String, type != "stdio" { return false }
         let args = entry["args"] as? [String] ?? []
-        return !args.contains("--hands-mcp") && !args.contains("--agent-mcp") && !args.contains(flag)
+        return !args.contains("--hands-mcp") && !args.contains("--agent-mcp") && !args.contains("--history-mcp") && !args.contains(flag)
     }
 
     /// Seconds before a call becomes a handle: 20, or less when the server's own timeout is shorter, so Claude Code

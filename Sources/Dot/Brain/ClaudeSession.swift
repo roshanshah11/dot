@@ -17,6 +17,8 @@ final class ClaudeSession {
         var allowedTools: [String] = []
         var disallowedTools: [String] = []
         var mcpConfigPath: String? = nil
+        /// More MCP config files after `mcpConfigPath` (Dot's own servers beside his).
+        var extraMCPConfigs: [String] = []
         var strictMCP = true
         var permissionMode = "default"
         var permissionPromptOverStdio = true
@@ -384,7 +386,9 @@ final class ClaudeSession {
         if !options.allowedTools.isEmpty { args += ["--allowedTools", options.allowedTools.joined(separator: ",")] }
         if !options.disallowedTools.isEmpty { args += ["--disallowedTools", options.disallowedTools.joined(separator: ",")] }
         if let mcp = options.mcpConfigPath {
-            args += ["--mcp-config", mcp]
+            args += ["--mcp-config", mcp] + options.extraMCPConfigs
+        } else if !options.extraMCPConfigs.isEmpty {
+            args += ["--mcp-config"] + options.extraMCPConfigs
         } else if options.strictMCP {
             args += ["--mcp-config", "{\"mcpServers\":{}}"]
         }

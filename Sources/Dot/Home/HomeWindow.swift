@@ -112,7 +112,7 @@ struct ThreadItem: Identifiable, Equatable {
 @MainActor
 final class HomeModel: ObservableObject {
     /// `settings` is the General page.
-    enum Page: Equatable { case agent, day, settings, voice, microphone, dictation, shortcuts, cursor, skills, suggestions, agents }
+    enum Page: Equatable { case agent, day, history, settings, voice, microphone, dictation, shortcuts, cursor, skills, suggestions, agents }
 
     @Published var page: Page = .agent
     @Published var agents: [AgentManager.Agent] = []
@@ -291,6 +291,16 @@ final class HomeModel: ObservableObject {
         markSeen(agent)
     }
 
+    /// A turn from History in its agent's thread (HO-14): the thread opens with that turn at the top.
+    func openTurn(agentSlug: String, key: String) {
+        guard let agent = agents.first(where: { $0.slug == agentSlug }) else { return }
+        page = .agent
+        select(agent)
+        restore = .anchor(key)
+        restoring = true
+        restoreToken += 1
+    }
+
     /// The open thread's draft and reading place, saved on a switch, on quit, and a second after each keystroke.
     func saveThreadState() {
         guard let thread = openThread else { return }
@@ -460,6 +470,9 @@ struct HomeView: View {
                         .frame(maxWidth: .infinity)
                 }
             case .day: dayView
+            case .history:
+                HistoryPage(config: model.config, agentName: { slug in model.agents.first { $0.slug == slug }?.name },
+                            openTurn: { slug, key in model.openTurn(agentSlug: slug, key: key) })
             case .settings: settingsView
             case .voice: VoicePage(model: model)
             case .microphone: MicrophonePage(model: model)
@@ -499,6 +512,7 @@ struct HomeView: View {
             }
             Divider().padding(.vertical, 4)
             pageRow("Day", icon: "sun.max", page: .day, detail: model.brief.map { "\($0.today.count) today · \($0.deadlines(withinDays: 7).count) due" })
+            pageRow("History", icon: "clock.arrow.circlepath", page: .history, detail: nil)
             // HeyClicky's sidebar groups: its own settings, then Work.
             railHeader("Dot")
             pageRow("General", icon: "slider.horizontal.3", page: .settings, detail: nil)

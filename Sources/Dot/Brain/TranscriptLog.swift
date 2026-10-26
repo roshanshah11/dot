@@ -47,6 +47,7 @@ enum TranscriptLog {
         if let data = try? JSONSerialization.data(withJSONObject: entry), let line = String(data: data, encoding: .utf8) {
             appendText(line + "\n", to: directory.appendingPathComponent("transcripts.jsonl"))
         }
+        HistoryService.refreshSoon(DotConfig.peek())
         return id
     }
 

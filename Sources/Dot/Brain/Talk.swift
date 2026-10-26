@@ -344,6 +344,11 @@ final class Talk {
         options.strictMCP = true
         // Events with guests go out to them (FX-08): those two tools are judged per call below, never pre-allowed.
         options.allowedTools = options.mcpConfigPath == nil ? [] : config.talkAllowedTools.filter { !Talk.guestTools.contains($0) }
+        // past-chat search (parity H1): Dot's own server beside his config, read only, so it is pre-allowed
+        if let history = HistoryService.talkMCPConfig() {
+            options.extraMCPConfigs = [history]
+            options.allowedTools.append(HistoryMCPWire.allowedName)
+        }
         // Every kind of session in a bench turn is a bench session: think used to run on the live config (06).
         let bench = MCPConfigEdit.isBenchSession(kind: kind.rawValue, benchMode: benchMode)
         if bench {

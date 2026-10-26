@@ -142,6 +142,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             guard let command = AgentCommand.from(request: request) else { reply(["error": "not an agent request"]); return }
             reply(self.agents.control(command))
         }
+        // Past-chat search (parity H1): the index catches up with whatever was said while Dot was off.
+        HistoryService.refreshSoon(config)
         // The notch file viewer (parity H2) for a file, from `Dot --view <file>`.
         control.register("view") { request, reply in
             let path = (request["path"] as? String ?? "") as NSString

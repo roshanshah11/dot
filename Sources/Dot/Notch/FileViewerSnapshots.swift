@@ -73,3 +73,60 @@ extension Snapshots {
         while Date() < until { RunLoop.main.run(mode: .default, before: Date(timeIntervalSinceNow: 0.03)) }
     }
 }
+
+/// `Dot --snapshot <folder> history`: Home's History page (parity HO-14) on a made-up sample history, a day and a search.
+@MainActor
+extension Snapshots {
+    static func historyStates() -> [(String, NSImage)] {
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent("dot-history-snapshot-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let talk = folder.appendingPathComponent("transcripts")
+        let agent = folder.appendingPathComponent("agents/lab-desk/.dot")
+        try? FileManager.default.createDirectory(at: talk, withIntermediateDirectories: true)
+        try? FileManager.default.createDirectory(at: agent, withIntermediateDirectories: true)
+        let day = ISO8601DateFormatter()
+        func at(_ hoursAgo: Double) -> String { day.string(from: Date().addingTimeInterval(-hoursAgo * 3600)) }
+        let talkRows: [[String: String]] = [
+            ["kind": "typed", "ts": at(50), "you": "what's rank", "dot": "the number of independent columns: the dimension of the column space.", "app": "Safari"],
+            ["kind": "talk", "ts": at(26), "you": "explain how dna replication works, draw it for me", "dot": "the double helix unzips at the fork; one strand is copied in one go, the other in short pieces.", "app": "Comet"],
+            ["kind": "talk", "ts": at(3), "you": "is rank-nullity on the midterm?", "dot": "very likely: it ties rank to the kernel, and the review sheet lists it.", "app": "Comet"],
+            ["kind": "typed", "ts": at(2), "you": "what's a basis", "dot": "a spanning set with nothing extra: every vector in the space is one combination of it.", "app": "Notes"],
+        ]
+        let agentRows: [[String: String]] = [
+            ["ts": at(5), "role": "user", "text": "find the rank-nullity proof in the lecture slides"],
+            ["ts": at(4.9), "role": "assistant", "text": "It's on slide 14 of lecture 7, right after the definition of the kernel."],
+        ]
+        func lines(_ rows: [[String: String]]) -> String {
+            rows.compactMap { (try? JSONSerialization.data(withJSONObject: $0)).map { String(decoding: $0, as: UTF8.self) } }.joined(separator: "\n") + "\n"
+        }
+        try? lines(talkRows).write(to: talk.appendingPathComponent("transcripts.jsonl"), atomically: true, encoding: .utf8)
+        try? lines(agentRows).write(to: agent.appendingPathComponent("transcript.jsonl"), atomically: true, encoding: .utf8)
+        let indexURL = folder.appendingPathComponent("index.sqlite")
+        HistoryIndex(url: indexURL)?.refresh(HistoryIndex.sources(transcripts: talk, agentsRoot: folder.appendingPathComponent("agents"), murmur: nil))
+        let config = DotConfig.peek()
+        var out: [(String, NSImage)] = []
+        for (name, query) in [("day", ""), ("search", "rank")] {
+            let page = HistoryPage(config: config, agentName: { $0 == "lab-desk" ? "Lab Desk" : nil }, store: .fixed(indexURL), query: query)
+                .frame(width: 900, height: 560).background(Color(nsColor: .windowBackgroundColor))
+            if let image = drawHosted(NSHostingView(rootView: page), size: CGSize(width: 900, height: 560)) { out.append(("history-\(name)", image)) }
+        }
+        return out
+    }
+
+    /// An SwiftUI page that loads on appear: given a moment to load before it's drawn.
+    private static func drawHosted(_ view: NSView, size: CGSize) -> NSImage? {
+        let window = NSWindow(contentRect: CGRect(origin: CGPoint(x: -10_000, y: -10_000), size: size), styleMask: .borderless, backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        window.contentView = view
+        view.frame = CGRect(origin: .zero, size: size)
+        let until = Date().addingTimeInterval(1.2)
+        while Date() < until { RunLoop.main.run(mode: .default, before: Date(timeIntervalSinceNow: 0.03)) }
+        view.layoutSubtreeIfNeeded()
+        guard let rep = view.bitmapImageRepForCachingDisplay(in: view.bounds) else { return nil }
+        view.cacheDisplay(in: view.bounds, to: rep)
+        let image = NSImage(size: size)
+        image.addRepresentation(rep)
+        window.contentView = nil
+        return image
+    }
+}

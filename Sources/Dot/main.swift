@@ -11,6 +11,9 @@ case "--gate":
 case "--hands-mcp":
     // A job's `dot` tools (the fast lane): stdio MCP in, relayed to the running Dot over the control socket.
     HandsMCPServer.run(Array(arguments.dropFirst()))
+case "--history-mcp":
+    // Talk's search_history tool (parity H1): reads the history index itself.
+    HistoryMCPServer.run()
 case "--agent-mcp":
     // An agent's own tools (`dot-agents`: note_to, list_agents, make_image), relayed to the running Dot.
     AgentMCPServer.run(Array(arguments.dropFirst()))
