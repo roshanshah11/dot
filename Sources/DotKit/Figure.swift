@@ -12,7 +12,7 @@ import Foundation
 /// sphere R, cylinder RxH, capsule RxH, cone RxH or TOPxBOTTOMxH, torus RINGxPIPE, tube OUTERxINNERxH,
 /// extrude x,y/x,y/x,y [depth D] (a flat outline pushed into 3D). Units are loose (the figure is fitted to its panel);
 /// rotations are degrees. A part that does not parse is skipped and named in `skipped`; a recipe with no part left is nil.
-public struct FigureRecipe: Equatable {
+public struct FigureRecipe: Equatable, CustomStringConvertible {
     public var title: String
     public var place: InkPlace?
     public var parts: [FigurePart]
@@ -74,6 +74,9 @@ public struct FigureRecipe: Equatable {
     public var radius: Double {
         parts.map { p in sqrt(p.position.x * p.position.x + p.position.y * p.position.y + p.position.z * p.position.z) + p.shape.extent }.max() ?? 1
     }
+
+    /// Short, for dot.log's beat lines.
+    public var description: String { "\(title) (\(molecule.map { "molecule \($0)" } ?? "\(parts.count) parts"))" }
 
     /// Back to tag text (logs, the `[on screen]` line).
     public var tagText: String {

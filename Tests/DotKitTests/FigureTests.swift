@@ -15,6 +15,7 @@ final class FigureTests: XCTestCase {
         XCTAssertEqual(recipe.parts[2].rotation, FigurePoint(0, 0, 40))
         XCTAssertEqual(recipe.parts[2].colorHex, "#ff6b2c")
         XCTAssertTrue(tag.isVisual)
+        XCTAssertEqual("\(recipe)", "animal cell (3 parts)")
         // round trip
         XCTAssertEqual(FigureRecipe.parse(String(recipe.tagText.dropFirst(8).dropLast())), recipe)
     }
