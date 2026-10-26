@@ -89,4 +89,16 @@ final class JobPageTests: XCTestCase {
         XCTAssertTrue(d.admit(event: "e1", version: "v2"))
         XCTAssertTrue(d.admit(event: "e2", version: "v1"))
     }
+
+    func testLetterNamesOnlyOnePendingProposalOfThisJob() {
+        func card(_ id: String) -> ProposalCard {
+            ProposalCard(json: ["proposal": id, "digest": "d", "operation": "gmail.send", "to": ["a@b.c"], "text": "hi"])!
+        }
+        let pending = [card("1a2b3c4d-0000-0000-0000-000000000001"), card("9f9f9f9f-0000-0000-0000-000000000002")]
+        XCTAssertEqual(LetterMatch.pending("1a2b3c4d", among: pending)?.proposal, pending[0].proposal)
+        XCTAssertNil(LetterMatch.pending("5e5e5e5e", among: pending), "used, withdrawn or another job's: not pending here")
+        XCTAssertNil(LetterMatch.pending("1a2b3c4d", among: []), "a stale page after the send: nothing pending")
+        XCTAssertNil(LetterMatch.pending("1a2b", among: pending), "too short to name one")
+        XCTAssertNil(LetterMatch.pending("1a2b3c4d", among: pending + [card("1a2b3c4d-ffff-0000-0000-000000000003")]), "two pending share it: neither")
+    }
 }

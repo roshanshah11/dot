@@ -128,7 +128,7 @@ extension JobManager {
     /// His Send or Edit on a `<letter>`: the proposal must be this job's own and still pending. Send shows the same
     /// card (exact recipients and words) and only its Allow sends; Edit withdraws it and asks the job for a new draft.
     private func letterTap(_ job: Job, page: JobPage, object: String, proposal: String, send: Bool) {
-        guard let o = page.object(object), o.kind == .letter, o.attributes["proposal"] == proposal, proposal.count >= 8 else {
+        guard let o = page.object(object), o.kind == .letter, o.attributes["proposal"] == proposal, proposal.count >= LetterMatch.minimumID else {
             Log.warn("job[\(job.id)] letter tap: \(object) with proposal \(proposal) isn't on the page; dropped")
             return
         }
@@ -136,9 +136,8 @@ extension JobManager {
         runApprove(["list", "--session", session]) { [weak self, weak job] code, json in
             guard let self, let job else { return }
             let cards = (code == 0 ? (json as? [[String: Any]]) ?? [] : []).compactMap(ProposalCard.init(json:))
-            let matches = cards.filter { $0.proposal.hasPrefix(proposal) }
-            guard matches.count == 1, let card = matches.first else {
-                Log.warn("job[\(job.id)] letter \(object): proposal \(proposal) is not pending for this job (\(matches.count) matches, list \(code))")
+            guard let card = LetterMatch.pending(proposal, among: cards) else {
+                Log.warn("job[\(job.id)] letter \(object): proposal \(proposal) is not pending for this job (\(cards.count) pending, list \(code))")
                 job.letterStates[proposal] = job.letterStates[proposal] ?? "expired"
                 self.fillLetters(job)
                 return
@@ -169,7 +168,7 @@ extension JobManager {
             let pending = (code == 0 ? (json as? [[String: Any]]) ?? [] : []).compactMap(ProposalCard.init(json:))
             for card in pending { job.letterWords[card.proposal] = card }
             for letter in letters {
-                guard let pid = letter.attributes["proposal"], pid.count >= 8 else {
+                guard let pid = letter.attributes["proposal"], pid.count >= LetterMatch.minimumID else {
                     window.letter(letter.id, to: "", subject: "", body: "", state: "unknown"); continue
                 }
                 let known = job.letterWords.filter { $0.key.hasPrefix(pid) }

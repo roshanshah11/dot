@@ -173,3 +173,16 @@ public struct PageDedupe {
         return seen[version]!.insert(event).inserted
     }
 }
+
+/// A page's `<letter proposal="...">` against this job's pending proposals (J2): the page carries the 8-character id
+/// the queue gave the job, and it names a proposal only when exactly one pending proposal of this job starts with it.
+/// A used, withdrawn, expired or another job's proposal is not pending here, so it names nothing.
+public enum LetterMatch {
+    public static let minimumID = 8
+
+    public static func pending(_ pageID: String, among pending: [ProposalCard]) -> ProposalCard? {
+        guard pageID.count >= minimumID else { return nil }
+        let matches = pending.filter { $0.proposal.hasPrefix(pageID) }
+        return matches.count == 1 ? matches[0] : nil
+    }
+}
