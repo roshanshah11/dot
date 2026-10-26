@@ -17,6 +17,12 @@ public enum PanelMessage: Equatable {
     case ready
     /// A page error, for dot.log.
     case log(String)
+    /// His taps on a job's live page (parity J1/J2; the wire contract is in 02-jobs.md and docs/ui-language.md).
+    /// `event` is the tap's own id (a repeat is dropped) and `version` the page version it was made on.
+    case pageTick(panel: String, object: String, item: String, done: Bool, event: String, version: String)
+    case pageForm(panel: String, object: String, fields: [String: String], event: String, version: String)
+    case pageReview(panel: String, object: String, decisions: [PageDecision], event: String, version: String)
+    case pageLetter(panel: String, object: String, proposal: String, send: Bool, event: String, version: String)
 
     public init?(_ body: Any) {
         guard let d = body as? [String: Any], let type = d["type"] as? String else { return nil }
@@ -40,6 +46,32 @@ public enum PanelMessage: Equatable {
                 if let n = v as? NSNumber, CFGetTypeID(n) != CFBooleanGetTypeID() { values[k] = n.doubleValue }
             }
             self = .widget(panel: (d["card"] as? String) ?? panel, id: id, values: values)
+        case "page_tick", "page_form", "page_review", "page_letter":
+            guard let object = Self.pageID(d["object"]), let event = Self.pageID(d["event"], max: 40) else { return nil }
+            let version = String(((d["version"] as? String) ?? "").prefix(40))
+            switch type {
+            case "page_tick":
+                guard let item = Self.pageID(d["item"]), let done = d["done"] as? Bool else { return nil }
+                self = .pageTick(panel: panel, object: object, item: item, done: done, event: event, version: version)
+            case "page_form":
+                guard let raw = d["fields"] as? [String: Any] else { return nil }
+                var fields: [String: String] = [:]
+                for key in raw.keys.sorted().prefix(Self.pageMaxRows) {
+                    guard let name = Self.pageID(key), let value = raw[key] as? String else { continue }
+                    fields[name] = String(value.prefix(Self.pageMaxText))
+                }
+                self = .pageForm(panel: panel, object: object, fields: fields, event: event, version: version)
+            case "page_review":
+                guard let raw = d["decisions"] as? [[String: Any]] else { return nil }
+                let decisions = raw.prefix(Self.pageMaxRows).compactMap { r -> PageDecision? in
+                    guard let item = Self.pageID(r["item"]), let approve = r["approve"] as? Bool else { return nil }
+                    return PageDecision(item: item, approve: approve, reason: String(((r["reason"] as? String) ?? "").prefix(Self.pageMaxText)))
+                }
+                self = .pageReview(panel: panel, object: object, decisions: decisions, event: event, version: version)
+            default:
+                guard let proposal = Self.pageID(d["proposal"], max: 80), let choice = d["choice"] as? String, ["send", "edit"].contains(choice) else { return nil }
+                self = .pageLetter(panel: panel, object: object, proposal: proposal, send: choice == "send", event: event, version: version)
+            }
         case "close": self = .close
         case "minimize": self = .minimize
         case "ready": self = .ready
@@ -60,9 +92,20 @@ public enum PanelMessage: Equatable {
         case .widget(_, let id, let values):
             let shown = values.keys.sorted().prefix(6).map { "\($0)=\(Self.trim(values[$0]!))" }.joined(separator: ", ")
             return "he set the \(id) explainer to \(shown)"
-        case .ask, .close, .minimize, .ready, .log:
+        case .ask, .close, .minimize, .ready, .log, .pageTick, .pageForm, .pageReview, .pageLetter:
             return nil
         }
+    }
+
+    /// Strings a page message may carry, and rows or fields per object.
+    public static let pageMaxText = 2_000
+    public static let pageMaxRows = 30
+
+    /// An id on the page (t1, i3, f1, a proposal id): letters, digits, dash and underscore, starting with a letter or digit.
+    static func pageID(_ raw: Any?, max: Int = 24) -> String? {
+        guard let s = raw as? String, !s.isEmpty, s.count <= max,
+              s.range(of: #"^[A-Za-z0-9][A-Za-z0-9_-]*$"#, options: .regularExpression) != nil else { return nil }
+        return s
     }
 
     private static func trim(_ x: Double) -> String {
@@ -93,4 +136,12 @@ public enum PanelDock {
         let slug = title.lowercased().components(separatedBy: CharacterSet.alphanumerics.inverted).filter { !$0.isEmpty }.prefix(6).joined(separator: "-")
         return "\(f.string(from: date))-\(slug.isEmpty ? id : slug).html"
     }
+}
+
+/// One row of a `<review>` he decided.
+public struct PageDecision: Equatable {
+    public let item: String
+    public let approve: Bool
+    public let reason: String
+    public init(item: String, approve: Bool, reason: String = "") { self.item = item; self.approve = approve; self.reason = reason }
 }

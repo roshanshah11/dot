@@ -105,6 +105,9 @@ final class PanelCoach {
             if let line = message.contextLine { lastWidget = (line, Date()) }
         case .close, .minimize, .ready, .log:
             break
+        case .pageTick, .pageForm, .pageReview, .pageLetter:
+            // a job page's controls belong to the job's own window (JobPageWindow), never the explainer
+            Log.warn("panel: a page control reached the explainer; ignored")
         }
     }
 
