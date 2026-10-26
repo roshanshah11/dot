@@ -82,6 +82,9 @@ enum Snapshots {
         if wanted("history") {
             for (name, image) in historyStates() { keep(name, image) }
         }
+        if wanted("home") {
+            for (name, image) in homeStates() { keep("home-\(name)", image) }
+        }
         if let composite = contactSheet(sheet), let data = png(composite) {
             let url = folder.appendingPathComponent("sheet.png")
             try? data.write(to: url)

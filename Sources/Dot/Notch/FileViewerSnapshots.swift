@@ -114,12 +114,12 @@ extension Snapshots {
     }
 
     /// An SwiftUI page that loads on appear: given a moment to load before it's drawn.
-    private static func drawHosted(_ view: NSView, size: CGSize) -> NSImage? {
+    static func drawHosted(_ view: NSView, size: CGSize, wait: TimeInterval = 1.2) -> NSImage? {
         let window = NSWindow(contentRect: CGRect(origin: CGPoint(x: -10_000, y: -10_000), size: size), styleMask: .borderless, backing: .buffered, defer: false)
         window.isReleasedWhenClosed = false
         window.contentView = view
         view.frame = CGRect(origin: .zero, size: size)
-        let until = Date().addingTimeInterval(1.2)
+        let until = Date().addingTimeInterval(wait)
         while Date() < until { RunLoop.main.run(mode: .default, before: Date(timeIntervalSinceNow: 0.03)) }
         view.layoutSubtreeIfNeeded()
         guard let rep = view.bitmapImageRepForCachingDisplay(in: view.bounds) else { return nil }

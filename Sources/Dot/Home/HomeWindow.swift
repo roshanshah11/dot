@@ -823,19 +823,11 @@ struct HomeView: View {
             // By name inside output/; by full path or URL when the agent named a file elsewhere (TC-04).
             let url = entry.text.hasPrefix("/") ? URL(fileURLWithPath: entry.text)
                 : entry.text.contains("://") ? URL(string: entry.text) : model.selected?.outputFolder.appendingPathComponent(entry.text)
-            HStack(spacing: 8) {
-                Image(systemName: url.map(Self.fileIcon) ?? "doc").font(.system(size: 10)).foregroundStyle(url.flatMap(Theme.fileColor) ?? accent).frame(width: 14)
-                Text(entry.text).font(.system(size: 11.5)).lineLimit(1)
-                if let url, !url.isFileURL || FileManager.default.fileExists(atPath: url.path) {
-                    Button(FileViewer.canShow(url) ? "view" : "open") { FileViewer.show(url) }.buttonStyle(.link).font(.system(size: 11))
-                }
-                Spacer()
-            }
-            .padding(.leading, 6)
-            .onDrag { url.map { NSItemProvider(object: $0 as NSURL) } ?? NSItemProvider() }
-            if item.isFirstFile, let url, url.isFileURL, FileManager.default.fileExists(atPath: url.path),
-               ["pdf", "png", "jpg", "jpeg", "gif", "heic", "html", "pptx", "key", "docx", "xlsx", "md"].contains(url.pathExtension.lowercased()) {
-                QuickLookPreview(url: url).frame(width: 300, height: 190).clipShape(RoundedRectangle(cornerRadius: 8)).padding(.leading, 28)
+            // Every file is a card (parity HO-03); the turn's first one large, with its thumbnail on top.
+            if let url {
+                FileCard(url: url, large: item.isFirstFile && url.isFileURL, accent: accent).padding(.leading, 6)
+            } else {
+                Text(entry.text).font(.system(size: 11.5)).foregroundStyle(.secondary).padding(.leading, 6)
             }
         case "title":
             // The turn's done title (TC-01).

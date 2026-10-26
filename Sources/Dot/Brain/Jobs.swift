@@ -1559,6 +1559,7 @@ final class JobManager {
                              canStop: job.phase.isLive)
         chip.canOpen = false
         chip.hasPage = job.livePage != nil
+        chip.pageHeadline = job.livePage?.headline
         chip.canRetry = JobRetry.canRetry(job.phase, endLine: job.endLine)
         chip.checked = job.checked
         chip.outputs = job.outputs

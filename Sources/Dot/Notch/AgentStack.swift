@@ -54,6 +54,8 @@ struct StackChip: Identifiable {
     var holdUntil: Date? = nil
     /// A job with a live page (parity J1): its Page button opens the page window.
     var hasPage = false
+    /// The page's headline, for its card (parity HO-03).
+    var pageHeadline: String? = nil
     /// A failed, stopped or cut-off job: Retry carries on where it stopped (J3).
     var canRetry = false
     /// The done check passed (parity CU-03): the card says "checked".
@@ -706,6 +708,9 @@ struct StackChipView: View {
                     .frame(maxHeight: 150)
                 }
             }
+            if open, chip.state != .running, chip.hasPage || !chip.outputs.isEmpty {
+                files
+            }
             if open || heldOffer, !chip.nextActions.isEmpty {
                 VStack(alignment: .leading, spacing: 4) {
                     ForEach(chip.nextActions.prefix(3), id: \.self) { next in
@@ -732,6 +737,21 @@ struct StackChipView: View {
         .onTapGesture {
             if chip.state == .waiting { model.onFocusConsent?(chip.id); return }
             withAnimation(.easeOut(duration: 0.15)) { model.expanded = model.expanded == chip.id ? nil : chip.id }
+        }
+    }
+
+    /// What the work made, as cards (parity HO-03): a job's page by its headline first, then up to three files.
+    private var files: some View {
+        VStack(alignment: .leading, spacing: 5) {
+            if chip.isJob, chip.hasPage {
+                PageCard(headline: chip.pageHeadline ?? chip.title, accent: model.accent) { model.onOpenPage?(chip.id) }
+            }
+            ForEach(chip.outputs.filter { $0.lastPathComponent != "page.md" }.prefix(3), id: \.self) { url in
+                FileCard(url: url, style: .notch, accent: model.accent)
+            }
+            if chip.outputs.count > 3 {
+                Text("and \(chip.outputs.count - 3) more").font(.system(size: 10.5)).foregroundStyle(text.opacity(0.45)).padding(.leading, 4)
+            }
         }
     }
 
