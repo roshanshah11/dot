@@ -407,7 +407,7 @@ enum RouterSelfTest {
         }
         session.onEvent = { event in
             switch event {
-            case .systemInit(_, _, _, let servers): seen.servers = servers
+            case .systemInit(_, _, _, let servers, _): seen.servers = servers
             case .toolUse(_, let name, _): pending.append(name)
             case .toolResult(let content, _): if !pending.isEmpty { seen.results[pending.removeFirst()] = content }
             case .result: seen.finished = true

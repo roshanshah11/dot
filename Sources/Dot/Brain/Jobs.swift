@@ -458,7 +458,7 @@ final class JobManager {
 
     private func handle(_ event: StreamEvent, sessionOf session: ClaudeSession) {
         guard let job = jobs.first(where: { $0.session === session }) else {
-            if case .systemInit(_, _, let mode, _) = event, let mode, mode != "default" {
+            if case .systemInit(_, _, let mode, _, _) = event, let mode, mode != "default" {
                 Log.warn("job: session refused (permission mode \(mode))")
                 session.stop()
                 if spare?.session === session { spare = nil }
@@ -468,7 +468,7 @@ final class JobManager {
         }
         job.lastEventAt = Date()
         switch event {
-        case .systemInit(_, _, let mode, _):
+        case .systemInit(_, _, let mode, _, _):
             if let mode, mode != "default" {
                 Log.warn("job: session refused (permission mode \(mode))")
                 finish(job, failed: true, line: "blocked: the job session came up without dot's permission check", stopReason: nil)

@@ -112,6 +112,7 @@ final class ClaudeSession {
             guard !data.isEmpty, let text = String(data: data, encoding: .utf8) else { return }
             let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
             if !trimmed.isEmpty { Log.warn("session[\(self?.label ?? "?")] stderr: \(Log.short(trimmed, 300))") }
+            if !trimmed.isEmpty { DispatchQueue.main.async { self?.noteStderr(trimmed) } }
         }
         process.terminationHandler = { [weak self] proc in
             stdout.fileHandleForReading.readabilityHandler = nil
@@ -129,6 +130,21 @@ final class ClaudeSession {
         lastActivity = Date()
         Log.info("session[\(label)] started pid \(process.processIdentifier) model \(options.model) cwd \(options.cwd.path)")
     }
+
+    /// What the CLI wrote to stderr in the last minute (AU-03 reads it for why a turn failed).
+    private(set) var recentStderr = ""
+    private var stderrAt = Date.distantPast
+    /// The MCP servers this session's init said failed to start.
+    private(set) var failedServers: [String] = []
+
+    private func noteStderr(_ text: String) {
+        if Date().timeIntervalSince(stderrAt) > 60 { recentStderr = "" }
+        stderrAt = Date()
+        recentStderr = String((recentStderr + "\n" + text).suffix(2000))
+    }
+
+    /// The last minute's stderr, or nothing.
+    var freshStderr: String { Date().timeIntervalSince(stderrAt) < 60 ? recentStderr : "" }
 
     private func exited(_ status: Int32) {
         isRunning = false
@@ -311,8 +327,10 @@ final class ClaudeSession {
         lastActivity = Date()
         var event = incoming
         switch event {
-        case .systemInit(let id, _, _, _):
+        case .systemInit(let id, _, _, _, let failed):
             if !id.isEmpty { sessionId = id }
+            failedServers = failed
+            if !failed.isEmpty { Log.warn("session[\(label)] tool servers that didn't start: \(failed.joined(separator: ", "))") }
         case .result(let info):
             pendingResults = max(0, pendingResults - 1)
             turnInFlight = pendingResults > 0

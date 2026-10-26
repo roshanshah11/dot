@@ -12,7 +12,7 @@ final class AgentToolsTests: XCTestCase {
 
     func testInitLineCarriesServers() {
         let line = #"{"type":"system","subtype":"init","session_id":"s","mcp_servers":[{"name":"atlas","status":"connected"},{"name":"claude.ai Gmail","status":"connected"}]}"#
-        guard case .systemInit(_, _, _, let servers)? = StreamJSON.parse(line: line) else { return XCTFail("no init") }
+        guard case .systemInit(_, _, _, let servers, _)? = StreamJSON.parse(line: line) else { return XCTFail("no init") }
         XCTAssertEqual(servers, ["atlas", "claude_ai_Gmail"])
     }
 

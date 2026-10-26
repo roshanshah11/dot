@@ -3,7 +3,7 @@ import Foundation
 /// What a `claude -p --output-format stream-json` line means to Dot.
 public enum StreamEvent: Equatable {
     /// `servers`: the MCP servers the session came up with, by the name its tools carry (mcp__<server>__...).
-    case systemInit(sessionId: String, model: String?, permissionMode: String?, servers: [String] = [])
+    case systemInit(sessionId: String, model: String?, permissionMode: String?, servers: [String] = [], failed: [String] = [])
     case systemStatus
     case textDelta(String)
     case toolInputDelta
@@ -82,9 +82,12 @@ public enum StreamJSON {
         case "system":
             let subtype = object["subtype"] as? String ?? ""
             if subtype == "init" {
-                let servers = ((object["mcp_servers"] as? [[String: Any]]) ?? []).compactMap { $0["name"] as? String }.map(AgentTools.toolPrefix)
+                let entries = (object["mcp_servers"] as? [[String: Any]]) ?? []
+                let servers = entries.compactMap { $0["name"] as? String }.map(AgentTools.toolPrefix)
+                // a server whose start failed (AU-03: said when a turn needed it)
+                let failed = entries.filter { ($0["status"] as? String) == "failed" }.compactMap { $0["name"] as? String }
                 return .systemInit(sessionId: object["session_id"] as? String ?? "", model: object["model"] as? String,
-                                   permissionMode: object["permissionMode"] as? String, servers: servers)
+                                   permissionMode: object["permissionMode"] as? String, servers: servers, failed: failed)
             }
             if subtype == "background_tasks_changed" {
                 // Ambient entries (watchers the runtime keeps on its own) are not work the agent is doing;

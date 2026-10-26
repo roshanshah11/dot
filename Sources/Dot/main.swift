@@ -121,6 +121,7 @@ case "--help", "-h":
       Dot --track-selftest     the running Dot checks that marks stay on scrolled content (posts real scrolls; run while away)
       Dot --selftest           check the notch's permission-card queue (no agents, no model)
       Dot --gate               the agents' tool-call hook (Claude Code runs it; JSON on stdin)
+      Dot --doc-check <file or url> [question]         how Dot reads a document: pages and passages, or why it can't
       Dot --router-mcp --server <name> --spec <file>   one MCP server through the tool router (Claude Code runs it)
       Dot --router-selftest [--quick] [--no-claude]    the router against a fake server, then Claude Code and the job gate
       Dot --host [list]        the agent host that keeps agents running across a relaunch (launchd runs it)
@@ -272,6 +273,32 @@ case "--stack-demo":
     DistributedNotificationCenter.default().postNotificationName(DotIPC.stackDemo, object: nil,
                                                                  userInfo: ["muted": flags.contains("--muted"), "job": flags.contains("--job")], deliverImmediately: true)
     print("asked the running Dot for the stack demo; stack-demo: lines land in dot.log")
+    exit(0)
+case "--doc-check":
+    // How Dot reads a document (AU-03, VO-11): its pages and the passages a deep answer would carry, or the line it says
+    // when it can't read it.
+    let rest = Array(arguments.dropFirst())
+    guard let target = rest.first else { print("usage: Dot --doc-check <file or url> [question]"); exit(2) }
+    let question = rest.dropFirst().joined(separator: " ")
+    var context = ScreenContext()
+    if target.hasPrefix("http") { context.url = target } else { context.documentPath = (target as NSString).expandingTildeInPath }
+    context.windowTitle = (target as NSString).lastPathComponent
+    let done = DispatchSemaphore(value: 0)
+    Task { @MainActor in
+        let reader = DocumentReader()
+        if let document = await reader.document(for: context) {
+            print("read: \(document.isPDF ? "pdf" : "text") \"\(document.title)\", \(document.pageCount) page(s), \(document.text.count) chars")
+            if !question.isEmpty {
+                print(DocumentPassages.block(question: question, title: document.title, pages: document.pages, isPDF: document.isPDF) ?? "no passage matches")
+            }
+        } else if let read = reader.problem(for: context) {
+            print("problem: \(read.problem.rawValue): \(read.problem.line(isPDF: read.isPDF))")
+        } else {
+            print("not a document Dot reads")
+        }
+        done.signal()
+    }
+    while done.wait(timeout: .now() + 0.05) == .timedOut { RunLoop.main.run(until: Date().addingTimeInterval(0.05)) }
     exit(0)
 case "--agent-tools":
     // Which servers an agent gets and which it is denied (parity AG-08), from its folder, without starting it.

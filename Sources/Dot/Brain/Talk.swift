@@ -93,6 +93,11 @@ final class Talk {
     private var lastImages: [(data: Data, mediaType: String)] = []
     /// A turn that dies inside the CLI before the model is even called gets one more try.
     private var retriedTurn = false
+    /// AU-03: the same failure twice in 10 minutes is said once; a document's read problem once per document.
+    private var failureVoice = FailureVoice()
+    private var documentProblemsSaid: Set<String> = []
+    /// Sessions whose failed tool servers were already named (AU-03).
+    private var failedServersSaid: Set<ObjectIdentifier> = []
 
     // MARK: Lesson pacing: a stage shows one step at a time and waits for him between steps
     private var lessonCard: String?
@@ -382,7 +387,7 @@ final class Talk {
             return session
         } catch {
             Log.error("talk session failed to start: \(error)")
-            hud.flash(error: "Claude Code did not start: \(error.localizedDescription)")
+            tellFailure(.cliMissing, detail: "\(error)")
             return nil
         }
     }
@@ -1297,20 +1302,14 @@ final class Talk {
                 // one line at once covers Opus's slower start; the panel fills as it writes
                 speaker.speak("putting it on the panel.")
                 overlay.setBubble("putting it on the panel.")
-                let (message, images) = buildMessage(text, kind: .think)
-                lastMessage = message
-                lastImages = images
-                sendTurn(message, images: images, to: think, kind: .think)
+                sendThink(text, question: text, to: think)
                 return
             }
         case .think:
             if let think = session(for: .think) {
                 speaker.speak("let me think about that for a second.")
                 overlay.setBubble("let me think about that for a second.")
-                let (message, images) = buildMessage(text, kind: .think)
-                lastMessage = message
-                lastImages = images
-                sendTurn(message, images: images, to: think, kind: .think)
+                sendThink(text, question: text, to: think)
                 return
             }
         case .answer:
@@ -1442,7 +1441,15 @@ final class Talk {
             return
         }
         guard let session = session(for: .talk) else { phase = .idle; settle(); return }
-        acknowledge()
+        if let read = documents.problem(for: context), documentProblemsSaid.insert(read.key).inserted {
+            // AU-03: say why once, then go by the screen as before
+            let line = read.problem.line(isPDF: read.isPDF)
+            hud.setCaption(line)
+            speaker.speak(line)
+            Log.info("document: told him \(read.problem.rawValue) for \(Log.short(read.key, 80))")
+        } else {
+            acknowledge()
+        }
         var screenText = ""
         if let shot = shots.first(where: { $0.isCursorScreen }) ?? shots.first { screenText = await TextRecognizer.recognize(jpeg: shot.jpeg) }
         if screenText.count > 3000 { screenText = String(screenText.prefix(3000)) + "…" }
@@ -2728,7 +2735,7 @@ final class Talk {
         return TalkGuard.isComputationCommand(command)
     }
 
-    private func buildMessage(_ transcript: String, kind: SessionKind) -> (String, [(data: Data, mediaType: String)]) {
+    private func buildMessage(_ transcript: String, kind: SessionKind, passages: String? = nil) -> (String, [(data: Data, mediaType: String)]) {
         var lines: [String] = []
         var images = shots.map { (data: $0.jpeg, mediaType: "image/jpeg") }
         lines.append("[context]")
@@ -2883,6 +2890,7 @@ final class Talk {
         }
         // His Atlas chats (Telegram, the app, his terminal): one thread of record (10-22).
         if !benchMode { lines.append(contentsOf: AtlasThread.shared.lines()) }
+        if let passages { lines.append(passages) }
         lines.append("[/context]")
         lines.append("")
         lines.append(transcript)
@@ -2970,8 +2978,12 @@ final class Talk {
             }
         case .result(let result):
             finishTurn(result)
-        case .rateLimit(let status, _, let kind):
-            if status != "allowed" { hud.flash(status: "claude rate limit (\(kind ?? "")): \(status)") }
+        case .rateLimit(let status, let resetsAt, let kind):
+            if status == "rejected" {
+                tellFailure(.usageLimit, detail: "rate limit \(kind ?? "") rejected", reset: resetsAt.map { Date(timeIntervalSince1970: $0) })
+            } else if status != "allowed" {
+                hud.flash(status: "claude rate limit (\(kind ?? "")): \(status)")
+            }
         default:
             break
         }
@@ -3288,6 +3300,53 @@ final class Talk {
         (agents.roster().first(where: { $0.slug == slug })?.name ?? slug).lowercased()
     }
 
+    /// A think turn (VO-11): with a document in front, its best passages for his question ride along (page numbers,
+    /// under DocumentPassages.cap). A cached document adds nothing to the wait; a first read gets 2.5 s, then the turn
+    /// goes without it.
+    private func sendThink(_ text: String, question: String, to think: ClaudeSession, remember: Bool = true) {
+        let snapshot = context
+        Task { @MainActor in
+            let passages = await self.documentPassages(question: question, context: snapshot, wait: 2.5)
+            let (message, images) = self.buildMessage(text, kind: .think, passages: passages)
+            if remember {
+                self.lastMessage = message
+                self.lastImages = images
+            }
+            self.sendTurn(message, images: images, to: think, kind: .think)
+        }
+    }
+
+    private final class Box<T> { var value: T?; var done = false }
+
+    func documentPassages(question: String, context: ScreenContext, wait: TimeInterval) async -> String? {
+        guard DocumentReader.key(for: context) != nil else { return nil }
+        let started = Date()
+        let box = Box<DocumentReader.Document?>()
+        Task { @MainActor in
+            box.value = await self.documents.document(for: context)
+            box.done = true
+        }
+        while !box.done, Date().timeIntervalSince(started) < wait { try? await Task.sleep(nanoseconds: 40_000_000) }
+        guard box.done, let document = box.value ?? nil else {
+            Log.info("think: no passages (\(box.done ? "nothing readable" : "the read took over \(wait) s"))")
+            return nil
+        }
+        let block = DocumentPassages.block(question: question, title: document.title, pages: document.pages, isPDF: document.isPDF)
+        Log.info("think: \(block == nil ? "no passage matches" : "\(block!.split(separator: "\n").count - 1) passage(s), \(block!.count) chars") from \"\(Log.short(document.title, 40))\" in \(Int(Date().timeIntervalSince(started) * 1000)) ms")
+        return block
+    }
+
+    /// AU-03, NO-07: why a turn failed, as one plain line: in the notch every time, and spoken unless the answer is
+    /// text here (a muted Mac, a typed question, a quiet mode); the same failure twice in 10 minutes speaks once.
+    private func tellFailure(_ failure: SessionFailure, detail: String, reset: Date? = nil, server: String? = nil) {
+        let line = failure.line(reset: reset ?? (failure == .usageLimit ? SessionFailure.resetTime(in: detail) : nil), server: server)
+        hud.flash(error: line)
+        let fresh = failureVoice.admit(failure.rawValue + (server ?? ""))
+        Log.warn("failure[\(failure.rawValue)] \(fresh ? "said" : "shown, said in the last 10 min"): \(line) (\(Log.short(detail.replacingOccurrences(of: "\n", with: " "), 200)))")
+        guard fresh, !textSurface, !quietTurn, !AudioDevices.outputIsSilent() else { return }
+        speaker.speak(line)
+    }
+
     private func sayLocal(_ line: String) {
         phase = .idle
         overlay.setPhase(.speaking)
@@ -3370,6 +3429,9 @@ final class Talk {
         Log.info("turn[\(kind)] done in \(result.durationMs) ms, $\(String(format: "%.4f", result.costUSD)), \(tags.filter { $0.isVisual }.count) visual beat(s), tags \(tags.map { "\($0)" }.joined(separator: " | "))")
         Log.info("turn[\(kind)] said: \(Log.short(spoken, 240))")
         if !result.isError { retriedTurn = false }
+        if let s = activeSession, !s.failedServers.isEmpty, failedServersSaid.insert(ObjectIdentifier(s)).inserted {
+            tellFailure(.toolServerDown, detail: "init: \(s.failedServers.joined(separator: ", ")) failed", server: s.failedServers.first)
+        }
         if result.isError, spoken.isEmpty {
             // 2026-10-15: two turns in class failed with error_during_execution in 44 and 413 ms, nothing
             // said and nothing spent: the CLI dropped them before the model saw them. One retry covers that.
@@ -3385,7 +3447,12 @@ final class Talk {
                 }
                 return
             }
-            hud.flash(error: Log.short(result.resultText ?? "the turn failed", 160))
+            let detail = (result.resultText ?? "") + "\n" + (activeSession?.freshStderr ?? "")
+            if let failure = SessionFailure.classify(detail) {
+                tellFailure(failure, detail: detail)
+            } else {
+                hud.flash(error: Log.short(result.resultText ?? "the turn failed", 160))
+            }
             overlay.setMood(.puzzled, for: 3)
             Log.error("turn[\(kind)] failed: \(result.subtype) \(Log.short(result.resultText ?? "", 300))")
         }
@@ -3473,11 +3540,9 @@ final class Talk {
                     let question = lastAsked.isEmpty ? hud.model.transcript : lastAsked
                     let said = spoken.trimmingCharacters(in: .whitespacesAndNewlines)
                     let handed = "[escalated] he asked: \"\(question)\". the quick model already said \"\(Log.short(said, 240))\" and handed the rest to you: answer the question itself now, and if a panel, card or figure was promised, build it in full; don't open by repeating what it already said."
-                    let (message, images) = buildMessage(handed, kind: .think)
                     // Let the "let me think" sentence finish, then ask the stronger model.
                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { [weak self] in
-                        guard let self else { return }
-                        self.sendTurn(message, images: images, to: think, kind: .think)
+                        self?.sendThink(handed, question: question, to: think, remember: false)
                     }
                 }
             default:
