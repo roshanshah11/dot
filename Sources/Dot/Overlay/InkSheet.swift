@@ -110,6 +110,13 @@ enum InkSheet {
                 let view = ZStack(alignment: .topLeading) {
                     page(dark: dark)
                     InkLayerView(marks: marks(progress: progress, dark: dark), accent: accent)
+                    // the caption strip (D7) mid-sentence, then whole
+                    let words = CaptionTiming.words("The discount rate is the cost of capital, so a higher rate shrinks every future cash flow.")
+                    CaptionStripView(caption: CaptionModel(id: 0, words: words.map(\.word), starts: words.map(\.start),
+                                                           begin: Date().timeIntervalSinceReferenceDate - 2.4 * Double(progress) - 0.2, duration: 4.8),
+                                     accent: accent)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
+                        .padding(.bottom, 24)
                 }
                 .frame(width: size.width, height: size.height)
                 out.append(("\(dark ? "dark" : "light")-\(progress >= 1 ? "done" : "half")", AnyView(view)))

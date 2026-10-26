@@ -110,6 +110,9 @@ final class CompanionModel: ObservableObject {
     @Published var shapes: [ShapeMark] = []
     /// Ink on this screen (parity batch 1), drawn by InkLayerView.
     @Published var ink: [InkMarkModel] = []
+    /// The caption strip (parity D7) and how far above the screen's bottom edge it sits (clear of the Dock).
+    @Published var caption: CaptionModel?
+    var captionInset: CGFloat = 40
     @Published var highlight: CGRect?
     @Published var highlightLabel: String?
     /// 0...1: the highlight's dashed outline draws itself on when it lands.
@@ -205,6 +208,11 @@ struct CompanionView: View {
             }
             if !model.ink.isEmpty {
                 InkLayerView(marks: model.ink, accent: model.color)
+            }
+            if let caption = model.caption {
+                CaptionStripView(caption: caption, accent: model.color)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
+                    .padding(.bottom, model.captionInset)
             }
             if let ring = model.ring {
                 RingView(ring: ring, color: model.color, done: model.ringDone)
@@ -903,6 +911,7 @@ final class OverlayManager {
     /// Ink on the live screen (parity batch 1): the drawing by id, and the pen's state (InkLayer.swift).
     var inkBoard = InkBoard()
     var inkPen = InkPenState()
+    var captionSerial = 0
     /// Marks hidden because their content scrolled out of view, restored when it comes back.
     private var hiddenRing: (Ring, Int)?
     private var hiddenHighlight: (CGRect, Int)?

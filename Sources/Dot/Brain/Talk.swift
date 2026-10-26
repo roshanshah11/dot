@@ -137,6 +137,8 @@ final class Talk {
     private var listedElements: [AXElementInfo] = []
     /// No visual of this answer has landed yet: the first one decides whether the last answer's ink stays (D4).
     private var inkTurnFresh = true
+    /// This answer has drawn ink: a typed question that draws always captions (parity D7).
+    private var turnDrew = false
     /// The screenshots decoded for reading what is under free words, by display (cleared each turn).
     private var decodedShots: [CGDirectDisplayID: CGImage] = [:]
 
@@ -191,7 +193,7 @@ final class Talk {
             return self.recorder.isRecording || self.lecture.isListening
         }
         self.speaker.onFinishedAll = { [weak self] in
-            Task { @MainActor in self?.scheduleIdleCheck() }
+            Task { @MainActor in self?.overlay.endCaption(); self?.scheduleIdleCheck() }
         }
         // He moved a figure (VI-06): a quiet turn that speaks only if the move changes the answer.
         board.onEvent = { [weak self] event in self?.cardEvent(event) }
@@ -418,7 +420,7 @@ final class Talk {
     private func beginListening(mode: HotkeyMonitor.Mode) {
         guard phase == .idle || phase == .speaking || phase == .thinking else { return }
         // barge-in: the pen holds after the stroke it is on, and the drawing stays (D4)
-        if phase == .speaking || phase == .thinking { overlay.holdInk(); stopSpeaking(); cutActiveTurn() }
+        if phase == .speaking || phase == .thinking { overlay.holdInk(); overlay.clearCaption(); stopSpeaking(); cutActiveTurn() }
         self.mode = mode
         quietTurn = false   // a spoken question is always answered aloud, whatever the last test turn was
         endBench()          // nor is it ever a bench turn
@@ -2698,6 +2700,7 @@ final class Talk {
         turnRevealsEnqueued = 0
         beatsFired = 0
         inkTurnFresh = true
+        turnDrew = false
         decodedShots = [:]
         quietWork.forEach { $0.cancel() }
         quietWork = []
@@ -3110,6 +3113,7 @@ final class Talk {
         // a STEP only lights the panel: the box on his notes stays while he reads
         if visuals.contains(where: { if case .step = $0 { return false }; return true }) { overlay.fadeOldMarks() }
         inkStarted(beat, visuals: visuals)
+        captionStarted(beat)
         var label: String?
         for tag in visuals {
             switch tag {
@@ -3637,6 +3641,7 @@ final class Talk {
         let drawn = overlay.inkBeat(items, sentence: quiet ? BubbleLines.readingTime(of: beat.text) : SpeechActivity.recentDuration(),
                                     characters: beat.text.count, busy: context.elements.map(\.frame),
                                     luminance: { [weak self] rect in self?.luminance(under: rect) })
+        if !drawn.isEmpty { turnDrew = true }
         for (id, spec) in drawn {
             switch spec.kind {
             case .photo:
@@ -3651,6 +3656,14 @@ final class Talk {
                 break
             }
         }
+    }
+
+    /// Captions while Dot talks (parity D7): on with Home > Voice > Drawing, and always for a typed question that draws.
+    private func captionStarted(_ beat: Beat) {
+        guard !beat.text.isEmpty, !benchMode, (config.inkCaptions && !quietTurn) || (lastAskWasTyped && turnDrew) else { return }
+        let quiet = quietTurn || textSurface
+        let duration = quiet ? BubbleLines.readingTime(of: beat.text) : SpeechActivity.recentDuration() ?? CaptionTiming.estimate(beat.text)
+        overlay.caption(beat.text, duration: duration)
     }
 
     /// Where an ink place is on the screen (AppKit points): an element's frame, a pixel point as a zero-size rect, or
@@ -4022,6 +4035,7 @@ final class Talk {
         hud.escapeDismiss()
         overlay.clearMarks()
         overlay.clearInk()
+        overlay.clearCaption()
         overlay.hideBubble(after: 0)
         overlay.setPhase(.idle)
         overlay.releaseTransient(after: 0.3)
