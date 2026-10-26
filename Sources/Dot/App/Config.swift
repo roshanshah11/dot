@@ -58,6 +58,9 @@ struct DotConfig: Codable {
     var inkCaptions = false
     /// Where agents and jobs sit (parity J6): "corner" (bottom right), "left" or "right" (a column of small windows).
     var stackSide = "corner"
+    /// Agents' and jobs' MCP servers go through Dot's tool router (parity IN-03): started on first use, restarted when
+    /// they die, long calls handed back as handles. false: the servers run direct, as before.
+    var routeTools = true
     /// Course terms and names the recognizer should write his way (one per line, "heard => correct").
     var dictionaryFile = "~/.config/dot/dictionary.txt"
     /// Where Murmur keeps its dictation history, read for "what did i say in the meeting".
@@ -271,6 +274,7 @@ struct DotConfig: Codable {
         penSounds = get(.penSounds, d.penSounds)
         inkCaptions = get(.inkCaptions, d.inkCaptions)
         stackSide = get(.stackSide, d.stackSide)
+        routeTools = get(.routeTools, d.routeTools)
         dictionaryFile = get(.dictionaryFile, d.dictionaryFile)
         murmurHistoryFile = get(.murmurHistoryFile, d.murmurHistoryFile)
         murmurLogDirectory = get(.murmurLogDirectory, d.murmurLogDirectory)

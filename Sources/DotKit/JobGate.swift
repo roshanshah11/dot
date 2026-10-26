@@ -112,6 +112,8 @@ public enum JobGate {
     ]
 
     public static func decide(tool: String, input: [String: AnyCodableValue], context c: JobGateContext) -> JobGateDecision {
+        // 0. A router handle's result (IN-03): the call it collects already came through here.
+        if RouterCore.isCheck(tool) { return .allow }
         let atlasWay = c.permissions == .atlas && !c.bench
         if atlasWay, let why = AtlasDeny.refusal(tool: tool, input: input, home: c.home, vault: c.vault, cwd: c.jobFolder) { return .deny(why) }
         // 1. The hands check every press themselves.

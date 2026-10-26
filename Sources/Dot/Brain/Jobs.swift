@@ -134,6 +134,13 @@ final class JobManager {
 
     static var root: URL { URL(fileURLWithPath: NSHomeDirectory()).appendingPathComponent("Dot/jobs", isDirectory: true) }
 
+    /// What a job runs without asking the gate: the dot tools, web reads and Atlas's reads.
+    static var allowedTools: [String] {
+        let reads = DotConfig.talkAtlasTools.filter { !DotConfig.talkWriteTools.contains($0) }.map { "mcp__atlas__\($0)" }
+            .filter { !Talk.guestTools.contains($0) }
+        return ["mcp__dot", "WebSearch", "WebFetch", "Skill", "Glob", "Grep", "TodoWrite"] + reads
+    }
+
     var running: [Job] { jobs.filter { $0.phase.isLive } }
     var pausedJob: Job? { jobs.last { $0.phase == .paused } }
     var frontJob: Job? { running.last { $0.placement == .front } }
@@ -234,9 +241,7 @@ final class JobManager {
         let bashOn = !bench && (atlasWay || sandboxVerified == true)
         if !bashOn { disallowed.append("Bash") }
         options.disallowedTools = disallowed
-        let reads = DotConfig.talkAtlasTools.filter { !DotConfig.talkWriteTools.contains($0) }.map { "mcp__atlas__\($0)" }
-            .filter { !Talk.guestTools.contains($0) }
-        options.allowedTools = ["mcp__dot", "WebSearch", "WebFetch", "Skill", "Glob", "Grep", "TodoWrite"] + reads
+        options.allowedTools = Self.allowedTools
         options.maxTurns = nil
         options.permissionMode = "default"
         options.permissionPromptOverStdio = true
@@ -265,7 +270,9 @@ final class JobManager {
             let dir = (bench ? URL(fileURLWithPath: "/tmp/dot-bench/jobs/.mcp") : Self.root.appendingPathComponent(".mcp"))
             try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
             let file = dir.appendingPathComponent("\(id).json")
-            try? data.write(to: file)
+            // IN-03: atlas and atlas-send through the router under their own names; the gate below sees the same tools.
+            let routed = config.routeTools ? RouterMCPServer.writeRouted(data, to: file, deny: options.disallowedTools) : nil
+            if routed == nil { try? data.write(to: file) }
             options.mcpConfigPath = file.path
         }
         let session = ClaudeSession(label: "job:\(id)", claudePath: config.claudeExecutable, options: options)

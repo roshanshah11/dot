@@ -11,6 +11,16 @@ case "--gate":
 case "--hands-mcp":
     // A job's `dot` tools (the fast lane): stdio MCP in, relayed to the running Dot over the control socket.
     HandsMCPServer.run(Array(arguments.dropFirst()))
+case "--router-mcp":
+    // The tool router (IN-03): one MCP server under its own name, started on first use, restarted when it dies, and
+    // a call past its time handed back as a handle (router_check).
+    RouterMCPServer.run(Array(arguments.dropFirst()))
+case "--router-fake":
+    // The router self-test's stand-in MCP server.
+    RouterFake.run(Array(arguments.dropFirst()))
+case "--router-selftest":
+    // IN-03's checks: the router over stdio against the fake, then real Claude Code with the job gate, direct and routed.
+    RouterSelfTest.run(Array(arguments.dropFirst()))
 case "--job-run":
     // One real bench job, headless, without the running Dot (its own socket and log; never port 9222).
     JobHarness.run(Array(arguments.dropFirst()))
@@ -111,6 +121,8 @@ case "--help", "-h":
       Dot --track-selftest     the running Dot checks that marks stay on scrolled content (posts real scrolls; run while away)
       Dot --selftest           check the notch's permission-card queue (no agents, no model)
       Dot --gate               the agents' tool-call hook (Claude Code runs it; JSON on stdin)
+      Dot --router-mcp --server <name> --spec <file>   one MCP server through the tool router (Claude Code runs it)
+      Dot --router-selftest [--quick] [--no-claude]    the router against a fake server, then Claude Code and the job gate
       Dot --host [list]        the agent host that keeps agents running across a relaunch (launchd runs it)
       Dot --jobs [--json]      what an install would interrupt now (exit 0 idle, 1 busy, 3 no answer)
       Dot --version

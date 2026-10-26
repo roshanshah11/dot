@@ -95,7 +95,7 @@ public enum HandsMCPWire {
         line(["jsonrpc": "2.0", "id": id, "error": ["code": code, "message": message]])
     }
 
-    static func line(_ object: [String: Any]) -> String {
+    public static func line(_ object: [String: Any]) -> String {
         guard let data = try? JSONSerialization.data(withJSONObject: object, options: [.withoutEscapingSlashes]),
               let s = String(data: data, encoding: .utf8) else { return "{}" }
         return s

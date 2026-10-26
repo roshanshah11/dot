@@ -154,6 +154,8 @@ public enum Sentinel {
             }
         }
         guard toolName.hasPrefix("mcp__") else { return false }
+        // a router handle's result can be any tool's (IN-03): always read it
+        if RouterCore.isCheck(toolName) { return true }
         let parts = toolName.split(separator: "__").map(String.init)
         let server = parts.count > 1 ? parts[1].lowercased() : ""
         let tool = parts.count > 2 ? parts[2...].joined(separator: "_") : ""

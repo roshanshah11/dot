@@ -415,6 +415,11 @@ final class AgentManager {
         }
         options.maxTurns = 200
         options.mcpConfigPath = config.mcpConfigPath(config.agentMCPConfig)
+        // IN-03: the agent's servers through the router under their own names, so the gate and deny lists are unchanged.
+        if config.routeTools, let path = options.mcpConfigPath, let data = FileManager.default.contents(atPath: path) {
+            let file = config.agentsRootURL.appendingPathComponent(".mcp/\(agent.slug).json")
+            if RouterMCPServer.writeRouted(data, to: file, deny: options.disallowedTools) != nil { options.mcpConfigPath = file.path }
+        }
         options.strictMCP = false
         options.settingSources = nil
         options.effort = config.agentEffort
@@ -723,6 +728,8 @@ final class AgentManager {
     // MARK: Consent
 
     private func permission(_ request: PermissionRequest, run: Run, completion: @escaping (Bool, String?) -> Void) {
+        // A router handle's result (IN-03): the call it collects already passed this gate.
+        if RouterCore.isCheck(request.toolName) { completion(true, nil); return }
         // Atlas's permissions (his call 2026-10-21): a prompt Claude Code still sends, or a call from a session started
         // guarded, is answered at once; only Atlas's deny list refuses. No card, no Jev, no allowances.
         if config.permissionsMode == .atlas {
