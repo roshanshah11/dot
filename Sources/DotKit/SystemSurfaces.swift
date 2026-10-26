@@ -81,3 +81,17 @@ public enum SystemSurfaces {
         return nil
     }
 }
+
+/// Whether a Focus (Do Not Disturb, Work, Sleep...) is on (parity S1), read off the menu bar: Control Center puts its
+/// Focus item up while one is on. Apple's Focus API needs an entitlement only a provisioned app carries, and the
+/// DoNotDisturb database is closed to apps without Full Disk Access, so the menu bar is the signal Dot can read.
+public enum FocusSignal {
+    public static let itemNames: Set<String> = ["FocusModes", "Focus"]
+
+    public static func isOn(_ windows: [SystemWindow]) -> Bool {
+        windows.contains { w in
+            (w.owner == "Control Center" || w.owner == "ControlCenter") && itemNames.contains(w.name) && w.layer >= 0 && w.alpha > 0.05
+                && w.frame.minY < 40 && w.frame.height <= 40 && w.frame.width > 0
+        }
+    }
+}

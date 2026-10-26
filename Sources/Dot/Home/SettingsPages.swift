@@ -395,9 +395,11 @@ struct MicrophonePage: View {
                     RadioRow(chosen, detail: "not connected right now", selected: true) {}
                 }
             }
-            HomeSection("Calls") {
+            HomeSection("Calls and Focus") {
                 SettingToggle("Quiet on calls", detail: "stay quiet while another app has the microphone: notices, offers and spoken heads-ups wait",
                               isOn: $model.settings.quietOnCalls)
+                SettingToggle("Quiet in Focus", detail: "the same while a Focus or Do Not Disturb is on; answers to what you just asked still speak",
+                              isOn: $model.settings.quietInFocus)
             }
             SettingsSaveBar(model: model)
         }

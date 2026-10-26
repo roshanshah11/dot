@@ -155,7 +155,7 @@ final class AgentManager {
         hud.onConsentShown = { [weak self] card in
             guard let self else { return }
             // A muted Mac gets the card as text, never the spoken line (decided item 22).
-            let report = AgentReport.consentCard(speakResults: self.config.speakAgentResults, onCall: self.config.quietOnCalls && CallPresence.isOnCall(),
+            let report = AgentReport.consentCard(speakResults: self.config.speakAgentResults, onCall: Quiet.now(self.config),
                                                  outputSilent: AudioDevices.outputIsSilent())
             guard report.voice else { return }
             SpeakLog.as("consent (\(card.agent))") { self.speaker.speak("\(card.agent) wants to \(card.title).") }
@@ -632,7 +632,7 @@ final class AgentManager {
         let quiet = run.isRoutine || run.quietReport
         let wasRoutine = run.isRoutine
         let unprompted = run.turnsOwed == 0
-        let onCall = config.quietOnCalls && CallPresence.isOnCall()
+        let onCall = Quiet.now(config)
         let report = AgentReport.decide(speakResults: config.speakAgentResults, routineMode: quiet ? (run.routineMode ?? .report) : nil, notify: parsed.notify,
                                         unprompted: unprompted, onCall: onCall, threadOpen: isThreadOpen?(agent.slug) == true,
                                         outputSilent: AudioDevices.outputIsSilent(), isQuestion: parsed.isQuestion)
@@ -930,7 +930,7 @@ final class AgentManager {
                 if run?.session.isRunning == true { answer(false, "The task was stopped.") } else { answered = true }
             }
             // No chime into a call or a muted Mac (AgentReport.consentCard); the card itself is the text.
-            hud.present(card, chime: AgentReport.consentCard(speakResults: config.speakAgentResults, onCall: config.quietOnCalls && CallPresence.isOnCall(),
+            hud.present(card, chime: AgentReport.consentCard(speakResults: config.speakAgentResults, onCall: Quiet.now(config),
                                                             outputSilent: AudioDevices.outputIsSilent()).chime)
             postActivity(agent.slug)
         }

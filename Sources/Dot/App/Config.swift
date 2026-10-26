@@ -52,6 +52,8 @@ struct DotConfig: Codable {
     var showInRecordings = true
     /// Hold notices, suggestions and spoken heads-ups while he is on a call (mic in use by another app).
     var quietOnCalls = true
+    /// The same quiet while a Focus (Do Not Disturb, Work, Sleep...) is on (parity S1).
+    var quietInFocus = true
     /// Ink on the screen makes its pen sounds (parity D6).
     var penSounds = true
     /// A caption strip at the bottom of the screen while Dot talks, words lighting in turn (parity D7).
@@ -278,6 +280,7 @@ struct DotConfig: Codable {
         speakTypedAnswers = get(.speakTypedAnswers, d.speakTypedAnswers)
         showInRecordings = get(.showInRecordings, d.showInRecordings)
         quietOnCalls = get(.quietOnCalls, d.quietOnCalls)
+        quietInFocus = get(.quietInFocus, d.quietInFocus)
         penSounds = get(.penSounds, d.penSounds)
         inkCaptions = get(.inkCaptions, d.inkCaptions)
         stackSide = get(.stackSide, d.stackSide)

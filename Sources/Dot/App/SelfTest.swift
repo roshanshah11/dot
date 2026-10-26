@@ -54,7 +54,22 @@ enum SelfTest {
         check("a request that starts with ok is not an answer (FX-01)", ConsentVoice.interpret("ok so explain this", guarded: physics.guarded, card: physics.title) == .none)
         editKeys(check)
         stepAside(check, hud: hud)
+        quietInFocus(check)
         return ok
+    }
+
+    /// S1: a Focus keeps Dot quiet like a call does, and the setting turns that off. The live read runs too (it must
+    /// answer, and agree with the window list it reads).
+    static func quietInFocus(_ check: (String, Bool) -> Void) {
+        var config = DotConfig()
+        let onCall = config.quietOnCalls && CallPresence.isOnCall()
+        FocusPresence.override = true
+        check("a Focus on: quiet", Quiet.now(config))
+        config.quietInFocus = false
+        check("Quiet in Focus off: a Focus alone is not quiet", Quiet.now(config) == onCall)
+        FocusPresence.override = nil
+        let live = FocusPresence.isOn()
+        check("the live Focus read agrees with the menu bar (\(live ? "on" : "off"))", live == FocusSignal.isOn(StepAside.liveWindows()))
     }
 
     /// NO-04: a fake Spotlight in the window list fades the notch and the orb's overlay (marks and ink are drawn there)

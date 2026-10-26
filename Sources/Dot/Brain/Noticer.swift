@@ -80,7 +80,7 @@ final class Noticer {
     }
 
     private func consider(_ app: NSRunningApplication, repeated: Bool) {
-        if config.quietOnCalls, CallPresence.isOnCall() { return }
+        if Quiet.now(config) { return }
         let context = AccessibilityContext.capture(maxElements: 0, timeBudget: 0.15)
         if offers, offerSkill(app: app, context: context) { return }
         // One line per switch: a deadline notice comes first; with none to give, the switch is a break.
@@ -256,7 +256,7 @@ final class Noticer {
     private func closedGate() -> String? {
         Quips.closedGate(cooldownOn: chat.quipCooldown != nil,
                          secondsSinceKey: CGEventSource.secondsSinceLastEventType(.hidSystemState, eventType: .keyDown),
-                         onCall: config.quietOnCalls && CallPresence.isOnCall(),
+                         onCall: Quiet.now(config),
                          busy: !(canSpeakUp?() ?? true),
                          reduceMotion: NSWorkspace.shared.accessibilityDisplayShouldReduceMotion,
                          offerUp: Self.pending != nil)
@@ -264,7 +264,7 @@ final class Noticer {
 
     private var quipGatesOpen: Bool {
         Quips.gatesOpen(secondsSinceKey: CGEventSource.secondsSinceLastEventType(.hidSystemState, eventType: .keyDown),
-                        onCall: config.quietOnCalls && CallPresence.isOnCall(),
+                        onCall: Quiet.now(config),
                         busy: !(canSpeakUp?() ?? true),
                         reduceMotion: NSWorkspace.shared.accessibilityDisplayShouldReduceMotion)
     }
@@ -298,7 +298,7 @@ final class Noticer {
         let probe = title + " " + url
         guard Self.documentWords.firstMatch(in: probe, range: NSRange(location: 0, length: (probe as NSString).length)) != nil else { return }
         guard Date().timeIntervalSince(lastSuggestAt) > chat.cooldown(minutes: config.suggestionCooldownMinutes) else { return }
-        if config.quietOnCalls, CallPresence.isOnCall() { return }
+        if Quiet.now(config) { return }
         suggest(app: context.appName ?? "", title: title, url: url)
     }
 

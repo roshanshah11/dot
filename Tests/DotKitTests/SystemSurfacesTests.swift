@@ -46,3 +46,18 @@ final class SystemSurfacesTests: XCTestCase {
         XCTAssertNil(SystemWindow(["kCGWindowLayer": NSNumber(value: 0)]))
     }
 }
+
+final class FocusSignalTests: XCTestCase {
+    func item(_ name: String, y: CGFloat = 0, h: CGFloat = 33, owner: String = "Control Center", alpha: Double = 1) -> SystemWindow {
+        SystemWindow(owner: owner, name: name, layer: 25, frame: CGRect(x: 1220, y: y, width: 34, height: h), alpha: alpha)
+    }
+
+    func testTheMenuBarFocusItem() {
+        let bar = [item("Clock"), item("WiFi"), item("BentoBox-0"), item("Battery")]
+        XCTAssertFalse(FocusSignal.isOn(bar), "his usual menu bar (the always-shown items, 2026-10-26)")
+        XCTAssertTrue(FocusSignal.isOn(bar + [item("FocusModes")]))
+        XCTAssertFalse(FocusSignal.isOn(bar + [item("FocusModes", alpha: 0)]), "a see-through item is not up")
+        XCTAssertFalse(FocusSignal.isOn(bar + [item("FocusModes", y: 300, h: 400)]), "Control Center's Focus panel is not the menu bar item")
+        XCTAssertFalse(FocusSignal.isOn(bar + [item("FocusModes", owner: "Comet")]))
+    }
+}

@@ -1608,6 +1608,11 @@ final class JobManager {
             return
         }
         overlay?.greet(line, for: short ? 3 : 6)
+        // On a call or in a Focus (S1) a job finishes as text on its card; the start line he just asked for still speaks.
+        if !start, Quiet.now(config) {
+            Log.info("job[\(job.id)] quiet (call or Focus): the line is text only")
+            return
+        }
         if AudioDevices.outputIsSilent() {
             Log.info("job[\(job.id)] muted: the line is text only")
             return

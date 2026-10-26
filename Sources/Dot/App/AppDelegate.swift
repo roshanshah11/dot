@@ -36,7 +36,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     /// The alive pass (docs/alive.md): what the orb reacts to, and the quips at its breaks.
     private func wireAlive() {
-        overlay.isQuiet = { [weak self] in self.map { $0.config.quietOnCalls && CallPresence.isOnCall() } ?? false }
+        overlay.isQuiet = { [weak self] in self.map { Quiet.now($0.config) } ?? false }
         overlay.isRecording = { [weak self] in self.map { $0.talk.lecture.isListening || ($0.murmur?.isRecording ?? false) } ?? false }
         overlay.keepOut = { [weak self] in self?.talk.panels.panel.floatingFrame }
         overlay.onWake = { [weak self] idle in self?.noticer.quip(idle > 15 * 60 ? .backLong : .backShort) }
@@ -93,7 +93,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         Theme.look = tokens.look("study")
         Chimes.shared.configure(names: ["launch": tokens.chimes.launch, "needsYou": tokens.chimes.needsYou, "done": tokens.chimes.done, "failed": tokens.chimes.failed])
         // The sound set (AU-04) holds on a call, like every other chime (FX-11).
-        Chimes.shared.isSilenced = { [weak self] in self.map { $0.config.quietOnCalls && CallPresence.isOnCall() } ?? false }
+        Chimes.shared.isSilenced = { [weak self] in self.map { Quiet.now($0.config) } ?? false }
         PenSounds.shared.allowed = { [weak self] in self.map { $0.config.penSounds && !CallPresence.isOnCall() } ?? false }
         agents.atlas = atlas
         agents.jev = jev
@@ -225,7 +225,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         talk.morningAnswer = { [weak self] yes, adjust in self?.morning.decideFirst(yes: yes, adjust: adjust) }
         morning.canShow = { [weak self] in
             guard let self else { return false }
-            return self.talk.isIdle && !(self.config.quietOnCalls && CallPresence.isOnCall())
+            return self.talk.isIdle && !Quiet.now(self.config)
         }
         let hudModel = hud.model
         hudModel.onOpenHome = { [weak self] slug in Task { @MainActor in self?.home.show(agent: slug) } }
@@ -284,7 +284,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         suggester = AgentSuggester(config: config, agents: agents, hud: hud)
         suggester.canShow = { [weak self] in
             guard let self else { return false }
-            return self.talk.isIdle && !(self.config.quietOnCalls && CallPresence.isOnCall())
+            return self.talk.isIdle && !Quiet.now(self.config)
         }
         suggester.start()
         announceUpdate()
@@ -370,7 +370,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                                    SpeakLog.as("notice") { self.speaker.speak("on it, a brief in a minute.") }
                                    self.agents.handoff(brief: "in \(startsIn) minutes roshan has: \(title). write a short brief fast: who or what it is, two talking points, two questions to ask. put it on the clipboard and in the output folder; keep it under a page.", agentName: nil, context: nil, shots: nil)
                                }, secondaryTitle: "dismiss", secondary: {}, seconds: 60))
-        let onCall = config.quietOnCalls && CallPresence.isOnCall()
+        let onCall = Quiet.now(config)
         if !onCall { overlay.greet(line, for: 12) }
         if talk.isIdle, config.speakMeetingNotice, !onCall {
             SpeakLog.as("notice") { speaker.speak("heads up, \(next.title.lowercased()) in \(next.startsIn) minutes.") }
