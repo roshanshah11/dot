@@ -25,6 +25,10 @@ final class SkillKitTests: XCTestCase {
         XCTAssertEqual(text, "---\nname: deal-notes\ndescription: Notes on a deal.\n---\n\n# Deal notes\n\nRead the 8-K first.\n")
         XCTAssertEqual(SkillDraft.extract("---\nname: x\ndescription: y\n---\nbody")?.hasPrefix("---\nname: x"), true)
         XCTAssertNil(SkillDraft.extract("I couldn't read the links."))
+        // a draft whose body has code blocks of its own comes back whole
+        let withCode = "---\nname: x\ndescription: y\n---\n\n# X\n\n```bash\nls -la\n```\n\nThen read it.\n"
+        XCTAssertEqual(SkillDraft.extract(withCode), withCode)
+        XCTAssertEqual(SkillDraft.extract("Draft:\n```markdown\n" + withCode + "```\n"), withCode)
     }
 
     func testProblems() {

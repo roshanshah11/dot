@@ -85,15 +85,27 @@ public enum SkillDraft {
         """
     }
 
-    /// The SKILL.md in the pass's reply (a fenced block or the reply from its first --- line).
+    /// The SKILL.md in the pass's reply: the reply itself when it starts with the --- line (its body may hold code
+    /// blocks of its own), else a fenced block that opens on the frontmatter, else the reply from its first --- line.
     public static func extract(_ reply: String) -> String? {
-        var text = reply
-        if let fence = text.range(of: "```(?:markdown|md)?\\n", options: .regularExpression),
-           let end = text.range(of: "\n```", options: .backwards), end.lowerBound > fence.upperBound {
-            text = String(text[fence.upperBound..<end.lowerBound])
+        let trimmed = reply.trimmingCharacters(in: .whitespacesAndNewlines)
+        var text: Substring
+        if trimmed.hasPrefix("---") {
+            text = Substring(trimmed)
+        } else if let fence = trimmed.range(of: "```[a-z]*\\n---", options: .regularExpression) {
+            text = trimmed[trimmed.index(fence.upperBound, offsetBy: -3)...]
+            // the closing fence is the last line that is only ```
+            let body = String(text)
+            if let last = try? NSRegularExpression(pattern: "\n```[ \t]*(?:\n|$)").matches(in: body, range: NSRange(body.startIndex..., in: body)).last,
+               let end = Range(last.range, in: body) {
+                text = Substring(body[..<end.lowerBound])
+            }
+        } else if let start = trimmed.range(of: "---\n") {
+            text = trimmed[start.lowerBound...]
+        } else {
+            return nil
         }
-        guard let start = text.range(of: "---") else { return nil }
-        let out = String(text[start.lowerBound...]).trimmingCharacters(in: .whitespacesAndNewlines) + "\n"
+        let out = text.trimmingCharacters(in: .whitespacesAndNewlines) + "\n"
         return frontmatter(out)["name"] == nil ? nil : out
     }
 
