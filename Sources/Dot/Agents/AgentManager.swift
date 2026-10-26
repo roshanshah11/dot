@@ -1181,11 +1181,15 @@ final class AgentManager {
         let url = agent.folder.appendingPathComponent(".dot/transcript.jsonl")
         guard let content = try? String(contentsOf: url, encoding: .utf8) else { return [] }
         let iso = ISO8601DateFormatter()
-        let lines = content.split(separator: "\n").suffix(limit)
+        let all = content.split(separator: "\n")
+        let lines = all.suffix(limit)
+        let first = all.count - lines.count
         return lines.enumerated().compactMap { index, line in
             guard let data = line.data(using: .utf8), let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
                   let role = object["role"] as? String, let text = object["text"] as? String else { return nil }
-            return TranscriptEntry(id: index, role: role, text: text, time: (object["ts"] as? String).flatMap { iso.date(from: $0) })
+            let ts = object["ts"] as? String ?? ""
+            return TranscriptEntry(id: first + index, role: role, text: text, time: iso.date(from: ts),
+                                   key: TranscriptRow.legacyID(ts: ts, kind: role, text: text))
         }
     }
 
@@ -1465,6 +1469,11 @@ final class AgentManager {
         case .note(let from, let to, let text):
             let sent = leaveNote(from: from, to: to, text: text)
             return sent.ok ? ["ok": true, "text": sent.line] : ["error": sent.line]
+        case .archive(let name):
+            guard let agent = find(name) else { return ["error": "no agent named \(name)"] }
+            guard agent.slug != "dot" else { return ["error": "Dot's own agent stays"] }
+            archive(agent)
+            return find(agent.slug) == nil ? ["ok": true, "text": "\(agent.name) archived to agents/.archive"] : ["error": "couldn't archive \(agent.name)"]
         }
     }
 

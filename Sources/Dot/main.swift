@@ -14,7 +14,7 @@ case "--hands-mcp":
 case "--agent-mcp":
     // An agent's own tools (`dot-agents`: note_to, list_agents, make_image), relayed to the running Dot.
     AgentMCPServer.run(Array(arguments.dropFirst()))
-case "--agent-start", "--agent-status", "--agent-list", "--agent-tell", "--agent-note":
+case "--agent-start", "--agent-status", "--agent-list", "--agent-tell", "--agent-note", "--agent-archive":
     // Agents from outside (parity AG-19): start one, tell it something, leave it a note, or read where they stand.
     // Exit 0 done, 2 usage, 3 no answer from Dot, 4 Dot refused (no such agent).
     let flag = arguments.first!
@@ -55,6 +55,9 @@ case "--agent-suggest":
     let found = AgentSuggester.suggestions(config: config, agents: roster, dismissed: [:], now: Date())
     print(found.isEmpty ? "no repeated asks without an agent in the last 14 days" : found.map { "\($0.name) (\($0.count)x, key \"\($0.key)\"): \($0.line)" }.joined(separator: "\n"))
     exit(0)
+case "--home-selftest":
+    // Batch 6: Home's state store and the talk log's ids, on a temp database.
+    MainActor.assumeIsolated { HomeSelfTest.run() }
 case "--skill-avatars":
     // SK-05: each installed skill's picture by the rule table (his picks in ~/Dot/skill-avatars.json win in Home).
     for skill in SkillEntry.load(from: SkillsPage.root) {
@@ -205,6 +208,7 @@ case "--help", "-h":
       Dot --agent-start <name> "<brief>" [--quiet]   start (or follow up with) an agent in the running Dot; --quiet: no chime or voice [--json]
       Dot --agent-status [name]            where an agent stands: state, last step, next, files, spend today [--json]
       Dot --agent-list                     every agent's status [--json]
+      Dot --agent-archive <name>           stop an agent and move its folder to agents/.archive [--json]
       Dot --agent-suggest                  the weekly agent-suggestion sweep, printed now (no card)
       Dot --skill-avatars                  each skill's picture by Dot's rule table
       Dot --skill-draft "<links>" "<purpose>"   draft a SKILL.md from links and print it (saves nothing)

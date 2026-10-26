@@ -25,7 +25,8 @@ final class AgentWireTests: XCTestCase {
 
     func testRequestRoundTrip() {
         let commands: [AgentCommand] = [.start(name: "a", brief: "b"), .start(name: "a", brief: "b", quiet: true), .status(name: nil), .status(name: "a"), .list,
-                                        .tell(name: "a", message: "m"), .tell(name: "a", message: "m", quiet: true), .note(from: "x", to: "a", text: "t")]
+                                        .tell(name: "a", message: "m"), .tell(name: "a", message: "m", quiet: true), .note(from: "x", to: "a", text: "t"),
+                                        .archive(name: "a")]
         for c in commands { XCTAssertEqual(AgentCommand.from(request: c.request), c) }
         XCTAssertNil(AgentCommand.from(request: ["verb": "agent", "do": "start", "name": "a"]))
         XCTAssertNil(AgentCommand.from(request: ["verb": "agent", "do": "explode"]))

@@ -43,6 +43,9 @@ final class HomeWindowController {
         return model.selected?.slug
     }
 
+    /// On quit: the open thread's draft and place.
+    func saveState() { model.saveThreadState() }
+
     func show(agent slug: String? = nil) {
         model.reload()
         if let slug, let agent = model.agents.first(where: { $0.slug == slug }) { model.select(agent); model.page = .agent }
@@ -63,10 +66,13 @@ final class HomeWindowController {
 }
 
 struct TranscriptEntry: Identifiable, Equatable {
+    /// Its line in the transcript file (append-only, so it never changes).
     let id: Int
     let role: String
     let text: String
     let time: Date?
+    /// A stable key for Home's state (scroll place, reactions): sha1 of time, role and text (TranscriptRow.legacyID).
+    var key: String = ""
 }
 
 /// A transcript row as the thread draws it. A step owns the "output" and "tool_error" rows
@@ -125,8 +131,21 @@ final class HomeModel: ObservableObject {
     @Published var brief: TodayBrief?
     @Published var newAgentName = ""
     @Published var newAgentBrief = ""
-    @Published var composer = ""
-    @Published var attachments: [URL] = []
+    @Published var composer = "" { didSet { if composer != oldValue { draftSaveSoon() } } }
+    @Published var attachments: [URL] = [] { didSet { if attachments != oldValue { draftSaveSoon() } } }
+    // HO-07, HO-08: each thread keeps its draft and where he was reading (HomeState).
+    /// The thread whose draft is in the composer.
+    private var openThread: String?
+    private var draftSave: DispatchWorkItem?
+    /// The thread item at the top of the view, as he scrolls.
+    @Published var scrollPosition: Int?
+    /// Where the open thread should land; `restoreToken` changes when it should be applied.
+    @Published var restore: ScrollRestore = .end
+    @Published var restoreToken = 0
+    /// While a switch lands, a growing transcript doesn't pull the view to the end.
+    var restoring = false
+    /// "n new" after coming back to a thread that moved on.
+    @Published var newSinceLeft = 0
     @Published var filter = ""
     @Published var lastLines: [String: String] = [:]
     @Published var lastActivity: [String: Date] = [:]
@@ -247,14 +266,49 @@ final class HomeModel: ObservableObject {
     }
 
     func select(_ agent: AgentManager.Agent?) {
+        let thread = agent.map { ThreadID.agent($0.slug) }
+        let switching = thread != openThread
+        if switching {
+            saveThreadState()
+            openThread = thread
+            let draft: (text: String, attachments: [URL]) = thread.map { HomeState.shared.draft(thread: $0) } ?? ("", [])
+            composer = draft.text
+            attachments = draft.attachments
+        }
         selected = agent
         guard let agent else { entries = []; claudeMD = ""; runs = []; outputs = []; previewURL = nil; return }
         entries = agentManager.transcriptEntries(for: agent)
+        if switching, let thread {
+            let saved = HomeState.shared.scroll(thread: thread)
+            restore = ScrollRestore.decide(savedAnchor: saved.anchor, savedNewest: saved.newest, turns: entries.map(\.key))
+            restoring = true
+            restoreToken += 1
+        }
         claudeMD = (try? String(contentsOf: agent.claudeMD, encoding: .utf8)) ?? ""
         runs = ledger.recent(limit: 30, agent: agent.slug)
         outputs = agentManager.outputFiles(for: agent)
         if previewURL == nil || !outputs.contains(previewURL!) { previewURL = outputs.first }
         markSeen(agent)
+    }
+
+    /// The open thread's draft and reading place, saved on a switch, on quit, and a second after each keystroke.
+    func saveThreadState() {
+        guard let thread = openThread else { return }
+        draftSave?.cancel()
+        HomeState.shared.saveDraft(thread: thread, text: composer, attachments: attachments)
+        let anchor = scrollPosition.flatMap { id in entries.first { $0.id == id }?.key }
+        HomeState.shared.saveScroll(thread: thread, anchor: anchor, newest: entries.last?.key)
+    }
+
+    private func draftSaveSoon() {
+        draftSave?.cancel()
+        guard let thread = openThread else { return }
+        let work = DispatchWorkItem { [weak self] in
+            guard let self, self.openThread == thread else { return }
+            HomeState.shared.saveDraft(thread: thread, text: self.composer, attachments: self.attachments)
+        }
+        draftSave = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1, execute: work)
     }
 
     func markSeen(_ agent: AgentManager.Agent) {
@@ -636,10 +690,48 @@ struct HomeView: View {
                     }
                     Color.clear.frame(height: 1).id("end")
                 }
+                .scrollTargetLayout()
                 .padding(.horizontal, 18).padding(.vertical, 12)
             }
-            .onChange(of: model.entries.count) { _, _ in withAnimation { proxy.scrollTo("end") } }
-            .onAppear { proxy.scrollTo("end") }
+            .scrollPosition(id: $model.scrollPosition, anchor: .top)
+            .onChange(of: model.entries.count) { _, _ in
+                guard !model.restoring else { return }
+                withAnimation { proxy.scrollTo("end") }
+            }
+            // HO-08: back where he left the thread, or at the end with "n new" when it moved on.
+            .task(id: model.restoreToken) {
+                try? await Task.sleep(nanoseconds: 60_000_000)
+                switch model.restore {
+                case .anchor(let key):
+                    if let entry = model.entries.first(where: { $0.key == key }),
+                       let item = model.items.first(where: { $0.id == entry.id || $0.outputs.contains { $0.id == entry.id } }) {
+                        proxy.scrollTo(item.id, anchor: .top)
+                    } else {
+                        proxy.scrollTo("end")
+                    }
+                case .end:
+                    proxy.scrollTo("end")
+                case .endWithNew(let n):
+                    proxy.scrollTo("end")
+                    model.newSinceLeft = n
+                }
+                try? await Task.sleep(nanoseconds: 400_000_000)
+                model.restoring = false
+                if model.newSinceLeft > 0 {
+                    try? await Task.sleep(nanoseconds: 5_000_000_000)
+                    model.newSinceLeft = 0
+                }
+            }
+            .overlay(alignment: .top) {
+                if model.newSinceLeft > 0 {
+                    Text("\(model.newSinceLeft) new since you left")
+                        .font(.system(size: 11, weight: .semibold)).foregroundStyle(.white)
+                        .padding(.horizontal, 10).padding(.vertical, 4)
+                        .background(accent, in: Capsule())
+                        .padding(.top, 8)
+                        .transition(.opacity)
+                }
+            }
         }
     }
 

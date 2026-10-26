@@ -480,6 +480,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         for job in talk?.jobs.running ?? [] { Log.info("job[\(job.id)] lost at quit") }
         talk?.jobs.stopAll(reason: "quit")
         agents.prepareForQuit()
+        home?.saveState()
         control?.stop()
         Log.info("quit: agents ended")
         Log.flush()

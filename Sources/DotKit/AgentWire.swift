@@ -11,8 +11,10 @@ public enum AgentCommand: Equatable {
     case list
     case tell(name: String, message: String, quiet: Bool = false)
     case note(from: String, to: String, text: String)
+    /// Its folder moves to agents/.archive, as Home's Archive does (the session stops first).
+    case archive(name: String)
 
-    public static let flags = ["--agent-start", "--agent-status", "--agent-list", "--agent-tell", "--agent-note"]
+    public static let flags = ["--agent-start", "--agent-status", "--agent-list", "--agent-tell", "--agent-note", "--agent-archive"]
 
     /// The words after the flag (with `--json` already taken out).
     public static func parse(flag: String, _ args: [String]) -> Result<AgentCommand, Usage> {
@@ -30,6 +32,9 @@ public enum AgentCommand: Equatable {
         case "--agent-tell":
             guard words.count >= 2, !rest(1).isEmpty else { return .failure(.init(flag)) }
             return .success(.tell(name: words[0], message: rest(1), quiet: quiet))
+        case "--agent-archive":
+            let name = rest(0)
+            return name.isEmpty ? .failure(.init(flag)) : .success(.archive(name: name))
         case "--agent-note":
             // --agent-note <to> "<text>" [--from <name>]
             var w = words
@@ -53,6 +58,7 @@ public enum AgentCommand: Equatable {
             case "--agent-status": return "usage: Dot --agent-status [name] [--json]"
             case "--agent-list": return "usage: Dot --agent-list [--json]"
             case "--agent-tell": return "usage: Dot --agent-tell <name> \"<message>\" [--quiet] [--json]"
+            case "--agent-archive": return "usage: Dot --agent-archive <name> [--json]"
             default: return "usage: Dot --agent-note <to> \"<text>\" [--from <name>] [--json]"
             }
         }
@@ -66,6 +72,7 @@ public enum AgentCommand: Equatable {
         case .list: return ["verb": "agent", "do": "list"]
         case .tell(let name, let message, let quiet): return ["verb": "agent", "do": "tell", "name": name, "text": message, "quiet": quiet]
         case .note(let from, let to, let text): return ["verb": "agent", "do": "note", "from": from, "name": to, "text": text]
+        case .archive(let name): return ["verb": "agent", "do": "archive", "name": name]
         }
     }
 
@@ -79,6 +86,7 @@ public enum AgentCommand: Equatable {
         case "status": return .status(name: name.isEmpty ? nil : name)
         case "list": return .list
         case "tell": return name.isEmpty || text.isEmpty ? nil : .tell(name: name, message: text, quiet: quiet)
+        case "archive": return name.isEmpty ? nil : .archive(name: name)
         case "note": return name.isEmpty || text.isEmpty ? nil : .note(from: (r["from"] as? String).flatMap { $0.isEmpty ? nil : $0 } ?? "him", to: name, text: text)
         default: return nil
         }

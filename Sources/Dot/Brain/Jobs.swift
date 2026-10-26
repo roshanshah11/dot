@@ -700,7 +700,7 @@ final class JobManager {
         if failed || stopReason != nil, !job.howtos.isEmpty { howtosFailed(job) }
         refreshPage(job)
         if !job.bench {
-            TranscriptLog.append(kind: .job, you: job.hisWords, dot: line, app: job.appName,
+            TranscriptLog.append(kind: .job, you: job.hisWords, dot: line, app: job.appName, thread: ThreadID.job(job.id),
                                  extra: ["model": job.model, "ms": String(ms), "steps": String(job.steps.count), "placement": job.placement.rawValue])
         }
         let keep = job.rung != nil
