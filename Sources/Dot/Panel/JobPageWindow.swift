@@ -67,6 +67,12 @@ final class JobPageWindow: NSObject, NSWindowDelegate, WKNavigationDelegate, WKU
         window?.orderOut(nil)
     }
 
+    /// Run script in the page (`Dot --page-selftest` clicks the controls with it).
+    func evaluate(_ js: String, done: @escaping (Any?) -> Void) {
+        guard let web else { done(nil); return }
+        web.evaluateJavaScript(js) { value, _ in done(value) }
+    }
+
     private func ensureWindow() {
         if window != nil { return }
         let w = PanelWindow(contentRect: CGRect(x: 0, y: 0, width: PanelDock.defaultWidth, height: 600),

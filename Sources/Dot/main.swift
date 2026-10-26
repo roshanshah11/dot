@@ -103,6 +103,7 @@ case "--help", "-h":
       Dot --snapshot [folder] [notch|stack|overlay|cards|panel]  render every notch state, stack chip, mark and card to PNG
       Dot --stack-demo [--muted] [--job]   a fake agent (or job) through the running Dot's stack (no voice, no chime)
       Dot --stack-selftest [--muted] [--job] [frames.json]   the same demo in this process, its window off screen, G7 to G9 checked
+      Dot --page-selftest                                    a job page in its window: a tick and a letter Send through WebKit
       Dot --stack-selftest --hover | --edges                 a pretend pointer on an avatar; the left and right edge columns (J6)
       Dot --panel file.ui      show a UI-language explanation in the explainer panel (Dot --panel close hides it)
       Dot --prompt talk|think  print a session's system prompt
@@ -260,6 +261,12 @@ case "--stack-demo":
                                                                  userInfo: ["muted": flags.contains("--muted"), "job": flags.contains("--job")], deliverImmediately: true)
     print("asked the running Dot for the stack demo; stack-demo: lines land in dot.log")
     exit(0)
+case "--page-selftest":
+    // A job page in the real page window off every display: a tick and a letter Send clicked in WebKit (parity J1, J2).
+    let pageApp = NSApplication.shared
+    pageApp.setActivationPolicy(.accessory)
+    pageApp.finishLaunching()
+    exit(MainActor.assumeIsolated { PageSelfTest.run() } ? 0 : 1)
 case "--stack-selftest":
     // The stack demo in this process, its window off every display, with G7 to G9's window rules checked (04).
     let flags = Array(arguments.dropFirst())
