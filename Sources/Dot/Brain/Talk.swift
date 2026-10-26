@@ -133,6 +133,12 @@ final class Talk {
     private var bubbleQueue: [String] = []
     private var bubbleWork: DispatchWorkItem?
     private var beatsFired = 0
+    /// The elements this turn's message listed, in its numbering: an ink place `e12` is the twelfth (parity D2).
+    private var listedElements: [AXElementInfo] = []
+    /// No visual of this answer has landed yet: the first one decides whether the last answer's ink stays (D4).
+    private var inkTurnFresh = true
+    /// The screenshots decoded for reading what is under free words, by display (cleared each turn).
+    private var decodedShots: [CGDirectDisplayID: CGImage] = [:]
 
     /// A step-by-step walkthrough: the ringed control Dot waits for him to click (or rest on).
     private struct Walkthrough {
@@ -411,7 +417,8 @@ final class Talk {
 
     private func beginListening(mode: HotkeyMonitor.Mode) {
         guard phase == .idle || phase == .speaking || phase == .thinking else { return }
-        if phase == .speaking || phase == .thinking { stopSpeaking(); cutActiveTurn() }
+        // barge-in: the pen holds after the stroke it is on, and the drawing stays (D4)
+        if phase == .speaking || phase == .thinking { overlay.holdInk(); stopSpeaking(); cutActiveTurn() }
         self.mode = mode
         quietTurn = false   // a spoken question is always answered aloud, whatever the last test turn was
         endBench()          // nor is it ever a bench turn
@@ -466,6 +473,7 @@ final class Talk {
 
     private func endListening(heldFor: TimeInterval) {
         guard phase == .listening else { return }
+        overlay.finishInk()
         levelTimer?.invalidate()
         levelTimer = nil
         hud.model.level = 0
@@ -2689,6 +2697,8 @@ final class Talk {
         bubbleLabel = nil
         turnRevealsEnqueued = 0
         beatsFired = 0
+        inkTurnFresh = true
+        decodedShots = [:]
         quietWork.forEach { $0.cancel() }
         quietWork = []
         quietClock = Date()
@@ -2777,10 +2787,12 @@ final class Talk {
         if let cursorShot, !context.elements.isEmpty {
             lines.append("elements on the cursor's screen (role, label, center x,y in image \(cursorIndex + 1)\(boxPixels != nil ? "; (in box) marks those inside his box" : "")):")
             var count = 0
+            listedElements = []
             for element in context.elements {
                 let center = CGPoint(x: element.frame.midX, y: element.frame.midY)
                 guard let pixel = Coordinates.pixelPoint(fromScreen: center, in: cursorShot.frame) else { continue }
                 count += 1
+                listedElements.append(element)
                 let role = element.role.hasPrefix("AX") ? String(element.role.dropFirst(2)) : element.role
                 let inBox = boxPixels.map { $0.insetBy(dx: -4, dy: -4).contains(pixel) } ?? false
                 lines.append("\(count). \(role) \"\(element.title)\" \(Int(pixel.x)),\(Int(pixel.y))\(inBox ? " (in box)" : "")")
@@ -2788,6 +2800,15 @@ final class Talk {
         }
         if !board.isEmpty {
             lines.append("board: " + board.stateLines().joined(separator: "; "))
+        }
+        if overlay.hasInk {
+            // the ink he can see, by id, at its place in the model's own pixels
+            let marks = overlay.inkBoard.marks.map { mark -> String in
+                let center = CGPoint(x: mark.frame.midX, y: mark.frame.midY)
+                let shot = shots.first { $0.frame.displayFrame.contains(center) }
+                return shot.flatMap { Coordinates.pixelPoint(fromScreen: center, in: $0.frame) }.map { mark.line(at: $0) } ?? mark.line
+            }
+            lines.append("[on screen] your ink: " + marks.joined(separator: "; "))
         }
         lines.append(contentsOf: panels.contextLines())
         lines.append(contentsOf: calendarLines(for: transcript))
@@ -3088,6 +3109,7 @@ final class Talk {
         Log.info("beat \(beatsFired)\(quietTurn ? " (quiet)" : ""): " + (visuals.isEmpty ? "" : visuals.map { "\($0)" }.joined(separator: " ") + " ") + Log.short(beat.text, 120))
         // a STEP only lights the panel: the box on his notes stays while he reads
         if visuals.contains(where: { if case .step = $0 { return false }; return true }) { overlay.fadeOldMarks() }
+        inkStarted(beat, visuals: visuals)
         var label: String?
         for tag in visuals {
             switch tag {
@@ -3580,6 +3602,116 @@ final class Talk {
         }
     }
 
+    // MARK: Ink (parity batch 1)
+
+    /// A beat's ink: the first visual of an answer clears the last drawing unless the answer edits it or adds to it;
+    /// edits apply by id; new marks draw across the sentence.
+    private func inkStarted(_ beat: Beat, visuals: [DotTag]) {
+        let specs = visuals.compactMap { tag -> InkSpec? in if case .ink(let s) = tag { return s }; return nil }
+        let edits = visuals.compactMap { tag -> InkEdit? in if case .inkEdit(let e) = tag { return e }; return nil }
+        if inkTurnFresh, visuals.contains(where: { if case .step = $0 { return false }; return true }) {
+            inkTurnFresh = false
+            if !edits.isEmpty || specs.contains(where: \.add) { overlay.finishInk() } else { overlay.clearInk() }
+        }
+        for edit in edits {
+            if case .move(_, let place) = edit, let shot = shot(forScreen: nil) {
+                overlay.inkEdit(edit, moveTo: inkRect(place, label: "", kind: .label, in: shot))
+            } else {
+                overlay.inkEdit(edit)
+            }
+        }
+        guard !specs.isEmpty else { return }
+        var items: [OverlayManager.InkItem] = []
+        for spec in specs {
+            guard let shot = shot(forScreen: spec.screen) else { continue }
+            let rects = spec.places.compactMap { inkRect($0, label: spec.text, kind: spec.kind, in: shot) }
+            guard rects.count == spec.places.count else {
+                Log.info("ink: \(spec.tagText) names an element this turn did not list; skipped")
+                continue
+            }
+            items.append(.init(spec: spec, anchors: rects, marks: rects.reduce(CGRect.null) { $0.union($1) }))
+        }
+        // spoken: the sentence's measured length; muted or typed: reading pace
+        let quiet = quietTurn || textSurface
+        let drawn = overlay.inkBeat(items, sentence: quiet ? BubbleLines.readingTime(of: beat.text) : SpeechActivity.recentDuration(),
+                                    characters: beat.text.count, busy: context.elements.map(\.frame),
+                                    luminance: { [weak self] rect in self?.luminance(under: rect) })
+        for (id, spec) in drawn {
+            switch spec.kind {
+            case .photo:
+                inkPhoto(id, query: spec.text)
+            case .typeText where walkthrough?.driving == true || driveRequested:
+                // typed into the field only when he asked Dot to do it; never Return
+                guard let rect = items.first(where: { $0.spec == spec })?.marks, !benchMode || hands.benchAllows(context) else { break }
+                if Hands.focus(atAppKit: CGPoint(x: rect.midX, y: rect.midY)) {
+                    Log.info("act: insert (type_text) via \(TextInjection.insert(spec.text).rawValue)")
+                }
+            default:
+                break
+            }
+        }
+    }
+
+    /// Where an ink place is on the screen (AppKit points): an element's frame, a pixel point as a zero-size rect, or
+    /// a pixel box. A label or badge written at a point snaps to the element there when its name matches.
+    private func inkRect(_ place: InkPlace, label: String, kind: InkKind, in shot: ScreenShot) -> CGRect? {
+        switch place {
+        case .element(let n):
+            guard listedElements.indices.contains(n - 1) else { return nil }
+            return listedElements[n - 1].frame
+        case .point(let pixel):
+            let p = Coordinates.clamp(Coordinates.screenPoint(fromPixel: pixel, in: shot.frame), to: shot.frame.displayFrame, inset: 2)
+            if (kind == .label || kind == .num), shot.isCursorScreen, !label.isEmpty,
+               let element = AccessibilityContext.element(near: p, label: label, in: context.elements, maxDistance: 40),
+               element.title.lowercased().contains(label.lowercased()) || label.lowercased().contains(element.title.lowercased()) && element.title.count > 2,
+               max(element.frame.width, element.frame.height) <= 420 {
+                return element.frame
+            }
+            return CGRect(origin: p, size: .zero)
+        case .rect(let pixels):
+            let r = Coordinates.screenRect(fromPixel: pixels, in: shot.frame).intersection(shot.frame.displayFrame)
+            return r.isNull ? nil : r
+        }
+    }
+
+    /// How light the screenshot is under a screen rect, 0...1 (free words go white on dark, near-black on light).
+    private func luminance(under rect: CGRect) -> Double? {
+        let center = CGPoint(x: rect.midX, y: rect.midY)
+        guard let shot = shots.first(where: { $0.frame.displayFrame.contains(center) }) else { return nil }
+        let image: CGImage
+        if let cached = decodedShots[shot.displayID] { image = cached } else {
+            guard let source = CGImageSourceCreateWithData(shot.jpeg as CFData, nil),
+                  let decoded = CGImageSourceCreateImageAtIndex(source, 0, nil) else { return nil }
+            decodedShots[shot.displayID] = decoded
+            image = decoded
+        }
+        let pixels = Coordinates.pixelRect(fromScreen: rect, in: shot.frame).integral
+            .intersection(CGRect(x: 0, y: 0, width: image.width, height: image.height))
+        guard !pixels.isNull, pixels.width >= 1, pixels.height >= 1, let crop = image.cropping(to: pixels) else { return nil }
+        var rgba = [UInt8](repeating: 0, count: 8 * 8 * 4)
+        guard let ctx = CGContext(data: &rgba, width: 8, height: 8, bitsPerComponent: 8, bytesPerRow: 32, space: CGColorSpaceCreateDeviceRGB(),
+                                  bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return nil }
+        ctx.draw(crop, in: CGRect(x: 0, y: 0, width: 8, height: 8))
+        var total = 0.0
+        for i in stride(from: 0, to: rgba.count, by: 4) {
+            total += (0.2126 * Double(rgba[i]) + 0.7152 * Double(rgba[i + 1]) + 0.0722 * Double(rgba[i + 2])) / 255
+        }
+        return total / 64
+    }
+
+    /// A [PHOTO] mark's picture: the first fitting Commons picture for the words, into the mark when it arrives.
+    private func inkPhoto(_ id: String, query: String) {
+        Task { @MainActor in
+            let found = await Images.search(query, count: 3)
+            guard let item = found.first(where: { $0.width >= $0.height / 2 }) ?? found.first,
+                  let (data, _) = try? await URLSession.shared.data(from: item.thumb), let image = NSImage(data: data) else {
+                Log.info("ink: no photo for \"\(query)\"")
+                return
+            }
+            overlay.setInkPhoto(id, image: image)
+        }
+    }
+
     private func shape(kind: ShapeKind, pixels: [CGPoint], label: String, screen: Int?) {
         guard let shot = shot(forScreen: screen) else { return }
         let points = pixels.map { Coordinates.clamp(Coordinates.screenPoint(fromPixel: $0, in: shot.frame), to: shot.frame.displayFrame, inset: 2) }
@@ -3888,6 +4020,7 @@ final class Talk {
         hud.dismissAnswer()
         hud.escapeDismiss()
         overlay.clearMarks()
+        overlay.clearInk()
         overlay.hideBubble(after: 0)
         overlay.setPhase(.idle)
         overlay.releaseTransient(after: 0.3)

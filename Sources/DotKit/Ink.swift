@@ -194,11 +194,14 @@ public struct InkBoard: Equatable, Sendable {
             self.id = id; self.spec = spec; self.frame = frame; self.color = color; self.scale = scale; self.landedAt = landedAt
         }
 
-        /// `m1 ring "Discount rate" at 412,88`: kind, words, where (screen points), colour when not the accent.
-        public var line: String {
+        /// `m1 label "Discount rate" at 412,88`: kind, words, where (screen points), colour when not the accent.
+        public var line: String { line(at: CGPoint(x: frame.midX, y: frame.midY)) }
+
+        /// The same line with the place given in the model's own coordinates (screenshot pixels).
+        public func line(at point: CGPoint) -> String {
             var s = "\(id) \(spec.kind.rawValue)"
             if !spec.text.isEmpty { s += " \"\(Self.short(spec.text))\"" }
-            s += " at \(Int(frame.midX)),\(Int(frame.midY))"
+            s += " at \(Int(point.x)),\(Int(point.y))"
             if !color.isEmpty { s += " (\(color))" }
             if scale != 1 { s += " x\(String(format: "%.1f", scale))" }
             return s

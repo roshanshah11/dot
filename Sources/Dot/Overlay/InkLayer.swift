@@ -284,10 +284,10 @@ extension OverlayManager {
 
     /// Draws a beat's marks across its sentence (D3): each starts when the one before it is done, and together they
     /// fill the sentence. `busy` is where text and controls are (AppKit rects); `luminance` reads what is under a
-    /// screen rect, 0...1. Returns the new ids.
+    /// screen rect, 0...1. Returns each drawn mark's id with its tag.
     @discardableResult
     func inkBeat(_ items: [InkItem], sentence duration: TimeInterval?, characters: Int, busy: [CGRect] = [],
-                 luminance: ((CGRect) -> Double?)? = nil) -> [String] {
+                 luminance: ((CGRect) -> Double?)? = nil) -> [(id: String, spec: InkSpec)] {
         InkFonts.register()
         var built: [(item: InkItem, index: Int, drawing: InkDrawing, tone: String, seed: UInt64)] = []
         var placedBoxes: [Int: [CGRect]] = [:]
@@ -322,7 +322,7 @@ extension OverlayManager {
         guard !built.isEmpty else { return [] }
         let plan = InkTiming.schedule(naturals: built.map(\.drawing.natural), sentence: duration, characters: characters)
         let now = Date().timeIntervalSinceReferenceDate
-        var ids: [String] = []
+        var ids: [(id: String, spec: InkSpec)] = []
         for ((item, index, drawing, tone, seed), slot) in zip(built, plan) {
             let frame = windows[index].screenFrame
             let (id, dropped) = inkBoard.add(item.spec, frame: Self.screenRect(fromOverlay: drawing.bounds, screenFrame: frame))
@@ -334,7 +334,7 @@ extension OverlayManager {
             let tracked = item.marks.width < 4 || item.marks.height < 4 ? item.marks.insetBy(dx: -12, dy: -12) : item.marks
             trackedRects[.ink(id)] = tracked
             tracker.track(.ink(id), appKitRect: tracked)
-            ids.append(id)
+            ids.append((id, item.spec))
             Log.info("ink: \(id) \(item.spec.tagText) in \(String(format: "%.2f", slot.duration)) s at +\(String(format: "%.2f", slot.start)) s")
         }
         showTransient()
@@ -518,12 +518,12 @@ extension OverlayManager {
         DispatchQueue.main.asyncAfter(deadline: .now() + max(end - now, 0) + 0.05, execute: work)
     }
 
-    static func screenRect(fromOverlay r: CGRect, screenFrame: CGRect) -> CGRect {
+    nonisolated static func screenRect(fromOverlay r: CGRect, screenFrame: CGRect) -> CGRect {
         CGRect(x: screenFrame.minX + r.minX, y: screenFrame.maxY - r.maxY, width: r.width, height: r.height)
     }
 
     /// FNV-1a of the tag, so the same mark wobbles the same way when it is drawn again.
-    static func inkSeed(_ text: String) -> UInt64 {
+    nonisolated static func inkSeed(_ text: String) -> UInt64 {
         var h: UInt64 = 0xcbf29ce484222325
         for b in text.utf8 { h = (h ^ UInt64(b)) &* 0x100000001b3 }
         return h

@@ -61,8 +61,19 @@ enum SpeechActivity {
     nonisolated(unsafe) static var onSentence: ((_ duration: TimeInterval?, _ isLast: Bool) -> Void)?
     nonisolated(unsafe) static var onLevel: ((_ level: Double, _ metered: Bool) -> Void)?
 
+    /// The last sentence's length and when it started, set at once (not on the next main-queue turn), so the beat
+    /// that starts with it can pace its ink to it (parity D3).
+    nonisolated(unsafe) static var latest: (duration: TimeInterval?, at: TimeInterval)?
+
     static func sentence(duration: TimeInterval?, isLast: Bool) {
+        latest = (duration, ProcessInfo.processInfo.systemUptime)
         DispatchQueue.main.async { onSentence?(duration, isLast) }
+    }
+
+    /// The length of the sentence that started in the last `seconds`, when it was measured.
+    static func recentDuration(within seconds: TimeInterval = 0.3) -> TimeInterval? {
+        guard let latest, ProcessInfo.processInfo.systemUptime - latest.at <= seconds else { return nil }
+        return latest.duration
     }
 
     static func level(_ level: Double, metered: Bool) {

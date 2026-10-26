@@ -65,15 +65,11 @@ public struct InkDrawing: Equatable, Sendable {
     public var texts: [InkText] { pieces.compactMap { if case .text(let t) = $0.body { return t }; return nil } }
     public var fills: [InkFill] { pieces.compactMap { if case .fill(let f) = $0.body { return f }; return nil } }
 
-    /// The boxes words and paper take (what other labels must not sit on).
+    /// The boxes words and paper take (what other labels must not sit on); words written on the mark's own paper
+    /// are part of the paper.
     public var labelBoxes: [CGRect] {
-        pieces.compactMap {
-            switch $0.body {
-            case .text(let t): return t.frame
-            case .fill(let f) where f.style != .tint: return f.rect
-            default: return nil
-            }
-        }
+        let papers = fills.filter { $0.style != .tint }.map(\.rect)
+        return papers + texts.map(\.frame).filter { frame in !papers.contains { $0.contains(frame) } }
     }
 }
 

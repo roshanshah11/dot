@@ -58,6 +58,12 @@ enum Snapshots {
                 keep("overlay-\(name)", render(CompanionView(model: model), width: 640, height: 400, trim: false, ground: NSColor(calibratedWhite: 0.96, alpha: 1)))
             }
         }
+        if wanted("ink") {
+            // Ink on the live screen (parity batch 1): every mark on a light page and a dark one, mid-stroke and done.
+            for (name, view) in InkSheet.views(accentHex: accent) {
+                keep("ink-\(name)", render(view, width: InkSheet.size.width, height: InkSheet.size.height, trim: false))
+            }
+        }
         if wanted("cards") {
             for (name, title, html) in cards(accentHex: accent) {
                 keep("card-\(name)", renderCard(title: title, html: html, accentHex: accent))

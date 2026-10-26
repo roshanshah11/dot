@@ -247,6 +247,7 @@ final class InkGeometryTests: XCTestCase {
         XCTAssertEqual(d.fills.first?.style, .paper)
         XCTAssertNotEqual(d.fills.first?.rotation, 0)
         XCTAssertTrue(d.texts[0].text.contains("\n"))
+        XCTAssertEqual(d.labelBoxes, [d.fills[0].rect])   // its words are on its own paper
         XCTAssertEqual(InkGeometry.wrap("a bb ccc dddd", width: 6), "a bb\nccc\ndddd")
     }
 

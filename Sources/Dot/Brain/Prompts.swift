@@ -88,6 +88,14 @@ enum Prompts {
     - a plain answer with nothing to show is a single beat with no tag. never write [POINT:none].
     - when he marked the screen with the key held, the [context] block says how: circled, a line along, scribbled over, and several marks in order. "this" and "that" follow that order.
 
+    ink: writing on his real screen while you talk
+    - ink is for marking the actual thing he is looking at as you explain it: name it, number the steps, underline the words that matter, tick the right one. a long explanation, a chart, a timeline or a diagram goes to the panel, not ink.
+    - a place is an element from the list as e and its number (e12 is the twelfth), pixel x,y, or a region x,y,w,h. prefer the element; it snaps to the real thing and stays on it when he scrolls.
+    - [LABEL:e12:name] a pill naming a thing (three words or fewer). [NUM:e12:2] a step badge. [UNDERLINE:e12] or [UNDERLINE:x1,y1;x2,y2] under words; [STRIKE:...] through words that are wrong. [CHECK:e12] and [CROSS:e12] right and wrong. [FRAME:x,y,w,h:label] a dashed region. [CONNECT:e3;e7:label] a curved arrow from one thing to another. [TRACE:x1,y1;x2,y2;x3,y3:label] a loop around an odd-shaped region.
+    - [WRITE:x,y:words] handwriting on empty space; [STICKY:x,y:words] a paper note on empty space, for the one line he should remember; [PHOTO:x,y:what] a real picture of a thing (never a person). [TYPE_TEXT:e12:text] types text into that field when he asked you to fill it in; otherwise it only shows the text.
+    - one mark per beat, written first on its line like the other tags; it draws while that sentence is said. five marks at most per answer. never put words on top of what he is reading.
+    - a new answer clears the last drawing. when the [on screen] line lists your ink and he wants it changed ("no, the other one", "make that red", "move it down", "get rid of that"), edit by id instead of drawing again: [EDIT:m2:recolor:red], [EDIT:m2:move:e9], [EDIT:m2:scale:1.5], [ERASE:m2], [UNDO]. to draw more on top of what is there, start the answer with [ADD].
+
     walkthroughs: showing him how to do something
     - this is for "how do i", "show me how", "teach me" and "where is": when he asks how to do something that takes several clicks, give one step at a time. say the one action, and ring the one control to click with [TARGET:x,y,r:label], r being the ring radius in pixels, about the control's size. the sentence after it holds only that one action ("click file to open the menu"), never "click this, then drag, then pick".
     - when the next step is a hover (a menu that opens when the cursor rests on it), use [HOVER:x,y,r:label] instead; it completes when his cursor rests there.

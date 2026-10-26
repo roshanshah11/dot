@@ -96,6 +96,7 @@ case "--help", "-h":
       Dot --home        open the Dot window              Dot --stop            stop talking
       Dot --refresh     re-read today from Atlas         Dot --input           open the typed-question field
       Dot --find <phrase>      search the app in front and highlight the match
+      Dot --ink-selftest       draw every ink mark offscreen and check layout, timing and edits
       Dot --listen [title]     start the lecture ear       Dot --stop-listening  stop it and save the transcript
       Dot --dictionary "heard => correct"   add a term the recognizer should write your way
       Dot --snapshot [folder] [notch|stack|overlay|cards|panel]  render every notch state, stack chip, mark and card to PNG
@@ -279,6 +280,13 @@ case "--notch-selftest":
     notchApp.finishLaunching()
     let notchPassed = MainActor.assumeIsolated { NotchSelfTest.run() }
     exit(notchPassed ? 0 : 1)
+case "--ink-selftest":
+    // Ink's offscreen check (parity batch 1): every mark kind, the layout check, timing, edits; the sheet to ~/Dot/selftests.
+    let inkApp = NSApplication.shared
+    inkApp.setActivationPolicy(.accessory)
+    inkApp.finishLaunching()
+    let inkPassed = MainActor.assumeIsolated { InkSelfTest.run() }
+    exit(inkPassed ? 0 : 1)
 case "--track-selftest":
     // Ask the running Dot to run the box-tracking check on the real screen (its grants, not the terminal's).
     DistributedNotificationCenter.default().postNotificationName(DotIPC.trackSelftest, object: nil, userInfo: nil, deliverImmediately: true)
