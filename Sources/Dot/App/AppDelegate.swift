@@ -24,6 +24,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var murmur: MurmurWatcher?
     private var morning: MorningSuggestions!
     private var routines: RoutineScheduler!
+    private var suggester: AgentSuggester!
     private let hotkeys = HotkeyMonitor()
     /// Control+Command+T: today's transcript (10-21).
     private var transcriptShortcut: GlobalShortcut?
@@ -255,6 +256,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         morning.start()
         routines.start()
+        // Agents suggested from his repeated asks, Sunday evenings (parity AG-17).
+        suggester = AgentSuggester(config: config, agents: agents, hud: hud)
+        suggester.canShow = { [weak self] in
+            guard let self else { return false }
+            return self.talk.isIdle && !(self.config.quietOnCalls && CallPresence.isOnCall())
+        }
+        suggester.start()
         announceUpdate()
     }
 

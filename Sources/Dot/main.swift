@@ -45,6 +45,47 @@ case "--agent-start", "--agent-status", "--agent-list", "--agent-tell", "--agent
         print(rows.isEmpty ? (command == .status(name: nil) ? "no agents are working right now" : "no agents") : rows.map(\.line).joined(separator: "\n"))
     }
     exit(0)
+case "--agent-suggest":
+    // AG-17's weekly sweep, printed now over the real talk log (no card, nothing remembered).
+    let config = DotConfig.load(save: false)
+    let root = config.agentsRootURL
+    let roster = ((try? FileManager.default.contentsOfDirectory(at: root, includingPropertiesForKeys: nil)) ?? [])
+        .filter { $0.hasDirectoryPath && !$0.lastPathComponent.hasPrefix(".") }
+        .map { AgentManager.Agent(slug: $0.lastPathComponent, name: AgentManager.displayName(for: $0) ?? $0.lastPathComponent, folder: $0) }
+    let found = AgentSuggester.suggestions(config: config, agents: roster, dismissed: [:], now: Date())
+    print(found.isEmpty ? "no repeated asks without an agent in the last 14 days" : found.map { "\($0.name) (\($0.count)x, key \"\($0.key)\"): \($0.line)" }.joined(separator: "\n"))
+    exit(0)
+case "--skill-avatars":
+    // SK-05: each installed skill's picture by the rule table (his picks in ~/Dot/skill-avatars.json win in Home).
+    for skill in SkillEntry.load(from: SkillsPage.root) {
+        print("\(SkillAvatar.symbol(name: skill.name, description: skill.description).padding(toLength: 40, withPad: " ", startingAt: 0)) \(skill.name)")
+    }
+    exit(0)
+case "--skill-draft":
+    // SK-02 without Home: Dot --skill-draft "<links>" "<purpose>" prints the drafted SKILL.md and its problems; saves nothing.
+    let rest = Array(arguments.dropFirst())
+    guard rest.count >= 2 else { print("usage: Dot --skill-draft \"<links>\" \"<what it's for>\""); exit(2) }
+    let links = SkillDraft.links(in: rest[0])
+    guard !links.isEmpty, links.count <= SkillDraft.maxLinks else { print("one to five http(s) links"); exit(2) }
+    let config = DotConfig.load(save: false)
+    let names = SkillEntry.load(from: SkillsPage.root).map { $0.folder.lastPathComponent }
+    let done = DispatchSemaphore(value: 0)
+    var code: Int32 = 0
+    Task { @MainActor in
+        switch await SkillDrafter.draft(links: links, purpose: rest[1...].joined(separator: " "), existing: names, config: config) {
+        case .success(let text):
+            print(text)
+            let problems = SkillDraft.problems(text, existing: Set(names))
+            print(problems.isEmpty ? "--- ready to save" : "--- problems: " + problems.joined(separator: "; "))
+            code = problems.isEmpty ? 0 : 1
+        case .failure(let failure):
+            print("no draft: \(failure.why)")
+            code = 1
+        }
+        done.signal()
+    }
+    while done.wait(timeout: .now() + 0.05) == .timedOut { RunLoop.main.run(until: Date().addingTimeInterval(0.05)) }
+    exit(code)
 case "--router-mcp":
     // The tool router (IN-03): one MCP server under its own name, started on first use, restarted when it dies, and
     // a call past its time handed back as a handle (router_check).
@@ -164,6 +205,9 @@ case "--help", "-h":
       Dot --agent-start <name> "<brief>" [--quiet]   start (or follow up with) an agent in the running Dot; --quiet: no chime or voice [--json]
       Dot --agent-status [name]            where an agent stands: state, last step, next, files, spend today [--json]
       Dot --agent-list                     every agent's status [--json]
+      Dot --agent-suggest                  the weekly agent-suggestion sweep, printed now (no card)
+      Dot --skill-avatars                  each skill's picture by Dot's rule table
+      Dot --skill-draft "<links>" "<purpose>"   draft a SKILL.md from links and print it (saves nothing)
       Dot --agent-tell <name> "<message>" [--quiet]  pass an agent a message, like a typed follow-up [--json]
       Dot --agent-note <to> "<text>" [--from <name>]   leave an agent a note for its next step or turn [--json]
       Dot --version

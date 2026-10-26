@@ -1586,7 +1586,7 @@ final class AgentManager {
         return slug.isEmpty ? "agent" : slug
     }
 
-    static func displayName(for folder: URL) -> String? {
+    nonisolated static func displayName(for folder: URL) -> String? {
         guard let text = try? String(contentsOf: folder.appendingPathComponent("CLAUDE.md"), encoding: .utf8),
               let first = text.split(separator: "\n").first(where: { $0.hasPrefix("# ") }) else { return nil }
         return String(first.dropFirst(2)).trimmingCharacters(in: .whitespaces)

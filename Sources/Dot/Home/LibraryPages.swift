@@ -141,9 +141,21 @@ struct DictationPage: View {
 // MARK: - Skills
 
 struct SkillsPage: View {
+    let config: DotConfig
     @State private var skills: [SkillEntry] = []
     @State private var query = ""
     @State private var open: Set<String> = []
+    /// His picks for skill pictures (SK-05), by skill name.
+    @State private var avatars: [String: String] = [:]
+    // A new skill from links (SK-02)
+    @State private var drafting = false
+    @State private var showNew = false
+    @State private var linksText = ""
+    @State private var purpose = ""
+    @State private var draft = ""
+    @State private var draftNote: String?
+
+    static var avatarsURL: URL { URL(fileURLWithPath: NSHomeDirectory()).appendingPathComponent("Dot/skill-avatars.json") }
 
     static var root: URL { URL(fileURLWithPath: NSHomeDirectory()).appendingPathComponent(".claude/skills", isDirectory: true) }
 
@@ -164,8 +176,10 @@ struct SkillsPage: View {
                         .buttonStyle(.plain).foregroundStyle(.secondary).help("Open ~/.claude/skills")
                     Button { reload() } label: { Image(systemName: "arrow.clockwise") }
                         .buttonStyle(.plain).foregroundStyle(.secondary).help("Read the skills again")
+                    Button("New skill from links") { withAnimation(.easeOut(duration: 0.15)) { showNew.toggle() } }.controlSize(.small)
                 }
                 Text("agents can use every skill here; talk mode routes deliverables through them").font(.callout).foregroundStyle(.secondary)
+                if showNew { newSkill }
                 TextField("Search skills", text: $query).textFieldStyle(.roundedBorder).frame(maxWidth: 320)
             }
             .padding(.horizontal, 24).padding(.top, 30).padding(.bottom, 10)
@@ -185,7 +199,68 @@ struct SkillsPage: View {
         .onAppear(perform: reload)
     }
 
-    private func reload() { skills = SkillEntry.load(from: Self.root) }
+    private func reload() {
+        skills = SkillEntry.load(from: Self.root)
+        avatars = (try? JSONDecoder().decode([String: String].self, from: Data(contentsOf: Self.avatarsURL))) ?? [:]
+    }
+
+    private func setAvatar(_ symbol: String?, for skill: SkillEntry) {
+        avatars[skill.name] = symbol
+        if let data = try? JSONEncoder().encode(avatars) { try? data.write(to: Self.avatarsURL, options: .atomic) }
+    }
+
+    /// One to five links and a purpose; a pass drafts the SKILL.md; it is saved only on Save (SK-02).
+    private var newSkill: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Paste one to five links (docs, a guide, a thread) and say in a line what the skill is for. Dot drafts a SKILL.md from them; nothing is saved until you press Save.")
+                .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            TextField("links", text: $linksText, axis: .vertical).lineLimit(2...5).textFieldStyle(.roundedBorder)
+            TextField("what it's for, in a line", text: $purpose).textFieldStyle(.roundedBorder)
+            HStack(spacing: 8) {
+                let links = SkillDraft.links(in: linksText)
+                Button(drafting ? "Drafting..." : "Draft it") {
+                    drafting = true
+                    draftNote = nil
+                    let names = skills.map { $0.folder.lastPathComponent }
+                    Task { @MainActor in
+                        let result = await SkillDrafter.draft(links: Array(links.prefix(SkillDraft.maxLinks)), purpose: purpose, existing: names, config: config)
+                        drafting = false
+                        switch result {
+                        case .success(let text): draft = text
+                        case .failure(let failure): draftNote = failure.why
+                        }
+                    }
+                }
+                .controlSize(.small)
+                .disabled(drafting || links.isEmpty || links.count > SkillDraft.maxLinks || purpose.trimmingCharacters(in: .whitespaces).isEmpty)
+                Text(links.count > SkillDraft.maxLinks ? "\(links.count) links: five at most" : "\(links.count) link\(links.count == 1 ? "" : "s")")
+                    .font(.caption).foregroundStyle(links.count > SkillDraft.maxLinks ? .orange : .secondary)
+                if drafting { ProgressView().controlSize(.small) }
+            }
+            if !draft.isEmpty {
+                TextEditor(text: $draft).font(.system(size: 11.5, design: .monospaced)).frame(minHeight: 220, maxHeight: 360)
+                    .overlay(RoundedRectangle(cornerRadius: 6).stroke(Color.secondary.opacity(0.3)))
+                let problems = SkillDraft.problems(draft, existing: Set(skills.map { $0.folder.lastPathComponent }))
+                HStack(spacing: 8) {
+                    Button("Save") {
+                        switch SkillDrafter.save(draft, root: Self.root) {
+                        case .success(let folder):
+                            draftNote = "saved to \(folder.path)"
+                            draft = ""; linksText = ""; purpose = ""
+                            reload()
+                        case .failure(let failure): draftNote = failure.why
+                        }
+                    }
+                    .controlSize(.small).disabled(!problems.isEmpty)
+                    Button("Discard") { draft = "" }.controlSize(.small)
+                    if !problems.isEmpty { Text(problems.joined(separator: "; ")).font(.caption).foregroundStyle(.orange) }
+                }
+            }
+            if let draftNote { Text(draftNote).font(.caption).foregroundStyle(.secondary).textSelection(.enabled) }
+        }
+        .padding(10)
+        .background(Color.primary.opacity(0.04), in: RoundedRectangle(cornerRadius: 8))
+    }
 
     private func row(_ skill: SkillEntry) -> some View {
         let expanded = open.contains(skill.id)
@@ -199,6 +274,7 @@ struct SkillsPage: View {
                     HStack(alignment: .top, spacing: 8) {
                         Image(systemName: "chevron.right").font(.system(size: 8, weight: .bold)).foregroundStyle(.tertiary)
                             .rotationEffect(.degrees(expanded ? 90 : 0)).frame(width: 10).padding(.top, 5)
+                        avatar(skill)
                         VStack(alignment: .leading, spacing: 2) {
                             Text(skill.name).font(.system(size: 13, weight: .semibold))
                             if !expanded {
@@ -221,6 +297,25 @@ struct SkillsPage: View {
         }
         .padding(.horizontal, 8).padding(.vertical, 7)
         .background(expanded ? Color.primary.opacity(0.05) : .clear, in: RoundedRectangle(cornerRadius: 8))
+    }
+
+    /// Its picture (SK-05): his pick, else the rule table's; click to change it.
+    private func avatar(_ skill: SkillEntry) -> some View {
+        let symbol = avatars[skill.name] ?? SkillAvatar.symbol(name: skill.name, description: skill.description)
+        return Menu {
+            ForEach(SkillAvatar.choices, id: \.self) { choice in
+                Button { setAvatar(choice, for: skill) } label: { Label(choice, systemImage: choice) }
+            }
+            if avatars[skill.name] != nil {
+                Divider()
+                Button("Back to Dot's pick") { setAvatar(nil, for: skill) }
+            }
+        } label: {
+            Image(systemName: symbol).font(.system(size: 12)).foregroundStyle(HomeStyle.accent)
+                .frame(width: 24, height: 24).background(HomeStyle.accent.opacity(0.12), in: Circle())
+        }
+        .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
+        .help("Change its picture")
     }
 }
 

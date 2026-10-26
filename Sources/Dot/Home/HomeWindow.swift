@@ -412,7 +412,7 @@ struct HomeView: View {
             case .dictation: DictationPage(model: model, editor: model.dictionary)
             case .shortcuts: ShortcutsPage()
             case .cursor: CursorPage(model: model)
-            case .skills: SkillsPage()
+            case .skills: SkillsPage(config: model.config)
             case .suggestions: SuggestionsPage(model: model)
             case .agents: AgentsPage(model: model)
             }
