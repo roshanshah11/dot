@@ -100,6 +100,18 @@ next load. At most 30 rows or fields render in a block; posted strings are cut a
   re-render or reload of the same page keeps it (a fill made for another page or another proposal is not shown).
 - Light look: the job blocks read only the panel's color tokens; `data-theme="light"` on `<html>` switches them.
 
+## Cards Dot designs (parity C1)
+A `[CARD:id:auto:title] <<< ... >>>` block whose body is this language is a card Dot designed for something that has
+no card of its own (a flight, office hours, what's due, two options side by side). The card window loads
+`panel/card.html`, which renders the body with the panel's renderer at card size and wears the look's accent (study
+by default, desk in desk mode); the window fits the content. The title on the tag is the card's heading, so the body
+doesn't repeat it. The usual pieces: `<box tone="card">` around the whole, `<row>` and `<grid cols="2">`, `<text>`,
+`<badge tone>`, `<table>` with `num` columns and `class="hl"` on the row that matters, `<divider>`, and
+`<cite label>` last. A body is this language when it starts with one of its tags and has none of `<div>`, `<style>`,
+`<script>`, `<section>`, `<h1>`-`<h4>`, `<span>` or a stage class (`CardMarkup.isUILanguage`); anything else is an
+HTML card in board.html, as before. Fixtures: `panel/fixtures/card-*.ui`; checks: `scripts/panel-check.py` (the
+`card` expect flag) and `Dot --card-selftest`.
+
 ## Messages the panel sends Dot
 `{type:"quiz", panel, id, choice, correct}`, `{type:"ask", panel, text}`, `{type:"selection", panel, text, step}`,
 `{type:"event", kind:"viz", data:{id, values}, card}` (a dragged widget), `{type:"close"}`, `{type:"ready"}`.

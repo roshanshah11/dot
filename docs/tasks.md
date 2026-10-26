@@ -5,6 +5,22 @@ bottom with the date. "His ask" quotes the message that created the item.
 
 ## Now
 
+- [ ] 2026-10-26 HeyClicky parity, overnight (plan set ~/Dot/plans/2026-10-26-heyclicky-parity, run log
+      ~/.claude/overnight/runs/2026-10-26-0255-build-the-heyclicky-parity-plan-agreed-in-grilli.md), his asks ("what
+      does HeyClicky have that Dot doesnt have. make a full exhaustive list", "lets go through all 99 things and organize
+      between what we want and what i dont want", "Yes, build it"): 64 items in 8 batches, each with its commit in
+      docs/heyclicky-gaps.md ("2026-10-26 parity run").
+      1. [x] Batches 1-7 built and installed when the gate said idle; batch 8 (cards, place walks, paste a circled
+         region, code colours, the privacy section, TI-01/02) built and committed through 37ce6e5.
+      2. [ ] His verdicts, live: ink on a page with sound ("circle the discount rate and label it"), a 3D figure click,
+         a job page tick, the walkthrough take-over card, the edge column, the notch click into Home, a tapback, Send
+         task, the History page and file viewer, `Dot --surfaces` with Spotlight open, a Focus on, a dictation fixed by
+         hand, recording a chord, `Dot --card` on `panel/fixtures/card-flight.ui`, a place card, a circled region pasted
+         into Notes, code colours in the panel.
+      3. [ ] His: the `dot-pmset` sudo rule (routines while asleep), OpenRouter credits (`make_image`), the Atlas
+         patch (atlas-dot-agent-tools.patch.md), `Dot --barge-selftest` with sound before turning on Talk over Dot,
+         Full Disk Access for Dot and the host, and how long Claude Code keeps talk and agent transcripts (30 days).
+
 - [ ] 2026-10-20 The fast lane, overnight (plan set ~/Dot/plans/2026-10-20-dot-fast-lane, after two interview rounds), his asks ("its different when i need help on my screen vs for it to do things. its in ability to do long standing tasks irks me", and the rule: "dont limit the amount of steps at all ... assume everything can get done w the fast model multi steps and then if needed i will say spawn a background agent"):
       1. [x] Jobs: every action with more than one small step runs as a job, its own Claude Code session (Sonnet; Opus for prose and decks under his name) with Dot's hands, Atlas, his skills and no step or time limit. Front (his tab or app) for open / go to / show me; behind (a Comet window of its own) for result-only asks and "in a separate tab". Behind the `jobsEnabled` flag; flag off is today's talk prompt byte for byte.
       2. [x] Agents only when he says agent ("spawn / start / have an agent", "a background agent", shift held); Jev's agent route is gone and talk's own [AGENT] tags become jobs.

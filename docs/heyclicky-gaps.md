@@ -1,5 +1,127 @@
 # Dot against HeyClicky: every difference, and everything to add
 
+## 2026-10-26 parity run
+
+His asks, 2026-10-25 and 10-26: "what does HeyClicky have that Dot doesnt have. make a full exhaustive list", then
+"lets go through all 99 things and organize between what we want and what i dont want. and then we can design an
+overnight build targeting all of these areas!", then "Yes, build it". The 99-item list (the 2026-10-25 regrade of
+this document's open rows plus HeyClicky 1.1.1's new rows #1-24) and his sort are in the plan set,
+`~/Dot/plans/2026-10-26-heyclicky-parity/00-index.md` ("His calls", "Not doing"); each item's spec is in its batch
+file there. The rows below are the 64 he kept, with what was built and the commit. "Installed" means main was built
+and installed by `scripts/install-when-idle`; "live left" is the check that needs his screen, his voice or his
+money. Rows further down this document keep their 2026-10-17 grade; where a row below covers the same id, this one
+is newer.
+
+| Batch | Id | Item | Status | Commits | Live left |
+|---|---|---|---|---|---|
+| 1 Drawing | D0 | How HeyClicky draws, Dot's answer (docs/heyclicky-drawing.md) | done | 12945fb |  |
+|  | D1 | Ink on the live screen | built, installed | d33cbcc | track-selftest safari-ink on an unlocked screen |
+|  | D2 | Marks kit | built, installed | d33cbcc |  |
+|  | D3 | Strokes timed to the voice | built, installed | d33cbcc, 7219a58 |  |
+|  | D4 | Live edits, hold on barge-in | built, installed | 7219a58 | bench rows 21.1-21.3 |
+|  | D5 | 3D you can click | built, installed | b1dc0ca, 84ebd96, e7303d3 | track-selftest figure-clicks |
+|  | D6 | Pen sounds | built, installed | 9f380b9 | his listen (chosen by measurement) |
+|  | D7 | Captions | built, installed (off by default) | 99bd31b |  |
+|  | SH-02 | Pen cursor while another app is in front | built, installed | 96468b7 |  |
+| 2 Jobs | J1 | Live job page | built, installed | 27e7ed0, b361642, 3bcd007, 828f0b5, 66f063e |  |
+|  | J2 | Act on the page | built, installed | b361642, 2292f78, 828f0b5 |  |
+|  | J3 | Retry | built, installed | b361642 |  |
+|  | J4 | Learned how-tos | built, installed | b361642 |  |
+|  | J5 | Take-over offer | built, installed | b361642 | the card on an unlocked screen |
+|  | J6 | Edge windows | built, installed | b361642 | the column on his display |
+| 3 Speed | CU-01 | Fast click loop | built, installed | 3c3ea1d | fixture rows through drive |
+|  | CU-03 | Done check | built, installed | 5bf1e47 |  |
+|  | IN-03 | Tool router | built, installed (on) | 4e0aeea, 7c2d3b7, 8cd2de0 |  |
+| 4 Voice | AU-01 | Talk over Dot | built, installed, off | 7c5c3c1 | Dot --barge-selftest with sound, then his headset |
+|  | AU-02 | Echo cancellation | built, installed, off | 7c5c3c1 | same |
+|  | AU-03 | Says why it failed | built, installed | 5904684 |  |
+|  | NO-07 | Unreadable-document notice | built, installed | 5904684 |  |
+|  | VO-11 | Doc passages in deep answers | built, installed | 5904684 | Dot --ask --dry with a PDF in front |
+| 5 Agents | AG-18 | Notes between agents | built, installed | 1f9ed38 |  |
+|  | AG-19 | Outside start and status | built, installed | 1f9ed38 |  |
+|  | AG-22 | Routines while asleep | built, installed | 1f9ed38, f604a23 | his sudo rule for pmset; lid open |
+|  | AG-17 | Agent suggestions | built, installed | 5059e08 |  |
+|  | AG-08 | Own tools per agent, Atlas kept | built, installed | 6f15c2e |  |
+|  | AG-14 | Images via OpenRouter | built, installed; blocked | 1f9ed38 | OpenRouter credits (balance negative) |
+|  | SK-02 | Skill from links | built, installed | 5059e08, d539528 |  |
+|  | SK-05 | Skill avatars | built, installed | 5059e08 |  |
+| 6 Home | HO-07 | Draft per thread | built, installed | e0b0886 |  |
+|  | HO-08 | Scroll per thread | built, installed | e0b0886 |  |
+|  | HO-06 | Tapbacks | built, installed | 0e2a947 | a tapback reaching a real agent turn |
+|  | HO-09 | Starter messages | built, installed | 0e2a947 |  |
+|  | HO-10 | Focus pane and Send task | built, installed | 0e2a947 | Send task starting a job |
+|  | HO-11 | Prompt card colours | built, installed | 0e2a947 |  |
+|  | HO-03 | File cards | built, installed | bb0c6d1 |  |
+|  | HO-01 | Home in the notch | built, installed | 4cbc568 | the notch click and its animation |
+|  | HO-15 | Agent icons | built, installed | c8dea57 |  |
+|  | HO-16 | Agent moods | built, installed | c8dea57 |  |
+|  | H1 | Past-chat search | built, installed | aac2ecf |  |
+|  | HO-14 | History page | built, installed | aac2ecf | the page on screen |
+|  | H2 | Notch file viewer | built, installed | f45d688 | the viewer on screen |
+|  | H3 | xlsx grid | built, installed | f2b85ed |  |
+| 7 System | NO-04 | Notch steps aside | built, installed | 83e8a57 | Dot --surfaces with each surface open |
+|  | SH-01 | Overlays step aside | built, installed | 83e8a57 | same |
+|  | S1 | Quiet in Focus | built, installed | 8e52ab5, 4308bc8 | a Focus turned on |
+|  | DI-01 | Dictation reads its field | built, installed | 4308bc8 |  |
+|  | DI-02 | Dictation cleanup (on the Mac) | built, installed | 4308bc8 |  |
+|  | DI-05 | Learns from his fixes (candidates only) | built, installed | 4308bc8 | a dictation fixed by hand |
+|  | ON-01 | Guided permissions | built, installed | 0780c5c |  |
+|  | ON-02 | Blocked-screen notice and relaunch | built, installed | 0780c5c | the notice on screen |
+|  | ON-03 | Inherited permissions list | built, installed | 0780c5c |  |
+|  | SE-01 | Record a shortcut | built, installed | 517abca | recording a chord |
+|  | SE-02 | Two recordable chords and reset | built, installed | 517abca |  |
+| 8 Cards | C1 | Dot designs any card | built | a080a2c | Dot --card on a fixture after install |
+|  | WI-02 | Better place cards | built; ratings open | a1dcfc9 | a live place card; MapKit has no ratings |
+|  | WI-03 | Walking time | built | a1dcfc9 |  |
+|  | HA-01 | Paste a circled region into any app | built | e70d84c | a paste into a real app |
+|  | VI-08 | Code colours | built | 436c29a |  |
+|  | US-11 | Privacy section | done | d00568a |  |
+|  | TI-01 | Measure first sound | built | 37ce6e5 | medians once he has spoken turns |
+|  | TI-02 | Measure ring to ring | built | 37ce6e5 | medians once he runs a walkthrough |
+
+Not built, his calls: the morning paper (#19), the keep-drawings extras (#8-10), dashboards (#13), browser upgrades
+(#18), fresher briefs (TC-08/09/13), voices by use (AU-07), notch extras (NO-01/02/03/05/06/08), the dictation field
+guard (VO-16), the Apple Speech backup (DI-03), other languages (DI-04, SE-03), inbox gestures (HO-02/04/05), the
+Home mic (HO-13), meetings on Home (HO-17), the connectors page (IN-02), stock ranges (WI-04), the weekly pattern card
+(ON-05), hand-off by voice or marker (HA-02/03) and the lab window (SE-05). The phone (IN-01) stays deferred and
+AU-05 is his listening test.
+
+**Commit ids in this document.** The history was rewritten after 2026-10-17, so the ids the first version cited no
+longer resolve. Each was matched to its live commit by subject and time in that night's run log and replaced below
+(120 places). `fdfe9c8` to `b4eebdf` is the least certain (the only other hook commit that night).
+
+| Was | Now |
+|---|---|
+| 0486dfd | e7dd5a5 |
+| 285a285 | 3e94f87 |
+| dcb857b | b608570 |
+| a01b3fa | c8ba4ec |
+| ea92f51 | 0a7abc5 |
+| 8cae245 | da5ad2f |
+| 0a9d8c2 | ee8fb73 |
+| 82c980e | 43338dc |
+| fdfe9c8 | b4eebdf |
+| 7086f13 | 0ea9138 |
+| 1ac2e43 | 8a48f03 |
+| 60b5450 | a5cba7b |
+| 555f36b | e715486 |
+| 4cd906b | 90b885e |
+| 3e062e5 | b48ec8c |
+| 85a6183 | a831e4b |
+| 2ea7e28 | 5d04b1c |
+| d949002 | 3a7f4e4 |
+| 1194514 | e3469f5 |
+| 5e07f43 | c353e3e |
+| 164ae22 | 341458a |
+| 19fea48 | 427736e |
+| bec11f5 | d6ebc73 |
+| 2dd4d9f | ccd5460 |
+| 4404e9a | 4190939 |
+| db7d2be | 9bee23e |
+| e1bb539 | 84d5af1 |
+
+## The 2026-10-17 document
+
 His asks, 2026-10-17: "make a full document detailing all of the things that are different and need
 to be added", then "make the doc write up. then we are going to run fixes + the 13 additions all
 /overnight". This is that document and the spec for the overnight run. It replaces the scattered
@@ -13,12 +135,12 @@ R, C, M, W, O and E below come from it), docs/tasks.md, and four read-only explo
 2026-10-16 and 10-17 (open rows regraded, research findings mapped to code, the round-seven diff
 inventoried, the Atlas phone path traced).
 
-**The tree it was graded against.** HEAD e1bb539 (round six) plus another session's uncommitted
+**The tree it was graded against.** HEAD 84d5af1 (round six) plus another session's uncommitted
 round-seven diff, still being edited at 00:28 on 2026-10-17 (AgentManager, AppDelegate, Config,
 Snapshots, ClaudeSession, Prompts, Talk, HomeWindow, NotchHUD, main.swift, AgentRules,
 ConsentPolicy, Routines, StreamJSON, TagParser, DotKitTests.swift, docs/agents.md, docs/tasks.md,
 and the new SelfTest.swift, ConsentQueue.swift, AgentRecovery.swift, AgentAddress.swift). None of it
-is committed, built or installed; the installed Dot is the 17:34 build of e1bb539. Line numbers in
+is committed, built or installed; the installed Dot is the 17:34 build of 84d5af1. Line numbers in
 Talk.swift, AgentManager.swift and Prompts.swift were moving while this was read, so every anchor
 names its function too; trust the function over the number.
 
@@ -71,13 +193,13 @@ that report back). It starts by fixing eleven risks found in the round-seven cod
 
 ## What the overnight run did (2026-10-17)
 
-Round seven landed first (555f36b, 4cd906b, its own session). On top of it, on main, each with its tests:
+Round seven landed first (e715486, 90b885e, its own session). On top of it, on main, each with its tests:
 
-- **Fixes** (0486dfd): FX-01 to FX-11 as listed below (FX-04 was already closed by round seven, FX-10 needed no change), plus a SIGPIPE guard on agents' stdin.
-- **Batch 1:** the orb (d949002, 1194514), context modes and app skill offers (3e062e5), the scout (85a6183, 2ea7e28), tokens, the finance kit and figures that report back (5e07f43, 164ae22), the state chip and mode word (19fea48), the notch on the tokens (bec11f5).
-- **Batch 2a:** the prompt lines (285a285; PL-T9 went into round eight's panel rules), voice over agents (dcb857b), the turn contract and routines by title (a01b3fa, 8cae245, 0a9d8c2, 82c980e), lecture and call answers as text and voice speed per mode (2dd4d9f, 4404e9a), the hook (ea92f51, fdfe9c8).
-- **Batch 2b:** the sentinel (7086f13, ea92f51), agents that outlive a relaunch (1ac2e43, 60b5450).
-- **Review fixes** (db7d2be): eight defects a review found in the code above (voice routing, the offline rule, routines, crash recovery).
+- **Fixes** (e7dd5a5): FX-01 to FX-11 as listed below (FX-04 was already closed by round seven, FX-10 needed no change), plus a SIGPIPE guard on agents' stdin.
+- **Batch 1:** the orb (3a7f4e4, e3469f5), context modes and app skill offers (b48ec8c), the scout (a831e4b, 5d04b1c), tokens, the finance kit and figures that report back (c353e3e, 341458a), the state chip and mode word (427736e), the notch on the tokens (d6ebc73).
+- **Batch 2a:** the prompt lines (3e94f87; PL-T9 went into round eight's panel rules), voice over agents (b608570), the turn contract and routines by title (c8ba4ec, da5ad2f, ee8fb73, 43338dc), lecture and call answers as text and voice speed per mode (ccd5460, 4190939), the hook (0a7abc5, b4eebdf).
+- **Batch 2b:** the sentinel (0ea9138, 0a7abc5), agents that outlive a relaunch (8a48f03, a5cba7b).
+- **Review fixes** (9bee23e): eight defects a review found in the code above (voice routing, the offline rule, routines, crash recovery).
 - **Still partial:** AG-08 (strict MCP mode would drop the claude.ai connectors, so the gate covers inherited servers instead). Phone stays deferred (IN-01).
 
 The run's log, with every decision and check: `~/.claude/overnight/runs/2026-10-17-0107-run-the-fixes-and-the-13-additions-in-docs-heycl.md`.
@@ -88,7 +210,7 @@ This section is the run's playbook. It never needs to ask him; every judgment ca
 
 **1. Start-of-run check.** Run `git status --short`, `git log --oneline -3`, and the newest mtime under
 `Sources/`.
-- Round seven committed (HEAD moved off e1bb539 with those files): build everything on main.
+- Round seven committed (HEAD moved off 84d5af1 with those files): build everything on main.
 - Still uncommitted and still changing (an edit in the last 2 hours): batch 1 goes in a git worktree
   (branch `overnight-batch-1` off HEAD); FX, B2a and B2b wait for the commit, checking every 20
   minutes; the files listed under "The tree it was graded against" are off limits until then. If no
@@ -135,19 +257,19 @@ work, fixed once it is committed (or adopted as the baseline, step 1 above).
 
 | Id | Fix | Status | Size | Batch |
 |---|---|---|---|---|
-| FX-01 | A spoken yes approves a card too loosely | Has it (0486dfd) | small | FX |
-| FX-02 | "stop the email agent" while holding shift is sent as a message | Has it (0486dfd) | small | FX |
-| FX-03 | A one-word agent name said in passing reroutes a brief | Has it (0486dfd) | small | FX |
-| FX-04 | A relative `rm` is judged against the agent folder after an earlier `cd` | Has it (round seven 555f36b) | small | FX |
-| FX-05 | A second `.result` re-logs every output file and re-speaks | Has it (0486dfd) | small | FX |
-| FX-06 | Interrupted briefs live in memory only; the continue button matches label text | Has it (0486dfd) | small | FX |
-| FX-07 | A stopped agent's cards are dropped instead of answered deny | Has it (0486dfd) | small | FX |
-| FX-08 | Talk pre-allows calendar_create and calendar_update even with guests | Has it (0486dfd) | small | FX |
-| FX-09 | The chime plays for every queued card | Has it (0486dfd) | small | FX |
+| FX-01 | A spoken yes approves a card too loosely | Has it (e7dd5a5) | small | FX |
+| FX-02 | "stop the email agent" while holding shift is sent as a message | Has it (e7dd5a5) | small | FX |
+| FX-03 | A one-word agent name said in passing reroutes a brief | Has it (e7dd5a5) | small | FX |
+| FX-04 | A relative `rm` is judged against the agent folder after an earlier `cd` | Has it (round seven e715486) | small | FX |
+| FX-05 | A second `.result` re-logs every output file and re-speaks | Has it (e7dd5a5) | small | FX |
+| FX-06 | Interrupted briefs live in memory only; the continue button matches label text | Has it (e7dd5a5) | small | FX |
+| FX-07 | A stopped agent's cards are dropped instead of answered deny | Has it (e7dd5a5) | small | FX |
+| FX-08 | Talk pre-allows calendar_create and calendar_update even with guests | Has it (e7dd5a5) | small | FX |
+| FX-09 | The chime plays for every queued card | Has it (e7dd5a5) | small | FX |
 | FX-10 | The "gets this after" flash while the message goes at once | Has it (no change: the flash is accurate) | small | FX |
-| FX-11 | Agent results and card asks are still spoken on calls | Has it (0486dfd) | small | FX |
+| FX-11 | Agent results and card asks are still spoken on calls | Has it (e7dd5a5) | small | FX |
 | FX-12 | All of $HOME is writable without a card outside the protected list | Has it (his rule; noted) | none | none |
-| FX-13 | Agents load his user settings, whose default mode is bypassPermissions | Has it (closed by AG-07, ea92f51) | none | B2a |
+| FX-13 | Agents load his user settings, whose default mode is bypassPermissions | Has it (closed by AG-07, 0a7abc5) | none | B2a |
 
 **FX-01 A spoken yes approves too loosely.**
 - Covers: A2.9, G2.
@@ -248,22 +370,22 @@ work, fixed once it is committed (or adopted as the baseline, step 1 above).
 
 | Id | Gap | Status | Size | Batch |
 |---|---|---|---|---|
-| AG-01 | A second agent's card waits instead of replacing the first | Has it (round seven 555f36b) | small | FX-07, FX-09 |
-| AG-02 | A quit or relaunch mid-turn: the turn is recorded and can be continued | Has it (round seven 555f36b) | small | FX-06 |
-| AG-03 | Agents start in default mode so edits reach Dot's rules | Has it (round seven 555f36b) | small | FX-04 |
-| AG-04 | Consent holes: rm -rf ~, replies, guests, shares, run_script, unknown servers | Has it (round seven 555f36b) | small | none |
-| AG-05 | Helpers run in the foreground so the turn ends with the work | Has it (round seven 555f36b) | small | FX-05 |
+| AG-01 | A second agent's card waits instead of replacing the first | Has it (round seven e715486) | small | FX-07, FX-09 |
+| AG-02 | A quit or relaunch mid-turn: the turn is recorded and can be continued | Has it (round seven e715486) | small | FX-06 |
+| AG-03 | Agents start in default mode so edits reach Dot's rules | Has it (round seven e715486) | small | FX-04 |
+| AG-04 | Consent holes: rm -rf ~, replies, guests, shares, run_script, unknown servers | Has it (round seven e715486) | small | none |
+| AG-05 | Helpers run in the foreground so the turn ends with the work | Has it (round seven e715486) | small | FX-05 |
 | AG-06 | The computer-use surface is fenced | Partial | small | B2a (CU-05) |
-| AG-07 | A PreToolUse hook sends every agent tool call through Dot | Has it (ea92f51, fdfe9c8; seen live 10/17 04:33) | medium | B2a |
-| AG-08 | Each agent loads only its own MCP servers | Partial (ea92f51: strict mode would drop the claude.ai connectors, so per the spec strict stays off and the gate covers inherited servers; no per-agent mcp.json) | small | B2a |
-| AG-09 | Steering a running turn | Has it (round seven 555f36b) | small | B2a (VO-09) |
-| AG-10 | Reaching an agent by name | Has it (round seven 555f36b) | small | FX-02, FX-03 |
-| AG-11 | Approving or stopping an agent by voice | Has it (round seven 555f36b) | small | FX-01 |
-| AG-12 | Agents keep running across a Dot relaunch | Has it (1ac2e43, 60b5450; a turn survived a relaunch live 10/17 04:33) | large | B2b |
-| AG-13 | A sentinel judges what runs without asking | Has it (7086f13, ea92f51) | medium | B2b |
+| AG-07 | A PreToolUse hook sends every agent tool call through Dot | Has it (0a7abc5, b4eebdf; seen live 10/17 04:33) | medium | B2a |
+| AG-08 | Each agent loads only its own MCP servers | Partial (0a7abc5: strict mode would drop the claude.ai connectors, so per the spec strict stays off and the gate covers inherited servers; no per-agent mcp.json) | small | B2a |
+| AG-09 | Steering a running turn | Has it (round seven e715486) | small | B2a (VO-09) |
+| AG-10 | Reaching an agent by name | Has it (round seven e715486) | small | FX-02, FX-03 |
+| AG-11 | Approving or stopping an agent by voice | Has it (round seven e715486) | small | FX-01 |
+| AG-12 | Agents keep running across a Dot relaunch | Has it (8a48f03, a5cba7b; a turn survived a relaunch live 10/17 04:33) | large | B2b |
+| AG-13 | A sentinel judges what runs without asking | Has it (0ea9138, 0a7abc5) | medium | B2b |
 | AG-14 | Agents can make images | Missing | small | none |
-| AG-15 | A new routine's first run happens at once | Has it (round seven 555f36b) | small | none |
-| AG-16 | Each turn keeps its own record (next actions, artifacts) | Has it (round seven 555f36b) | small | B2a (TC) |
+| AG-15 | A new routine's first run happens at once | Has it (round seven e715486) | small | none |
+| AG-16 | Each turn keeps its own record (next actions, artifacts) | Has it (round seven e715486) | small | B2a (TC) |
 | AG-17 | An organizer sweep founds agents from earlier threads | Partial | medium | none |
 | AG-18 | Agents leave notes for each other | Missing | medium | none |
 | AG-19 | Dot's agents callable as jobs by other tools | Missing | large | none |
@@ -476,21 +598,21 @@ stop (AG-10, AG-11). Tonight's "voice" adds the rest on top of `AgentAddress`.
 
 | Id | Gap | Status | Size | Batch |
 |---|---|---|---|---|
-| VO-01 | "open Inbox Keeper", "open the deck" | Has it (dcb857b) | small | B2a |
-| VO-02 | "what did X find", answered from that agent's saved transcript | Has it (dcb857b) | small | B2a |
-| VO-03 | Several cards waiting and an unaddressed yes: "which one?" | Has it (dcb857b) | small | B2a |
-| VO-04 | Voice goes to the agent thread open in Home | Has it (dcb857b, 8cae245) | small | B2a |
-| VO-05 | His next sentence belongs to the agent that just reported | Has it (round seven 555f36b) | small | B2a |
-| VO-06 | "retry" re-sends the last brief without repeating what already happened | Has it (dcb857b) | small | B2a |
-| VO-07 | A turn his next question cut off gets a "don't mention it" note | Has it (dcb857b) | small | B2a |
-| VO-08 | Silent lookups, figure first | Has it (285a285) | line | B2a (PL-T2) |
-| VO-09 | "stop, do X instead": interrupt and resend; a soft stop that keeps the session | Has it (dcb857b) | small | B2a |
-| VO-10 | The think pass may start an agent itself | Has it (285a285) | line | B2a (PL-T3) |
+| VO-01 | "open Inbox Keeper", "open the deck" | Has it (b608570) | small | B2a |
+| VO-02 | "what did X find", answered from that agent's saved transcript | Has it (b608570) | small | B2a |
+| VO-03 | Several cards waiting and an unaddressed yes: "which one?" | Has it (b608570) | small | B2a |
+| VO-04 | Voice goes to the agent thread open in Home | Has it (b608570, da5ad2f) | small | B2a |
+| VO-05 | His next sentence belongs to the agent that just reported | Has it (round seven e715486) | small | B2a |
+| VO-06 | "retry" re-sends the last brief without repeating what already happened | Has it (b608570) | small | B2a |
+| VO-07 | A turn his next question cut off gets a "don't mention it" note | Has it (b608570) | small | B2a |
+| VO-08 | Silent lookups, figure first | Has it (3e94f87) | line | B2a (PL-T2) |
+| VO-09 | "stop, do X instead": interrupt and resend; a soft stop that keeps the session | Has it (b608570) | small | B2a |
+| VO-10 | The think pass may start an agent itself | Has it (3e94f87) | line | B2a (PL-T3) |
 | VO-11 | The think pass gets the open document's best passages | Missing | small | none |
 | VO-12 | Spotify by voice, checked after playing | Missing | small | none |
-| VO-13 | "resume Email's routine" by voice | Has it (dcb857b) | small | B2a |
-| VO-14 | Approve, skip or adjust the morning card by voice | Has it (dcb857b) | small | B2a (MB-07) |
-| VO-15 | Home's empty states tell him to say "agent, …", which nothing parses | Has it (285a285) | line | B2a |
+| VO-13 | "resume Email's routine" by voice | Has it (b608570) | small | B2a |
+| VO-14 | Approve, skip or adjust the morning card by voice | Has it (b608570) | small | B2a (MB-07) |
+| VO-15 | Home's empty states tell him to say "agent, …", which nothing parses | Has it (3e94f87) | line | B2a |
 | VO-16 | Typed insertion refuses the address bar and Dot's own windows | Missing | small | none |
 | VO-17 | An [OPEN:url] tag that opens his browser | Missing | small | none |
 | VO-18 | Tool status labels, start and finish spoken, a tool cap per turn, the deeper pass in place, attachments to agents, "always" only when said | Has it | none | none |
@@ -600,18 +722,18 @@ a ROUTINE block (C55 to C61). Dot reads one trailing "Next:" line (`AgentResult.
 
 | Id | Gap | Status | Size | Batch |
 |---|---|---|---|---|
-| TC-01 | A done title: two to five words naming the outcome | Has it (a01b3fa) | small | B2a |
-| TC-02 | Up to four next actions, none on a question turn | Has it (a01b3fa) | small | B2a |
-| TC-03 | The spoken summary under 200 characters; not spoken when his thread is open | Has it (a01b3fa, 8cae245) | small | B2a |
-| TC-04 | Files: the turn's own files plus any outside output/, checked to exist; the first opens | Has it (a01b3fa, 82c980e) | small | B2a |
-| TC-05 | On a question turn the first sentence is the main question | Has it (285a285) | line | B2a (PL-A16) |
-| TC-06 | Agents create, update, pause, resume and delete their routines by title | Has it (a01b3fa) | small | B2a |
-| TC-07 | Each turn lists the agent's routines, and the list is complete | Has it (a01b3fa) | small | B2a |
+| TC-01 | A done title: two to five words naming the outcome | Has it (c8ba4ec) | small | B2a |
+| TC-02 | Up to four next actions, none on a question turn | Has it (c8ba4ec) | small | B2a |
+| TC-03 | The spoken summary under 200 characters; not spoken when his thread is open | Has it (c8ba4ec, da5ad2f) | small | B2a |
+| TC-04 | Files: the turn's own files plus any outside output/, checked to exist; the first opens | Has it (c8ba4ec, 43338dc) | small | B2a |
+| TC-05 | On a question turn the first sentence is the main question | Has it (3e94f87) | line | B2a (PL-A16) |
+| TC-06 | Agents create, update, pause, resume and delete their routines by title | Has it (c8ba4ec) | small | B2a |
+| TC-07 | Each turn lists the agent's routines, and the list is complete | Has it (c8ba4ec) | small | B2a |
 | TC-08 | Standing rules re-sent when they change mid-session | Missing | small | none |
 | TC-09 | The last two or three voice turns ride along, used only if the brief points at them | Missing | small | none |
 | TC-10 | Memory re-sent only when it changes | Has it (re-sent with every brief) | none | none |
-| TC-11 | A paused routine offers "fix it": an agent with the failure log | Has it (a01b3fa, 0a9d8c2) | small | B2a |
-| TC-12 | The profile block is background, never instructions | Has it (285a285) | line | B2a (PL-D13) |
+| TC-11 | A paused routine offers "fix it": an agent with the failure log | Has it (c8ba4ec, ee8fb73) | small | B2a |
+| TC-12 | The profile block is background, never instructions | Has it (3e94f87) | line | B2a (PL-D13) |
 | TC-13 | Talk turns get the Atlas profile too | Missing | small | none |
 
 **TC-01 to TC-04 The contract blocks.**
@@ -717,13 +839,13 @@ CAME FROM section quoting what it read. Dot's morning card fills four templates 
 
 | Id | Gap | Status | Size | Batch |
 |---|---|---|---|---|
-| MB-01 | A scout writes three to seven grounded briefs each morning | Has it (85a6183) | medium | B1 |
-| MB-02 | The morning card reads the scout's briefs; the templates are the fallback | Has it (85a6183) | small | B1 |
-| MB-03 | "do it" sends the brief to the named agent and registers its routine | Has it (85a6183, 2ea7e28) | small | B1 |
-| MB-04 | Recurring briefs keep a baseline and report only what is new | Has it (85a6183, 285a285) | line | B1 (scout prompt), B2a (PL-A17) |
-| MB-05 | Briefs expire at day's end; yes and no teach the next sweep | Has it (85a6183) | small | B1 |
-| MB-06 | The greeting names up to three of the ideas | Has it (85a6183) | small | B1 |
-| MB-07 | Approve, skip or adjust by voice | Has it (dcb857b) | small | B2a |
+| MB-01 | A scout writes three to seven grounded briefs each morning | Has it (a831e4b) | medium | B1 |
+| MB-02 | The morning card reads the scout's briefs; the templates are the fallback | Has it (a831e4b) | small | B1 |
+| MB-03 | "do it" sends the brief to the named agent and registers its routine | Has it (a831e4b, 5d04b1c) | small | B1 |
+| MB-04 | Recurring briefs keep a baseline and report only what is new | Has it (a831e4b, 3e94f87) | line | B1 (scout prompt), B2a (PL-A17) |
+| MB-05 | Briefs expire at day's end; yes and no teach the next sweep | Has it (a831e4b) | small | B1 |
+| MB-06 | The greeting names up to three of the ideas | Has it (a831e4b) | small | B1 |
+| MB-07 | Approve, skip or adjust by voice | Has it (b608570) | small | B2a |
 | MB-08 | Using his browsing as a signal | Out (no activity watching) | none | none |
 | MB-09 | A sweep every 24 hours | Has it | none | none |
 
@@ -789,12 +911,12 @@ MB-08 covers R4, W34, W36. MB-09 covers C54.
 
 | Id | Gap | Status | Size | Batch |
 |---|---|---|---|---|
-| SK-01 | Offer the right skill for the app in front | Has it (3e062e5) | small | B1 |
+| SK-01 | Offer the right skill for the app in front | Has it (b48ec8c) | small | B1 |
 | SK-02 | Make a skill from a few links | Partial | small | B2a (PL-A19); the panel none |
 | SK-03 | A library of community skills | Has it (his own 143, all wired) | none | none |
 | SK-04 | Three active slots | Out (all his skills are always on) | none | none |
 | SK-05 | An avatar per skill | Missing | small | none |
-| SK-06 | Skills never change the safety rules | Has it (285a285) | line | B2a (PL-D12) |
+| SK-06 | Skills never change the safety rules | Has it (3e94f87) | line | B2a (PL-D12) |
 | SK-07 | Hermes skills not wired, the voice model sees names only, built-for skills, publishing and team sharing | Better / Out | none | none |
 
 **SK-01 App-keyed skill offers (tonight, B1, "appskills").**
@@ -834,9 +956,9 @@ C78, C80, R8, R11, R14.
 | IN-01 | Run Dot's agents from his phone through Atlas | Deferred (mbp2020 unreachable) | medium | none |
 | IN-02 | A connectors page: add by URL, key in the Keychain, OAuth, a draft form, what it can do | Partial | medium | none |
 | IN-03 | MCP-first reach behind a tool router, Tasks handles for long jobs | Missing | medium | none |
-| IN-04 | Check after acting (read an event back after creating it) | Has it (285a285) | line | B2a (PL-T8) |
-| IN-05 | Connector discipline: read drafts back, never count by eye | Has it (285a285) | line | B2a (PL-D9, PL-D10) |
-| IN-06 | The right mail account for each thread | Has it (285a285) | line | B2a (PL-D4) |
+| IN-04 | Check after acting (read an event back after creating it) | Has it (3e94f87) | line | B2a (PL-T8) |
+| IN-05 | Connector discipline: read drafts back, never count by eye | Has it (3e94f87) | line | B2a (PL-D9, PL-D10) |
+| IN-06 | The right mail account for each thread | Has it (3e94f87) | line | B2a (PL-D4) |
 | IN-07 | Atlas's "atlas ..." iMessage path never fires (Atlas bug, not Dot's) | Missing | small | none |
 | IN-08 | Bring your own AI, custom MCP, Canvas, calendar by voice, a website he is signed into, hand-off to coding agents | Better / Has it | none | none |
 | IN-09 | Catalog connection feedback, logos, suggesting a connector for the app in front | n/a | none | none |
@@ -895,8 +1017,8 @@ HomeSpaceIntegrationConnectionFeedback, IntegrationLogoArtwork, IntegrationSugge
 | CU-02 | "Do it" mode checks the element under the target, not only the label | Missing | small | none |
 | CU-03 | A success string checked in code as the step's done check | Missing | medium | none |
 | CU-04 | TYPE checks the field and inserts through accessibility | Partial | small | none |
-| CU-05 | replay_trajectory is blocked for agents | Has it (ea92f51) | line | B2a (hook) |
-| CU-06 | One browser window per task | Has it (285a285) | line | B2a (PL-D15) |
+| CU-05 | replay_trajectory is blocked for agents | Has it (0a7abc5) | line | B2a (hook) |
+| CU-06 | One browser window per task | Has it (3e94f87) | line | B2a (PL-D15) |
 | CU-07 | Jev never writes text, menus reachable, the advisory step, lazy tool loading, the talk shell computes only | Has it / Better | none | none |
 
 **CU-01 The fast lane.**
@@ -995,9 +1117,9 @@ NO-09 covers CodexHUDHitRegions.
 | AU-01 | Speech-to-speech with voice barge-in | Partial | large | none |
 | AU-02 | Full-duplex audio with echo cancellation | Missing | medium | none |
 | AU-03 | Explains a voice or model failure (login, network, quota) | Partial | small | none |
-| AU-04 | A sound set: launch, needs you, done, failed, preloaded | Has it (d949002, 1194514) | small | B1 (Chimes), B2a (callers) |
+| AU-04 | A sound set: launch, needs you, done, failed, preloaded | Has it (3a7f4e4, e3469f5) | small | B1 (Chimes), B2a (callers) |
 | AU-05 | Voice quality against HeyClicky's realtime voice | Unknown | none | none |
-| AU-06 | Agent speech and chimes quiet on calls | Has it (0486dfd) | small | FX-11 |
+| AU-06 | Agent speech and chimes quiet on calls | Has it (e7dd5a5) | small | FX-11 |
 | AU-07 | Voices described by use, speed 0.5x to 1.5x, a voice per mode | Partial | small | B2a (speed per mode, VI-03) |
 | AU-08 | Thirteen tone-preset clips | Out (unclear HeyClicky uses them) | none | none |
 | AU-09 | Always-on voice | in | none | none |
@@ -1163,13 +1285,13 @@ claim) and the web-taste references.
 
 | Id | Gap | Status | Size | Batch |
 |---|---|---|---|---|
-| VI-01 | One token file, two looks (study, desk), used by every card | Has it (5e07f43, 164ae22, bec11f5; Home keeps its own palette) | small | B1 (board), B2a (notch, Home) |
-| VI-02 | A finance kit: football field, sensitivity table, comps table | Has it (5e07f43) | medium | B1 (pieces), B2a (prompt) |
-| VI-03 | Context modes: lecture, call, study, desk | Has it (3e062e5, 164ae22, 19fea48, 2dd4d9f, 4404e9a) | small | B1 (detector), B2a (wiring) |
-| VI-04 | The orb shows what agents are doing and when one waits | Has it (d949002, 1194514) | small | B1 (drawing), B2a (posts) |
-| VI-05 | Colors by file type; status chips with tinted triples | Has it (d949002, 1194514, 19fea48) | small | B1 (map), B2a (tiles) |
-| VI-06 | Figures that report drags, sliders and taps back to Dot | Has it (5e07f43, 164ae22) | medium | B1 (relay), B2a (talk) |
-| VI-07 | The orb honors Reduce Motion and rests when covered | Has it (d949002) | small | B1 |
+| VI-01 | One token file, two looks (study, desk), used by every card | Has it (c353e3e, 341458a, d6ebc73; Home keeps its own palette) | small | B1 (board), B2a (notch, Home) |
+| VI-02 | A finance kit: football field, sensitivity table, comps table | Has it (c353e3e) | medium | B1 (pieces), B2a (prompt) |
+| VI-03 | Context modes: lecture, call, study, desk | Has it (b48ec8c, 341458a, 427736e, ccd5460, 4190939) | small | B1 (detector), B2a (wiring) |
+| VI-04 | The orb shows what agents are doing and when one waits | Has it (3a7f4e4, e3469f5) | small | B1 (drawing), B2a (posts) |
+| VI-05 | Colors by file type; status chips with tinted triples | Has it (3a7f4e4, e3469f5, 427736e) | small | B1 (map), B2a (tiles) |
+| VI-06 | Figures that report drags, sliders and taps back to Dot | Has it (c353e3e, 341458a) | medium | B1 (relay), B2a (talk) |
+| VI-07 | The orb honors Reduce Motion and rests when covered | Has it (3a7f4e4) | small | B1 |
 | VI-08 | Syntax colors in code blocks | Missing | small | none |
 | VI-09 | A lint and one-repair pass before a card shows | Missing | medium | none |
 | VI-10 | Each step part lights as the sentence naming it is spoken | Missing | medium | none |

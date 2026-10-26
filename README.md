@@ -201,6 +201,14 @@ with `ATLAS_MCP_TOOLS=now,search,facts,...` so only those tools ride along.
 | `quipModel` | `haiku` | The Claude Code model alias that writes the quips: one `claude -p` per quip, no tools, thinking off. `Dot --quip-test` runs three sample moments through it |
 | `chattiness` | `2` | How much Dot says unprompted, 0 to 3: 0 nothing, 1 deadline notices only (cooldown 3x) and a quip every 2 hours, 2 notices, offers and a quip every 40 minutes, 3 cooldowns halved and a quip every 20 minutes. Scales `noticeCooldownMinutes` and `suggestionCooldownMinutes`; `proactiveNotices` and `suggestions` still switch their part off. See `docs/persona.md` |
 | `orbSize` | `24` | The orb's diameter in points, 16 to 36 (it was 20 before the alive pass). Its eyes, follow offset and bubble scale with it. To pet Dot, rub the cursor gently back and forth over it; a gentle rub is smaller than macOS's shake-to-find-cursor. See `docs/alive.md` |
+| `quietInFocus` | `true` | Hold notices, suggestions and spoken heads-ups while a Focus (Do Not Disturb, Work, Sleep) is on, as on a call |
+| `conversationChord`, `dictationChord` | control+option, control+fn | The talk chord (hold, tap, drag; Shift added hands it to an agent) and the dictation chord. Record them in Settings > Shortcuts; a chord the system owns or a clash falls back to the defaults and says why |
+| `penSounds` | `true` | Ink makes its pen sounds |
+| `inkCaptions` | `false` | A caption strip at the bottom of the screen while Dot talks (always on for a typed question that draws) |
+| `stackSide` | `corner` | Where agents and jobs sit: `corner`, or a column at the `left` or `right` edge |
+| `routeTools` | `true` | Agents' and jobs' MCP servers go through Dot's tool router; `false` runs them direct |
+| `talkOverDot` | `false` | Talk over Dot to cut it off; off until the live headset test passes |
+| `imageModels`, `imageKeyFile` | Nano Banana 2.1, GPT-5.4 Image 2; `~/.secrets.env` | `make_image`'s OpenRouter models in order, and where `OPENROUTER_API_KEY` lives when it isn't in the environment |
 
 ### Computer use (optional)
 
@@ -273,6 +281,52 @@ meeting countdown in the notch, an onboarding tour, and embedding cua-driver ins
 Dictation is left to [Murmur](https://github.com/roshanshah11/murmur).
 
 MIT. Built by Roshan Shah.
+
+## HeyClicky parity: drawing, jobs you can steer, cards Dot designs (2026-10-26)
+
+The plan set is `~/Dot/plans/2026-10-26-heyclicky-parity/`; each item's commit is in docs/heyclicky-gaps.md.
+
+- **Ink on the live screen.** Dot draws on the app in front, not on a copy: circles, underlines, arrows, labels, ticks and
+  crosses from one marks kit, placed by the element they point at and kept on it as the page scrolls. Strokes are timed
+  to the sentence that names them, a correction ("no, the other one") moves, recolours or erases a mark instead of
+  redrawing, and cutting Dot off holds the ink where it is. Pen sounds (CC0 accents and synthesized beds, `scripts/make-ink-sounds.py`) and
+  captions at the bottom of the screen are in Home > Voice > Drawing; the pen cursor shows while ink draws in another
+  app. How HeyClicky draws, and why Dot's is its own: docs/heyclicky-drawing.md.
+- **3D you can click.** `[FIGURE]` builds a figure from parts in its own panel; clicking a part asks about it. A card's
+  three.js meshes report clicks the same way.
+- **Job pages.** A job writes a live page (status, tiles, a todo list, a form, a letter to review, a timeline) that
+  opens beside it; a tick, a form or Send on the page goes to the job's own session. Retry runs a failed job again in
+  the same session, jobs keep how-tos they learned (`~/Dot/howtos/`), a walkthrough offers once to take over, and `stackSide` puts
+  agents and jobs in a column at the screen's edge.
+- **Speed.** A job's planned clicks run in a fast loop where Jev picks each control and every click still goes through
+  Dot's rules; a job's `check:` lines are verified on a fresh look before it counts as done; agents' and jobs' MCP
+  servers run behind Dot's tool router (started on first use, restarted when they die, long calls handed back as a
+  handle). Each agent loads only its own servers, Atlas and computer use always kept.
+- **Voice.** A failed turn says why in one plain line (logged out, offline, usage limit and its reset, overloaded), a
+  PDF Dot can't read says so once, and deep answers quote the open document's best passages with page numbers. Talking
+  over Dot to cut it off (`talkOverDot`) is built and off until the live headset test passes.
+- **Agents.** `Dot --agent-start`, `--agent-status` and `--agent-note` work from outside; agents leave each other notes;
+  routines can wake the Mac (a sudo rule for `pmset` that only he installs; the lid must be open); on Sunday evenings
+  a habit in two weeks of asks that no agent owns becomes a quiet "start an agent" card; `make_image` goes through
+  OpenRouter; a skill can be drafted from links and is saved only on Save; skills get avatars.
+- **Home.** Each thread keeps its draft and scroll; tapbacks, starter messages, a focus pane with Send task, prompt
+  cards; file cards with thumbnails; a click on the idle notch drops Home down from it; agents have icons and moods; Home > History searches
+  past chats; the notch file viewer reads xlsx and csv in a grid.
+- **System.** While Spotlight, a Control Center or Notification Center panel, the screenshot tool or Mission Control
+  is up, the notch, the ink and the stack fade and let clicks through (`Dot --surfaces`). Dot stays quiet in a Focus
+  (`quietInFocus`). Dictation reads the field it types into, cleans up on the Mac (fillers, false starts, the
+  dictionary, a closing period only where the field wants one) and turns his own one-word fixes into candidates he
+  adds in Home > Dictation. Permissions are walked one program at a time (`Dot --permissions`), and the talk and
+  dictation chords are recordable in Settings > Shortcuts, with a reset.
+- **Cards and the rest.** Dot designs a card for anything that has none (a flight, office hours, what's due, two
+  options) in its UI language (`Dot --card-selftest`); place cards show the walk there and a Look Around picture; a
+  circled region can be copied or pasted with a note into the app he was in; code in the panel and the reader is
+  coloured (highlight.js 11.12.0, BSD-3); "What Dot captures and keeps" above says where everything goes.
+- **Timings.** Dot logs `speech: first-audio <ms> ms from release|ask` and `walkthrough: ring-to-ring <ms> ms`;
+  `scripts/dot-bench.py --timings` prints the medians over real turns. No target is enforced.
+- **Testing.** `Dot --ink-selftest`, `--figure-selftest`, `--page-selftest`, `--router-selftest`, `--home-selftest`,
+  `--card-selftest`, `--barge-selftest` (plays sound), `--surfaces`, `--jobs` (what an install would interrupt; the
+  install gate is `scripts/install-when-idle`).
 
 ## The fast lane: Dot does the work itself (2026-10-20)
 
