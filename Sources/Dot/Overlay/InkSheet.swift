@@ -151,6 +151,19 @@ enum InkSelfTest {
         check(board.apply(.recolor(id: "m2", color: "red")) == ["m2"] && board.mark("m2")?.color == "red", "recolor m2 by id")
         check(board.apply(.erase(id: "m3")) == ["m3"] && board.apply(.undo) == ["m2"] && board.marks.map(\.id) == ["m1"], "erase m3, then undo takes m2")
 
+        let sounds = PenSounds.shared.loaded
+        check(sounds.accents == ["pop", "stamp", "tick", "nope", "paper", "clear", "eraser", "slide"]
+              && sounds.beds == ["felt", "pencil", "writing", "highlighter", "keys"], "the pen sounds load (\(sounds.accents.count) accents, \(sounds.beds.count) beds)")
+        let byKind = Dictionary(uniqueKeysWithValues: drawings.map { kind, d in (kind, PenSounds.cues(kind, drawing: d, after: 0, duration: 1).map(\.name)) })
+        let wanted: [InkKind: [String]] = [.label: ["pop"], .num: ["stamp"], .check: ["felt", "tick"], .cross: ["nope", "felt"],
+                                           .write: ["writing"], .sticky: ["paper", "pencil"], .typeText: ["keys"]]
+        for (kind, names) in wanted.sorted(by: { $0.key.rawValue < $1.key.rawValue }) {
+            let got = byKind[kind] ?? []
+            check(names.allSatisfy(got.contains), "\(kind.rawValue) sounds like \(names.joined(separator: " + ")) (got \(got.joined(separator: ", ")))")
+        }
+        let cues = drawings.flatMap { kind, d in PenSounds.cues(kind, drawing: d, after: 0.5, duration: 1) }
+        check(cues.allSatisfy { $0.at >= 0.5 && $0.at <= 1.5 && $0.at + $0.length <= 1.5 + 1e-9 }, "every sound sits inside its mark's time")
+
         let stamp: String = { let f = DateFormatter(); f.dateFormat = "yyyy-MM-dd-HHmm"; return f.string(from: Date()) }()
         let folder = URL(fileURLWithPath: NSHomeDirectory()).appendingPathComponent("Dot/selftests/ink-\(stamp)", isDirectory: true)
         try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)

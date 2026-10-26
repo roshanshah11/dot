@@ -90,6 +90,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         Chimes.shared.configure(names: ["launch": tokens.chimes.launch, "needsYou": tokens.chimes.needsYou, "done": tokens.chimes.done, "failed": tokens.chimes.failed])
         // The sound set (AU-04) holds on a call, like every other chime (FX-11).
         Chimes.shared.isSilenced = { [weak self] in self.map { $0.config.quietOnCalls && CallPresence.isOnCall() } ?? false }
+        PenSounds.shared.allowed = { [weak self] in self.map { $0.config.penSounds && !CallPresence.isOnCall() } ?? false }
         agents.atlas = atlas
         agents.jev = jev
         // AG-07: every agent tool call asks Dot here first (`Dot --gate`), before it runs.

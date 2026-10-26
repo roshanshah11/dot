@@ -3633,6 +3633,7 @@ final class Talk {
         }
         // spoken: the sentence's measured length; muted or typed: reading pace
         let quiet = quietTurn || textSurface
+        overlay.inkPen.sounds = !quietTurn
         let drawn = overlay.inkBeat(items, sentence: quiet ? BubbleLines.readingTime(of: beat.text) : SpeechActivity.recentDuration(),
                                     characters: beat.text.count, busy: context.elements.map(\.frame),
                                     luminance: { [weak self] rect in self?.luminance(under: rect) })

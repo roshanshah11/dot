@@ -21,11 +21,16 @@ Dot is MIT licensed. Parts of it are ported from, or modelled on, other MIT work
   the MLX conversion by mlx-community, run through **mlx-audio** by Blaizzy (MIT,
   https://github.com/Blaizzy/mlx-audio) with **misaki** (Apache 2.0) for phonemes. All
   installed into `~/Dot/tts` by `scripts/install-tts.sh`; nothing is bundled.
+- **Patrick Hand** by Patrick Wagesreiter (SIL Open Font License 1.1), the handwriting in Dot's ink on the
+  screen (`Resources/fonts/PatrickHand-Regular.ttf`, licence beside it). Fetched 2026-10-26 from its Google Fonts
+  source, https://github.com/google/fonts/tree/main/ofl/patrickhand (sha256 0f173b3e...ad0fc).
+- **Kenney sound packs** by Kenney (CC0 1.0, https://kenney.nl): Interface Sounds, RPG Audio and Impact Sounds,
+  fetched 2026-10-26. Eight short files (pluck_002, tick_004, error_004, impactGeneric_light_001, bookPlace2,
+  bookFlip3, cloth2, cloth4) are trimmed and levelled by `scripts/make-ink-sounds.py` into Dot's pen accents in
+  `Resources/sounds/ink/` (licence text beside them). The looping pen, pencil, highlighter and key beds are Dot's own,
+  synthesized from seeded noise by the same script.
 
 HeyClicky (the commercial product that grew out of Clicky) was studied from its public
 download to understand its architecture: its notch HUD, named agents with a workspace
 folder, consent-gated computer use, and voice-to-agent handoff. None of its code,
 prompts, sounds, images or other assets are included here.
-- **Patrick Hand** by Patrick Wagesreiter (SIL Open Font License 1.1), the handwriting in Dot's ink on the
-  screen (`Resources/fonts/PatrickHand-Regular.ttf`, licence beside it). Fetched 2026-10-26 from its Google Fonts
-  source, https://github.com/google/fonts/tree/main/ofl/patrickhand (sha256 0f173b3e...ad0fc).

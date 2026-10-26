@@ -11,7 +11,7 @@ final class ControlServer {
 
     /// Overrides the socket path, for Dot and for `Dot --gate` (tests point both at a temp path).
     /// Agents get it in their environment, so the gate they run finds this Dot.
-    static let pathVariable = "DOT_CONTROL_SOCKET"
+    nonisolated static let pathVariable = "DOT_CONTROL_SOCKET"
 
     static func path(dotHome: URL) -> String {
         if let path = ProcessInfo.processInfo.environment[pathVariable], !path.isEmpty { return path }

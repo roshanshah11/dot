@@ -52,6 +52,10 @@ struct DotConfig: Codable {
     var showInRecordings = true
     /// Hold notices, suggestions and spoken heads-ups while he is on a call (mic in use by another app).
     var quietOnCalls = true
+    /// Ink on the screen makes its pen sounds (parity D6).
+    var penSounds = true
+    /// A caption strip at the bottom of the screen while Dot talks, words lighting in turn (parity D7).
+    var inkCaptions = false
     /// Course terms and names the recognizer should write his way (one per line, "heard => correct").
     var dictionaryFile = "~/.config/dot/dictionary.txt"
     /// Where Murmur keeps its dictation history, read for "what did i say in the meeting".
@@ -262,6 +266,8 @@ struct DotConfig: Codable {
         speakTypedAnswers = get(.speakTypedAnswers, d.speakTypedAnswers)
         showInRecordings = get(.showInRecordings, d.showInRecordings)
         quietOnCalls = get(.quietOnCalls, d.quietOnCalls)
+        penSounds = get(.penSounds, d.penSounds)
+        inkCaptions = get(.inkCaptions, d.inkCaptions)
         dictionaryFile = get(.dictionaryFile, d.dictionaryFile)
         murmurHistoryFile = get(.murmurHistoryFile, d.murmurHistoryFile)
         murmurLogDirectory = get(.murmurLogDirectory, d.murmurLogDirectory)

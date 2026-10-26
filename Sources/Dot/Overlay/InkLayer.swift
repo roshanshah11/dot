@@ -11,6 +11,8 @@ import SwiftUI
 /// The pen across marks: held on a barge-in, where each mark is, and the timers that tidy up.
 struct InkPenState {
     var held = false
+    /// The pen's sounds (PenSounds); off for a muted answer.
+    var sounds = true
     /// Marks that had not started when the pen was held, and how long after the hold they were due.
     var waiting: [String: TimeInterval] = [:]
     /// The screen each mark is on.
@@ -335,6 +337,7 @@ extension OverlayManager {
             trackedRects[.ink(id)] = tracked
             tracker.track(.ink(id), appKitRect: tracked)
             ids.append((id, item.spec))
+            if inkPen.sounds, !inkPen.held { PenSounds.shared.mark(item.spec.kind, drawing: drawing, after: slot.start, duration: slot.duration) }
             Log.info("ink: \(id) \(item.spec.tagText) in \(String(format: "%.2f", slot.duration)) s at +\(String(format: "%.2f", slot.start)) s")
         }
         showTransient()
@@ -360,6 +363,7 @@ extension OverlayManager {
             return []
         }
         let now = Date().timeIntervalSinceReferenceDate
+        if inkPen.sounds { PenSounds.shared.edit(edit) }
         for id in touched {
             guard let index = inkPen.screens[id], let i = models[index].ink.firstIndex(where: { $0.id == id }) else { continue }
             let model = models[index]
@@ -398,6 +402,7 @@ extension OverlayManager {
     func clearInk(animated: Bool = true) {
         guard !inkBoard.isEmpty || models.contains(where: { !$0.ink.isEmpty }) else { return }
         let ids = inkBoard.marks.map(\.id)
+        if animated, !ids.isEmpty, inkPen.sounds { PenSounds.shared.cleared() }
         inkBoard.removeAll()
         inkPen.waiting = [:]
         inkPen.held = false
@@ -424,6 +429,7 @@ extension OverlayManager {
     func holdInk() {
         guard !inkPen.held else { return }
         inkPen.held = true
+        PenSounds.shared.hush()
         let now = Date().timeIntervalSinceReferenceDate
         for model in models {
             for i in model.ink.indices where model.ink[i].start > now && model.ink[i].start.isFinite {

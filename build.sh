@@ -44,6 +44,8 @@ cp scripts/dot-spotify-library.py "$APP/Contents/Resources/dot-spotify-library.p
 cp scripts/dot-spotify-api.py "$APP/Contents/Resources/dot-spotify-api.py"
 cp scripts/dot-atlas-thread.py "$APP/Contents/Resources/dot-atlas-thread.py"
 cp -R Resources/board "$APP/Contents/Resources/board"
+rm -rf "$APP/Contents/Resources/sounds"
+cp -R Resources/sounds "$APP/Contents/Resources/sounds"
 rm -rf "$APP/Contents/Resources/fonts"
 cp -R Resources/fonts "$APP/Contents/Resources/fonts"
 rm -rf "$APP/Contents/Resources/lecture"

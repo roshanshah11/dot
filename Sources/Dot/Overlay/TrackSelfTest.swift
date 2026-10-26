@@ -1,5 +1,6 @@
 import AppKit
 import ApplicationServices
+import DotKit
 import ScreenCaptureKit
 import Vision
 
@@ -44,6 +45,7 @@ enum TrackSelfTest {
         // Preview first: quitting a test app activates another one, and an app switch rightly clears marks
         results.append(await preview(overlay: overlay))
         results.append(await safari(overlay: overlay))
+        results.append(await safariInk(overlay: overlay))
         overlay.clearMarks()
         // put the pointer back where it was
         if let primary = NSScreen.screens.first?.frame.height { CGWarpMouseCursorPosition(CGPoint(x: pointer.x, y: primary - pointer.y)) }
@@ -89,6 +91,73 @@ enum TrackSelfTest {
         try? await Task.sleep(nanoseconds: 600_000_000)
         let truth = { () -> CGRect? in frame(of: element) }
         await exercise(overlay: overlay, mark: frame0, window: window, truth: truth, sampleDuring: true, into: &s)
+        return s
+    }
+
+    // MARK: Scenario C: ink by id (parity batch 1; Codex review #13)
+
+    /// Three underlines of the same kind on three paragraphs, each anchored to its own element: scrolled, each must
+    /// stay within 4 pt of its paragraph; then m2 is recoloured, m3 erased and the last mark undone, by id.
+    private static func safariInk(overlay: OverlayManager) async -> Scenario {
+        var s = Scenario(name: "safari-ink")
+        let page = folder.appendingPathComponent("track-page.html")
+        guard FileManager.default.fileExists(atPath: page.path) else { s.note = "no page (the element scenario writes it)"; return s }
+        let wasRunning = NSRunningApplication.runningApplications(withBundleIdentifier: "com.apple.Safari").first != nil
+        guard let app = await open(page, bundle: "com.apple.Safari") else { s.note = "safari did not open"; return s }
+        try? await Task.sleep(nanoseconds: 3_500_000_000)
+        let axApp = AXUIElementCreateApplication(app.processIdentifier)
+        AXUIElementSetMessagingTimeout(axApp, 1.0)
+        AXUIElementSetAttributeValue(axApp, "AXEnhancedUserInterface" as CFString, kCFBooleanTrue)
+        defer {
+            AXUIElementSetAttributeValue(axApp, "AXEnhancedUserInterface" as CFString, kCFBooleanFalse)
+            closeWindow(app: app, titled: "Dot track selftest", quit: !wasRunning)
+        }
+        var elements: [AXUIElement] = []
+        for attempt in 0..<4 where elements.count < 3 {
+            if attempt > 0 { try? await Task.sleep(nanoseconds: 1_000_000_000) }
+            elements = []
+            for w in windows(of: axApp) where title(of: w).contains("Dot track selftest") {
+                for n in [12, 14, 16] { if let e = findText(in: w, prefix: "Paragraph \(n).", limit: 20000) { elements.append(e) } }
+            }
+        }
+        guard elements.count == 3 else { s.note = "found \(elements.count) of 3 paragraphs"; return s }
+        guard let window = frontWindow(pid: app.processIdentifier, titled: "Dot track selftest") else { s.note = "no window"; return s }
+        try? await Task.sleep(nanoseconds: 1_500_000_000)
+        let primary = NSScreen.screens.first?.frame.height ?? 0
+        func appKit(_ r: CGRect) -> CGRect { CGRect(x: r.minX, y: primary - r.maxY, width: r.width, height: r.height) }
+        let frames = elements.compactMap { frame(of: $0).map(appKit) }
+        guard frames.count == 3 else { s.note = "no frames"; return s }
+        overlay.clearInk(animated: false)
+        let drawn = overlay.inkBeat(frames.map { .init(spec: InkSpec(kind: .underline, places: [.element(1)]), anchors: [$0], marks: $0) },
+                                    sentence: 1.2, characters: 30)
+        let ids = drawn.map(\.id)
+        s.anchor = ids.joined(separator: ",")
+        guard ids.count == 3 else { s.note = "drew \(ids.count) of 3"; return s }
+        try? await Task.sleep(nanoseconds: 1_500_000_000)
+        func drifts() -> [Double] {
+            zip(ids, elements).compactMap { id, element in
+                guard let m = overlay.trackedRects[.ink(id)], let t = frame(of: element).map(appKit) else { return nil }
+                return Double(max(abs(m.midX - t.midX), abs(m.midY - t.midY)))
+            }
+        }
+        let point = CGPoint(x: window.frame.midX, y: window.frame.midY)
+        CGWarpMouseCursorPosition(point)
+        try? await Task.sleep(nanoseconds: 300_000_000)
+        let before = frame(of: elements[0])
+        await scroll(steps: 20, by: -15, at: point) { s.driftDuring.append(drifts().max() ?? -1) }
+        try? await Task.sleep(nanoseconds: 1_200_000_000)
+        if let b = before, let a = frame(of: elements[0]) { s.moved = Double(abs(a.midY - b.midY)) }
+        s.driftRest = drifts()
+        s.restored = s.driftRest.count == 3 && s.driftRest.allSatisfy { $0 <= 4 }
+        // edits by id
+        overlay.inkEdit(.recolor(id: ids[1], color: "red"))
+        overlay.inkEdit(.erase(id: ids[2]))
+        overlay.inkEdit(.undo)
+        try? await Task.sleep(nanoseconds: 800_000_000)
+        let left = overlay.inkBoard.marks.map(\.id)
+        let painted = overlay.models.flatMap { $0.ink.map(\.id) }
+        s.note = "after recolor \(ids[1]), erase \(ids[2]), undo: board \(left), painted \(painted)" + (left == [ids[0]] && painted == [ids[0]] ? " (ok)" : " (WRONG)")
+        overlay.clearInk(animated: false)
         return s
     }
 
