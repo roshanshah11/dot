@@ -158,6 +158,7 @@ enum InkSelfTest {
         check(board.apply(.recolor(id: "m2", color: "red")) == ["m2"] && board.mark("m2")?.color == "red", "recolor m2 by id")
         check(board.apply(.erase(id: "m3")) == ["m3"] && board.apply(.undo) == ["m2"] && board.marks.map(\.id) == ["m1"], "erase m3, then undo takes m2")
 
+        check(PenCursor.pen(accentHex: "#ff6b2c") != nil, "the pen cursor draws (background cursor \(BackgroundCursor.available ? "available" : "missing on this macOS: the pen stays off"))")
         let sounds = PenSounds.shared.loaded
         check(sounds.accents == ["pop", "stamp", "tick", "nope", "paper", "clear", "eraser", "slide"]
               && sounds.beds == ["felt", "pencil", "writing", "highlighter", "keys"], "the pen sounds load (\(sounds.accents.count) accents, \(sounds.beds.count) beds)")
@@ -178,6 +179,10 @@ enum InkSelfTest {
         for (name, view) in InkSheet.views(accentHex: DotConfig.peek().pointerColorHex) {
             if let image = Snapshots.render(view, width: InkSheet.size.width, height: InkSheet.size.height, trim: false), let data = Snapshots.png(image),
                (try? data.write(to: folder.appendingPathComponent("\(name).png"))) != nil { written += 1 }
+        }
+        if let pen = PenCursor.pen(accentHex: DotConfig.peek().pointerColorHex), let tiff = pen.image.tiffRepresentation,
+           let rep = NSBitmapImageRep(data: tiff), let data = rep.representation(using: .png, properties: [:]) {
+            try? data.write(to: folder.appendingPathComponent("pen-cursor.png"))
         }
         check(written == 4, "the sheet rendered (\(written) of 4) in \(folder.path)")
         print(failures.isEmpty ? "ink-selftest: passed" : "ink-selftest: \(failures.count) failed")

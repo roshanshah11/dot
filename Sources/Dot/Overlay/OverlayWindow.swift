@@ -922,14 +922,19 @@ final class OverlayManager {
     func setColor(hex: String) {
         guard let next = Color(hex: hex) else { return }
         color = next
+        colorHex = hex
         for model in models { model.color = next }
     }
 
     /// Dot stays beside the cursor all the time. Off: it appears for each exchange only.
     var isPresent: Bool { presence }
 
+    /// The accent as hex (the pen cursor is drawn in it).
+    private(set) var colorHex: String
+
     init(colorHex: String, presence: Bool, orbSize: CGFloat = 24) {
         color = Color(hex: colorHex) ?? Color(red: 1.0, green: 0.42, blue: 0.17)
+        self.colorHex = colorHex
         self.presence = presence
         self.orbSize = min(max(orbSize, 16), 36)
         rebuild()

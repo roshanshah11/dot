@@ -340,6 +340,8 @@ extension OverlayManager {
             if inkPen.sounds, !inkPen.held { PenSounds.shared.mark(item.spec.kind, drawing: drawing, after: slot.start, duration: slot.duration) }
             Log.info("ink: \(id) \(item.spec.tagText) in \(String(format: "%.2f", slot.duration)) s at +\(String(format: "%.2f", slot.start)) s")
         }
+        // the pointer is Dot's pen while it draws and his mouse is still (SH-02)
+        if !inkPen.held, let end = plan.last.map({ $0.start + $0.duration }) { PenCursor.shared.draw(for: end, accentHex: colorHex) }
         showTransient()
         returnWork?.cancel()
         startInkFade()
@@ -401,6 +403,7 @@ extension OverlayManager {
     /// Every mark goes (Escape, a new answer that draws afresh): the pens run backwards together.
     func clearInk(animated: Bool = true) {
         closeFigures()
+        PenCursor.shared.handBack()
         guard !inkBoard.isEmpty || models.contains(where: { !$0.ink.isEmpty }) else { return }
         let ids = inkBoard.marks.map(\.id)
         if animated, !ids.isEmpty, inkPen.sounds { PenSounds.shared.cleared() }
@@ -431,6 +434,7 @@ extension OverlayManager {
         guard !inkPen.held else { return }
         inkPen.held = true
         PenSounds.shared.hush()
+        PenCursor.shared.handBack()
         let now = Date().timeIntervalSinceReferenceDate
         for model in models {
             for i in model.ink.indices where model.ink[i].start > now && model.ink[i].start.isFinite {
