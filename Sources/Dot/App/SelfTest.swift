@@ -57,7 +57,39 @@ enum SelfTest {
         quietInFocus(check)
         dictationWatch(check)
         chords(check)
+        regionClip(check)
         return ok
+    }
+
+    /// HA-01: the clip a circled region becomes, pasted the way apps read it (on a private pasteboard: his clipboard is
+    /// untouched). A rich text view gets the note and the picture, a plain one the note alone, an image reader the image.
+    static func regionClip(_ check: (String, Bool) -> Void) {
+        let rep = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: 40, pixelsHigh: 24, bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true,
+                                   isPlanar: false, colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0)!
+        NSGraphicsContext.saveGraphicsState()
+        NSGraphicsContext.current = NSGraphicsContext(bitmapImageRep: rep)
+        NSColor.orange.setFill()
+        CGRect(x: 0, y: 0, width: 40, height: 24).fill()
+        NSGraphicsContext.restoreGraphicsState()
+        guard let jpeg = rep.representation(using: .jpeg, properties: [:]) else { return check("a test picture", false) }
+        let board = NSPasteboard(name: NSPasteboard.Name("com.roshan.dot.selftest.clip"))
+        defer { board.releaseGlobally() }
+        check("the region and a note go on the clipboard as one item", RegionPaste.copy(jpeg: jpeg, note: "why is this row negative?", to: board)
+              && board.pasteboardItems?.count == 1)
+        let rich = NSTextView()
+        rich.importsGraphics = true
+        let read = rich.readSelection(from: board)
+        let storage = rich.textStorage ?? NSTextStorage()
+        var attachments = 0
+        storage.enumerateAttribute(.attachment, in: NSRange(location: 0, length: storage.length)) { value, _, _ in if value != nil { attachments += 1 } }
+        check("a rich text view pastes the note and the picture (\(attachments) attachment)",
+              read && storage.string.hasPrefix("why is this row negative?") && attachments == 1)
+        let plain = NSTextView()
+        plain.isRichText = false
+        check("a plain field pastes the note alone", plain.readSelection(from: board) && plain.string == "why is this row negative?")
+        check("an image reader gets the picture", NSImage(pasteboard: board).map { $0.size.width > 0 } ?? false)
+        RegionPaste.copy(jpeg: jpeg, note: "", to: board)
+        check("no note: the picture alone, no text", board.string(forType: .string) == nil && NSImage(pasteboard: board) != nil)
     }
 
     /// SE-01/02: the event tap's handler fed events made here (none is posted): today's chords, Shift for an agent,

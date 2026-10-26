@@ -238,7 +238,11 @@ final class Talk {
         hud.model.onSubmitInput = { [weak self] text, forAgent in
             Task { @MainActor in
                 guard let self else { return }
-                if self.pendingRegionAgent { self.pendingRegionAgent = false; self.handRegionToAgent(text) } else { self.askTyped(text, fromField: true, shift: forAgent) }
+                if let clip = self.pendingRegionClip, Date().timeIntervalSince(clip.at) < 120 {
+                    self.pendingRegionClip = nil
+                    self.clipRegion(note: text, paste: clip.paste)
+                } else if self.pendingRegionAgent { self.pendingRegionAgent = false; self.handRegionToAgent(text) } else { self.askTyped(text, fromField: true, shift: forAgent) }
+                self.pendingRegionClip = nil
             }
         }
         panels.placement = { [weak self] in
@@ -666,16 +670,21 @@ final class Talk {
 
     private var pendingRegionAgent = false
     private var regionTextCache: String?
+    /// HA-01: the app and field he circled from, read before the bar opens, and a note being typed for a copy or paste.
+    private var pasteTarget: RegionPaste.Captured?
+    private var pendingRegionClip: (paste: Bool, at: Date)?
 
     /// He drew around something and let go without a word: offer what to do with it.
     private func showRegionBar() {
         guard let region else { return }
+        pasteTarget = RegionPaste.capture()   // before any of Dot's own windows can take focus
+        let pasteName = PasteCheck.offers(pasteTarget?.target, ownBundleID: Bundle.main.bundleIdentifier ?? "") ? pasteTarget?.target.appName : nil
         phase = .idle
         hud.set(phase: .hidden)
         overlay.setPhase(.idle)
         regionTextCache = nil
         let accent = hud.model.accent
-        ActionBarPanel.show(near: region, accent: accent, actions: [
+        var actions: [ActionBarPanel.Action] = [
             .init(title: "ask", icon: "bubble.left") { [weak self] in
                 ActionBarPanel.dismiss()
                 self?.hud.model.inputPrompt = "what about it?"
@@ -707,15 +716,60 @@ final class Talk {
                     let head = String(text.replacingOccurrences(of: "\n", with: " ").prefix(240))
                     self.askTyped(head.isEmpty ? "look up what i circled and tell me what it is." : "look this up and tell me what it is: \(head)")
                 }
+            },
+            .init(title: "copy with note", icon: "paperclip") { [weak self] in
+                ActionBarPanel.dismiss()
+                self?.askRegionNote(paste: nil)
+            },
+        ]
+        if let pasteName {
+            actions.append(.init(title: "paste into \(pasteName)", icon: "arrow.right.doc.on.clipboard") { [weak self] in
+                ActionBarPanel.dismiss()
+                self?.askRegionNote(paste: pasteName)
+            })
+        }
+        ActionBarPanel.show(near: region, accent: accent, actions: actions) { [weak self] in self?.clearRegion() }
+        hud.flash(status: "circled it: ask, hand it off, copy its text, look it up, or copy\(pasteName.map { " or paste it into \($0)" } ?? " it") with a note", for: 6)
+    }
+
+    /// The note for a copy or a paste; return with nothing typed sends the picture alone.
+    private func askRegionNote(paste appName: String?) {
+        pendingRegionClip = (appName != nil, Date())
+        hud.model.inputPrompt = appName.map { "a note to paste with it into \($0) (return for none)" } ?? "a note to go with it (return for none)"
+        hud.showInput()
+    }
+
+    /// HA-01: the circled region and his note onto the clipboard, then into the app he circled from when he asked.
+    private func clipRegion(note: String, paste: Bool) {
+        Task { @MainActor in
+            let target = pasteTarget
+            guard let crop = await regionCrop(), RegionPaste.copy(jpeg: crop.data, note: note) else {
+                hud.flash(status: "couldn't cut that region", for: 3)
+                clearRegion()
+                return
             }
-        ]) { [weak self] in self?.clearRegion() }
-        hud.flash(status: "circled it: ask, hand it off, copy its text, or look it up", for: 6)
+            clearRegion()
+            hud.hideInput()   // the note field gives up the keyboard, or the paste's last check refuses
+            let what = note.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "the region" : "the region and your note"
+            guard paste, let target else { hud.flash(status: "copied \(what)", for: 3); return }
+            try? await Task.sleep(nanoseconds: 150_000_000)   // the note field hands the keyboard back first
+            switch await RegionPaste.paste(into: target) {
+            case .pasted:
+                Log.info("region: pasted \(what) into \(target.target.appName) (\(target.target.role))")
+                hud.flash(status: "pasted \(what) into \(target.target.appName)", for: 3)
+            case .refused(let why):
+                Log.info("region: no paste into \(target.target.appName): \(why)")
+                hud.flash(status: "\(why), so i didn't paste; it's on your clipboard", for: 6)
+            }
+        }
     }
 
     private func clearRegion() {
         region = nil
         marks = []
         pendingRegionAgent = false
+        pendingRegionClip = nil
+        pasteTarget = nil
         overlay.setDrawRect(nil)
         overlay.clearStrokes()
         settle()
