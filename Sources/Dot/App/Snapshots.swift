@@ -76,6 +76,9 @@ enum Snapshots {
                 keep("panel-\(name)", renderPanel(title: name.replacingOccurrences(of: "-", with: " "), markup: markup, accentHex: accent))
             }
         }
+        if wanted("viewer") {
+            for (name, image) in viewerStates() { keep("viewer-\(name)", image) }
+        }
         if let composite = contactSheet(sheet), let data = png(composite) {
             let url = folder.appendingPathComponent("sheet.png")
             try? data.write(to: url)

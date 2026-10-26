@@ -1302,7 +1302,7 @@ struct NotchHUDView: View {
                     Image(systemName: Self.symbol(forFile: url)).font(.system(size: 10)).foregroundStyle(Theme.fileColor(url) ?? model.accent)
                     Text(url.lastPathComponent).font(.system(size: 11.5)).foregroundStyle(text.opacity(0.85)).lineLimit(1)
                     Spacer()
-                    smallButton("open") { NSWorkspace.shared.open(url) }
+                    smallButton(FileViewer.canShow(url) ? "view" : "open") { FileViewer.show(url) }
                 }
                 .onDrag { NSItemProvider(object: url as NSURL) }
             }

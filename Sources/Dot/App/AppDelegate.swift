@@ -142,6 +142,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             guard let command = AgentCommand.from(request: request) else { reply(["error": "not an agent request"]); return }
             reply(self.agents.control(command))
         }
+        // The notch file viewer (parity H2) for a file, from `Dot --view <file>`.
+        control.register("view") { request, reply in
+            let path = (request["path"] as? String ?? "") as NSString
+            let url = URL(fileURLWithPath: path.expandingTildeInPath)
+            guard FileManager.default.fileExists(atPath: url.path) else { reply(["error": "no file at \(url.path)"]); return }
+            FileViewer.show(url)
+            reply(["ok": true, "text": FileViewer.canShow(url) ? "showing \(url.lastPathComponent)" : "opened \(url.lastPathComponent) in its app"])
+        }
         // An agent's own tools (AG-18 note_to and list_agents, AG-14 make_image), from `Dot --agent-mcp`.
         control.register("agent-tool") { [weak self] request, reply in
             guard let self else { reply(["error": "dot is quitting"]); return }

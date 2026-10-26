@@ -288,12 +288,15 @@ enum XLSXParts {
     }
 
     static func styles(_ data: Data, theme: [String]) throws -> [XLSXStyle] {
-        struct Font { var bold = false, italic = false, underline = false, size: Double?, color: String? }
+        // colors are kept as written and resolved at the end: a workbook's own palette (<colors><indexedColors>, common
+        // in old banking templates) comes after the fonts and fills that use it
+        struct Font { var bold = false, italic = false, underline = false, size: Double?, color: [String: String]? }
         var formats: [Int: String] = [:]
-        var fonts: [Font] = [], fills: [String?] = []
+        var fonts: [Font] = [], fills: [[String: String]?] = []
+        var palette: [String] = []
         var xfs: [(fmt: Int, font: Int, fill: Int, align: String?, indent: Int)] = []
         var stack: [String] = []
-        var font = Font(), fill: String?, solid = false
+        var font = Font(), fill: [String: String]?, solid = false
         try XMLWalk.run(data, start: { name, a in
             let parent = stack.last ?? ""
             let grand = stack.count > 1 ? stack[stack.count - 2] : ""
@@ -305,11 +308,12 @@ enum XLSXParts {
             case "i" where parent == "font" && grand == "fonts": font.italic = XMLWalk.flag(a["val"], default: true)
             case "u" where parent == "font" && grand == "fonts": font.underline = (a["val"] ?? "single") != "none"
             case "sz" where parent == "font" && grand == "fonts": font.size = a["val"].flatMap(Double.init)
-            case "color" where parent == "font" && grand == "fonts": font.color = XLSXColor.resolve(a, theme: theme)
+            case "color" where parent == "font" && grand == "fonts": font.color = a
             case "fill" where parent == "fills": fill = nil; solid = false
             case "patternFill" where grand == "fills": solid = (a["patternType"] ?? "none") == "solid"
             case "fgColor" where stack.dropLast().suffix(3) == ["fills", "fill", "patternFill"][...]:
-                if solid { fill = XLSXColor.resolve(a, theme: theme) }
+                if solid { fill = a }
+            case "rgbColor" where parent == "indexedColors": palette.append(String((a["rgb"] ?? "000000").suffix(6)).uppercased())
             case "xf" where parent == "cellXfs":
                 xfs.append((Int(a["numFmtId"] ?? "0") ?? 0, Int(a["fontId"] ?? "0") ?? 0, Int(a["fillId"] ?? "0") ?? 0, nil, 0))
             case "alignment" where grand == "cellXfs" && !xfs.isEmpty:
@@ -323,14 +327,18 @@ enum XLSXParts {
             if name == "font" && parent == "fonts" { fonts.append(font) }
             if name == "fill" && parent == "fills" { fills.append(fill) }
         })
+        let indexed = palette.count >= 8 ? palette : XLSXColor.indexed
+        func resolve(_ a: [String: String]?) -> String? { a.flatMap { XLSXColor.resolve($0, theme: theme, indexed: indexed) } }
+        let fontColors = fonts.map { resolve($0.color) }
+        let fillColors = fills.map(resolve)
         return xfs.map { xf in
             var s = XLSXStyle()
             s.format = formats[xf.fmt] ?? ExcelFormat.builtin(xf.fmt) ?? "General"
             if fonts.indices.contains(xf.font) {
                 let f = fonts[xf.font]
-                s.bold = f.bold; s.italic = f.italic; s.underline = f.underline; s.size = f.size; s.fontColor = f.color
+                s.bold = f.bold; s.italic = f.italic; s.underline = f.underline; s.size = f.size; s.fontColor = fontColors[xf.font]
             }
-            if fills.indices.contains(xf.fill) { s.fill = fills[xf.fill] }
+            if fills.indices.contains(xf.fill) { s.fill = fillColors[xf.fill] }
             s.align = xf.align
             s.indent = xf.indent
             return s
@@ -384,8 +392,8 @@ enum XLSXParts {
             // a formula with no usable cached value (openpyxl writes an empty <v>): show the formula
             case .empty: if let formula { shown = ExcelFormat.Shown("=" + XLSXParts.readable(formula)) }
             }
-            // a styled blank cell adds nothing to the grid but its fill; keep it only when it has one
-            if case .empty = value, formula == nil, style.fill == nil { return }
+            // a styled blank cell adds nothing to the grid but its fill, or a run that centers a heading across it
+            if case .empty = value, formula == nil, style.fill == nil, style.align != "centerContinuous" { return }
             if cells.count >= maxCells { truncated = true; return }
             cells.append(XLSXCell(row: at.row, column: at.column, value: value, formula: formula, shown: shown.text,
                                   formatColor: shown.color, style: style))
@@ -525,11 +533,11 @@ enum XLSXColor {
     ]
 
     /// A <color> element's attributes as "RRGGBB": rgb (ARGB), theme + tint, or indexed; nil for automatic.
-    static func resolve(_ a: [String: String], theme: [String]) -> String? {
+    static func resolve(_ a: [String: String], theme: [String], indexed palette: [String] = indexed) -> String? {
         var base: String?
         if let rgb = a["rgb"], rgb.count >= 6 { base = String(rgb.suffix(6)).uppercased() }
         else if let t = a["theme"].flatMap(Int.init), theme.indices.contains(t) { base = theme[t] }
-        else if let i = a["indexed"].flatMap(Int.init), indexed.indices.contains(i) { base = indexed[i] }
+        else if let i = a["indexed"].flatMap(Int.init), palette.indices.contains(i) { base = palette[i] }
         guard let base else { return nil }
         guard let tint = a["tint"].flatMap(Double.init), tint != 0 else { return base }
         return tinted(base, tint)

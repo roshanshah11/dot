@@ -64,6 +64,18 @@ case "--skill-avatars":
         print("\(SkillAvatar.symbol(name: skill.name, description: skill.description).padding(toLength: 40, withPad: " ", startingAt: 0)) \(skill.name)")
     }
     exit(0)
+case "--view":
+    // H2: show a file in the running Dot's notch viewer (Markdown in the reader; anything else in its own app).
+    guard let path = arguments.dropFirst().first else { print("usage: Dot --view <file>"); exit(2) }
+    let socket = ProcessInfo.processInfo.environment[ControlServer.pathVariable].flatMap { $0.isEmpty ? nil : $0 }
+        ?? (NSHomeDirectory() as NSString).appendingPathComponent("Dot/control.sock")
+    let absolute = URL(fileURLWithPath: (path as NSString).expandingTildeInPath).standardizedFileURL.path
+    guard let reply = try? UnixSocketClient.send(["verb": "view", "path": absolute], to: socket, timeout: 10) else {
+        print("view: no answer from Dot at \(socket)"); exit(3)
+    }
+    if let error = reply["error"] as? String { print("view: \(error)"); exit(4) }
+    print(reply["text"] as? String ?? "ok")
+    exit(0)
 case "--xlsx-dump":
     // H3: what the notch viewer reads from a workbook, read only. --json prints every cell (for comparing with openpyxl).
     let rest = Array(arguments.dropFirst())
@@ -259,6 +271,7 @@ case "--help", "-h":
       Dot --agent-suggest                  the weekly agent-suggestion sweep, printed now (no card)
       Dot --skill-avatars                  each skill's picture by Dot's rule table
       Dot --xlsx-dump <file.xlsx> [--json] what the file viewer reads from a workbook (read only)
+      Dot --view <file>                    show a file in the running Dot's notch viewer
       Dot --skill-draft "<links>" "<purpose>"   draft a SKILL.md from links and print it (saves nothing)
       Dot --agent-tell <name> "<message>" [--quiet]  pass an agent a message, like a typed follow-up [--json]
       Dot --agent-note <to> "<text>" [--from <name>]   leave an agent a note for its next step or turn [--json]

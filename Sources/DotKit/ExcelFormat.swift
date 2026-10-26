@@ -421,7 +421,8 @@ public enum ExcelFormat {
 
     static let posix = Locale(identifier: "en_US_POSIX")
 
-    static func trimZeros(_ s: String) -> String {
+    /// "1.500" -> "1.5", "2.0" -> "2".
+    public static func trimZeros(_ s: String) -> String {
         guard s.contains(".") else { return s }
         var t = s
         while t.hasSuffix("0") { t.removeLast() }

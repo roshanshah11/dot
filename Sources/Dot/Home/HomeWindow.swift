@@ -813,7 +813,7 @@ struct HomeView: View {
                 Image(systemName: url.map(Self.fileIcon) ?? "doc").font(.system(size: 10)).foregroundStyle(url.flatMap(Theme.fileColor) ?? accent).frame(width: 14)
                 Text(entry.text).font(.system(size: 11.5)).lineLimit(1)
                 if let url, !url.isFileURL || FileManager.default.fileExists(atPath: url.path) {
-                    Button("open") { NSWorkspace.shared.open(url) }.buttonStyle(.link).font(.system(size: 11))
+                    Button(FileViewer.canShow(url) ? "view" : "open") { FileViewer.show(url) }.buttonStyle(.link).font(.system(size: 11))
                 }
                 Spacer()
             }
@@ -906,11 +906,11 @@ struct HomeView: View {
         .padding(.leading, 22)
     }
 
-    private func readButton(action: @escaping () -> Void) -> some View {
+    private func readButton(_ title: String = "read", symbol: String = "book", action: @escaping () -> Void) -> some View {
         Button(action: action) {
             HStack(spacing: 4) {
-                Image(systemName: "book").font(.system(size: 9.5, weight: .semibold))
-                Text("read").font(.system(size: 11, weight: .medium))
+                Image(systemName: symbol).font(.system(size: 9.5, weight: .semibold))
+                Text(title).font(.system(size: 11, weight: .medium))
             }
             .foregroundStyle(accent)
             .padding(.horizontal, 8).padding(.vertical, 3)
@@ -1007,6 +1007,7 @@ struct HomeView: View {
                 LazyVStack(spacing: 2) {
                     ForEach(model.outputs.prefix(40), id: \.self) { url in
                         let markdown = MarkdownViewer.isMarkdown(url)
+                        let viewable = FileViewer.canShow(url)
                         HStack(spacing: 6) {
                             Button { model.previewURL = url } label: {
                                 HStack(spacing: 8) {
@@ -1021,9 +1022,10 @@ struct HomeView: View {
                                 .contentShape(Rectangle())
                             }
                             .buttonStyle(.plain)
-                            // QuickLook shows Markdown as raw text, so a double-click on a Markdown output opens the reader.
-                            .simultaneousGesture(TapGesture(count: 2).onEnded { if markdown { MarkdownViewer.show(file: url) } })
-                            if markdown { readButton { MarkdownViewer.show(file: url) } }
+                            // QuickLook shows Markdown as raw text and a workbook without its grid, so a double-click opens
+                            // the reader or the notch viewer (parity H2).
+                            .simultaneousGesture(TapGesture(count: 2).onEnded { if viewable { FileViewer.show(url) } })
+                            if viewable { readButton(markdown ? "read" : "view", symbol: markdown ? "book" : "eye") { FileViewer.show(url) } }
                         }
                         .padding(.trailing, 8)
                         .background(model.previewURL == url ? Color.primary.opacity(0.08) : .clear, in: RoundedRectangle(cornerRadius: 7))
