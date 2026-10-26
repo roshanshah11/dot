@@ -24,6 +24,7 @@ public enum SkillAvatar {
         ("paintpalette", ["design", "taste", "image", "images", "photo", "art", "visual"]),
         ("wrench.and.screwdriver", ["reverse", "engineer", "decompile", "binary", "firmware"]),
         ("calendar", ["event", "events", "hackathon", "hackathons", "calendar", "deadline"]),
+        ("cart", ["buy", "buys", "shop", "shopping", "product", "products", "cart", "purchase", "prices", "amazon"]),
         ("gearshape", ["config", "settings", "keybindings", "hooks", "permissions", "setup", "skill", "skills"]),
     ]
     public static let fallback = "sparkles"

@@ -11,6 +11,7 @@ extension Snapshots {
         try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         var out: [(String, NSImage)] = []
         if let image = fileCards(in: folder) { out.append(("file-cards", image)) }
+        if let image = faces() { out.append(("faces", image)) }
         return out
     }
 
@@ -51,6 +52,47 @@ extension Snapshots {
             .frame(width: 820, height: 640, alignment: .topLeading)
             .background(Color(nsColor: .windowBackgroundColor))
         return drawHosted(NSHostingView(rootView: sheet), size: CGSize(width: 820, height: 640), wait: 3)
+    }
+
+    /// Every mood (HO-16) with symbols from the rule table (HO-15), as rail rows, in light and dark.
+    private static func faces() -> NSImage? {
+        let rows: [(String, AgentMood, String?, String)] = [
+            ("Dot", .rest, nil, "nothing yet"),
+            ("Scout", .working, AgentLook.symbol(name: "Scout", brief: "watch for hackathons and deadlines"), "working…"),
+            ("Option", .waiting, "cart", "waiting on you · the 2-pack or the 3-pack?"),
+            ("Pitch Desk", .done, AgentLook.symbol(name: "Pitch Desk", brief: ""), "Done: COHR comps in output/."),
+            ("Mailroom", .failed, AgentLook.symbol(name: "Mailroom", brief: "draft replies to my inbox"), "failed: usage limit"),
+        ]
+        func rail(_ scheme: ColorScheme) -> some View {
+            VStack(alignment: .leading, spacing: 4) {
+                ForEach(rows, id: \.0) { row in
+                    HStack(spacing: 10) {
+                        AgentFace(name: row.0, mood: row.1, symbol: row.2, size: 32, still: true).padding(.trailing, 2)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(row.0).font(.system(size: 13, weight: .semibold))
+                            Text(row.3).font(.system(size: 11.5)).lineLimit(1)
+                                .foregroundStyle(row.1 == .working || row.1 == .waiting ? HomeStyle.accent : row.1 == .failed ? .orange : .secondary)
+                        }
+                        Spacer()
+                    }
+                    .padding(.horizontal, 8).padding(.vertical, 6)
+                }
+                HStack(spacing: 18) {
+                    ForEach(AgentMood.allCases, id: \.self) { mood in
+                        VStack(spacing: 6) {
+                            AgentFace(name: "Scout", mood: mood, symbol: "calendar", size: 56, still: true)
+                            Text(mood.word).font(.system(size: 10.5)).foregroundStyle(.secondary)
+                        }
+                    }
+                }
+                .padding(.top, 14).padding(.leading, 10)
+            }
+            .padding(14).frame(width: 420, height: 440, alignment: .topLeading)
+            .background(Color(nsColor: .windowBackgroundColor))
+            .environment(\.colorScheme, scheme)
+        }
+        let sheet = HStack(spacing: 0) { rail(.light); rail(.dark) }
+        return drawHosted(NSHostingView(rootView: sheet), size: CGSize(width: 840, height: 440), wait: 0.6)
     }
 
     private static func samplePicture() -> Data {

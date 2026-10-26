@@ -151,6 +151,10 @@ final class HomeModel: ObservableObject {
     @Published var lastActivity: [String: Date] = [:]
     @Published var unread: Set<String> = []
     @Published var running: Set<String> = []
+    /// Each agent's face (HO-16) and symbol (HO-15; his pick, else the rule table's; none for Dot's own thread).
+    @Published var moods: [String: AgentMood] = [:]
+    @Published var icons: [String: String] = [:]
+    @Published var iconPicks: [String: String] = [:]
     @Published var settings: DotConfig
     @Published var settingsNote: String?
     @Published var renaming: AgentManager.Agent?
@@ -258,11 +262,30 @@ final class HomeModel: ObservableObject {
     func reload() {
         refreshRoutines()
         agents = agentManager.roster()
+        refreshIcons()
         if selected == nil || !agents.contains(where: { $0.slug == selected?.slug }) { selected = agents.first }
         refreshLive()
         select(selected)
         permissions = Permissions.status()
         brief = atlas.brief
+    }
+
+    /// The rule table's symbol from its name and what it was made for, unless he picked one (HomeState).
+    func refreshIcons() {
+        iconPicks = HomeState.shared.agentIcons()
+        var out: [String: String] = [:]
+        for agent in agents where agent.slug != "dot" {
+            if let pick = iconPicks[agent.slug] { out[agent.slug] = pick; continue }
+            let claudeMD = (try? String(contentsOf: agent.claudeMD, encoding: .utf8)) ?? ""
+            let founding = (try? String(contentsOf: agent.folder.appendingPathComponent(".dot/brief.txt"), encoding: .utf8)) ?? ""
+            out[agent.slug] = AgentLook.symbol(name: agent.name, brief: AgentLook.brief(claudeMD: claudeMD, template: Prompts.agentClaudeMD(name: agent.name), founding: founding))
+        }
+        icons = out
+    }
+
+    func setIcon(_ agent: AgentManager.Agent, _ symbol: String?) {
+        HomeState.shared.setAgentIcon(agent.slug, symbol)
+        refreshIcons()
     }
 
     func select(_ agent: AgentManager.Agent?) {
@@ -331,19 +354,22 @@ final class HomeModel: ObservableObject {
         today = ledger.today()
         brief = atlas.brief
         running = Set(agentManager.roster().filter { agentManager.hasTurnInFlight($0) }.map(\.slug))
-        var lines: [String: String] = [:], times: [String: Date] = [:], fresh: Set<String> = []
+        var lines: [String: String] = [:], times: [String: Date] = [:], fresh: Set<String> = [], faces: [String: AgentMood] = [:]
         for agent in agents {
             let file = agent.folder.appendingPathComponent(".dot/transcript.jsonl")
             let modified = (try? FileManager.default.attributesOfItem(atPath: file.path)[.modificationDate] as? Date) ?? .distantPast
             times[agent.slug] = modified
-            if let last = agentManager.transcriptEntries(for: agent, limit: 3).last(where: { $0.role == "assistant" || $0.role == "user" }) {
+            let tail = agentManager.transcriptEntries(for: agent, limit: 12)
+            if let last = tail.last(where: { $0.role == "assistant" || $0.role == "user" }) {
                 lines[agent.slug] = Log.short(last.text.replacingOccurrences(of: "\n", with: " "), 70)
             }
+            faces[agent.slug] = AgentMood.of(running: running.contains(agent.slug), rows: tail.map { ($0.role, $0.text, $0.time) })
             let seen = defaults.object(forKey: "dot.home.seen.\(agent.slug)") as? Date ?? .distantPast
             if modified > seen, agent.slug != selected?.slug || !(NSApp.keyWindow?.title == "Dot") { fresh.insert(agent.slug) }
         }
         lastLines = lines
         lastActivity = times
+        if faces != moods { moods = faces }
         unread = fresh
         if let selected {
             let latest = agentManager.transcriptEntries(for: selected)
@@ -582,13 +608,8 @@ struct HomeView: View {
             model.select(agent)
         } label: {
             HStack(spacing: 10) {
-                ZStack(alignment: .bottomTrailing) {
-                    Circle().fill(accent.opacity(0.18)).frame(width: 32, height: 32)
-                        .overlay(Text(String(agent.name.prefix(1)).uppercased()).font(.system(size: 14, weight: .semibold)).foregroundStyle(accent))
-                    if running {
-                        Circle().fill(Color.orange).frame(width: 9, height: 9).overlay(Circle().stroke(Color(nsColor: .windowBackgroundColor), lineWidth: 2))
-                    }
-                }
+                AgentFace(name: agent.name, mood: model.moods[agent.slug] ?? (running ? .working : .rest), symbol: model.icons[agent.slug], size: 32)
+                    .padding(.trailing, 2)
                 VStack(alignment: .leading, spacing: 2) {
                     HStack(spacing: 4) {
                         Text(agent.name).font(.system(size: 13, weight: .semibold)).lineLimit(1)
@@ -598,8 +619,9 @@ struct HomeView: View {
                             Text(Self.relative(time)).font(.system(size: 10.5)).foregroundStyle(.secondary)
                         }
                     }
-                    Text(running ? "working…" : (model.lastLines[agent.slug] ?? "nothing yet"))
-                        .font(.system(size: 11.5)).foregroundStyle(running ? accent : .secondary).lineLimit(1)
+                    let mood = model.moods[agent.slug] ?? .rest
+                    Text(running ? "working…" : mood == .waiting ? "waiting on you · \(model.lastLines[agent.slug] ?? "")" : (model.lastLines[agent.slug] ?? "nothing yet"))
+                        .font(.system(size: 11.5)).foregroundStyle(running || mood == .waiting ? accent : mood == .failed ? .orange : .secondary).lineLimit(1)
                 }
                 if model.unread.contains(agent.slug) {
                     Circle().fill(accent).frame(width: 7, height: 7)
@@ -613,6 +635,15 @@ struct HomeView: View {
         .contextMenu {
             Button(model.pinned.contains(agent.slug) ? "Unpin" : "Pin to the top") { model.togglePin(agent) }
             Button("Rename…") { model.renameText = agent.name; model.renaming = agent }
+            if agent.slug != "dot" {
+                Menu("Icon") {
+                    Button { model.setIcon(agent, nil) } label: { Label("Automatic", systemImage: model.iconPicks[agent.slug] == nil ? "checkmark" : "wand.and.stars") }
+                    Divider()
+                    ForEach(SkillAvatar.choices, id: \.self) { choice in
+                        Button { model.setIcon(agent, choice) } label: { Label(choice, systemImage: choice) }
+                    }
+                }
+            }
             Button("Open folder") { NSWorkspace.shared.open(agent.folder) }
             Button("Open output folder") { NSWorkspace.shared.open(agent.outputFolder) }
             Divider()
@@ -635,15 +666,13 @@ struct HomeView: View {
         let running = model.running.contains(agent.slug)
         return VStack(spacing: 0) {
             HStack(spacing: 10) {
+                let mood = running ? AgentMood.working : (model.moods[agent.slug] ?? .rest)
+                AgentFace(name: agent.name, mood: mood, symbol: model.icons[agent.slug], size: 38)
                 VStack(alignment: .leading, spacing: 2) {
                     Text(agent.name).font(.system(size: 17, weight: .semibold))
                     HStack(spacing: 6) {
-                        if running {
-                            BreathingDot(color: accent)
-                            Text("working").font(.system(size: 11.5)).foregroundStyle(accent)
-                        } else {
-                            Text("idle").font(.system(size: 11.5)).foregroundStyle(.secondary)
-                        }
+                        Text(mood.word).font(.system(size: 11.5))
+                            .foregroundStyle(mood == .working || mood == .waiting ? accent : mood == .failed ? .orange : .secondary)
                         Text(agent.folder.path.replacingOccurrences(of: NSHomeDirectory(), with: "~")).font(.system(size: 11)).foregroundStyle(.tertiary).lineLimit(1)
                     }
                 }

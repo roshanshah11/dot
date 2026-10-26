@@ -1,5 +1,6 @@
 import DotKit
 import Foundation
+import SQLite3
 
 /// `Dot --home-selftest`: Home's state store (batch 6) on a temp database: drafts, scroll places, reactions, prompt
 /// cards and the schema version; then the storage contract over a copy of the real talk log (read only).
@@ -39,10 +40,33 @@ enum HomeSelfTest {
             check(s.promptCards().map(\.id) == ["a", "b"], "prompt cards in their order")
             s.deletePromptCard("a")
             check(s.promptCards().map(\.id) == ["b"], "a card deletes")
+            s.setAgentIcon("scout", "calendar")
+            s.setAgentIcon("option", "cart")
+            s.setAgentIcon("option", nil)
+            check(s.agentIcons() == ["scout": "calendar"], "an icon pick is kept; Automatic takes it back")
         }
         // reopening keeps everything and doesn't migrate twice
         let again = HomeState(url: url)
-        check(again.scroll(thread: "agent:scout").anchor == "k2" && again.version == 1, "a reopened store keeps its rows and version")
+        check(again.scroll(thread: "agent:scout").anchor == "k2" && again.version == HomeState.schemaVersion, "a reopened store keeps its rows and version")
+        // a schema 1 file (before agent icons) upgrades in place and keeps its rows
+        let old = dir.appendingPathComponent("v1.sqlite")
+        var raw: OpaquePointer?
+        if sqlite3_open(old.path, &raw) == SQLITE_OK {
+            sqlite3_exec(raw, """
+            CREATE TABLE meta(key TEXT PRIMARY KEY, value TEXT);
+            CREATE TABLE drafts(thread TEXT PRIMARY KEY, text TEXT NOT NULL, attachments TEXT NOT NULL DEFAULT '[]', updated REAL NOT NULL);
+            CREATE TABLE scroll(thread TEXT PRIMARY KEY, anchor TEXT, newest TEXT, updated REAL NOT NULL);
+            CREATE TABLE reactions(turn TEXT PRIMARY KEY, thread TEXT NOT NULL, emoji TEXT NOT NULL, text TEXT NOT NULL DEFAULT '', at REAL NOT NULL, told INTEGER NOT NULL DEFAULT 0);
+            CREATE TABLE prompt_cards(id TEXT PRIMARY KEY, title TEXT NOT NULL, text TEXT NOT NULL, color TEXT NOT NULL, ord INTEGER NOT NULL);
+            INSERT INTO meta VALUES('schema', '1');
+            INSERT INTO drafts VALUES('agent:option', 'kept across the upgrade', '[]', 0);
+            """, nil, nil, nil)
+            sqlite3_close(raw)
+        }
+        let upgraded = HomeState(url: old)
+        upgraded.setAgentIcon("option", "cart")
+        check(upgraded.version == 2 && upgraded.draft(thread: "agent:option").text == "kept across the upgrade" && upgraded.agentIcons() == ["option": "cart"],
+              "a schema 1 store upgrades to 2 and keeps its drafts")
         // the storage contract on the real log: every row gets an id, nothing written
         let log = TranscriptLog.directory.appendingPathComponent("transcripts.jsonl")
         if let before = try? Data(contentsOf: log) {

@@ -8,7 +8,7 @@ import SQLite3
 @MainActor
 final class HomeState {
     static let shared = HomeState(url: URL(fileURLWithPath: NSHomeDirectory()).appendingPathComponent("Dot/home-state.sqlite"))
-    static let schemaVersion = 1
+    static let schemaVersion = 2
 
     private var db: OpaquePointer?
     private let transient = unsafeBitCast(-1, to: sqlite3_destructor_type.self)
@@ -31,6 +31,12 @@ final class HomeState {
             CREATE TABLE IF NOT EXISTS reactions(turn TEXT PRIMARY KEY, thread TEXT NOT NULL, emoji TEXT NOT NULL, text TEXT NOT NULL DEFAULT '', at REAL NOT NULL, told INTEGER NOT NULL DEFAULT 0);
             CREATE TABLE IF NOT EXISTS prompt_cards(id TEXT PRIMARY KEY, title TEXT NOT NULL, text TEXT NOT NULL, color TEXT NOT NULL, ord INTEGER NOT NULL);
             INSERT OR REPLACE INTO meta(key, value) VALUES('schema', '1');
+            """)
+        }
+        if version < 2 {
+            exec("""
+            CREATE TABLE IF NOT EXISTS agent_icons(slug TEXT PRIMARY KEY, symbol TEXT NOT NULL);
+            INSERT OR REPLACE INTO meta(key, value) VALUES('schema', '2');
             """)
         }
     }
@@ -148,6 +154,21 @@ final class HomeState {
     }
 
     func deletePromptCard(_ id: String) { run("DELETE FROM prompt_cards WHERE id = ?", [id]) }
+
+    // MARK: Agent icons (HO-15)
+
+    /// His picks; an agent without one gets the rule table's.
+    func agentIcons() -> [String: String] {
+        var out: [String: String] = [:]
+        run("SELECT slug, symbol FROM agent_icons", []) { st in if let a = Self.text(st, 0), let b = Self.text(st, 1) { out[a] = b } }
+        return out
+    }
+
+    /// nil goes back to the rule table's pick.
+    func setAgentIcon(_ slug: String, _ symbol: String?) {
+        if let symbol { run("INSERT OR REPLACE INTO agent_icons(slug, symbol) VALUES(?, ?)", [slug, symbol]) }
+        else { run("DELETE FROM agent_icons WHERE slug = ?", [slug]) }
+    }
 
     var version: Int { Int(scalar("SELECT value FROM meta WHERE key = 'schema'") ?? "0") ?? 0 }
 }
