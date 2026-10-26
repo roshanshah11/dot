@@ -311,7 +311,7 @@ final class ClaudeSession {
         lastActivity = Date()
         var event = incoming
         switch event {
-        case .systemInit(let id, _, _):
+        case .systemInit(let id, _, _, _):
             if !id.isEmpty { sessionId = id }
         case .result(let info):
             pendingResults = max(0, pendingResults - 1)

@@ -261,6 +261,19 @@ case "--stack-demo":
                                                                  userInfo: ["muted": flags.contains("--muted"), "job": flags.contains("--job")], deliverImmediately: true)
     print("asked the running Dot for the stack demo; stack-demo: lines land in dot.log")
     exit(0)
+case "--agent-tools":
+    // Which servers an agent gets and which it is denied (parity AG-08), from its folder, without starting it.
+    let config = DotConfig.peek()
+    let slugs = arguments.dropFirst().isEmpty
+        ? ((try? FileManager.default.contentsOfDirectory(atPath: config.agentsRootURL.path)) ?? []).filter { !$0.hasPrefix(".") }.sorted()
+        : Array(arguments.dropFirst())
+    print("known servers: \(AgentManager.seenServers(config).joined(separator: ", "))")
+    for slug in slugs {
+        let (known, chosen) = AgentManager.tools(folder: config.agentsRootURL.appendingPathComponent(slug), config: config)
+        let denied = AgentTools.denied(known: known, chosen: chosen)
+        print("\(slug): \(chosen.sorted().map(AgentTools.label).joined(separator: ", "))" + (denied.isEmpty ? "" : "  (denied: \(denied.joined(separator: " ")))"))
+    }
+    exit(0)
 case "--page-selftest":
     // A job page in the real page window off every display: a tick and a letter Send clicked in WebKit (parity J1, J2).
     let pageApp = NSApplication.shared
@@ -322,7 +335,12 @@ case "--home", "--stop", "--refresh", "--input", "--stop-listening":
     DistributedNotificationCenter.default().postNotificationName(name, object: nil, userInfo: nil, deliverImmediately: true)
     exit(0)
 default:
-    break
+    // An unknown flag never starts the app: a build that lacked a new flag read it as "launch" and ran a second Dot
+    // beside his, with its own hotkey tap and talk session (2026-10-26 05:08). The app itself takes no arguments.
+    if let flag = arguments.first, flag.hasPrefix("--") {
+        FileHandle.standardError.write(Data("Dot: unknown flag \(flag) (Dot --help lists them); the app was not started\n".utf8))
+        exit(2)
+    }
 }
 
 let app = NSApplication.shared

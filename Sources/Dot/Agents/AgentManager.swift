@@ -306,6 +306,7 @@ final class AgentManager {
             Log.info("agent[\(agent.slug)] follow-up mid-turn: \(Log.short(brief))")
             return agent
         } else {
+            noteFoundingBrief(agent, brief)
             guard let fresh = startRun(for: agent) else { return agent }
             run = fresh
         }
@@ -379,6 +380,12 @@ final class AgentManager {
         // Agents keep hb and their gate; a job's dot tools are never theirs. Here only: jobs reuse disallowedAgentTools,
         // and a disallow beats an allow, so the shared list must not carry it.
         options.disallowedTools = Self.disallowedAgentTools + ["mcp__dot"]
+        // AG-08: its own servers; the rest it would inherit are disallowed by server (Atlas and computer use always stay).
+        let tools = tools(for: agent)
+        let denied = AgentTools.denied(known: tools.known, chosen: tools.chosen)
+        options.disallowedTools += denied
+        Log.info("agent[\(agent.slug)] tools: \(tools.chosen.sorted().map(AgentTools.label).joined(separator: ", "))"
+                 + (denied.isEmpty ? "" : "; not given: \(tools.known.filter { !tools.chosen.contains($0) }.sorted().map(AgentTools.label).joined(separator: ", "))"))
         options.permissionPromptOverStdio = true
         if config.permissionsMode == .atlas {
             // Atlas's permissions (his call 2026-10-21, "fully Atlas, no Dot guards"): bypassPermissions and Atlas's deny
@@ -473,10 +480,11 @@ final class AgentManager {
     private func handle(_ event: StreamEvent, run: Run) {
         let agent = run.agent
         switch event {
-        case .systemInit(let id, _, _):
+        case .systemInit(let id, _, _, let servers):
             if !id.isEmpty {
                 try? id.write(to: agent.folder.appendingPathComponent(".dot/session-id"), atomically: true, encoding: .utf8)
             }
+            recordServers(servers)
         case .result(let result):
             try? FileManager.default.setAttributes([.modificationDate: Date()], ofItemAtPath: agent.folder.appendingPathComponent(".dot/session-id").path)
             saveHostSeq(run)
@@ -1022,6 +1030,63 @@ final class AgentManager {
         var n = 2
         while taken.contains("\(name) \(n)".lowercased()) { n += 1 }
         return "\(name) \(n)"
+    }
+
+    // MARK: Its own tools (parity AG-08)
+
+    private var serversFile: URL { Self.serversFile(config) }
+    nonisolated static func serversFile(_ config: DotConfig) -> URL { config.agentsRootURL.appendingPathComponent(".servers.json") }
+
+    /// Every MCP server an agent session has come up with (its init line), plus the ones Dot's own config names.
+    nonisolated static func seenServers(_ config: DotConfig) -> [String] {
+        let seen = (try? JSONDecoder().decode([String].self, from: Data(contentsOf: serversFile(config)))) ?? []
+        let configured = config.mcpToolNames(config.agentMCPConfig).map { String($0.dropFirst(5).dropLast(2)) }
+        return KnownServers.merge(seen, configured)
+    }
+
+    private func recordServers(_ servers: [String]) {
+        guard !servers.isEmpty else { return }
+        let old = (try? JSONDecoder().decode([String].self, from: Data(contentsOf: serversFile))) ?? []
+        let merged = KnownServers.merge(old, servers)
+        guard merged != old.sorted(), let data = try? JSONEncoder().encode(merged) else { return }
+        try? data.write(to: serversFile, options: .atomic)
+        Log.info("agents: servers seen \(merged.joined(separator: ", "))")
+    }
+
+    /// The ask that founded it, kept once (its CLAUDE.md and this are what its tools are chosen from).
+    private func noteFoundingBrief(_ agent: Agent, _ brief: String) {
+        let file = agent.folder.appendingPathComponent(".dot/brief.txt")
+        guard !FileManager.default.fileExists(atPath: file.path) else { return }
+        try? FileManager.default.createDirectory(at: file.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try? String(brief.prefix(4000)).write(to: file, atomically: true, encoding: .utf8)
+    }
+
+    private func toolsFile(_ agent: Agent) -> URL { agent.folder.appendingPathComponent(".dot/tools.json") }
+
+    func toolOverrides(_ agent: Agent) -> AgentTools.Overrides {
+        (try? JSONDecoder().decode(AgentTools.Overrides.self, from: Data(contentsOf: toolsFile(agent)))) ?? AgentTools.Overrides()
+    }
+
+    /// Its servers: chosen from its CLAUDE.md and founding ask by AgentTools' rules, then his adds and removes.
+    func tools(for agent: Agent) -> (known: [String], chosen: Set<String>) { Self.tools(folder: agent.folder, config: config) }
+
+    nonisolated static func tools(folder: URL, config: DotConfig) -> (known: [String], chosen: Set<String>) {
+        let brief = [folder.appendingPathComponent("CLAUDE.md"), folder.appendingPathComponent(".dot/brief.txt")]
+            .compactMap { try? String(contentsOf: $0, encoding: .utf8) }.joined(separator: "\n")
+        let overrides = (try? JSONDecoder().decode(AgentTools.Overrides.self, from: Data(contentsOf: folder.appendingPathComponent(".dot/tools.json"))))
+            ?? AgentTools.Overrides()
+        let known = seenServers(config)
+        return (known, AgentTools.chosen(brief: brief, known: known, overrides: overrides))
+    }
+
+    /// His switch in Home: give it this server or take it away (from its next session; Atlas and computer use stay).
+    func setTool(_ server: String, on: Bool, for agent: Agent) {
+        var o = toolOverrides(agent)
+        o.add.removeAll { $0 == server }
+        o.remove.removeAll { $0 == server }
+        if on { o.add.append(server) } else { o.remove.append(server) }
+        if let data = try? JSONEncoder().encode(o) { try? data.write(to: toolsFile(agent), options: .atomic) }
+        Log.info("agent[\(agent.slug)] tools: he \(on ? "gave it" : "took away") \(AgentTools.label(server)) (from its next session)")
     }
 
     /// A job's own agent: founded like any other, marked as a job so it is archived after it has sat finished for a while.

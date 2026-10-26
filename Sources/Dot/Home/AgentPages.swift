@@ -183,11 +183,40 @@ struct AgentProfileStrip: View {
                 Label(routines.map { ($0.paused ? "paused: " : "") + $0.schedule.words }.joined(separator: ", "), systemImage: "clock.arrow.2.circlepath")
                     .font(.system(size: 11.5)).foregroundStyle(.secondary).lineLimit(1)
             }
+            AgentToolsMenu(model: model, agent: agent)
             if let cost = model.spend[agent.slug] { Text(String(format: "$%.2f this week", cost)).font(.system(size: 11.5, design: .monospaced)).foregroundStyle(.tertiary) }
             Spacer()
             Button("Agents page") { model.page = .agents }.controlSize(.mini)
         }
         .padding(.horizontal, 18).padding(.vertical, 6)
         .background(Color.primary.opacity(0.03))
+    }
+}
+
+/// Its tools (parity AG-08): the servers it gets, with a switch for each; Atlas and computer use can't be taken away.
+struct AgentToolsMenu: View {
+    @ObservedObject var model: HomeModel
+    let agent: AgentManager.Agent
+    @State private var version = 0
+
+    var body: some View {
+        let tools = model.agentManager.tools(for: agent)
+        let _ = version
+        Menu {
+            ForEach(tools.known, id: \.self) { server in
+                let fixed = AgentTools.always.contains(server)
+                Toggle(AgentTools.label(server) + (fixed ? " (always)" : ""), isOn: Binding(
+                    get: { tools.chosen.contains(server) },
+                    set: { on in model.agentManager.setTool(server, on: on, for: agent); version += 1 }))
+                    .disabled(fixed)
+            }
+            Divider()
+            Text("changes apply from its next session")
+        } label: {
+            Label(tools.chosen.sorted().map(AgentTools.label).joined(separator: ", "), systemImage: "wrench.and.screwdriver")
+                .font(.system(size: 11.5)).foregroundStyle(.secondary).lineLimit(1)
+        }
+        .menuStyle(.borderlessButton).fixedSize()
+        .help("Its tools")
     }
 }

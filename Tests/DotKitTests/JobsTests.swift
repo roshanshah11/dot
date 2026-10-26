@@ -465,7 +465,7 @@ final class JobConfigFileTests: XCTestCase {
 
     func testInitCarriesPermissionMode() {
         let line = #"{"type":"system","subtype":"init","session_id":"s1","model":"claude-sonnet","permissionMode":"default"}"#
-        XCTAssertEqual(StreamJSON.parse(line: line), .systemInit(sessionId: "s1", model: "claude-sonnet", permissionMode: "default"))
+        XCTAssertEqual(StreamJSON.parse(line: line), .systemInit(sessionId: "s1", model: "claude-sonnet", permissionMode: "default", servers: []))
     }
 }
 
