@@ -118,6 +118,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             guard let self else { reply(["error": "dot is quitting"]); return }
             self.talk.jobs.hands(request, reply)
         }
+        // The install gate (parity run, 00-index): what would an install interrupt right now (`Dot --jobs`).
+        control.register("jobs") { [weak self] _, reply in
+            guard let self else { reply(["error": "dot is quitting"]); return }
+            let report = IdleReport(jobs: self.talk.jobs.idleRows, queued: self.talk.jobs.queuedCount,
+                                    workingAgents: self.agents.workingAgents, cardsWaiting: self.hud.cardsWaiting,
+                                    lecture: self.talk.lectureSession != nil)
+            reply(report.wire)
+        }
         if control.isRunning { talk.jobs.socketPath = control.path }
         noticer = Noticer(config: config, atlas: atlas, overlay: overlay, jev: jev)
         noticer.onSuggest = { [weak self] suggestion in Task { @MainActor in self?.talk.offerSuggestion(suggestion) } }

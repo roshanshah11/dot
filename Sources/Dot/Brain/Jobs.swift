@@ -114,6 +114,11 @@ final class JobManager {
     var pausedJob: Job? { jobs.last { $0.phase == .paused } }
     var frontJob: Job? { running.last { $0.placement == .front } }
     var newest: Job? { running.last }
+    /// Live jobs and the queue, for the install gate (`Dot --jobs`, IdleReport).
+    var idleRows: [IdleReport.Job] {
+        running.filter { !$0.bench }.map { IdleReport.Job(id: $0.id, phase: $0.phase.rawValue, goal: Log.short($0.goal, 80), waitingOnHim: $0.waitingOnHim) }
+    }
+    var queuedCount: Int { queue.filter { !$0.bench }.count }
 
     func job(_ id: String) -> Job? { jobs.first { $0.id == id } }
 

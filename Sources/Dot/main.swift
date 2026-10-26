@@ -64,6 +64,20 @@ case "--host":
     }
     FileHandle.standardError.write(Data("messages: live chat.db readable=\(MessagesProbe.liveReadable())\n".utf8))
     AgentHostCore.serve(path: socket)
+case "--jobs":
+    // The install gate (parity run): what an install would interrupt in the running Dot. Exit 0 idle, 1 busy, 3 no answer.
+    let path = ProcessInfo.processInfo.environment[ControlServer.pathVariable].flatMap { $0.isEmpty ? nil : $0 }
+        ?? (NSHomeDirectory() as NSString).appendingPathComponent("Dot/control.sock")
+    guard let reply = try? UnixSocketClient.send(["verb": "jobs"], to: path, timeout: 5), let report = IdleReport(wire: reply) else {
+        print(arguments.contains("--json") ? "{\"v\":1,\"error\":\"no answer from Dot at \(path)\"}" : "jobs: no answer from Dot at \(path)")
+        exit(3)
+    }
+    if arguments.contains("--json"), let data = try? JSONSerialization.data(withJSONObject: report.wire, options: [.sortedKeys]) {
+        print(String(decoding: data, as: UTF8.self))
+    } else {
+        print(report.idle ? "idle" : report.reasons.map { "busy: \($0)" }.joined(separator: "\n"))
+    }
+    exit(report.idle ? 0 : 1)
 case "--version", "-v":
     print("Dot \(Version.string)")
     exit(0)
@@ -94,6 +108,7 @@ case "--help", "-h":
       Dot --selftest           check the notch's permission-card queue (no agents, no model)
       Dot --gate               the agents' tool-call hook (Claude Code runs it; JSON on stdin)
       Dot --host [list]        the agent host that keeps agents running across a relaunch (launchd runs it)
+      Dot --jobs [--json]      what an install would interrupt now (exit 0 idle, 1 busy, 3 no answer)
       Dot --version
 
     Hold control+option and talk; drag while holding to draw a box to ask about.

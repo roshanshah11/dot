@@ -1,0 +1,94 @@
+#!/bin/zsh
+# Install this tree's build only when the running Dot is idle (the parity run's install gate).
+#
+#   scripts/install-when-idle            check, then ./build.sh when idle
+#   scripts/install-when-idle --check    check only (exit 0 idle, 1 busy, 3 could not tell)
+#   scripts/install-when-idle -- <build.sh args>
+#
+# ./build.sh quits Dot, and jobs, lecture mode and in-process agent turns live in Dot's process, so this asks the
+# owners themselves: the running Dot (`Dot --jobs --json`) and the agent host (`Dot --host list`). It never kills
+# anything. When the running Dot is too old to know `--jobs`, it falls back to Dot's log and installs only when the
+# log shows no unfinished job and no job, agent or lecture line in the last 15 minutes.
+# It asks through this tree's own debug build, never the installed binary: an older Dot reads an unknown flag like
+# `--jobs` as "launch the app" and would start a second Dot. DOT_BIN overrides it (the tests use stub sockets).
+set -uo pipefail
+cd "${0:A:h}/.."
+
+CHECK_ONLY=0
+BUILD_ARGS=()
+while (( $# )); do
+  case "$1" in
+    --check) CHECK_ONLY=1 ;;
+    --) shift; BUILD_ARGS=("$@"); break ;;
+    *) BUILD_ARGS+=("$1") ;;
+  esac
+  shift
+done
+
+if [[ -n "${DOT_BIN:-}" ]]; then DOT="$DOT_BIN"; else
+  swift build --product Dot > /tmp/dot-install-gate-build.log 2>&1 || { echo "could not build the gate's client; see /tmp/dot-install-gate-build.log"; exit 3 }
+  DOT=.build/debug/Dot
+fi
+LOG="${DOT_LOG:-$HOME/Library/Logs/Dot/dot.log}"
+busy=()
+
+# 1. The running Dot's own report.
+dot_running=1
+# The app itself, not the agent host (`Dot --host`) or a job's hands server (`Dot --hands-mcp`).
+if [[ -z "${DOT_CONTROL_SOCKET:-}" ]] && ! pgrep -qf '/Dot\.app/Contents/MacOS/Dot$'; then dot_running=0; fi
+if (( dot_running )); then
+  report=$("$DOT" --jobs 2>&1); code=$?
+  case $code in
+    0) ;;
+    1) busy+=("${(@f)report}") ;;
+    *)
+      # An older Dot (no `jobs` verb) or no answer: read the log, conservatively.
+      fallback=$(/usr/bin/python3 -I - "$LOG" <<'PY'
+import re, sys, datetime as dt
+try:
+    lines = open(sys.argv[1], errors="replace").read().splitlines()[-40000:]
+except OSError:
+    print("busy: no Dot log to read"); sys.exit(1)
+now = dt.datetime.now(); started = {}; ended = set(); recent = []; lecture_on = False
+# Matched on the component tag after the level ("INFO job[ab12cd] started"), never on message text.
+TAG = re.compile(r"\S+ \S+ \w+ (job\[\w+\]|agent\[[^\]]*\]|lecture:|turn\[[^\]]*\])")
+for l in lines:
+    m = re.match(r"(\d{4}-\d\d-\d\d \d\d:\d\d:\d\d)", l)
+    if not m: continue
+    t = dt.datetime.strptime(m.group(1), "%Y-%m-%d %H:%M:%S")
+    j = re.search(r" INFO job\[(\w+)\] (started|done|failed|stopped)", l)
+    if j:
+        (started.__setitem__(j.group(1), t) if j.group(2) == "started" else ended.add(j.group(1)))
+    if re.search(r" lecture: (listening|mode on|demo on)", l): lecture_on = True
+    if re.search(r" lecture: (stopped after|ended after|mode off|demo off)", l): lecture_on = False
+    tag = TAG.match(l)
+    if tag and now - t < dt.timedelta(minutes=2 if tag.group(1).startswith("turn[") else 15):
+        recent.append(l[:140])
+open_jobs = [k for k, t in started.items() if k not in ended and now - t < dt.timedelta(hours=24)]
+out = [f"busy: job {k} started and not finished (log)" for k in open_jobs]
+if lecture_on: out.append("busy: lecture mode is on (log)")
+if recent: out.append(f"busy: job, agent, lecture or talk activity just now (log): {recent[-1]}")
+print("\n".join(out)); sys.exit(1 if out else 0)
+PY
+); fcode=$?
+      if (( fcode != 0 )); then busy+=("${(@f)fallback}"); else echo "jobs: $DOT has no --jobs answer; the log shows nothing running"; fi
+      ;;
+  esac
+fi
+
+# 2. The agent host: a live hosted agent may be mid-turn, so any live one waits.
+host=$("$DOT" --host list 2>&1); hcode=$?
+if (( hcode == 0 )); then
+  live=$(print -r -- "$host" | sed -nE 's/.*protocol [0-9]+, ([0-9]+) live.*/\1/p' | tail -1)
+  if [[ -z "$live" ]]; then busy+=("busy: could not read the agent host's list"); elif (( live > 0 )); then busy+=("busy: $live hosted agent(s) live"); fi
+elif ! print -r -- "$host" | grep -q "not running"; then
+  busy+=("busy: the agent host did not answer: $host")
+fi
+
+if (( ${#busy} )); then
+  printf '%s\n' "${busy[@]}"
+  exit 1
+fi
+echo "idle"
+(( CHECK_ONLY )) && exit 0
+exec ./build.sh "${BUILD_ARGS[@]}"

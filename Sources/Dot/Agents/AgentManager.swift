@@ -61,6 +61,8 @@ final class AgentManager {
     private let speaker: TTSProvider
     private let ledger: Ledger
     private var runs: [String: Run] = [:]
+    /// Agents with a turn in flight or helpers at work, for the install gate (`Dot --jobs`, IdleReport).
+    var workingAgents: [String] { runs.values.filter(\.isWorking).map(\.agent.slug).sorted() }
     /// What each working agent is doing now, for the orb (VI-04).
     private var activities: [String: AgentActivity] = [:]
     /// The agent he last spoke to by name or replied to: a follow-up with no name goes there (G2).

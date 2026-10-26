@@ -624,6 +624,8 @@ final class NotchHUD {
     /// Before round seven a second card replaced the first and nothing ever answered the first; on
     /// 2026-10-16 that left the email agent waiting 78 minutes with no card on screen.
     private var consentQueue = ConsentQueue<ConsentCard>()
+    /// Allow / Not now cards waiting on him, for the install gate (`Dot --jobs`).
+    var cardsWaiting: Int { consentQueue.count }
 
     func present(_ card: ConsentCard, chime: Bool = true) {
         let before = consentQueue.current?.id
