@@ -60,6 +60,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         hud = NotchHUD(accentHex: config.pointerColorHex)
         overlay = OverlayManager(colorHex: config.pointerColorHex, presence: config.showCompanion, orbSize: CGFloat(config.orbSize))
         stack = AgentStack(accentHex: config.pointerColorHex)
+        stack.side = EdgeSide(rawValue: config.stackSide) ?? .corner
         hud.attach(stack: stack)
         hud.onGreet = { [weak self] text, seconds in self?.overlay.greet(text, for: seconds) }
         hud.configure(talkOnly: config.notchTalkOnly, consentInNotch: config.consentInNotch)
@@ -256,6 +257,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             presenceItem?.state = changed.showCompanion ? .on : .off
             overlay.setPresence(changed.showCompanion)
         }
+        if changed.stackSide != before.stackSide { stack.side = EdgeSide(rawValue: changed.stackSide) ?? .corner }
         if changed.showInRecordings != before.showInRecordings {
             recordingsItem?.state = changed.showInRecordings ? .on : .off
             applyRecordingVisibility()
@@ -633,6 +635,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             Log.info("agent[\(id)] continue from the stack")
             self.agents.reply(to: id, text: AgentManager.continueLabel)
         }
+        stack.onRetry = { [weak self] id in self?.jobAction("retry", id) }
+        stack.onOpenPage = { [weak self] id in self?.jobAction("page", id) }
         talk.jobs.stack = stack
     }
 

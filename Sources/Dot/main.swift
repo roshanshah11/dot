@@ -103,6 +103,7 @@ case "--help", "-h":
       Dot --snapshot [folder] [notch|stack|overlay|cards|panel]  render every notch state, stack chip, mark and card to PNG
       Dot --stack-demo [--muted] [--job]   a fake agent (or job) through the running Dot's stack (no voice, no chime)
       Dot --stack-selftest [--muted] [--job] [frames.json]   the same demo in this process, its window off screen, G7 to G9 checked
+      Dot --stack-selftest --hover | --edges                 a pretend pointer on an avatar; the left and right edge columns (J6)
       Dot --panel file.ui      show a UI-language explanation in the explainer panel (Dot --panel close hides it)
       Dot --prompt talk|think  print a session's system prompt
       Dot --quip-test          three sample moments through the quip model (quipModel), each line and its check
@@ -268,6 +269,7 @@ case "--stack-selftest":
     let file = flags.first { !$0.hasPrefix("--") }
     let passed = MainActor.assumeIsolated {
         flags.contains("--hover") ? StackSelfTest.runHover()
+            : flags.contains("--edges") ? StackSelfTest.runEdges()
             : StackSelfTest.run(muted: flags.contains("--muted"), job: flags.contains("--job"), framesFile: file)
     }
     exit(passed ? 0 : 1)

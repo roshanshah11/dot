@@ -21,6 +21,8 @@ final class JobsMoreTests: XCTestCase {
         XCTAssertEqual(HowToBook.keys(for: "apply to the new jobs on wyzant", url: nil, app: nil, among: ["wyzant.com", "handshake.com"]), ["wyzant.com"])
         XCTAssertEqual(HowToBook.keys(for: "do it", url: "https://app.joinhandshake.com/x", app: nil, among: ["app.joinhandshake.com"]), ["app.joinhandshake.com"])
         XCTAssertEqual(HowToBook.keys(for: "the wyzantish thing", url: nil, app: nil, among: ["wyzant.com"]), [], "whole words only")
+        XCTAssertEqual(HowToBook.keys(for: "fill the budget", url: nil, app: "Google Sheets", among: ["google-sheets", "wyzant.com"]), ["google-sheets"], "the app in front")
+        XCTAssertEqual(HowToBook.keys(for: "make a chart in google sheets", url: nil, app: nil, among: ["google-sheets"]), ["google-sheets"], "an app named in his words")
     }
 
     func testHowToReplaceExpireAndFailures() {
@@ -34,6 +36,14 @@ final class JobsMoreTests: XCTestCase {
         let twice = HowToBook.failed(["Apply"], in: HowToBook.failed(["Apply"], in: book))
         XCTAssertTrue(HowToBook.live(twice, now: now).isEmpty, "two failures retire it")
         XCTAssertEqual(HowToBook.brief([("wyzant.com", book)]), "[how-to] what worked before (follow it unless the page changed):\nlast time on wyzant.com, Apply: new way (2026-10-26)")
+    }
+
+    func testLetterWordsComeFromTheProposal() {
+        let card = ProposalCard(json: ["proposal": "abcdef1234567890", "digest": "d", "operation": "gmail.send", "to": ["lee@uchicago.edu"],
+                                       "names": ["Prof. Lee"], "subject": "Office hours", "text": "Could we meet Thursday?"])
+        XCTAssertEqual(card?.people, "Prof. Lee (lee@uchicago.edu)")
+        XCTAssertEqual(card?.subject, "Office hours")
+        XCTAssertEqual(card?.body, "Could we meet Thursday?")
     }
 
     func testTakeoverOffer() {
@@ -58,5 +68,14 @@ final class JobsMoreTests: XCTestCase {
         let left = EdgeDeck.frames(count: 20, visible: visible, side: .left)
         XCTAssertEqual(left.count, 6, "only what fits; the rest collapse to chips")
         XCTAssertTrue(left.allSatisfy { visible.contains($0) && $0.minX == 10 })
+        let window = EdgeDeck.window(fitting: CGSize(width: 262, height: 300), visible: visible, side: .right, pad: 16)
+        XCTAssertEqual(window.maxX - 16, 1502, "the drawing sits 10 pt in from the right edge")
+        XCTAssertEqual(window.maxY - 16, 934, "and 10 pt below the top")
+        XCTAssertEqual(EdgeDeck.window(fitting: CGSize(width: 262, height: 300), visible: visible, side: .left, pad: 16).minX + 16, 10)
+        XCTAssertEqual(EdgeDeck.presentation(.avatar, state: .running, side: .right, slimSoFar: 0, fit: 6), .slim)
+        XCTAssertEqual(EdgeDeck.presentation(.avatar, state: .running, side: .corner, slimSoFar: 0, fit: 6), .avatar)
+        XCTAssertEqual(EdgeDeck.presentation(.avatar, state: .running, side: .left, slimSoFar: 6, fit: 6), .avatar, "past the fit: a chip")
+        XCTAssertEqual(EdgeDeck.presentation(.card, state: .done, side: .left, slimSoFar: 0, fit: 6), .card)
+        XCTAssertEqual(EdgeDeck.presentation(.gone, state: .done, side: .left, slimSoFar: 0, fit: 6), .gone)
     }
 }

@@ -108,6 +108,10 @@ public struct ProposalCard: Equatable, Sendable {
     public let title: String
     public let detail: String
     public let guarded: Bool
+    /// Who it goes to (names with handles), its subject and its exact words: a page's `<letter>` shows these (J2).
+    public let people: String
+    public let subject: String
+    public let body: String
 
     /// One entry of `dot-atlas-approve.py list` (Atlas's ask_proposals plus the names Atlas knows for each handle).
     public init?(json: [String: Any]) {
@@ -138,6 +142,9 @@ public struct ProposalCard: Equatable, Sendable {
         self.proposal = proposal
         self.digest = digest
         self.operation = operation
+        self.people = people
+        self.subject = subject ?? ""
+        self.body = text
         guarded = true
     }
 }

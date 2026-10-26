@@ -52,6 +52,10 @@ struct StackChip: Identifiable {
     /// An agent's "open" goes to its thread in Home; the lecture ear has none.
     var canOpen = true
     var holdUntil: Date? = nil
+    /// A job with a live page (parity J1): its Page button opens the page window.
+    var hasPage = false
+    /// A failed, stopped or cut-off job: Retry carries on where it stopped (J3).
+    var canRetry = false
     var result: String? = nil
     var outputs: [URL] = []
     var nextActions: [String] = []
@@ -99,6 +103,13 @@ final class StackModel: ObservableObject {
     var consentShownAt = Date.distantPast
     @Published var morningExpanded = false
     @Published var contentSize: CGSize = .zero
+    /// Where the stack sits (parity J6): the corner (today), or a column down the left or right edge where live
+    /// chips stay small windows instead of folding to avatars.
+    @Published var side: EdgeSide = .corner
+    /// How many slim windows fit down the edge of the screen it is on.
+    var edgeFit = 6
+    /// An open card's width: the corner's 270, or the edge column's wider 380 (hover widens a slim window).
+    var openWidth: CGFloat { side == .corner ? Self.cardWidth : EdgeDeck.wideWidth }
     /// Drawn by `Dot --snapshot`, where AppKit-backed controls cannot render.
     var snapshot = false
     static let cardWidth: CGFloat = 270
@@ -118,6 +129,8 @@ final class StackModel: ObservableObject {
     var onAllow: ((String) -> Void)?
     var onDeny: ((String) -> Void)?
     var onContinue: ((String) -> Void)?
+    var onRetry: ((String) -> Void)?
+    var onOpenPage: ((String) -> Void)?
     var onDismiss: ((String) -> Void)?
     /// A "needs you" chip was tapped: its question comes forward in the consent queue.
     var onFocusConsent: ((String) -> Void)?
@@ -143,10 +156,13 @@ final class StackModel: ObservableObject {
             entries.append(AgentChip.Entry(id: chip.id, state: chip.state, createdAt: chip.createdAt))
         }
         if consent != nil { entries.append(AgentChip.Entry(id: Self.consentID, state: .consent, createdAt: consentShownAt)) }
+        var slim = 0
         return AgentChip.order(entries).map { entry in
             if entry.id == Self.consentID { return (nil, .card) }
             let (chip, p) = byID[entry.id]!
-            return (chip, p)
+            let shown = EdgeDeck.presentation(p, state: chip.state, side: side, slimSoFar: slim, fit: edgeFit)
+            if shown == .slim { slim += 1 }
+            return (chip, shown)
         }
     }
 
@@ -180,6 +196,8 @@ final class AgentStack {
     var onAllow: ((String) -> Void)? { get { model.onAllow } set { model.onAllow = newValue } }
     var onDeny: ((String) -> Void)? { get { model.onDeny } set { model.onDeny = newValue } }
     var onContinue: ((String) -> Void)? { get { model.onContinue } set { model.onContinue = newValue } }
+    var onRetry: ((String) -> Void)? { get { model.onRetry } set { model.onRetry = newValue } }
+    var onOpenPage: ((String) -> Void)? { get { model.onOpenPage } set { model.onOpenPage = newValue } }
     var onDismiss: ((String) -> Void)?
     var onGone: ((String) -> Void)?
     /// NotchHUD's own hooks (its agent rows, notices and the morning card leave with their chips), called before the
@@ -190,6 +208,20 @@ final class AgentStack {
     var anchorFrame: (() -> CGRect)?
     /// The window's frame while it is up, for the self-test.
     var windowFrame: CGRect? { visible ? panel?.frame : nil }
+    /// The corner or an edge column (Home > Settings > "Agents and jobs sit at").
+    var side: EdgeSide {
+        get { model.side }
+        set {
+            guard newValue != model.side else { return }
+            model.side = newValue
+            edgeScreen = nil
+            Log.info("stack: sits at \(newValue.rawValue)")
+            refresh()
+            reposition()
+        }
+    }
+    /// The screen the edge column went up on (the one his pointer was on); it stays there until the stack empties.
+    private var edgeScreen: NSScreen?
 
     init(accentHex: String) {
         if let color = Color(hex: accentHex) { model.accent = color }
@@ -332,18 +364,27 @@ final class AgentStack {
         NSScreen.screens.first(where: { $0.safeAreaInsets.top > 0 }) ?? NSScreen.main ?? NSScreen.screens.first
     }
 
-    /// The window, placed so the drawing's bottom right corner lands on StackModel.corner (less the padding).
-    static func frame(fitting size: CGSize, in visibleFrame: CGRect) -> CGRect {
+    /// The window, placed so the drawing's bottom right corner lands on StackModel.corner (less the padding), or in
+    /// edge mode so the column hangs from the top of that edge (EdgeDeck.window).
+    static func frame(fitting size: CGSize, in visibleFrame: CGRect, side: EdgeSide = .corner) -> CGRect {
+        if side != .corner { return EdgeDeck.window(fitting: size, visible: visibleFrame, side: side, pad: StackModel.pad) }
         let inX = StackModel.corner.width - StackModel.pad, inY = StackModel.corner.height - StackModel.pad
         return CGRect(x: visibleFrame.maxX - inX - size.width, y: visibleFrame.minY + inY, width: size.width, height: size.height)
     }
 
-    private var visibleFrame: CGRect { anchorFrame?() ?? Self.anchorScreen()?.visibleFrame ?? CGRect(x: 0, y: 0, width: 1440, height: 875) }
+    private func frame(fitting size: CGSize) -> CGRect { Self.frame(fitting: size, in: visibleFrame, side: model.side) }
+
+    private var visibleFrame: CGRect {
+        if let anchorFrame { return anchorFrame() }
+        if model.side != .corner, let edgeScreen { return edgeScreen.visibleFrame }
+        return Self.anchorScreen()?.visibleFrame ?? CGRect(x: 0, y: 0, width: 1440, height: 875)
+    }
 
     private func reposition() {
+        model.edgeFit = EdgeDeck.fit(visible: visibleFrame)
         guard let panel else { return }
         let size = model.contentSize == .zero ? CGSize(width: 72, height: 72) : model.contentSize
-        panel.setFrame(Self.frame(fitting: size, in: visibleFrame), display: true)
+        panel.setFrame(frame(fitting: size), display: true)
     }
 
     /// The window hugs what is drawn (NotchHUD.fit's rule): it grows at once, so nothing is clipped, and shrinks a
@@ -351,16 +392,16 @@ final class AgentStack {
     private func fit(to size: CGSize) {
         guard size.width > 0, size.height > 0, let panel else { return }
         layoutChangedAt = Date()
-        let target = Self.frame(fitting: size, in: visibleFrame)
+        let target = frame(fitting: size)
         let current = panel.frame
         shrinkWork?.cancel()
-        let roomy = Self.frame(fitting: CGSize(width: max(target.width, current.width), height: max(target.height, current.height)), in: visibleFrame)
+        let roomy = frame(fitting: CGSize(width: max(target.width, current.width), height: max(target.height, current.height)))
         if roomy != current { panel.setFrame(roomy, display: true) }
         updateMousePassThrough()
         guard target != roomy else { return }
         let work = DispatchWorkItem { [weak self] in
             guard let self, let panel = self.panel else { return }
-            panel.setFrame(Self.frame(fitting: self.model.contentSize, in: self.visibleFrame), display: true)
+            panel.setFrame(self.frame(fitting: self.model.contentSize), display: true)
             self.updateMousePassThrough()
         }
         shrinkWork = work
@@ -369,6 +410,12 @@ final class AgentStack {
 
     private func refreshVisibility(empty: Bool) {
         if !empty {
+            if !visible, model.side != .corner, anchorFrame == nil {
+                // the edge column goes up on the screen he is on
+                let mouse = mouseLocation()
+                edgeScreen = NSScreen.screens.first { $0.frame.contains(mouse) } ?? Self.anchorScreen()
+                reposition()
+            }
             let panel = ensurePanel()
             if !visible {
                 visible = true
@@ -381,6 +428,7 @@ final class AgentStack {
             }
         } else if visible, let panel {
             visible = false
+            edgeScreen = nil
             resignKey()
             NSAnimationContext.runAnimationGroup({ ctx in
                 ctx.duration = 0.25
@@ -406,11 +454,13 @@ final class AgentStack {
         guard let panel, panel.isVisible else { return }
         let mouse = mouseLocation()
         let frame = panel.frame
-        // The drawing sits at the window's bottom right (the window is bigger for a moment while it shrinks), and its
-        // coordinates run down from the drawing's top left.
+        // The drawing sits at the window's bottom right in the corner, its top right or top left down an edge (the
+        // window is bigger for a moment while it shrinks), and its coordinates run down from the drawing's top left.
         let width = model.contentSize.width > 0 ? min(model.contentSize.width, frame.width) : frame.width
         let height = model.contentSize.height > 0 ? min(model.contentSize.height, frame.height) : frame.height
-        let point = CGPoint(x: mouse.x - (frame.maxX - width), y: frame.minY + height - mouse.y)
+        let left = model.side == .left ? frame.minX : frame.maxX - width
+        let top = model.side == .corner ? frame.minY + height : frame.maxY
+        let point = CGPoint(x: mouse.x - left, y: top - mouse.y)
         let under = model.chipFrames.first { $0.rect.insetBy(dx: -2, dy: -2).contains(point) }?.id
         let through = under == nil && model.expanded == nil
         if panel.ignoresMouseEvents != through { panel.ignoresMouseEvents = through }
@@ -459,10 +509,18 @@ struct StackChipFramesKey: PreferenceKey {
 struct AgentStackView: View {
     @ObservedObject var model: StackModel
 
+    private var alignment: Alignment {
+        switch model.side {
+        case .corner: return .bottomTrailing
+        case .right: return .topTrailing
+        case .left: return .topLeading
+        }
+    }
+
     var body: some View {
-        VStack(alignment: .trailing, spacing: 8) {
-            // Bottom up: the consent card and the newest chip sit nearest the corner.
-            ForEach(Array(model.shown.reversed().enumerated()), id: \.offset) { _, item in
+        VStack(alignment: model.side == .left ? .leading : .trailing, spacing: model.side == .corner ? 8 : EdgeDeck.gap) {
+            // Bottom up in the corner: the consent card and the newest chip sit nearest it. Down an edge: top down.
+            ForEach(Array((model.side == .corner ? Array(model.shown.reversed()) : model.shown).enumerated()), id: \.offset) { _, item in
                 Group {
                     if let chip = item.chip {
                         StackChipView(model: model, chip: chip, presentation: item.presentation)
@@ -482,7 +540,7 @@ struct AgentStackView: View {
         .onPreferenceChange(StackChipFramesKey.self) { frames in model.chipFrames = frames }
         .background(GeometryReader { proxy in Color.clear.preference(key: StackSizeKey.self, value: proxy.size) })
         .onPreferenceChange(StackSizeKey.self) { size in model.contentSize = size }
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: alignment)
         .animation(.easeOut(duration: 0.2), value: model.shown.map { "\($0.chip?.id ?? "consent")\($0.presentation.rawValue)" })
     }
 }
@@ -513,11 +571,13 @@ struct StackChipView: View {
             if presentation == .avatar {
                 StackAvatar(chip: chip, accent: model.accent, size: AgentChip.avatarSize)
                     .padding(0)
+            } else if presentation == .slim {
+                slimWindow
             } else if let morning = chip.morning {
                 MorningCardView(card: morning, expanded: $model.morningExpanded, accent: model.accent,
                                 decide: { item, yes in model.onMorningDecision?(item, yes) },
                                 dismiss: { model.onMorningDismiss?() })
-                    .frame(width: StackModel.cardWidth)
+                    .frame(width: model.openWidth)
                     .background(StackInk.card, in: RoundedRectangle(cornerRadius: StackInk.radius, style: .continuous))
                     .shadow(color: StackInk.glow.opacity(0.3), radius: 12)
             } else if chip.kind == .notice {
@@ -527,6 +587,45 @@ struct StackChipView: View {
             }
         }
         .contentShape(Rectangle())
+    }
+
+    // MARK: The edge column's small window (J6)
+
+    /// A live job or agent down the edge: title, state, its line (a job's page headline or run line), the last steps.
+    /// Hover widens it into the full card; a click opens a job's page, else holds the card open.
+    private var slimWindow: some View {
+        VStack(alignment: .leading, spacing: 5) {
+            HStack(spacing: 8) {
+                StackAvatar(chip: chip, accent: model.accent, size: 22)
+                Text(chip.title).font(.system(size: 12, weight: .semibold)).foregroundStyle(text).lineLimit(1)
+                Spacer(minLength: 0)
+            }
+            HStack(spacing: 5) {
+                Circle().fill(tone).frame(width: 6, height: 6)
+                Text(AgentChip.stateWord(chip.state, kind: chip.kind)).font(.system(size: 10.5, weight: .medium)).foregroundStyle(tone)
+                if chip.state == .running {
+                    Text(NotchHUDView.elapsed(since: chip.startedAt)).font(.system(size: 10, design: .monospaced)).foregroundStyle(text.opacity(0.4))
+                }
+            }
+            if !shownLine.isEmpty {
+                Text(shownLine).font(.system(size: 11.5)).foregroundStyle(text.opacity(0.85)).lineLimit(2)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            ForEach(Array(chip.steps.filter { $0 != chip.line }.suffix(2).enumerated()), id: \.offset) { _, step in
+                Text(step).font(.system(size: 10.5)).foregroundStyle(text.opacity(0.4)).lineLimit(1)
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(10)
+        .frame(width: EdgeDeck.width, height: EdgeDeck.height, alignment: .topLeading)
+        .background(StackInk.card, in: RoundedRectangle(cornerRadius: StackInk.radius, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: StackInk.radius, style: .continuous).stroke(StackInk.edge, lineWidth: 1))
+        .shadow(color: StackInk.glow.opacity(0.25), radius: 10)
+        .onTapGesture {
+            if chip.isJob, chip.hasPage { model.onOpenPage?(chip.id); return }
+            if chip.state == .waiting { model.onFocusConsent?(chip.id); return }
+            withAnimation(.easeOut(duration: 0.15)) { model.expanded = chip.id }
+        }
     }
 
     // MARK: The card
@@ -620,7 +719,7 @@ struct StackChipView: View {
             }
         }
         .padding(12)
-        .frame(width: StackModel.cardWidth, alignment: .leading)
+        .frame(width: model.openWidth, alignment: .leading)
         .background(StackInk.card, in: RoundedRectangle(cornerRadius: StackInk.radius, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: StackInk.radius, style: .continuous).stroke(StackInk.edge, lineWidth: 1))
         .shadow(color: StackInk.glow.opacity(0.3), radius: 12)
@@ -634,8 +733,10 @@ struct StackChipView: View {
         HStack(spacing: 8) {
             Spacer(minLength: 0)
             // One primary per card (04 review): Continue or Allow when the card has one, else open or show me, even while it runs.
-            let other = chip.state == .unfinished || chip.state == .consent
-            if chip.state == .unfinished {
+            let other = chip.state == .unfinished || chip.state == .consent || (chip.isJob && chip.canRetry)
+            if chip.isJob, chip.canRetry {
+                GelButton(title: "Retry", accent: model.accent, primary: true, gel: true) { model.onRetry?(chip.id) }
+            } else if chip.state == .unfinished {
                 GelButton(title: "Continue", accent: model.accent, primary: true, gel: true) { model.onContinue?(chip.id) }
             }
             if chip.state == .consent {
@@ -644,6 +745,9 @@ struct StackChipView: View {
             }
             if chip.canStop, chip.state == .running || chip.state == .paused {
                 GelButton(title: "Stop", accent: model.accent, primary: false, gel: true) { model.onStop?(chip.id) }
+            }
+            if chip.isJob, chip.hasPage {
+                GelButton(title: "Page", accent: model.accent, primary: false, gel: true) { model.onOpenPage?(chip.id) }
             }
             if chip.isJob, chip.state != .consent {
                 GelButton(title: "Show me", accent: model.accent, primary: !other, gel: true) { model.onShow?(chip.id) }
@@ -689,7 +793,7 @@ struct StackChipView: View {
                                        actionTitle: chip.actionTitle, action: chip.action, secondaryTitle: chip.secondaryTitle, secondary: chip.secondary,
                                        seconds: 0),
                    accent: model.accent) { model.onDismiss?(chip.id) }
-            .frame(width: StackModel.cardWidth)
+            .frame(width: model.openWidth)
             .background(StackInk.card, in: RoundedRectangle(cornerRadius: StackInk.radius, style: .continuous))
             .shadow(color: StackInk.glow.opacity(0.3), radius: 12)
     }
@@ -737,7 +841,7 @@ struct StackConsentCard: View {
             }
         }
         .padding(12)
-        .frame(width: StackModel.cardWidth, alignment: .leading)
+        .frame(width: model.openWidth, alignment: .leading)
         .background(StackInk.card, in: RoundedRectangle(cornerRadius: StackInk.radius, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: StackInk.radius, style: .continuous).stroke(model.accent.opacity(0.6), lineWidth: 1))
         .shadow(color: StackInk.glow.opacity(0.3), radius: 12)

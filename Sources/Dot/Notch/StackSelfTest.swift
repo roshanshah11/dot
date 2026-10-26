@@ -128,6 +128,69 @@ enum StackSelfTest {
         return failures.isEmpty
     }
 
+    /// `Dot --stack-selftest --edges` (parity J6): on each edge of a pretend screen off every display, live jobs stay small
+    /// windows hung from the top 10 pt in from that edge, only as many as fit (the rest are avatars), a finished one
+    /// keeps the corner's rule, and a pretend pointer resting on a small window widens it into the full card.
+    static func runEdges() -> Bool {
+        let activity = ProcessInfo.processInfo.beginActivity(options: [.userInitiated, .latencyCritical], reason: "stack edges selftest")
+        defer { ProcessInfo.processInfo.endActivity(activity) }
+        var failures: [String] = []
+        func check(_ ok: Bool, _ what: String) { print("\(ok ? "pass" : "FAIL"): \(what)"); if !ok { failures.append(what) } }
+        let visible = CGRect(x: -30_000, y: -30_000, width: 1440, height: 875)
+        for side in [EdgeSide.right, .left] {
+            let stack = AgentStack(accentHex: DotConfig.peek().pointerColorHex)
+            stack.setVisibleInRecordings(false)
+            stack.anchorFrame = { visible }
+            var pointer = CGPoint(x: -40_000, y: -40_000)
+            stack.mouseLocation = { pointer }
+            stack.side = side
+            let old = Date().addingTimeInterval(-60)
+            // seven live jobs and a finished one: the stack draws 8 at most (AgentChip.maxShown)
+            for i in 0..<7 {
+                var chip = StackChip(id: "job-edge\(i)", kind: .job, title: "Job \(i + 1)", line: "reading page \(i + 1)", steps: ["opened it", "read it"],
+                                     state: .running, stateSince: old, startedAt: old)
+                chip.hasPage = i == 0
+                stack.upsert(chip)
+                spin(0.02)
+            }
+            stack.upsert(StackChip(id: "job-finished", kind: .job, title: "Finished", line: "done: saved it", steps: [], state: .done, stateSince: Date(), startedAt: old))
+            spin(1.0)
+            let shown = stack.model.shown
+            let slim = shown.filter { $0.presentation == .slim }.count
+            let fit = EdgeDeck.fit(visible: visible)
+            check(slim == fit, "\(side.rawValue): \(fit) live jobs are small windows (\(slim))")
+            check(shown.filter { $0.presentation == .avatar }.count == 7 - fit, "\(side.rawValue): the rest are avatars")
+            check(shown.first { $0.chip?.id == "job-finished" }?.presentation == .card, "\(side.rawValue): a finished job keeps the corner's rule (a card, then gone)")
+            guard let frame = stack.windowFrame else { check(false, "\(side.rawValue): the window came up"); continue }
+            let pad = StackModel.pad
+            if side == .right {
+                check(abs(frame.maxX - pad - (visible.maxX - EdgeDeck.inset)) < 0.5, "right: the column's edge 10 pt in from the right (window maxX \(frame.maxX))")
+            } else {
+                check(abs(frame.minX + pad - (visible.minX + EdgeDeck.inset)) < 0.5, "left: the column's edge 10 pt in from the left (window minX \(frame.minX))")
+            }
+            check(abs(frame.maxY - pad - (visible.maxY - EdgeDeck.inset)) < 0.5, "\(side.rawValue): it hangs from 10 pt below the top (window maxY \(frame.maxY))")
+            // Rest on the newest live job's small window (the finished card is drawn above it, at the top).
+            guard let target = stack.model.chipFrames.first(where: { $0.id == "job-edge6" })?.rect else { check(false, "\(side.rawValue): job 7 is drawn"); continue }
+            let width = min(stack.model.contentSize.width, frame.width)
+            let left = side == .left ? frame.minX : frame.maxX - width
+            pointer = CGPoint(x: left + target.midX, y: frame.maxY - target.midY)
+            check(abs(target.width - EdgeDeck.width) < 0.5 && abs(target.height - EdgeDeck.height) < 0.5,
+                  "\(side.rawValue): a small window is \(Int(EdgeDeck.width)) x \(Int(EdgeDeck.height)) (\(Int(target.width)) x \(Int(target.height)))")
+            spin(1.0)
+            let opened = stack.model.shown.first { $0.chip?.id == "job-edge6" }?.presentation
+            let wide = stack.model.chipFrames.first { $0.id == "job-edge6" }?.rect.width ?? 0
+            check(stack.model.hovering == "job-edge6" && opened == .card, "\(side.rawValue): resting on it opens the card (\(opened?.rawValue ?? "none"))")
+            check(abs(wide - EdgeDeck.wideWidth) < 0.5, "\(side.rawValue): widened to \(Int(EdgeDeck.wideWidth)) pt (\(Int(wide)))")
+            pointer = CGPoint(x: -40_000, y: -40_000)
+            spin(1.2)
+            check(stack.model.shown.first { $0.chip?.id == "job-edge6" }?.presentation == .slim, "\(side.rawValue): leaving folds it back to a small window")
+            for chip in stack.model.chips { stack.remove(id: chip.id) }
+            spin(0.4)
+        }
+        print(failures.isEmpty ? "stack edges selftest: all passed" : "stack edges selftest: \(failures.count) failed")
+        return failures.isEmpty
+    }
+
     private static func write(_ samples: [Sample], to path: String) {
         let rows: [[String: Any]] = samples.map { s in
             var row: [String: Any] = ["t": (s.t * 1000).rounded() / 1000]

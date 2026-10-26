@@ -282,6 +282,15 @@ struct VoicePage: View {
                 // A preview speaks with the voice Dot loaded at launch, not the one ticked here.
                 Text("kokoro voice and speed apply after dot relaunches").font(.caption).foregroundStyle(.secondary)
             }
+            HomeSection("Agents and jobs") {
+                Picker("Agents and jobs sit at", selection: $model.settings.stackSide) {
+                    Text("Bottom right").tag("corner")
+                    Text("Left edge").tag("left")
+                    Text("Right edge").tag("right")
+                }
+                Text("on an edge, running jobs stay as small windows down the side of the screen you're on; hover one to widen it")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
             HomeSection("Drawing") {
                 SettingToggle("Pen sounds", detail: "the pen, pencil and paper sounds while Dot draws on the screen; never on a call", isOn: $model.settings.penSounds)
                 SettingToggle("Captions while Dot talks", detail: "what Dot says at the bottom of the screen, word by word; typed questions that draw always have them",

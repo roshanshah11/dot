@@ -29,7 +29,8 @@ public enum AgentChip {
         case notice
     }
 
-    public enum Presentation: String, Equatable, Sendable { case card, avatar, gone }
+    /// `slim`: a live chip in the edge column (parity J6), a small window instead of an avatar.
+    public enum Presentation: String, Equatable, Sendable { case card, avatar, slim, gone }
 
     /// A new card folds to its avatar after this long.
     public static let cardSeconds: TimeInterval = 5

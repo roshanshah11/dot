@@ -26,13 +26,17 @@ final class ExplainerPanel: NSObject, NSWindowDelegate, WKNavigationDelegate, WK
 
     init(accentHex: String) {
         self.accentHex = accentHex
-        // DOT_BOARD_DIR points a dev build at a worktree's Resources/board
+        resources = Self.boardResources
+        super.init()
+        if resources == nil { Log.warn("panel: resources not found; explanations fall back to cards") }
+    }
+
+    /// The board folder holding panel/panel.html; DOT_BOARD_DIR points a dev build at a worktree's Resources/board.
+    static var boardResources: URL? {
         let candidates = [ProcessInfo.processInfo.environment["DOT_BOARD_DIR"].map { URL(fileURLWithPath: DotConfig.expand($0)) },
                           Bundle.main.resourceURL?.appendingPathComponent("board"),
                           URL(fileURLWithPath: DotConfig.expand("~/Projects/dot/Resources/board"))].compactMap { $0 }
-        resources = candidates.first { FileManager.default.fileExists(atPath: $0.appendingPathComponent("panel/panel.html").path) }
-        super.init()
-        if resources == nil { Log.warn("panel: resources not found; explanations fall back to cards") }
+        return candidates.first { FileManager.default.fileExists(atPath: $0.appendingPathComponent("panel/panel.html").path) }
     }
 
     var available: Bool { resources != nil }

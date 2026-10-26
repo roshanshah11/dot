@@ -56,6 +56,8 @@ struct DotConfig: Codable {
     var penSounds = true
     /// A caption strip at the bottom of the screen while Dot talks, words lighting in turn (parity D7).
     var inkCaptions = false
+    /// Where agents and jobs sit (parity J6): "corner" (bottom right), "left" or "right" (a column of small windows).
+    var stackSide = "corner"
     /// Course terms and names the recognizer should write his way (one per line, "heard => correct").
     var dictionaryFile = "~/.config/dot/dictionary.txt"
     /// Where Murmur keeps its dictation history, read for "what did i say in the meeting".
@@ -268,6 +270,7 @@ struct DotConfig: Codable {
         quietOnCalls = get(.quietOnCalls, d.quietOnCalls)
         penSounds = get(.penSounds, d.penSounds)
         inkCaptions = get(.inkCaptions, d.inkCaptions)
+        stackSide = get(.stackSide, d.stackSide)
         dictionaryFile = get(.dictionaryFile, d.dictionaryFile)
         murmurHistoryFile = get(.murmurHistoryFile, d.murmurHistoryFile)
         murmurLogDirectory = get(.murmurLogDirectory, d.murmurLogDirectory)

@@ -167,6 +167,10 @@ final class Talk {
     private var hoverTimer: Timer?
     /// He asked Dot to do the clicking for the walkthrough about to start.
     private var driveRequested = false
+    /// The take-over offer (parity J5): once per walkthrough, its card, and the 20 s wait on a ring.
+    private var takeoverOffered = false
+    private var takeoverCard: UUID?
+    private var takeoverStall: DispatchWorkItem?
     private static let driveWords = try! NSRegularExpression(pattern: #"\b(do it( for me)?|you (do|click) it|take over|take the (mouse|wheel)|click (it|them|through)( for me)?|drive|go ahead and do it)\b"#, options: .caseInsensitive)
 
     init(config: DotConfig, hud: NotchHUD, overlay: OverlayManager, speaker: TTSProvider, transcriber: Transcriber,
@@ -1200,14 +1204,7 @@ final class Talk {
             settle()
             return
         case .drive:
-            if config.jobsEnabled {
-                let ask = walkthrough?.ask ?? previousAsked
-                let steps = walkthrough?.history.joined(separator: "; ") ?? ""
-                endWalkthrough(reason: "handed to a job")
-                startJob(goal: steps.isEmpty ? ask : "\(ask) (steps done so far: \(steps))", placement: .front, words: ask)
-                return
-            }
-            startDriving()
+            driveWalkthrough(ask: walkthrough?.ask ?? previousAsked)
             return
         case .job(let placement, let goal, _):
             startJob(goal: goal, placement: placement, words: text)
@@ -3814,7 +3811,12 @@ final class Talk {
             next.driving = previous.driving
         }
         if driveRequested, config.driveEnabled { next.driving = true; driveRequested = false }
+        if walkthrough == nil { takeoverOffered = false }
         walkthrough = next
+        if let reason = TakeoverOffer.shouldOffer(stepsDone: next.history.count, alreadyOffered: takeoverOffered, driving: next.driving) {
+            offerTakeover(reason)
+        }
+        watchForStall(step: step)
         overlay.target(at: target, radius: screenRadius, label: label, hover: hover)
         hud.flash(status: "step \(step): \(hover ? "rest on" : "click") \(label)", for: 6)
         hud.upsertAgent(AgentRow(id: "walkthrough", name: next.driving ? "dot is clicking" : "walkthrough", line: "step \(step): \(hover ? "rest on" : "click") \(label)",
@@ -3975,6 +3977,9 @@ final class Talk {
     /// He spoke during a walkthrough ("done", "next", "what's this", "do it"): continue it with a fresh look.
     private func continueWalkthrough(said text: String) {
         guard var step = walkthrough else { return }
+        if let reason = TakeoverOffer.shouldOffer(stepsDone: step.history.count, said: text, alreadyOffered: takeoverOffered, driving: step.driving) {
+            offerTakeover(reason)
+        }
         walkthroughTimeout?.cancel()
         step.awaitingNextStep = true
         walkthrough = step
@@ -4014,6 +4019,55 @@ final class Talk {
         }
     }
 
+    /// "do it" in or after a walkthrough, or his yes on the take-over card: a front job takes it from here (the
+    /// Driver when jobs are off), told the steps already done.
+    private func driveWalkthrough(ask: String) {
+        if config.jobsEnabled {
+            let steps = walkthrough?.history.joined(separator: "; ") ?? ""
+            endWalkthrough(reason: "handed to a job")
+            startJob(goal: steps.isEmpty ? ask : "\(ask) (steps done so far: \(steps))", placement: .front, words: ask)
+            return
+        }
+        startDriving()
+    }
+
+    /// Offer once per walkthrough to do the rest: a card, and its line said aloud. His yes hands it over as "do it"
+    /// would; his first move still takes it back (the Driver's rule, and a front job pauses on his clicks).
+    private func offerTakeover(_ reason: TakeoverOffer.Reason) {
+        guard let step = walkthrough, !takeoverOffered else { return }
+        takeoverOffered = true
+        Log.info("walkthrough: take-over offered (\(reason.rawValue)) at step \(step.step)")
+        let ask = step.ask
+        let card = ConsentCard(agentId: "walkthrough", agent: "dot", title: TakeoverOffer.line,
+                               detail: "step \(step.step): \(step.kind == .hover ? "rest on" : "click") \(step.label). move the mouse any time to take it back.",
+                               onAllow: { [weak self] in
+                                   guard let self, self.walkthrough != nil else { return }
+                                   self.takeoverCard = nil
+                                   Log.info("walkthrough: he took the offer")
+                                   self.driveWalkthrough(ask: ask)
+                               }, onDeny: { [weak self] in
+                                   self?.takeoverCard = nil
+                                   Log.info("walkthrough: he turned the offer down")
+                               })
+        takeoverCard = card.id
+        hud.present(card, chime: false)
+        if !speaker.isSpeaking, phase == .idle { speaker.speak(TakeoverOffer.line.lowercased()) }
+    }
+
+    /// He sat on a ring for 20 s without clicking it: the offer.
+    private func watchForStall(step: Int) {
+        takeoverStall?.cancel()
+        guard !takeoverOffered else { return }
+        let work = DispatchWorkItem { [weak self] in
+            guard let self, let w = self.walkthrough, w.step == step, !w.awaitingNextStep else { return }
+            if let reason = TakeoverOffer.shouldOffer(stepsDone: w.history.count, stalledFor: TakeoverOffer.stall, alreadyOffered: self.takeoverOffered, driving: w.driving) {
+                self.offerTakeover(reason)
+            }
+        }
+        takeoverStall = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + TakeoverOffer.stall, execute: work)
+    }
+
     private func endWalkthrough(reason: String) {
         guard walkthrough != nil else { return }
         Log.info("walkthrough: ended (\(reason))")
@@ -4025,6 +4079,8 @@ final class Talk {
         }
         walkthrough = nil
         walkthroughStartedAt = nil
+        takeoverStall?.cancel()
+        if let card = takeoverCard { hud.dismissConsent(id: card); takeoverCard = nil }
         hud.removeAgent(id: "walkthrough")
         driveRequested = false
         driver.end()

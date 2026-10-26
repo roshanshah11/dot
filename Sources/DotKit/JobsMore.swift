@@ -99,9 +99,11 @@ public enum HowToBook {
     public static func keys(for words: String, url: String?, app: String?, among known: [String]) -> [String] {
         let text = (words + " " + (url ?? "") + " " + (app ?? "")).lowercased()
         let host = url.flatMap { key(site: $0) }
+        let appKey = app.flatMap { key(site: $0) }
         return known.filter { k in
-            if k == host { return true }
-            let name = k.split(separator: ".").first.map(String.init) ?? k
+            if k == host || k == appKey { return true }
+            // "wyzant.com" is found by "wyzant", an app's "google-sheets" by "google sheets"
+            let name = (k.split(separator: ".").first.map(String.init) ?? k).replacingOccurrences(of: "-", with: " ")
             return name.count >= 3 && text.range(of: #"\b\#(NSRegularExpression.escapedPattern(for: name))\b"#, options: .regularExpression) != nil
         }
     }
@@ -152,16 +154,38 @@ public enum EdgeDeck {
     public static let gap: CGFloat = 8
     public static let inset: CGFloat = 10
 
+    /// How many slim windows fit down one edge of `visible`.
+    public static func fit(visible: CGRect) -> Int {
+        max(0, Int((visible.height - inset * 2 + gap) / (height + gap)))
+    }
+
     /// Frames (AppKit, bottom-left origin) for `count` windows down one edge of `visible`, from the top; the hovered
     /// one is wider. Windows that do not fit are not placed (they collapse to chips).
     public static func frames(count: Int, visible: CGRect, side: EdgeSide, hovered: Int? = nil) -> [CGRect] {
         guard side != .corner, count > 0 else { return [] }
-        let fit = max(0, Int((visible.height - inset * 2 + gap) / (height + gap)))
-        return (0..<min(count, fit)).map { i in
+        return (0..<min(count, fit(visible: visible))).map { i in
             let w = i == hovered ? wideWidth : width
             let x = side == .left ? visible.minX + inset : visible.maxX - inset - w
             let y = visible.maxY - inset - CGFloat(i + 1) * height - CGFloat(i) * gap
             return CGRect(x: x, y: y, width: w, height: height)
+        }
+    }
+
+    /// The stack's window in edge mode: the column hangs from the top of `visible`, `inset` in from the side, and the
+    /// window carries `pad` of glow room around the drawing (so it pokes `pad - inset` past the edge, all transparent).
+    public static func window(fitting size: CGSize, visible: CGRect, side: EdgeSide, pad: CGFloat) -> CGRect {
+        let inX = inset - pad
+        let x = side == .left ? visible.minX + inX : visible.maxX - inX - size.width
+        return CGRect(x: x, y: visible.maxY - inX - size.height, width: size.width, height: size.height)
+    }
+
+    /// In the edge column a live chip that would fold to its avatar stays a slim window, the first `fit` of them;
+    /// the rest, and anything finished, keep the corner's rule.
+    public static func presentation(_ p: AgentChip.Presentation, state: AgentChip.State, side: EdgeSide, slimSoFar: Int, fit: Int) -> AgentChip.Presentation {
+        guard side != .corner, p == .avatar, slimSoFar < fit else { return p }
+        switch state {
+        case .running, .waiting, .unfinished, .attention: return .slim
+        default: return p
         }
     }
 }

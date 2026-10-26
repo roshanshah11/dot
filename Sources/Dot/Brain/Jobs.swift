@@ -16,7 +16,8 @@ final class JobManager {
         var placement: JobPlacement
         let model: String
         var session: ClaudeSession?
-        let page: PageDriver
+        /// Its browser driver; a resumed job gets a fresh one (finish closes the old).
+        var page: PageDriver
         let hands: Hands
         /// A front job in a native app (or Safari): its bundle; nil for a Comet job.
         var appBundle: String?
@@ -59,6 +60,24 @@ final class JobManager {
         var waitingOnHim = false
         /// Hosts its login already ran on: one try each, since a wrong try can lock the account.
         var loginTried: Set<String> = []
+        /// Its live page (parity J1): page.md as last read, its stamp, the window showing it, and his taps already taken.
+        var livePage: JobPage?
+        var pageStamp: (Date, Int)?
+        var pageProblem: String?
+        var pageWindow: JobPageWindow?
+        var pageTaps = PageDedupe()
+        /// How-tos its first message carried (J4): a failure counts against them.
+        var howtos: [(key: String, task: String)] = []
+        /// Proposals it put on its page as letters, and what became of each (sent, withdrawn).
+        var letterStates: [String: String] = [:]
+        /// Each letter's words as the proposal store last gave them (a sent proposal leaves the pending list).
+        var letterWords: [String: ProposalCard] = [:]
+        /// One step on his screen he allowed a behind job (J5, ask_front_step): that app until the time runs out.
+        var frontStep: (bundle: String, name: String, until: Date)?
+        var frontStepLive: Bool { frontStep.map { Date() < $0.until } ?? false }
+        /// The app the native tools act in: his app for a front job, or the one he lent a behind job for a step.
+        var nativeBundle: String? { frontStepLive ? frontStep?.bundle : appBundle }
+        var nativeName: String? { frontStepLive ? frontStep?.name : appName }
 
         init(id: String, goal: String, hisWords: String, placement: JobPlacement, model: String, page: PageDriver, hands: Hands,
              askedAt: Date?, bench: Bool, folder: URL, stamp: String) {
@@ -70,9 +89,9 @@ final class JobManager {
         var bundle: String { appBundle ?? Hands.cometBundle }
     }
 
-    private let config: DotConfig
+    let config: DotConfig
     /// nil in the headless bench harness (`Dot --job-run`).
-    private let overlay: OverlayManager?
+    let overlay: OverlayManager?
     private let speaker: TTSProvider?
     private let ledger: Ledger?
     var socketPath: String?
@@ -100,6 +119,8 @@ final class JobManager {
     /// Held while any job runs, so App Nap never stretches its timers (an offscreen stack's 0.25 s tick stalled for
     /// minutes in a self-test on 10-20).
     private var activity: NSObjectProtocol?
+    /// Reads each live job's page.md (parity J1).
+    var pageTimer: Timer?
 
     init(config: DotConfig, overlay: OverlayManager?, speaker: TTSProvider?, ledger: Ledger?) {
         self.config = config
@@ -121,6 +142,9 @@ final class JobManager {
     var queuedCount: Int { queue.filter { !$0.bench }.count }
 
     func job(_ id: String) -> Job? { jobs.first { $0.id == id } }
+
+    /// A job dropped from the last-20 list that he picked back up (Retry, a tap on its page).
+    func adopt(_ job: Job) { jobs.append(job) }
 
     /// A behind job running, or one that finished in the last `within` seconds ("show me").
     func newestBehind(within: TimeInterval = 600) -> Job? {
@@ -174,12 +198,15 @@ final class JobManager {
 
     // MARK: Sessions
 
-    private func makeSession(model: String, bench: Bool, benchPort: Int?) -> (id: String, stamp: String, session: ClaudeSession, folder: URL)? {
-        let id = Self.newId()
-        let stamp = Self.stampNow()
-        let folder = bench ? URL(fileURLWithPath: "/tmp/dot-bench/jobs/\(id)", isDirectory: true) : Self.root.appendingPathComponent(id, isDirectory: true)
+    /// A new job session, or (`resume`) the ended job's own session again in its own folder (Retry, a page tap, J3).
+    func makeSession(model: String, bench: Bool, benchPort: Int?,
+                     resume: (id: String, stamp: String, folder: URL, sessionId: String)? = nil) -> (id: String, stamp: String, session: ClaudeSession, folder: URL)? {
+        let id = resume?.id ?? Self.newId()
+        let stamp = resume?.stamp ?? Self.stampNow()
+        let folder = resume?.folder ?? (bench ? URL(fileURLWithPath: "/tmp/dot-bench/jobs/\(id)", isDirectory: true) : Self.root.appendingPathComponent(id, isDirectory: true))
         try? FileManager.default.createDirectory(at: folder.appendingPathComponent("output"), withIntermediateDirectories: true)
         var options = ClaudeSession.Options(cwd: folder, model: model)
+        if let resume { options.sessionId = resume.sessionId; options.resume = true }
         options.appendSystemPrompt = Prompts.job + Prompts.courseIndex(in: config.talkRootURL)
         options.tools = nil
         var disallowed = ["Task", "Agent", "NotebookEdit", "AskUserQuestion", "EnterPlanMode", "ExitPlanMode", "Bash(security *)"] + AgentManager.disallowedAgentTools
@@ -350,6 +377,10 @@ final class JobManager {
         if !conversation.isEmpty { first += "\nthe last few minutes with dot, oldest first (\"it\" may mean these):\n" + conversation.joined(separator: "\n") }
         first += "\nhe said: \"\(words)\""
         if goal != words { first += "\nwhat talk saw that matters: \(goal)" }
+        if !bench, let (brief, given) = howtoBrief(words: words + " " + goal, url: context.url, app: context.appName) {
+            first += "\n" + brief
+            job.howtos = given
+        }
         if Self.isDeck(words) { first += "\n" + Self.deckBrief }
         Log.info("job[\(job.id)] started placement=\(placement.rawValue) warm=\(warm ? 1 : 0) model=\(model) goal=\(Log.short(goal, 120))")
         if placement == .front {
@@ -391,6 +422,7 @@ final class JobManager {
                 self.spawnSpare(bench: true)
             }
         }
+        watchPages()
         publish(job)
         if announce || placement != asked { say(line, job: job, start: true) } else { Log.info("job[\(job.id)] said: (talk said the start line)") }
         return line
@@ -578,6 +610,8 @@ final class JobManager {
             Log.info("act: go \(Log.short(job.goal, 80)) ok \(ms) ms")
         }
         if let result, !job.bench { ledger?.record(kind: "job", agent: nil, model: job.model, result: result, summary: Log.short(job.goal, 200)) }
+        if failed || stopReason != nil, !job.howtos.isEmpty { howtosFailed(job) }
+        refreshPage(job)
         if !job.bench {
             TranscriptLog.append(kind: .job, you: job.hisWords, dot: line, app: job.appName,
                                  extra: ["model": job.model, "ms": String(ms), "steps": String(job.steps.count), "placement": job.placement.rawValue])
@@ -719,7 +753,11 @@ final class JobManager {
             if let offer = outcome.offer { text += " (offer him: \(offer.verb) \(offer.object))" }
             return (text, true, nil)
         }
-        if !job.isBrowserJob { return await performNative(job, tool: tool, args: args) }
+        if tool == "howto_save" { return howtoSave(job, args: args) }
+        if tool == "ask_front_step" { return await askFrontStep(job, what: str(args, "what") ?? "", app: str(args, "app")) }
+        if !job.isBrowserJob || (job.frontStepLive && ["look", "click", "type", "key"].contains(tool)) {
+            return await performNative(job, tool: tool, args: args)
+        }
         var result: PageDriver.Result
         switch tool {
         case "look":
@@ -927,7 +965,7 @@ final class JobManager {
     private func performNative(_ job: Job, tool: String, args: [String: Any]) async -> (String, Bool, String?) {
         func capture() -> ScreenContext? {
             let c = AccessibilityContext.capture(maxElements: config.maxAccessibilityElements)
-            return c.bundleIdentifier == job.appBundle ? c : nil
+            return c.bundleIdentifier == job.nativeBundle ? c : nil
         }
         func lookText(_ c: ScreenContext) -> String {
             var lines = ["app: \(c.appName ?? "?"), window \"\(Log.short(c.windowTitle ?? "", 100))\"\(c.url.map { " \($0)" } ?? "")"]
@@ -946,14 +984,14 @@ final class JobManager {
             return lines.joined(separator: "\n")
         }
         if tool == "look" {
-            guard let c = capture() else { return ("paused: \(job.appName ?? "the app") isn't in front; he moved away. end your turn and wait", true, nil) }
+            guard let c = capture() else { return ("paused: \(job.nativeName ?? "the app") isn't in front; he moved away. end your turn and wait", true, nil) }
             return (lookText(c), false, nil)
         }
         if tool == "show" {
-            if let b = job.appBundle, let app = NSRunningApplication.runningApplications(withBundleIdentifier: b).first { app.activate() }
+            if let b = job.nativeBundle, let app = NSRunningApplication.runningApplications(withBundleIdentifier: b).first { app.activate() }
             return ("ok: it's in front", false, nil)
         }
-        guard let c = capture() else { return ("error: \(job.appName ?? "the app") isn't in front now, so dot didn't act", true, nil) }
+        guard let c = capture() else { return ("error: \(job.nativeName ?? "the app") isn't in front now, so dot didn't act", true, nil) }
         let label = str(args, "ref").flatMap { job.nativeRefs[$0] } ?? str(args, "label")
         // A click by ref presses that element (by its frame), not the first one with its title: on 10-20 a label and its
         // switch were both "Email alerts", and the label took every click (bench row 10).
@@ -1044,7 +1082,7 @@ final class JobManager {
     }
 
     /// Runs the approve script off the main thread and hands back its JSON.
-    private func runApprove(_ args: [String], done: @escaping (Int32, Any?) -> Void) {
+    func runApprove(_ args: [String], done: @escaping (Int32, Any?) -> Void) {
         guard let script = approveScript() else { Log.warn("proposal: no dot-atlas-approve.py"); done(-1, nil); return }
         let python = config.atlasPython
         let root = DotConfig.expand(config.atlasRoot), harness = DotConfig.expand(config.atlasHarness)
@@ -1082,7 +1120,7 @@ final class JobManager {
         }
     }
 
-    private func present(_ card: ProposalCard, job: Job, session: String) {
+    func present(_ card: ProposalCard, job: Job, session: String) {
         let pid8 = String(card.proposal.prefix(8))
         var answered = false
         let consent = ConsentCard(agentId: "job-\(job.id)", agent: "dot", title: card.title, detail: card.detail, guarded: card.guarded, onAllow: { [weak self, weak job] in
@@ -1092,6 +1130,7 @@ final class JobManager {
                 let status = ((json as? [String: Any])?["status"] as? String) ?? ((json as? [String: Any])?["error"] as? String) ?? "error \(code)"
                 Log.info("proposal: card \(pid8) \(card.operation) allowed \(status)")
                 let sent = code == 0 && status == "succeeded"
+                if let job { job.letterStates[card.proposal] = sent ? "sent" : "pending"; self.fillLetters(job) }
                 job?.session?.send(text: sent ? "[dot] he said yes; sent (\(card.title))." : "[dot] he said yes but it didn't go: \(status). say so in one line.")
             }
         }, onDeny: { [weak self, weak job] in
@@ -1100,6 +1139,7 @@ final class JobManager {
             self.runApprove(["deny", "--session", session, "--proposal", card.proposal, "--digest", card.digest]) { code, json in
                 let status = ((json as? [String: Any])?["status"] as? String) ?? "error \(code)"
                 Log.info("proposal: card \(pid8) \(card.operation) denied \(status)")
+                if let job { job.letterStates[card.proposal] = "withdrawn"; self.fillLetters(job) }
                 job?.session?.send(text: "[dot] he said no; nothing was sent.")
             }
         })
@@ -1421,11 +1461,17 @@ final class JobManager {
         case .failed: state = .failed; line = job.endLine.isEmpty ? "it stopped" : job.endLine
         case .stopped: state = .stopped; line = "stopped"
         }
+        if let page = job.livePage {
+            if job.phase.isLive, !page.status.isEmpty { line = page.status }
+            if job.phase == .done, !page.headline.isEmpty { line = page.headline }
+        }
         let title = Log.short(job.hisWords.components(separatedBy: .newlines).first ?? job.goal, 40)
         var chip = StackChip(id: "job-\(job.id)", kind: .job, title: title, line: Log.short(line, 140), steps: Array(job.steps.suffix(3)),
                              state: state, startedAt: job.startedAt, costText: job.cost >= 3 ? String(format: "$%.2f", job.cost) : nil,
                              canStop: job.phase.isLive)
         chip.canOpen = false
+        chip.hasPage = job.livePage != nil
+        chip.canRetry = JobRetry.canRetry(job.phase, endLine: job.endLine)
         chip.outputs = job.outputs
         if !job.endLine.isEmpty { chip.result = job.endLine }
         stack.upsert(chip)
@@ -1441,7 +1487,9 @@ final class JobManager {
             if let text, !text.isEmpty {
                 if job.phase.isLive { followUp(job, text: text) } else { continueJob(job, with: text) }
             }
-        case "continue": continueJob(job, with: "continue where you left off")
+        case "continue": resumeJob(job, with: "continue where you left off")
+        case "retry": retry(job)
+        case "page": openPage(job)
         default: Log.info("stack: \(what) on \(chipId)")
         }
     }
@@ -1458,7 +1506,7 @@ final class JobManager {
     // MARK: Speech
 
     /// Start lines Dot says itself; end lines when talk is idle and the Mac isn't muted, else as text. Bench jobs never speak.
-    private func say(_ line: String, job: Job, start: Bool, short: Bool = false, attempt: Int = 0) {
+    func say(_ line: String, job: Job, start: Bool, short: Bool = false, attempt: Int = 0) {
         guard !line.isEmpty else { return }
         Log.info("job[\(job.id)] said: \(Log.short(line, 160))")
         if job.bench {

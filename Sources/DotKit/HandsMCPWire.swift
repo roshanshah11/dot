@@ -1,7 +1,7 @@
 import Foundation
 
 /// JSON-RPC for `Dot --hands-mcp --job <id>`, the stdio MCP server a job sees as `dot`. The server answers initialize,
-/// tools/list and ping itself and relays tools/call to the running Dot. 16 tools; no eval, no tab switching, no port
+/// tools/list and ping itself and relays tools/call to the running Dot. 18 tools; no eval, no tab switching, no port
 /// or session arguments, so a job can't leave its tab or its rules.
 public enum HandsMCPWire {
     public struct Request {
@@ -65,6 +65,10 @@ public enum HandsMCPWire {
          schema(["to": str], required: ["to"])),
         ("spotify", "Control the Spotify app: \"play\", \"pause\", \"next\", \"previous\", \"restart\", \"seek 30\" (seconds, minus to go back), \"shuffle on\", \"repeat off\", \"volume 40\", \"now playing\", \"like\" (save the song), \"move phone\" (send it to a device).",
          schema(["do": str], required: ["do"])),
+        ("howto_save", "Save how you got a task done on a site or app, after you found a working path past a detour, so the next job there starts with it. site: the host (wyzant.com) or the app's name; task: a few words (\"apply to a tutoring job\"); steps: the path that worked, in one line.",
+         schema(["site": str, "task": str, "steps": str], required: ["site", "task", "steps"])),
+        ("ask_front_step", "A behind job that needs one step on his screen (in a Mac app, or his own tab): ask him with a card. what: the step in his words (\"press Allow in the Zoom dialog\"); app: the app, if you know it. It waits for his answer; on yes you get his screen for that one step through look, click, type and key (two minutes), then your tools go back to your window.",
+         schema(["what": str, "app": str], required: ["what"])),
     ]
 
     public static var toolNames: [String] { tools.map(\.0) }
