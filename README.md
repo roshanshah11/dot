@@ -91,6 +91,58 @@ Claude doing all of it.
 - **Computer use** for agents is [cua-driver](https://github.com/trycua/cua) (MIT) as a
   stdio MCP server, when you install it. Observation calls pass; input calls ask.
 
+## What Dot captures and keeps
+
+Checked against the code on 2026-10-26 (parity US-11). Paths are this Mac's.
+
+### On this Mac
+
+- **Your voice.** Each hold records to a temporary WAV (`$TMPDIR/dot-audio/turn-*.wav`) that Dot deletes once the
+  turn is transcribed. Speech is recognised on the Mac (Parakeet, through FluidAudio); no audio leaves it. Lecture
+  mode keeps the class audio in `~/Library/Caches/Dot/lecture-audio` until the after-class pass has transcribed it
+  again, then deletes it; one a crash left behind goes at the next launch.
+- **What was said.** Every spoken or typed turn, dictation, agent report and lecture line is appended as text to
+  `~/Dot/transcripts/<date>.md` and `.jsonl`, and indexed for Home's History in `~/Dot/index/transcripts.sqlite`
+  (with Murmur's history, which it reads). Nothing deletes them.
+- **Screenshots.** Dot holds them in memory for the turn and writes none itself, but every question sends a screenshot
+  of each screen (`includeOtherScreens`, on) to Claude, and Claude Code saves each session's messages, screenshots
+  included, under `~/.claude/projects/-Users-roshanshah-Dot-talk/` for talk and
+  `~/.claude/projects/-Users-roshanshah-Dot-agents-<name>/` for agents. It deletes a session 30 days after its last
+  use (`cleanupPeriodDays`, its default; your settings don't change it). Lecture mode saves the slides and board pictures
+  it puts in the notes, in the course folder's `notes-images/`, with the notes and the class transcript.
+- **Dot's own state.** `~/Dot/home-state.sqlite` (drafts, scroll positions, reactions, prompt cards, agent icons,
+  dictation suggestions); `~/Dot/agents/<name>/` (each agent's folder, its outputs and pictures); `~/Dot/rules.json`,
+  `~/Dot/routines.json`, `~/Dot/talk/`; settings and the dictionary in `~/.config/dot/`.
+- **The log.** `~/Library/Logs/Dot/dot.log` holds events and at most the first 120 characters of what you say and
+  what agents report; never screenshot bytes or passwords. Dot doesn't trim it.
+- **Secrets.** Passwords come from gopass at the moment of a login and are never logged. The Spotify
+  sign-in is a refresh token in the login Keychain (`dot-spotify-api`).
+
+### What leaves the Mac
+
+| To | What | When |
+|---|---|---|
+| Anthropic, through Claude Code (`claude -p`, your subscription) | your words, the screenshots, the window's accessibility text; for agents, their brief, the files they open and their tool results | every turn and every agent step |
+| TypeSafe (Jev, `api.typesafe.ai`) | text only: your words, the app and window title, on-screen control labels, agents' tasks, upcoming deadline titles, and an agent's commands and tool output for the safety check | routing a turn, notices, checking agent commands; only while a TypeSafe key is set (one is, on this Mac) |
+| OpenRouter | an agent's picture prompt, as text | an agent makes an image |
+| Apple (MapKit) | the place search, the home point, the places for walking times and Look Around | a place card |
+| Yahoo Finance | the ticker | a stock card |
+| Wikimedia Commons | the picture search words | a pictures card |
+| Spotify | the device and what to play | playing on a device through the Web API |
+| the document's own site | a request for the page, when Dot reads a web document you have open | a deep answer about it |
+| any site an agent visits | whatever the agent's own search and fetch tools send | agent work |
+
+### Deleting it
+
+- Conversation text: `rm -r ~/Dot/transcripts ~/Dot/index` (History then rebuilds from agents' folders and Murmur only).
+- What Claude Code saved, screenshots included: `rm -r ~/.claude/projects/-Users-roshanshah-Dot-talk
+  ~/.claude/projects/-Users-roshanshah-Dot-agents-*` (agents can't resume those sessions after), or a lower
+  `cleanupPeriodDays` in `~/.claude/settings.json`.
+- Dot's state: quit Dot, then `rm ~/Dot/home-state.sqlite`. An agent: its folder in `~/Dot/agents/`.
+- The log: `rm ~/Library/Logs/Dot/dot.log`; a new one starts.
+- Lecture material: the course folder in School; class audio left by a skipped pass: `~/Library/Caches/Dot/lecture-audio`.
+- The Spotify sign-in: Keychain Access, `dot-spotify-api`.
+
 ## Install
 
 Requirements: macOS 14.2 or later, Apple silicon recommended, Xcode 16 or later for the
