@@ -72,7 +72,7 @@ enum TrackSelfTest {
         fixture.contentView = counter
         fixture.isReleasedWhenClosed = false
         fixture.orderFrontRegardless()
-        defer { fixture.orderOut(nil) }
+        defer { fixture.orderOut(nil); fixture.close() }
         var told: [String] = []
         guard let panel = overlay.showFigure(recipe, anchor: nil, accentHex: "#ff6b2c", onPart: { told.append($0) }) else { s.note = "no figure"; return s }
         defer { overlay.closeFigure(panel) }

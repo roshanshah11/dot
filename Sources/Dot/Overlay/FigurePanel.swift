@@ -320,11 +320,17 @@ final class FigurePanel: NSPanel {
         NSAnimationContext.runAnimationGroup { $0.duration = 0.18; animator().alphaValue = 1 }
     }
 
+    /// Fade out and go. The order-out does not wait on the fade's completion, which never comes while the screen is
+    /// locked (two faded panels stayed ordered in, 2026-10-26).
     func dismiss() {
-        NSAnimationContext.runAnimationGroup({ $0.duration = 0.18; animator().alphaValue = 0 }, completionHandler: { [weak self] in
-            self?.view.isPlaying = false
-            self?.orderOut(nil)
-        })
+        view.isPlaying = false
+        onPart = nil
+        NSAnimationContext.runAnimationGroup { $0.duration = 0.18; animator().alphaValue = 0 }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.22) { [self] in
+            orderOut(nil)
+            view.scene = nil
+            close()
+        }
     }
 }
 

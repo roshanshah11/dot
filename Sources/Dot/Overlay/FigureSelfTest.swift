@@ -75,7 +75,9 @@ enum FigureSelfTest {
         panel.built.scene.background.contents = nil
         let wrote = Snapshots.png(picture).map { (try? $0.write(to: folder.appendingPathComponent("cell.png"))) != nil } ?? false
         check(wrote, "the figure rendered to \(folder.path)/cell.png")
-        panel.orderOut(nil)
+        panel.dismiss()
+        spin(0.4)
+        check(!panel.isVisible, "a dismissed figure is ordered out without waiting on its fade")
 
         let visible = CGRect(x: 0, y: 0, width: 1440, height: 875)
         let size = CGSize(width: 360, height: 390)
