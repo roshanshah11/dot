@@ -31,8 +31,11 @@ final class AgentManager {
         /// says Notify: yes or asks him something.
         var routineMode: RoutineMode?
         var isWatchRun: Bool { isRoutine && routineMode == .watch }
-        /// Started from outside with `--quiet` (AG-19): its result lands like a routine's, with no chime and no voice.
-        var quietReport = false
+        /// Whether each message still owed a result came with `--quiet` (AG-19), oldest first. A result lands like a
+        /// routine's, with no chime and no voice, only when every owed message was quiet: a quiet tell folded into
+        /// his own turn never silences that turn's answer, and a quiet tell answered in a turn of its own stays quiet.
+        var owedQuiet: [Bool] = []
+        var quietReport: Bool { !owedQuiet.isEmpty && owedQuiet.allSatisfy { $0 } }
         /// What he allowed for the rest of this task ("Allow for this task"), by allowanceKey; a new
         /// brief starts with none.
         var allowances: Set<String> = []
@@ -301,6 +304,7 @@ final class AgentManager {
             }
             live.step(Log.short("he added: \(brief)", 90))
             live.turnsOwed += 1
+            live.owedQuiet.append(quiet)
             // A routine run by hand into a busy agent still reports back to its routine when the turn ends.
             if routine { live.isRoutine = true; live.routineMode = routineMode ?? .report }
             hud.upsertAgent(liveRow(live, live.lastLine))
@@ -321,7 +325,7 @@ final class AgentManager {
         run.steps = []
         run.helpers = 0
         run.isRoutine = routine
-        run.quietReport = quiet
+        run.owedQuiet = [quiet]
         run.routineMode = routine ? (routineMode ?? .report) : nil
         run.allowances = []
         run.turnsOwed = 1
@@ -679,7 +683,7 @@ final class AgentManager {
         if !quiet || report.chip == .alert, !unprompted { reportedAt[agent.slug] = Date() }
         if !unprompted { AtlasThread.shared.record(kind: "agent", asked: "\(agent.name): \(Log.short(run.lastBrief, 200))", said: (failed ? "failed: " : "") + summary) }
         run.isRoutine = false
-        run.quietReport = false
+        if !run.owedQuiet.isEmpty { run.owedQuiet.removeFirst() }
         if wasRoutine { routineOutcome?(agent.slug, failed, failed ? summary : nil) }
         // On a call or a muted Mac the result waits in the stack: no chime, no voice (FX-11, decided item 22).
         if report.chime { Chimes.shared.play(failed ? .failed : .done) }

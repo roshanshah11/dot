@@ -13,6 +13,8 @@ public final class RouterCore {
         case toClient(String)
         case toChild(String)
         case startChild
+        /// The real server failed its handshake: stop it, so the next call starts a fresh one.
+        case stopChild
         /// Call `timerFired(id:)` after this many seconds.
         case startTimer(id: Int, seconds: Double)
         case saveToolList(String)
@@ -148,6 +150,15 @@ public final class RouterCore {
         }
         guard let id = (m["id"] as? NSNumber)?.intValue, let pending = inFlight.removeValue(forKey: id) else { return [] }
         if pending.handshake {
+            // an error (or no result) means the server never initialized: the calls waiting on it fail now with its
+            // reason, and the next call starts it again, instead of being sent to a server that can't answer them
+            guard m["result"] is [String: Any] else {
+                let why = ((m["error"] as? [String: Any])?["message"] as? String) ?? "no result"
+                childReady = false
+                childStarting = false
+                queued = []
+                return [.stopChild] + failInFlight { _ in "the \(self.server) server failed to start (initialize: \(why)); dot starts it again on the next call, so call it again" }
+            }
             childReady = true
             childStarting = false
             var actions: [Action] = [.toChild(Self.line(["jsonrpc": "2.0", "method": "notifications/initialized"]))]
@@ -193,16 +204,21 @@ public final class RouterCore {
         childReady = false
         childStarting = false
         queued = []
+        return failInFlight { "the \(self.server) server stopped during \($0.tool); dot starts it again on the next call, so call it again" }
+    }
+
+    /// Every call the server held (or that waited on its handshake) gets `message` as its error.
+    private func failInFlight(_ message: (Pending) -> String) -> [Action] {
         var actions: [Action] = []
         for (_, pending) in inFlight.sorted(by: { $0.key < $1.key }) {
-            let message = "the \(server) server stopped during \(pending.tool); dot starts it again on the next call, so call it again"
+            let why = message(pending)
             if pending.listing {
-                for w in listWaiters { actions.append(.toClient(Self.error(w, -32603, message))) }
+                for w in listWaiters { actions.append(.toClient(Self.error(w, -32603, why))) }
                 listWaiters = []
             } else if let handle = pending.handle {
-                actions += finish(handle, with: Self.text(message, error: true))
+                actions += finish(handle, with: Self.text(why, error: true))
             } else if let clientID = pending.clientID {
-                actions.append(.toClient(Self.reply(clientID, Self.text(message, error: true))))
+                actions.append(.toClient(Self.reply(clientID, Self.text(why, error: true))))
             }
         }
         inFlight = [:]

@@ -45,6 +45,8 @@ final class Talk {
     private var actChain: Task<Void, Never>?
     /// Bumped by every new turn and by escape: an act queued by an earlier answer is dropped.
     private var actGeneration = 0
+    /// Bumped by every new question and by escape: a think turn still waiting on its document passages is dropped.
+    private var askGeneration = 0
     /// The course on screen last, and when: a proof in "pset7.pdf" still gets the math map.
     private var lastCourse: (code: String, at: Date)?
     /// How many of this turn's tags have been acted on as they streamed in.
@@ -1040,6 +1042,7 @@ final class Talk {
     private func ask(_ text: String, typed: Bool) async {
         Log.info("ask: received bench=\(benchMode ? 1 : 0) \(typed ? "typed" : "spoken") text=\(Log.short(text, 120))")
         askReceivedAt = Date()
+        askGeneration += 1
         if !typed, !benchMode { dryRun = false }
         doIntent = false
         driveCap = nil
@@ -3386,8 +3389,11 @@ final class Talk {
     /// goes without it.
     private func sendThink(_ text: String, question: String, to think: ClaudeSession, remember: Bool = true) {
         let snapshot = context
+        let asked = askGeneration
         Task { @MainActor in
             let passages = await self.documentPassages(question: question, context: snapshot, wait: 2.5)
+            // A newer question or escape during the wait owns the think session now; sending this would cut it off.
+            guard asked == self.askGeneration else { Log.info("think: dropped (a newer ask came in while it waited for the document)"); return }
             let (message, images) = self.buildMessage(text, kind: .think, passages: passages)
             if remember {
                 self.lastMessage = message
@@ -4298,6 +4304,7 @@ final class Talk {
         cutActiveTurn()
         driveRequested = false
         actGeneration += 1   // acts still queued from the answer he stopped don't run
+        askGeneration += 1   // and a think turn still waiting on its document isn't sent
         if phase == .listening { recorder.cancel(); overlay.setMouseCapture(false) }
         levelTimer?.invalidate()
         phase = .idle

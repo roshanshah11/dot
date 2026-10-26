@@ -102,6 +102,8 @@ extension JobManager {
             return
         }
         guard let page = job.livePage else { return }
+        // a tap made on a version page.md has since replaced is stale, even when its object id is still on the page
+        guard tap.version == page.version else { Log.info("job[\(job.id)] page tap \(tap.event) from version \(tap.version), page is at \(page.version); dropped"); return }
         guard job.pageTaps.admit(event: tap.event, version: tap.version) else { Log.info("job[\(job.id)] page tap \(tap.event) again; dropped"); return }
         if case .pageLetter(_, let object, let proposal, let send, _, _) = message {
             letterTap(job, page: page, object: object, proposal: proposal, send: send)

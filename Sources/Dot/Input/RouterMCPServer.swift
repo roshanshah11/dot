@@ -67,6 +67,9 @@ enum RouterMCPServer {
                 do { try childIn.write(contentsOf: Data((line + "\n").utf8)) } catch { note("write to \(server) failed: \(error)") }
             case .startChild:
                 startChild()
+            case .stopChild:
+                stopChild()
+                note("\(server) failed its handshake; stopped it, the next call starts it again")
             case .startTimer(let id, let seconds):
                 queue.asyncAfter(deadline: .now() + seconds) { apply(core.timerFired(id: id)) }
             case .saveToolList(let list):

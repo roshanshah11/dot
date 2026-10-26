@@ -125,6 +125,21 @@ final class RouterTests: XCTestCase {
         XCTAssertEqual(text(client(answer(r, resent, "back"))[0]), "back")
     }
 
+    func testFailedHandshakeFailsTheWaitingCallsAndStartsAgainNextTime() {
+        let r = RouterCore(server: "atlas")
+        let first = r.clientMessage(call(5, "search", ["q": "x"]))
+        let hello = child(first).first { $0["method"] as? String == "initialize" }!
+        let a = r.childMessage(RouterCore.line(["jsonrpc": "2.0", "id": hello["id"]!, "error": ["code": -32602, "message": "unsupported protocol version"]]))
+        XCTAssertTrue(a.contains(.stopChild))
+        XCTAssertTrue(child(a).isEmpty, "nothing queued is sent to a server that never initialized")
+        let reply = client(a).first { RouterCore.same($0["id"], 5) }!
+        XCTAssertTrue(isError(reply))
+        XCTAssertTrue(text(reply).contains("unsupported protocol version"))
+        let again = r.clientMessage(call(6, "search", ["q": "y"]))
+        let forwarded = up(r, after: again)
+        XCTAssertEqual(forwarded.compactMap { ($0["params"] as? [String: Any])?["name"] as? String }, ["search"])
+    }
+
     func testDeniedToolIsNotListedAndIsRefusedByName() {
         let r = RouterCore(server: "atlas", denied: ["send_email"], cachedToolList: #"[{"name":"search"},{"name":"send_email"}]"#)
         let names = ((client(r.clientMessage(#"{"jsonrpc":"2.0","id":1,"method":"tools/list"}"#))[0]["result"] as! [String: Any])["tools"] as! [[String: Any]]).map { $0["name"] as! String }
