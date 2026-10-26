@@ -26,3 +26,6 @@ HeyClicky (the commercial product that grew out of Clicky) was studied from its 
 download to understand its architecture: its notch HUD, named agents with a workspace
 folder, consent-gated computer use, and voice-to-agent handoff. None of its code,
 prompts, sounds, images or other assets are included here.
+- **Patrick Hand** by Patrick Wagesreiter (SIL Open Font License 1.1), the handwriting in Dot's ink on the
+  screen (`Resources/fonts/PatrickHand-Regular.ttf`, licence beside it). Fetched 2026-10-26 from its Google Fonts
+  source, https://github.com/google/fonts/tree/main/ofl/patrickhand (sha256 0f173b3e...ad0fc).

@@ -17,10 +17,27 @@ import ScreenCaptureKit
 /// Geometry is in Core Graphics global points (top-left origin of the primary display), like AX and CGWindow.
 @MainActor
 final class MarkTracker {
-    enum Kind: Hashable { case highlight, ring, point, shape }
+    /// What a tracked mark is. The four walkthrough marks are one each (a new one replaces the old); ink marks
+    /// (`m1`, `m2`, ...) are any number, each with its own anchor (parity D1; Codex review #13).
+    enum Kind: Hashable, CustomStringConvertible {
+        case highlight, ring, point, shape
+        case ink(String)
+        var description: String {
+            switch self {
+            case .highlight: return "highlight"
+            case .ring: return "ring"
+            case .point: return "point"
+            case .shape: return "shape"
+            case .ink(let id): return "ink \(id)"
+            }
+        }
+        var isInk: Bool { if case .ink = self { return true }; return false }
+    }
 
     /// A mark moved, left the window (edge says which way) or came back. The rect is AppKit screen points.
     var onUpdate: ((Kind, CGRect, Bool, MarkEdge?) -> Void)?
+    /// The tracker dropped a mark on its own (he switched apps, or what it covered is gone).
+    var onRemoved: ((Kind) -> Void)?
 
     private enum Anchor {
         case element(AXUIElement, lastFrame: CGRect)
@@ -92,6 +109,19 @@ final class MarkTracker {
 
     func clear(_ kind: Kind? = nil) {
         if let kind { marks[kind] = nil } else { marks.removeAll() }
+        afterRemoval()
+    }
+
+    /// Clear every ink mark, or every walkthrough mark (`ink: false`).
+    func clearAll(ink: Bool) {
+        for key in marks.keys where key.isInk == ink { marks[key] = nil }
+        afterRemoval()
+    }
+
+    /// The ink marks being tracked now (for the selftest).
+    var inkIDs: [String] { marks.keys.compactMap { if case .ink(let id) = $0 { return id }; return nil }.sorted() }
+
+    private func afterRemoval() {
         if !marks.values.contains(where: { if case .pixels = $0.anchor { return true }; return false }) { pixel = nil }
         if marks.isEmpty { stop() }
     }
@@ -296,6 +326,7 @@ final class MarkTracker {
                         Log.info("track: lost \(kind) (best match \(String(format: "%.2f", match.score))); cleared")
                         self.onUpdate?(kind, Self.appKitRect(fromCG: now.rect), false, nil)
                         self.marks[kind] = nil
+                        self.onRemoved?(kind)
                         if self.marks.isEmpty { self.stop() }
                         return
                     }
@@ -426,6 +457,7 @@ final class MarkTracker {
         for kind in foreign {
             if let m = marks[kind] { onUpdate?(kind, Self.appKitRect(fromCG: m.rect), false, nil) }
             marks[kind] = nil
+            onRemoved?(kind)
         }
         if marks.isEmpty { stop() }
     }

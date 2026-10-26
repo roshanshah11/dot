@@ -108,6 +108,8 @@ final class CompanionModel: ObservableObject {
     @Published var tailTo: CGPoint?
     @Published var ring: Ring?
     @Published var shapes: [ShapeMark] = []
+    /// Ink on this screen (parity batch 1), drawn by InkLayerView.
+    @Published var ink: [InkMarkModel] = []
     @Published var highlight: CGRect?
     @Published var highlightLabel: String?
     /// 0...1: the highlight's dashed outline draws itself on when it lands.
@@ -200,6 +202,9 @@ struct CompanionView: View {
                 if !mark.label.isEmpty, mark.progress > 0.95, let anchor = mark.points.last {
                     chip(mark.label).offset(x: anchor.x + 10, y: anchor.y - 30)
                 }
+            }
+            if !model.ink.isEmpty {
+                InkLayerView(marks: model.ink, accent: model.color)
             }
             if let ring = model.ring {
                 RingView(ring: ring, color: model.color, done: model.ringDone)
@@ -812,12 +817,12 @@ struct MouthShape: Shape {
 /// arc to point at things, rings the next control in a walkthrough, and comes back.
 @MainActor
 final class OverlayManager {
-    private var windows: [OverlayWindow] = []
-    private var models: [CompanionModel] = []
+    var windows: [OverlayWindow] = []
+    var models: [CompanionModel] = []
     private var ticker: Timer?
     private var flightTimer: Timer?
     private var bubbleHide: DispatchWorkItem?
-    private var returnWork: DispatchWorkItem?
+    var returnWork: DispatchWorkItem?
     private var presence: Bool
     private var ringDoneWork: DispatchWorkItem?
     private var transientVisible = false
@@ -892,9 +897,12 @@ final class OverlayManager {
     var onPetted: (() -> Void)?
     private(set) var color: Color
     /// Keeps marks on the content while he scrolls (round eight).
-    private let tracker = MarkTracker()
+    let tracker = MarkTracker()
     /// The last placed geometry of each tracked mark (AppKit), to turn a tracker move into a delta.
-    private var trackedRects: [MarkTracker.Kind: CGRect] = [:]
+    var trackedRects: [MarkTracker.Kind: CGRect] = [:]
+    /// Ink on the live screen (parity batch 1): the drawing by id, and the pen's state (InkLayer.swift).
+    var inkBoard = InkBoard()
+    var inkPen = InkPenState()
     /// Marks hidden because their content scrolled out of view, restored when it comes back.
     private var hiddenRing: (Ring, Int)?
     private var hiddenHighlight: (CGRect, Int)?
@@ -929,6 +937,7 @@ final class OverlayManager {
         startTicking()
         if presence { bringUp() }
         tracker.onUpdate = { [weak self] kind, rect, visible, edge in self?.trackerMoved(kind, to: rect, visible: visible, edge: edge) }
+        tracker.onRemoved = { [weak self] kind in if case .ink(let id) = kind { self?.inkLost(id) } }
     }
 
     func rebuild() {
@@ -1029,6 +1038,8 @@ final class OverlayManager {
         transientFade?.cancel()
         let work = DispatchWorkItem { [weak self] in
             guard let self, !self.presence else { return }
+            // ink stays up until it fades or is cleared; the windows go with it then
+            if self.hasInk { self.releaseTransient(after: 10); return }
             self.transientVisible = false
             self.fadeWindows()
         }
@@ -1172,7 +1183,7 @@ final class OverlayManager {
 
     // MARK: Marks
 
-    private func screenIndex(containing point: CGPoint) -> Int? {
+    func screenIndex(containing point: CGPoint) -> Int? {
         windows.firstIndex(where: { $0.screenFrame.contains(point) }) ?? windows.indices.first
     }
 
@@ -1303,14 +1314,16 @@ final class OverlayManager {
         tracker.track(kind, appKitRect: rect)
     }
 
+    /// Stops tracking one walkthrough mark, or all of them; ink has its own clears (InkLayer.swift).
     private func stopTracking(_ kind: MarkTracker.Kind? = nil) {
-        tracker.clear(kind)
+        if let kind { tracker.clear(kind) } else { tracker.clearAll(ink: false) }
         if let kind {
             trackedRects[kind] = nil
             if kind == .ring { hiddenRing = nil; for m in models { m.edgeHint = nil } }
             if kind == .highlight { hiddenHighlight = nil }
         } else {
-            trackedRects.removeAll(); hiddenRing = nil; hiddenHighlight = nil
+            for key in trackedRects.keys where !key.isInk { trackedRects[key] = nil }
+            hiddenRing = nil; hiddenHighlight = nil
             for m in models { m.edgeHint = nil }
         }
     }
@@ -1350,7 +1363,8 @@ final class OverlayManager {
                 for i in model.shapes.indices { model.shapes[i].points = model.shapes[i].points.map { CGPoint(x: $0.x + delta.dx, y: $0.y + delta.dy) } }
             } else {
                 model.shapes = []
-            }
+            }        case .ink(let id):
+            inkMoved(id, by: delta, visible: visible, screen: index, to: rect)
         }
         // Dot perched beside the mark rides along with it
         if visible, model.motion == .parked, parkedScreen == index {

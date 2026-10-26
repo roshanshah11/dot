@@ -25,6 +25,11 @@ import Foundation
 ///   [IMAGES:artemis ii launch]     a strip of pictures on the board
 ///   [OPEN:spotify] [OPEN:https://example.com:same] [SCROLL:down] [KEY:cmd+l] [CLICK:export]
 ///   [INSERT:name] <<< text >>> [GO:goal]   Dot does it itself, right away (ActionCommand)
+///   Ink on the live screen (parity batch 1; a place is e12, x,y or x,y,w,h in the screenshot):
+///   [WRITE:x,y:words] [LABEL:e12:name] [NUM:e12:2] [FRAME:x,y,w,h:label] [UNDERLINE:e12] [STRIKE:x1,y1;x2,y2]
+///   [CHECK:e12] [CROSS:x,y] [CONNECT:e3;e7:label] [TRACE:x1,y1;x2,y2;x3,y3:label] [STICKY:x,y:words]
+///   [PHOTO:x,y:query] [TYPE_TEXT:e12:words]
+///   [EDIT:m2:recolor:red] [EDIT:m2:move:x,y] [EDIT:m2:scale:1.4] [ERASE:m2] [UNDO] [ADD] [ADD:LABEL:...]
 public enum DotTag: Equatable {
     case point(x: Int, y: Int, label: String, screen: Int?)
     case pointNone
@@ -62,6 +67,10 @@ public enum DotTag: Equatable {
     case images(query: String)
     /// Something Dot does itself the moment the tag streams in: open, scroll, click, type, keys.
     case act(ActionCommand)
+    /// A mark of ink on the live screen (parity batch 1).
+    case ink(InkSpec)
+    /// A change to the ink already on the screen, by mark id.
+    case inkEdit(InkEdit)
 }
 
 public enum ShapeKind: String, Equatable, Sendable { case line, arrow, circle, curve, polygon }
@@ -85,7 +94,7 @@ public extension DotTag {
     /// Tags that draw or move something on screen (as opposed to handing off or escalating).
     var isVisual: Bool {
         switch self {
-        case .point, .highlight, .target, .hover, .shape, .card, .reveal, .step, .clearBoard, .type, .web, .find, .stock, .place, .images: return true
+        case .point, .highlight, .target, .hover, .shape, .card, .reveal, .step, .clearBoard, .type, .web, .find, .stock, .place, .images, .ink, .inkEdit: return true
         case .pointNone, .agent, .newAgent, .tell, .jobMessage, .stopAgent, .routine, .think, .act: return false
         }
     }
@@ -122,11 +131,13 @@ public struct ParsedResponse: Equatable {
 }
 
 public enum TagParser {
-    static let tagNames = ["POINT", "HIGHLIGHT", "TARGET", "HOVER", "SHAPE", "CARD", "REVEAL", "STEP", "CLEAR_BOARD", "TYPE", "WEB", "FIND", "STOCK", "PLACE", "IMAGES", "AGENT", "NEW_AGENT", "TELL", "STOP_AGENT", "JOB", "ROUTINE", "THINK", "OPEN", "SCROLL", "KEY", "CLICK", "INSERT", "GO", "PLAY", "SETTING", "SPOTIFY"]
+    static let tagNames = ["POINT", "HIGHLIGHT", "TARGET", "HOVER", "SHAPE", "CARD", "REVEAL", "STEP", "CLEAR_BOARD", "TYPE", "WEB", "FIND", "STOCK", "PLACE", "IMAGES", "AGENT", "NEW_AGENT", "TELL", "STOP_AGENT", "JOB", "ROUTINE", "THINK", "OPEN", "SCROLL", "KEY", "CLICK", "INSERT", "GO", "PLAY", "SETTING", "SPOTIFY",
+                           "WRITE", "LABEL", "NUM", "FRAME", "UNDERLINE", "STRIKE", "CHECK", "CROSS", "CONNECT", "TRACE", "STICKY", "PHOTO",
+                           "TYPE_TEXT", "EDIT", "ERASE", "UNDO", "ADD"]
 
     // swiftlint:disable:next force_try
     static let pattern = try! NSRegularExpression(
-        pattern: #"\[(POINT|HIGHLIGHT|TARGET|HOVER|SHAPE|CARD|REVEAL|STEP|CLEAR_BOARD|TYPE|WEB|FIND|STOCK|PLACE|IMAGES|AGENT|NEW_AGENT|TELL|STOP_AGENT|JOB|ROUTINE|THINK|OPEN|SCROLL|KEY|CLICK|INSERT|GO|PLAY|SETTING|SPOTIFY)(?::([^\]]*))?\]"#,
+        pattern: #"\[(POINT|HIGHLIGHT|TARGET|HOVER|SHAPE|CARD|REVEAL|STEP|CLEAR_BOARD|TYPE_TEXT|TYPE|WEB|FIND|STOCK|PLACE|IMAGES|AGENT|NEW_AGENT|TELL|STOP_AGENT|JOB|ROUTINE|THINK|OPEN|SCROLL|KEY|CLICK|INSERT|GO|PLAY|SETTING|SPOTIFY|WRITE|LABEL|NUM|FRAME|UNDERLINE|STRIKE|CHECK|CROSS|CONNECT|TRACE|STICKY|PHOTO|EDIT|ERASE|UNDO|ADD)(?::([^\]]*))?\]"#,
         options: []
     )
 
@@ -178,7 +189,24 @@ public enum TagParser {
     }
 
     static func makeTag(kind: String, payload: String) -> DotTag? {
+        if let ink = InkKind(rawValue: kind.lowercased()) {
+            return InkSpec.parse(kind: ink, payload: payload).map { .ink($0) }
+        }
         switch kind {
+        case "EDIT":
+            return InkEdit.parseEdit(payload).map { .inkEdit($0) }
+        case "ERASE":
+            return InkEdit.parseErase(payload).map { .inkEdit($0) }
+        case "UNDO":
+            return .inkEdit(.undo)
+        case "ADD":
+            // [ADD] keeps the drawing for this answer; [ADD:LABEL:e3:name] is one mark drawn on top of it
+            let trimmed = payload.trimmingCharacters(in: .whitespaces)
+            guard !trimmed.isEmpty else { return .inkEdit(.keep) }
+            let split = trimmed.split(separator: ":", maxSplits: 1, omittingEmptySubsequences: false).map(String.init)
+            guard split.count == 2, let ink = InkKind(rawValue: split[0].lowercased()), var spec = InkSpec.parse(kind: ink, payload: split[1]) else { return nil }
+            spec.add = true
+            return .ink(spec)
         case "THINK":
             return .think
         case "OPEN", "SCROLL", "KEY", "CLICK", "INSERT", "GO", "PLAY", "SETTING", "SPOTIFY":
