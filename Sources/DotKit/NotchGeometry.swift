@@ -116,3 +116,12 @@ public enum NotchSilhouette {
         return path
     }
 }
+
+extension NotchGeometry {
+    /// A plain left click on the notch itself while it shows nothing (parity HO-01) drops Home down from it. A screen
+    /// with no notch has nothing to click; control-click stays Dot's menu; while the notch shows something the click is
+    /// that thing's.
+    public static func opensHome(_ point: CGPoint, geometry: NotchGeometry, showing: Bool, control: Bool) -> Bool {
+        geometry.hasNotch && !showing && !control && onNotch(point, geometry: geometry)
+    }
+}

@@ -121,6 +121,13 @@ extension Snapshots {
         model.focusOpen = false
         if let agent = model.agents.first(where: { $0.slug == "option" }) { model.composer = ""; model.select(agent) }
         shot("starters")
+        // HO-01: Home dropped down from the notch, the compact layout under its black band
+        if let agent = model.agents.first(where: { $0.slug == "scout" }) { model.select(agent) }
+        let drop = CGSize(width: 960, height: 600)
+        let dropView = NotchHomeView(model: model, topInset: 32, openWindow: {}, close: {}).frame(width: drop.width, height: drop.height)
+        let dropHost = NSHostingView(rootView: dropView)
+        dropHost.appearance = NSAppearance(named: .darkAqua)
+        if let image = drawHosted(dropHost, size: drop, wait: 2.5) { out.append(("notch-dropdown", image)) }
         let bar = VStack(alignment: .leading, spacing: 14) {
             TapbackBar(current: "👍") { _ in }
             HStack(alignment: .top) {

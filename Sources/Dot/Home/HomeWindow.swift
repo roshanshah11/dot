@@ -52,6 +52,10 @@ final class HomeWindowController {
     /// On quit: the open thread's draft and place.
     func saveState() { model.saveThreadState() }
 
+    /// Home in the notch (HO-01), from a click on the idle notch.
+    private lazy var dropdown = NotchHomeController(model: model) { [weak self] in self?.show() }
+    func toggleNotchDropdown() { dropdown.toggle() }
+
     func show(agent slug: String? = nil) {
         model.reload()
         if let slug, let agent = model.agents.first(where: { $0.slug == slug }) { model.select(agent); model.page = .agent }
@@ -536,6 +540,8 @@ final class HomeModel: ObservableObject {
 
 struct HomeView: View {
     @ObservedObject var model: HomeModel
+    /// Home dropped down from the notch (HO-01): agents and the open thread only.
+    var compact = false
     @State private var showingNew = false
     @State private var openSteps: Set<String> = []
     /// The message the pointer is over, for its tapback bar (HO-06).
@@ -545,13 +551,15 @@ struct HomeView: View {
 
     var body: some View {
         HStack(spacing: 0) {
-            rail.frame(width: 240)
+            rail.frame(width: compact ? 210 : 240)
             Divider()
-            switch model.page {
+            switch compact ? .agent : model.page {
             case .agent:
                 if let agent = model.selected {
                     thread(agent)
-                    if model.focusOpen {
+                    if compact {
+                        EmptyView()
+                    } else if model.focusOpen {
                         Divider()
                         FocusPane(model: model, agent: agent).frame(width: 420)
                     } else if model.showOutputs {
@@ -579,7 +587,7 @@ struct HomeView: View {
         }
         .sheet(isPresented: $showingNew) { newAgentSheet }
         .sheet(item: $model.renaming) { agent in renameSheet(agent) }
-        .frame(minWidth: 900, minHeight: 560)
+        .frame(minWidth: compact ? 640 : 900, minHeight: compact ? 400 : 560)
         .onAppear { model.reload() }
     }
 
@@ -593,7 +601,7 @@ struct HomeView: View {
                 Spacer()
                 Button { showingNew = true } label: { Image(systemName: "plus") }.buttonStyle(.plain).help("New agent")
             }
-            .padding(.horizontal, 14).padding(.top, 36).padding(.bottom, 8)
+            .padding(.horizontal, 14).padding(.top, compact ? 12 : 36).padding(.bottom, 8)
             TextField("Search agents", text: $model.filter)
                 .textFieldStyle(.roundedBorder).controlSize(.small)
                 .padding(.horizontal, 12).padding(.bottom, 6)
@@ -603,6 +611,14 @@ struct HomeView: View {
                 }
                 .padding(.horizontal, 8)
             }
+            if !compact { railPages }
+        }
+        .background(Color(nsColor: .windowBackgroundColor))
+    }
+
+    /// The pages under the agents, and today's spend (the window only).
+    @ViewBuilder private var railPages: some View {
+        Group {
             Divider().padding(.vertical, 4)
             pageRow("Day", icon: "sun.max", page: .day, detail: model.brief.map { "\($0.today.count) today · \($0.deadlines(withinDays: 7).count) due" })
             pageRow("History", icon: "clock.arrow.circlepath", page: .history, detail: nil)
@@ -632,7 +648,6 @@ struct HomeView: View {
             }
             .padding(.horizontal, 14).padding(.vertical, 10)
         }
-        .background(Color(nsColor: .windowBackgroundColor))
     }
 
     private var usageRing: some View {
@@ -746,9 +761,11 @@ struct HomeView: View {
                 Spacer()
                 if running { Button("Stop") { model.stop(agent) }.controlSize(.small) }
                 Toggle(isOn: $model.showCLAUDEMD) { Image(systemName: "doc.text") }.toggleStyle(.button).controlSize(.small).help("Identity (CLAUDE.md)")
-                Toggle(isOn: $model.showOutputs) { Image(systemName: "sidebar.right") }.toggleStyle(.button).controlSize(.small).help("Outputs")
+                if !compact {
+                    Toggle(isOn: $model.showOutputs) { Image(systemName: "sidebar.right") }.toggleStyle(.button).controlSize(.small).help("Outputs")
+                }
             }
-            .padding(.horizontal, 18).padding(.top, 34).padding(.bottom, 8)
+            .padding(.horizontal, 18).padding(.top, compact ? 10 : 34).padding(.bottom, 8)
             Divider()
             AgentProfileStrip(model: model, agent: agent)
             Divider()
@@ -1076,6 +1093,7 @@ struct HomeView: View {
                     .padding(.horizontal, 12).padding(.vertical, 9)
                     .background(Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 12))
                     .onSubmit { model.send() }
+                if !compact {
                 Button {
                     withAnimation(.easeOut(duration: 0.18)) { model.focusOpen.toggle() }
                 } label: {
@@ -1085,6 +1103,7 @@ struct HomeView: View {
                 }
                 .buttonStyle(.plain).foregroundStyle(.secondary)
                 .help("Focus: write a long draft beside the thread, then send it here or start it as a job")
+                }
                 Button {
                     model.send()
                 } label: {

@@ -135,3 +135,19 @@ final class HistoryIndexTests: XCTestCase {
         XCTAssertFalse(index.search(word).isEmpty, "searching \(word)")
     }
 }
+
+final class NotchHomeTests: XCTestCase {
+    func testClickOnTheNotchOpensHome() {
+        // a 1512 pt screen whose notch spans 663-848 and is 32 pt tall
+        let g = NotchGeometry(centerX: 756, topY: 982, notchWidth: 186, notchHeight: 32, hasNotch: true)
+        XCTAssertTrue(NotchGeometry.opensHome(CGPoint(x: 756, y: 970), geometry: g, showing: false, control: false))
+        XCTAssertTrue(NotchGeometry.opensHome(CGPoint(x: 670, y: 955), geometry: g, showing: false, control: false), "anywhere on the notch")
+        XCTAssertFalse(NotchGeometry.opensHome(CGPoint(x: 600, y: 970), geometry: g, showing: false, control: false), "a status item beside it")
+        XCTAssertFalse(NotchGeometry.opensHome(CGPoint(x: 756, y: 900), geometry: g, showing: false, control: false), "below the menu bar")
+        XCTAssertFalse(NotchGeometry.opensHome(CGPoint(x: 756, y: 970), geometry: g, showing: true, control: false), "the notch shows something")
+        XCTAssertFalse(NotchGeometry.opensHome(CGPoint(x: 756, y: 970), geometry: g, showing: false, control: true), "control-click is the menu")
+        var flat = g
+        flat.hasNotch = false
+        XCTAssertFalse(NotchGeometry.opensHome(CGPoint(x: 756, y: 980), geometry: flat, showing: false, control: false), "no notch, nothing to click")
+    }
+}

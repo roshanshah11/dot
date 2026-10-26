@@ -272,6 +272,7 @@ final class NotchHUD {
         observeContentSize()
         watchMouse()
         watchRightClicks()
+        watchNotchClicks()
         NotificationCenter.default.addObserver(forName: NSApplication.didChangeScreenParametersNotification, object: nil, queue: .main) { [weak self] _ in
             Task { @MainActor in
                 guard let self else { return }
@@ -810,6 +811,27 @@ final class NotchHUD {
         let idle = !model.hasContent && model.presence
         let through = idle && NotchGeometry.passesThrough(NSEvent.mouseLocation, geometry: geometry)
         if panel.ignoresMouseEvents != through { panel.ignoresMouseEvents = through }
+    }
+
+    /// A plain click on the notch while it shows nothing (HO-01): Home drops down. The idle notch may have no window
+    /// up at all (talk-only), so clicks are watched everywhere, and only the notch's own rect counts.
+    var onNotchClick: (() -> Void)?
+
+    private func watchNotchClicks() {
+        let decide: (NSEvent) -> Bool = { [weak self] event in
+            MainActor.assumeIsolated {
+                guard let self, self.onNotchClick != nil else { return false }
+                guard NotchGeometry.opensHome(NSEvent.mouseLocation, geometry: self.currentGeometry(), showing: self.model.hasContent,
+                                              control: event.modifierFlags.contains(.control)) else { return false }
+                self.onNotchClick?()
+                return true
+            }
+        }
+        if let global = NSEvent.addGlobalMonitorForEvents(matching: .leftMouseDown, handler: { _ = decide($0) }) { mouseMonitors.append(global) }
+        if let local = NSEvent.addLocalMonitorForEvents(matching: .leftMouseDown, handler: { [weak self] event in
+            guard event.window === self?.panel else { return event }
+            return decide(event) ? nil : event
+        }) { mouseMonitors.append(local) }
     }
 
     private func watchRightClicks() {
