@@ -54,6 +54,10 @@ struct DotConfig: Codable {
     var quietOnCalls = true
     /// The same quiet while a Focus (Do Not Disturb, Work, Sleep...) is on (parity S1).
     var quietInFocus = true
+    /// The two base chords (parity SE-01, SE-02): hold, tap and drag of the conversation chord (Shift added = agent),
+    /// and hold of the dictation chord. A file from before has neither and gets today's.
+    var conversationChord = Chord.conversationDefault
+    var dictationChord = Chord.dictationDefault
     /// Ink on the screen makes its pen sounds (parity D6).
     var penSounds = true
     /// A caption strip at the bottom of the screen while Dot talks, words lighting in turn (parity D7).
@@ -281,6 +285,8 @@ struct DotConfig: Codable {
         showInRecordings = get(.showInRecordings, d.showInRecordings)
         quietOnCalls = get(.quietOnCalls, d.quietOnCalls)
         quietInFocus = get(.quietInFocus, d.quietInFocus)
+        conversationChord = get(.conversationChord, d.conversationChord)
+        dictationChord = get(.dictationChord, d.dictationChord)
         penSounds = get(.penSounds, d.penSounds)
         inkCaptions = get(.inkCaptions, d.inkCaptions)
         stackSide = get(.stackSide, d.stackSide)

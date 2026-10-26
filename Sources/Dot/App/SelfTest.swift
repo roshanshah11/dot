@@ -56,7 +56,61 @@ enum SelfTest {
         stepAside(check, hud: hud)
         quietInFocus(check)
         dictationWatch(check)
+        chords(check)
         return ok
+    }
+
+    /// SE-01/02: the event tap's handler fed events made here (none is posted): today's chords, Shift for an agent,
+    /// exact matching, a recorded keyed chord whose key is kept from the app, and nothing while recording.
+    static func chords(_ check: (String, Bool) -> Void) {
+        let monitor = HotkeyMonitor()
+        var events: [HotkeyMonitor.Event] = []
+        monitor.onEvent = { events.append($0) }
+        func flags(_ f: CGEventFlags) {
+            guard let e = CGEvent(keyboardEventSource: nil, virtualKey: 0x3B, keyDown: true) else { return }
+            e.type = .flagsChanged
+            e.flags = f
+            _ = monitor.handle(type: .flagsChanged, event: e)
+        }
+        func key(_ code: CGKeyCode, down: Bool, _ f: CGEventFlags) -> Bool {
+            guard let e = CGEvent(keyboardEventSource: nil, virtualKey: code, keyDown: down) else { return false }
+            e.flags = f
+            return monitor.handle(type: down ? .keyDown : .keyUp, event: e)
+        }
+        func drain() -> [HotkeyMonitor.Event] {
+            RunLoop.main.run(until: Date().addingTimeInterval(0.05))
+            defer { events = [] }
+            return events
+        }
+        monitor.configure(conversation: .conversationDefault, dictation: .dictationDefault, testing: true)
+        flags([.maskControl]); flags([.maskControl, .maskAlternate]); flags([.maskControl, .maskAlternate, .maskShift]); flags([])
+        let talk = drain()
+        check("control+option talks, Shift turns it to an agent, letting go ends it",
+              talk.first == .pressed(.talk) && talk.contains(.modeChanged(.agent)) && talk.contains { if case .released(.agent, _) = $0 { return true }; return false })
+        flags([.maskControl, .maskAlternate, .maskCommand]); flags([])
+        check("command on top is not the chord (exact match)", drain().isEmpty)
+        flags([.maskControl, .maskSecondaryFn]); flags([])
+        let dictate = drain()
+        check("control+fn dictates", dictate.first == .pressed(.dictate))
+        let space = Chord([.option], keyCode: 49, keyLabel: "Space")
+        monitor.configure(conversation: space, dictation: .dictationDefault, testing: true)
+        flags([.maskAlternate])
+        check("a keyed chord doesn't fire on its modifier alone", drain().isEmpty)
+        let kept = key(49, down: true, [.maskAlternate])
+        let repeatKept = key(49, down: true, [.maskAlternate])
+        let pressed = drain()
+        let upKept = key(49, down: false, [.maskAlternate])
+        flags([])
+        let released = drain()
+        check("option+Space talks and its key never reaches the app", kept && repeatKept && upKept && pressed == [.pressed(.talk)]
+              && released.contains { if case .released(.talk, _) = $0 { return true }; return false })
+        flags([.maskControl, .maskAlternate]); flags([])
+        check("the old chord no longer fires once another is recorded", drain().isEmpty)
+        check("other keys pass through", !key(2, down: true, []) && !key(2, down: false, []))
+        _ = drain()
+        monitor.paused = true
+        _ = key(49, down: true, [.maskAlternate]); _ = key(49, down: false, [.maskAlternate])
+        check("nothing fires while he records a chord", drain().isEmpty)
     }
 
     /// DI-05: the correction watch over a scripted field. His fix inside the range, then five quiet seconds, gives a

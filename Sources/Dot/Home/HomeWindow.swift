@@ -26,6 +26,12 @@ final class HomeWindowController {
     }
 
     /// Starts a behind job from the focus pane's text (HO-10); false when it couldn't.
+    /// The Shortcuts page is recording a chord: the event tap stands down until it's done (SE-01).
+    var onRecordingShortcut: ((Bool) -> Void)? {
+        get { model.onRecordingShortcut }
+        set { model.onRecordingShortcut = newValue }
+    }
+
     /// Restart Dot through its launch agent (ON-02's notice; Settings has the same button).
     func relaunch() { model.relaunch() }
 
@@ -140,6 +146,7 @@ final class HomeModel: ObservableObject {
     @Published var claudeMD = ""
     @Published var runs: [Ledger.Row] = []
     @Published var permissions = Permissions.status()
+    var onRecordingShortcut: ((Bool) -> Void)?
     /// Dot, the agent host and cua-driver with their grants (ON-01, ON-03); read on demand, off the main thread.
     @Published var holders: [PermissionHolder] = []
     @Published var holdersLoading = false
@@ -586,7 +593,7 @@ struct HomeView: View {
                         outputsColumn(agent).frame(width: 300)
                     }
                 } else {
-                    VStack { Spacer(); Text("No agent yet. Make one, or hold control+option+shift and say what it should do.").foregroundStyle(.secondary); Spacer() }
+                    VStack { Spacer(); Text("No agent yet. Make one, or hold \(model.settings.conversationChord.words)+shift and say what it should do.").foregroundStyle(.secondary); Spacer() }
                         .frame(maxWidth: .infinity)
                 }
             case .day: dayView
@@ -597,7 +604,7 @@ struct HomeView: View {
             case .voice: VoicePage(model: model)
             case .microphone: MicrophonePage(model: model)
             case .dictation: DictationPage(model: model, editor: model.dictionary)
-            case .shortcuts: ShortcutsPage()
+            case .shortcuts: ShortcutsPage(model: model)
             case .cursor: CursorPage(model: model)
             case .skills: SkillsPage(config: model.config)
             case .suggestions: SuggestionsPage(model: model)

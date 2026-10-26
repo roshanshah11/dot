@@ -160,6 +160,11 @@ extension Snapshots {
         // DI-05: the Dictation page with two corrections waiting for his Add
         model.page = .dictation
         shot("dictation")
+        // SE-01/02: Shortcuts with a recorded keyed talk chord
+        model.settings.conversationChord = Chord([.option], keyCode: 49, keyLabel: "Space")
+        model.page = .shortcuts
+        shot("shortcuts")
+        model.settings.conversationChord = .conversationDefault
         model.page = .agent
         // HO-01: Home dropped down from the notch, the compact layout under its black band
         if let agent = model.agents.first(where: { $0.slug == "scout" }) { model.select(agent) }

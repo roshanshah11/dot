@@ -176,6 +176,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         home.onSettingsChanged = { [weak self] changed in Task { @MainActor in self?.applySettings(changed) } }
         home.onStartTask = { [weak self] text in self?.talk.startTask(fromHome: text) ?? false }
         talk.onRelaunch = { [weak self] in self?.home.relaunch() }
+        home.onRecordingShortcut = { [weak self] recording in self?.hotkeys.paused = recording }
         hud.onNotchClick = { [weak self] in self?.home.toggleNotchDropdown() }
         stepAside.anythingShown = { [weak self] in
             guard let self else { return false }
@@ -330,6 +331,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if changed.notchPresence != before.notchPresence { hud.setPresence(changed.notchPresence) }
         if changed.menuBarIcon != before.menuBarIcon { placeStatusItem() }
         if changed.microphoneName != before.microphoneName { talk.setMicrophone(name: changed.microphoneName) }
+        if changed.conversationChord != before.conversationChord || changed.dictationChord != before.dictationChord { applyChords() }
         applyAliveSettings(changed, before: before)
         Log.info("settings: applied from the dot window")
     }
@@ -559,21 +561,50 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let status = Permissions.status()
         if !status.allGranted {
             home.show()
-            hud.flash(status: "grant the permissions in the Dot window, then hold control+option", for: 8)
+            hud.flash(status: "grant the permissions in the Dot window, then hold \(hotkeys.conversation.words)", for: 8)
         } else {
-            hud.flash(status: "hold control+option and talk", for: 4)
+            hud.flash(status: "hold \(hotkeys.conversation.words) and talk", for: 4)
         }
     }
 
+    /// SE-01/02: the saved chords, or today's for this session with the reason in the notch when they can't be used
+    /// (a chord this version refuses, or a keyed chord whose active tap macOS won't make).
+    private func applyChords() {
+        let pick = ChordRules.effective(conversation: config.conversationChord, dictation: config.dictationChord)
+        if !hotkeys.configure(conversation: pick.conversation, dictation: pick.dictation) {
+            hotkeys.configure(conversation: .conversationDefault, dictation: .dictationDefault)
+            if !hotkeys.isRunning { hotkeys.start() }
+            return chordsFellBack(pick.fallback ?? "macOS wouldn't let Dot hold a key for the chord")
+        }
+        if let why = pick.fallback { chordsFellBack(why) }
+    }
+
+    /// The first start, and the retries while Accessibility is off: a keyed chord whose active tap fails falls back.
+    private func startHotkeys() -> Bool {
+        if hotkeys.start() { return true }
+        guard hotkeys.conversation.keyed || hotkeys.dictation.keyed else { return false }
+        hotkeys.configure(conversation: .conversationDefault, dictation: .dictationDefault)
+        guard hotkeys.start() else { return false }
+        chordsFellBack("macOS wouldn't let Dot hold a key for the chord")
+        return true
+    }
+
+    private func chordsFellBack(_ why: String) {
+        Log.warn("hotkey: saved chords not used this session: \(why)")
+        hud.notify(NotchNotice(id: "chords", icon: "keyboard", title: "using control+option and control+fn for now",
+                               detail: "Your recorded shortcut can't be used: \(why). Settings > Shortcuts to record another.", tone: .warn, seconds: 12))
+    }
+
     private func startHotkeysWhenTrusted() {
-        if Permissions.status().accessibility, hotkeys.start() { return }
+        applyChords()
+        if Permissions.status().accessibility, startHotkeys() { return }
         permissionTimer?.invalidate()
         permissionTimer = Timer.scheduledTimer(withTimeInterval: 2.0, repeats: true) { [weak self] timer in
             Task { @MainActor in
                 guard let self else { timer.invalidate(); return }
-                if Permissions.status().accessibility, self.hotkeys.start() {
+                if Permissions.status().accessibility, self.startHotkeys() {
                     timer.invalidate()
-                    self.hud.flash(status: "ready: hold control+option and talk", for: 4)
+                    self.hud.flash(status: "ready: hold \(self.hotkeys.conversation.words) and talk", for: 4)
                 }
             }
         }

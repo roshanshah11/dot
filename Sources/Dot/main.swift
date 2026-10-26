@@ -296,6 +296,7 @@ case "--help", "-h":
 
     Hold control+option and talk; drag while holding to draw a box to ask about.
     Hold control+option+shift to hand the request to an agent. Tap control+option to type.
+    (Those are the default chords; Home > Shortcuts records others.)
     Escape stops Dot talking. Dot lives beside the cursor; toggle that from the menu bar.
     Config: ~/.config/dot/config.json   Agents: ~/Dot/agents   Log: ~/Library/Logs/Dot/dot.log
     """)

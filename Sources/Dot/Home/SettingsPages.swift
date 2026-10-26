@@ -428,49 +428,210 @@ struct MicrophonePage: View {
 // MARK: - Shortcuts
 
 struct ShortcutsPage: View {
-    struct Shortcut: Identifiable {
+    @ObservedObject var model: HomeModel
+    @StateObject private var recorder = ChordRecorder()
+
+    struct Gesture: Identifiable {
         let action: String
         let how: String
-        let keys: [String]
         let detail: String
         var id: String { action }
     }
 
-    /// Fixed chords, read by HotkeyMonitor; double-tap fn belongs to Murmur.
-    static let shortcuts = [
-        Shortcut(action: "Talk to Dot", how: "hold", keys: ["⌃ control", "⌥ option"], detail: "let go when you are done; Dot answers out loud"),
-        Shortcut(action: "Type a question", how: "tap", keys: ["⌃ control", "⌥ option"], detail: "a quick tap with nothing said asks in text"),
-        Shortcut(action: "Hand it to an agent", how: "hold", keys: ["⌃ control", "⌥ option", "⇧ shift"], detail: "the request goes to a background agent"),
-        Shortcut(action: "Ask about part of the screen", how: "hold and drag", keys: ["⌃ control", "⌥ option"], detail: "draw a box while the keys are down"),
-        Shortcut(action: "Dictate a sentence", how: "hold", keys: ["⌃ control", "fn"], detail: "the words go into the field you are in"),
-        Shortcut(action: "Record with Murmur", how: "double-tap", keys: ["fn"], detail: "the long recorder; Dot reads its history"),
-        Shortcut(action: "Stop Dot", how: "press", keys: ["esc"], detail: "stops speaking and interrupts the turn"),
+    /// The conversation chord is one chord with four gestures (SE-01), not four shortcuts.
+    static let conversationGestures = [
+        Gesture(action: "Talk to Dot", how: "hold", detail: "let go when you are done; Dot answers out loud"),
+        Gesture(action: "Type a question", how: "tap", detail: "a quick tap with nothing said asks in text"),
+        Gesture(action: "Ask about part of the screen", how: "hold and drag", detail: "draw a box while it is down"),
+        Gesture(action: "Hand it to an agent", how: "hold with ⇧ shift", detail: "the request goes to a background agent"),
     ]
 
     var body: some View {
         SettingsPage("Shortcuts", subtitle: "The keys Dot listens for, anywhere on the Mac.") {
-            HomeSection("Keys") {
-                ForEach(Self.shortcuts) { shortcut in
-                    HStack(alignment: .center, spacing: 12) {
+            HomeSection("Talk chord") {
+                chordRow(.conversation, chord: model.settings.conversationChord)
+                ForEach(Self.conversationGestures) { gesture in
+                    HStack(spacing: 12) {
                         VStack(alignment: .leading, spacing: 2) {
-                            Text(shortcut.action).font(.system(size: 13, weight: .medium))
-                            Text(shortcut.detail).font(.caption).foregroundStyle(.secondary)
+                            Text(gesture.action).font(.system(size: 13, weight: .medium))
+                            Text(gesture.detail).font(.caption).foregroundStyle(.secondary)
                         }
                         Spacer()
-                        Text(shortcut.how).font(.caption).foregroundStyle(.secondary)
-                        HStack(spacing: 4) {
-                            ForEach(Array(shortcut.keys.enumerated()), id: \.offset) { index, key in
-                                if index > 0 { Text("+").font(.caption).foregroundStyle(.tertiary) }
-                                KeyCap(label: key)
-                            }
-                        }
+                        Text(gesture.how).font(.caption).foregroundStyle(.secondary)
                     }
-                    .padding(.vertical, 4)
-                    if shortcut.id != Self.shortcuts.last?.id { Divider() }
+                    .padding(.vertical, 2)
                 }
             }
-            Text("Run `Dot --help` in a terminal for the command-line flags.").font(.callout).foregroundStyle(.secondary)
+            HomeSection("Dictation chord") {
+                chordRow(.dictation, chord: model.settings.dictationChord)
+                Text("Hold it and speak: the words go into the field you are in.").font(.caption).foregroundStyle(.secondary)
+            }
+            HomeSection("Fixed") {
+                fixedRow("Record with Murmur", how: "double-tap", keys: ["fn"], detail: "the long recorder; Dot reads its history")
+                Divider()
+                fixedRow("Stop Dot", how: "press", keys: ["esc"], detail: "stops speaking and interrupts the turn")
+            }
+            HStack(spacing: 10) {
+                Button("Reset to control+option and control+fn") {
+                    model.settings.conversationChord = .conversationDefault
+                    model.settings.dictationChord = .dictationDefault
+                    recorder.note = nil
+                }
+                .controlSize(.small)
+                .disabled(model.settings.conversationChord == .conversationDefault && model.settings.dictationChord == .dictationDefault)
+                Text("Run `Dot --help` in a terminal for the command-line flags.").font(.caption).foregroundStyle(.secondary)
+            }
+            SettingsSaveBar(model: model)
         }
+        .onDisappear { recorder.cancel() }
+    }
+
+    private func chordRow(_ which: ChordRecorder.Which, chord: Chord) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 8) {
+                if recorder.recording == which {
+                    Text(recorder.live.isEmpty ? "Press the keys together, then let go" : recorder.live.joined(separator: " + "))
+                        .font(.system(size: 12.5, weight: .medium)).foregroundStyle(HomeStyle.accent)
+                    Spacer()
+                    Button("Cancel") { recorder.cancel() }.controlSize(.small)
+                } else {
+                    HStack(spacing: 4) {
+                        ForEach(Array(chord.caps.enumerated()), id: \.offset) { index, key in
+                            if index > 0 { Text("+").font(.caption).foregroundStyle(.tertiary) }
+                            KeyCap(label: key)
+                        }
+                    }
+                    Spacer()
+                    Button("Record") {
+                        recorder.start(which) { new in accept(new, for: which) }
+                        model.onRecordingShortcut?(true)
+                        recorder.onEnd = { model.onRecordingShortcut?(false) }
+                    }
+                    .controlSize(.small).disabled(recorder.recording != nil)
+                }
+            }
+            if let note = recorder.note, recorder.noteFor == which {
+                Text(note).font(.caption).foregroundStyle(.orange).fixedSize(horizontal: false, vertical: true)
+            }
+        }
+    }
+
+    /// A recorded chord is checked before it is kept; a refusal says why and changes nothing.
+    private func accept(_ chord: Chord, for which: ChordRecorder.Which) {
+        let conversation = which == .conversation ? chord : model.settings.conversationChord
+        let dictation = which == .dictation ? chord : model.settings.dictationChord
+        if let why = ChordRules.problem(chord, conversation: which == .conversation) ?? ChordRules.clash(conversation: conversation, dictation: dictation) {
+            recorder.note = "Not kept: \(why)."
+            recorder.noteFor = which
+            return
+        }
+        if which == .conversation { model.settings.conversationChord = chord } else { model.settings.dictationChord = chord }
+        recorder.note = "Save to start using it."
+        recorder.noteFor = which
+    }
+
+    private func fixedRow(_ action: String, how: String, keys: [String], detail: String) -> some View {
+        HStack(alignment: .center, spacing: 12) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(action).font(.system(size: 13, weight: .medium))
+                Text(detail).font(.caption).foregroundStyle(.secondary)
+            }
+            Spacer()
+            Text(how).font(.caption).foregroundStyle(.secondary)
+            HStack(spacing: 4) { ForEach(keys, id: \.self) { KeyCap(label: $0) } }
+        }
+        .padding(.vertical, 4)
+    }
+}
+
+/// Records one chord in the Home window (SE-01): every modifier held at once, and at most one key, finished when
+/// everything is let go. Escape alone cancels. The global tap is paused meanwhile (onRecordingShortcut).
+@MainActor
+final class ChordRecorder: ObservableObject {
+    enum Which: Equatable { case conversation, dictation }
+
+    @Published private(set) var recording: Which?
+    @Published private(set) var live: [String] = []
+    @Published var note: String?
+    @Published var noteFor: Which?
+    var onEnd: () -> Void = {}
+    private var monitor: Any?
+    private var seen = Set<ChordModifier>()
+    private var key: (code: UInt16, label: String)?
+    private var done: (Chord) -> Void = { _ in }
+
+    func start(_ which: Which, done: @escaping (Chord) -> Void) {
+        cancel()
+        recording = which
+        note = nil
+        seen = []
+        key = nil
+        live = []
+        self.done = done
+        monitor = NSEvent.addLocalMonitorForEvents(matching: [.flagsChanged, .keyDown, .keyUp]) { [weak self] event in
+            guard let self else { return event }
+            return self.handle(event) ? nil : event
+        }
+    }
+
+    func cancel() {
+        guard recording != nil else { return }
+        if let monitor { NSEvent.removeMonitor(monitor) }
+        monitor = nil
+        recording = nil
+        live = []
+        onEnd()
+        onEnd = {}
+    }
+
+    static func modifiers(_ flags: NSEvent.ModifierFlags) -> Set<ChordModifier> {
+        var out = Set<ChordModifier>()
+        if flags.contains(.control) { out.insert(.control) }
+        if flags.contains(.option) { out.insert(.option) }
+        if flags.contains(.shift) { out.insert(.shift) }
+        if flags.contains(.command) { out.insert(.command) }
+        if flags.contains(.function) { out.insert(.fn) }
+        return out
+    }
+
+    /// True when the event was part of the recording (kept from the window).
+    private func handle(_ event: NSEvent) -> Bool {
+        switch event.type {
+        case .keyDown:
+            if event.keyCode == 53, seen.isEmpty { cancel(); return true }
+            if key == nil, !event.isARepeat { key = (event.keyCode, Self.label(event)) }
+            update(Self.modifiers(event.modifierFlags))
+            return true
+        case .keyUp:
+            return true
+        case .flagsChanged:
+            let now = Self.modifiers(event.modifierFlags)
+            if now.isEmpty, !seen.isEmpty || key != nil { finish() } else { update(now) }
+            return true
+        default:
+            return false
+        }
+    }
+
+    private func update(_ now: Set<ChordModifier>) {
+        seen.formUnion(now)
+        live = Chord(key == nil ? seen : seen.subtracting([.fn]), keyCode: key?.code, keyLabel: key?.label).caps
+    }
+
+    private func finish() {
+        let chord = Chord(key == nil ? seen : seen.subtracting([.fn]), keyCode: key?.code, keyLabel: key?.label)
+        let done = self.done
+        cancel()
+        done(chord)
+    }
+
+    static func label(_ event: NSEvent) -> String {
+        let named: [UInt16: String] = [49: "Space", 36: "Return", 48: "Tab", 51: "Delete", 123: "←", 124: "→", 125: "↓", 126: "↑",
+                                       122: "F1", 120: "F2", 99: "F3", 118: "F4", 96: "F5", 97: "F6", 98: "F7", 100: "F8",
+                                       101: "F9", 109: "F10", 103: "F11", 111: "F12"]
+        if let name = named[event.keyCode] { return name }
+        return (event.charactersIgnoringModifiers ?? "").uppercased().trimmingCharacters(in: .whitespaces).isEmpty
+            ? "key \(event.keyCode)" : (event.charactersIgnoringModifiers ?? "").uppercased()
     }
 }
 
