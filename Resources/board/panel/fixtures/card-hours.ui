@@ -1,0 +1,11 @@
+<!-- expect: .box table ; card ; title: office hours today -->
+<box tone="card">
+<table>
+<tr><th>When</th><th>Who</th><th>Where</th></tr>
+<tr class="hl"><td>10:30 to 11:30</td><td>MATH 20250 TA</td><td>Eckhart 207</td></tr>
+<tr><td>1:00 to 2:00</td><td>Professor, sign up first</td><td>Ryerson 255</td></tr>
+<tr><td>4:00 to 5:00</td><td>PHYS 13100 TA</td><td>KPTC 105</td></tr>
+</table>
+<text size="xs" color="muted">Free between 11:30 and 1:00</text>
+<cite label="Canvas course pages">sample</cite>
+</box>

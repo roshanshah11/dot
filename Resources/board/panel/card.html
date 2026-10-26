@@ -1,0 +1,28 @@
+<!doctype html>
+<html><head><meta charset="utf-8">
+<title>Dot card</title>
+<link rel="stylesheet" href="../katex/katex.min.css">
+<link rel="stylesheet" href="../viz/viz.css">
+<link rel="stylesheet" href="panel.css">
+<script src="../katex/katex.min.js"></script>
+<script src="../katex/auto-render.min.js"></script>
+<script src="../viz/framework.js"></script>
+<script src="../viz/index.js"></script>
+<script src="panel.js"></script>
+<style>:root { --accent: {{ACCENT}}; }</style>
+<style>
+/* A card Dot designed (parity C1): the panel's renderer at card size. The card window draws the background and the
+   title strip, so the page is see-through, has no header, and grows to its content so the window can fit it. */
+html, body { height: auto; background: transparent; font-size: 13.5px; line-height: 1.5; }
+body { display: block; }
+#head { display: none; }
+#scroller { overflow: visible; padding: 2px 14px 12px; }
+#content > .block { margin: 0 0 8px; }
+.lead { font-size: 15px; margin: 8px 0 4px; }
+.title { margin: 10px 0 4px; }
+.title.lg { font-size: 17px; } .title.md { font-size: 15px; }
+</style>
+</head><body class="card">
+<header id="head"><span id="title"></span><button id="min" type="button" aria-label="Minimize">−</button><button id="close" type="button" aria-label="Close">×</button></header>
+<main id="scroller"><div id="content"></div></main>
+</body></html>

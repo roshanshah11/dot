@@ -1,0 +1,12 @@
+<!-- expect: .box .row .badge ; card ; title: your flight friday -->
+<box tone="card">
+<row align="center" gap="10"><badge tone="info">UA 1542</badge><text size="xs" color="muted">Fri Nov 20 · on time</text></row>
+<row align="center" gap="14">
+<box tone="plain"><title size="lg">ORD</title><text size="sm" color="muted">Chicago 7:05 am</text></box>
+<text size="lg" color="accent">→</text>
+<box tone="plain"><title size="lg">SFO</title><text size="sm" color="muted">San Francisco 9:41 am</text></box>
+</row>
+<divider>
+<row gap="16"><text size="sm">Gate C18</text><text size="sm">Seat 23F</text><text size="sm">Boards 6:25</text></row>
+<cite label="United confirmation email">sample</cite>
+</box>

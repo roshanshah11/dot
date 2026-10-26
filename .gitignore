@@ -6,5 +6,6 @@ build/
 Package.resolved.bak
 Resources/board/card-*.html
 Resources/board/card-snapshot*
+Resources/board/panel/card-*.html
 docs/catalog-status.lock
 docs/catalog-status.tmp

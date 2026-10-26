@@ -179,6 +179,8 @@ final class CardPanel: NSPanel, WKNavigationDelegate {
     private let stripHeight: CGFloat = 30
     private var pendingReveal: (Int, (CGRect?) -> Void)?
     private var loaded = false
+    /// A card Dot designed in its UI language (C1): loaded into the panel renderer once the page is up.
+    private var panelCard: (markup: String, light: Bool)?
 
     override var title: String { get { title_ } set { title_ = newValue; titleLabel.stringValue = newValue } }
 
@@ -287,6 +289,8 @@ final class CardPanel: NSPanel, WKNavigationDelegate {
         loaded = false
         shown = 0
         total = 0
+        if CardMarkup.isUILanguage(html) { return loadPanelCard(html, resources: resources, tokens: tokens, mode: mode) }
+        panelCard = nil
         guard let template = try? String(contentsOf: resources.appendingPathComponent("board.html"), encoding: .utf8) else { return }
         let (page, lookName) = tokens.cardPage(template: template, content: html, mode: mode)
         let look = tokens.look(lookName)
@@ -301,6 +305,29 @@ final class CardPanel: NSPanel, WKNavigationDelegate {
         } catch {
             Log.warn("board: could not write the card page: \(error)")
             web.loadHTMLString(page, baseURL: resources)
+        }
+    }
+
+    /// C1: the UI language rendered by the explainer panel's own renderer, at card size (panel/card.html), in the
+    /// card's look.
+    private func loadPanelCard(_ markup: String, resources: URL, tokens: StyleTokens, mode: String?) {
+        let lookName = tokens.lookName(forHTML: markup, mode: mode)
+        let look = tokens.look(lookName)
+        container.layer?.backgroundColor = Self.color(look.background, alpha: look.backgroundAlpha).cgColor
+        container.layer?.borderColor = Self.color(look.border).cgColor
+        strip.layer?.backgroundColor = Self.color(look.glass, alpha: 0.04).cgColor
+        titleLabel.textColor = Self.color(look.accent)
+        panelCard = (markup, CardMarkup.isLight(hex: look["background"] ?? ""))
+        let folder = resources.appendingPathComponent("panel")
+        guard let template = try? String(contentsOf: folder.appendingPathComponent("card.html"), encoding: .utf8) else { return }
+        let page = template.replacingOccurrences(of: "{{ACCENT}}", with: look.accentHex)
+        let file = folder.appendingPathComponent("card-\(cardID).html")
+        do {
+            try page.write(to: file, atomically: true, encoding: .utf8)
+            web.loadFileURL(file, allowingReadAccessTo: resources)
+        } catch {
+            Log.warn("board: could not write the card page: \(error)")
+            web.loadHTMLString(page, baseURL: folder)
         }
     }
 
@@ -351,6 +378,11 @@ final class CardPanel: NSPanel, WKNavigationDelegate {
             }
             return
         }
+        if let card = panelCard {
+            let script = "panel.load(\(CardMarkup.jsString(card.markup)), {id: \(CardMarkup.jsString(cardID)), title: \(CardMarkup.jsString(title))});"
+                + (card.light ? " document.documentElement.dataset.theme = 'light';" : "")
+            web.evaluateJavaScript(script) { _, error in if let error { Log.warn("board: card \(self.cardID) markup: \(error.localizedDescription)") } }
+        }
         // Fonts and typesetting settle a moment after load; measure again then.
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { [weak self] in self?.fitToContent {} }
         fitToContent { [weak self] in
@@ -364,6 +396,11 @@ final class CardPanel: NSPanel, WKNavigationDelegate {
                 self.reveal(step, completion: completion)
             }
         }
+    }
+
+    /// Runs a script in the card's page and hands back its value (the card self-test reads what rendered).
+    func evaluate(_ script: String, completion: @escaping (Any?) -> Void) {
+        web.evaluateJavaScript(script) { value, _ in completion(value) }
     }
 
     private func fitToContent(_ then: @escaping () -> Void) {

@@ -5,14 +5,15 @@
     scripts/panel-check.py kernel messy    # some
 
 Each fixture's first line may carry `<!-- expect: .sel .sel:N ; click: label ; slide: var=value ; vars: name ; tolerant ;
-page: tick t1 i1 ; form f1 ; review r1 ; letter l1 ; light -->`.
+page: tick t1 i1 ; form f1 ; review r1 ; letter l1 ; light ; card -->`.
 Checks: no console or page error (a fixture marked tolerant may log handled ones), every expected selector present
 (at least N times), no script ran (window.__pwned), streaming the markup in 13-character chunks, a frame each, ends in the same text
 as loading it at once and throws nothing on the way, a quiz answer and a chip tap post messages, `click:` presses that button and the named vars
 change, `slide:` moves a slider and the text changes. `page:` works a job page's controls in order and asserts the exact
 page_* message each posts (and that a second press posts nothing); `letter` fills the draft through panel.letter and fails if
 anything written inside <letter> (the fixture carries a CANARY there) reaches the page. Rows with no id must be inert.
-`light` adds screenshots in the light tokens. Screenshots at the panel's default width (440) to --out.
+`light` adds screenshots in the light tokens. `card` loads the card page (panel/card.html, a card Dot designed, parity C1)
+instead of the panel. Screenshots at the panel's default width (440) to --out.
 """
 import argparse, datetime, http.server, json, re, socket, sys, threading
 from pathlib import Path
@@ -34,17 +35,19 @@ def serve():
 
 def parse_expect(text):
     m = re.match(r"\s*<!--\s*expect:(.*?)-->", text)
-    spec = {"sel": [], "click": None, "slide": None, "vars": [], "tolerant": False, "page": [], "light": False}
+    spec = {"sel": [], "click": None, "slide": None, "vars": [], "tolerant": False, "page": [], "light": False, "card": False}
     if not m: return spec
     for part in m.group(1).split(";"):
         part = part.strip()
         if part.startswith("page:"): spec["page"].append(part[5:].strip())
         elif spec["page"] and re.match(r"(tick|form|review|letter)\b", part): spec["page"].append(part)
         elif part == "light": spec["light"] = True
+        elif part == "card": spec["card"] = True
         elif part.startswith("click:"): spec["click"] = part[6:].strip()
         elif part.startswith("slide:"): spec["slide"] = part[6:].strip()
         elif part.startswith("vars:"): spec["vars"] = part[5:].split()
         elif part == "tolerant": spec["tolerant"] = True
+        elif part.startswith("title:"): pass   # the strip title a card snapshot draws
         elif part: spec["sel"] += part.split()
     return spec
 
@@ -192,8 +195,10 @@ def check(page, port, name, outdir):
     page.on("console", lambda m: errors.append(m.text) if m.type == "error" else None)
     page.on("pageerror", lambda e: errors.append(str(e)))
     page.add_init_script("window.alert = function () { window.__pwned = true; };")
-    page.goto(f"http://127.0.0.1:{port}/panel/panel.html")
+    page.goto(f"http://127.0.0.1:{port}/panel/{'card' if spec['card'] else 'panel'}.html")
     page.wait_for_function("document.getElementById('content') !== null && window.panel")
+    # the card page is see-through (its window draws the ground); paint the ground behind it for the picture
+    if spec["card"]: page.add_style_tag(content="html { background: var(--ground) !important; }")
     page.evaluate("([m, n]) => panel.load(m, {id: n, title: n, version: 'v1'})", [markup, name])
     page.wait_for_timeout(900)
     for sel in spec["sel"]:
@@ -249,7 +254,7 @@ def check(page, port, name, outdir):
         if len(errors) > seen: fails.append("working the page logged an error: " + errors[seen][:160])
     # streaming: 13-char chunks end in the same text, and no chunk throws (a half-streamed svg tag did, 2026-10-19)
     seen = len(errors)
-    page.goto(f"http://127.0.0.1:{port}/panel/panel.html")
+    page.goto(f"http://127.0.0.1:{port}/panel/{'card' if spec['card'] else 'panel'}.html")
     page.wait_for_function("document.getElementById('content') !== null && window.panel")
     page.evaluate("([n]) => panel.load('', {id: n, title: n})", [name])
     for i in range(0, len(markup), 13):

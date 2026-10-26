@@ -337,6 +337,14 @@ enum Snapshots {
         <section class="step"><p>$$x = -1 \\text{ or } x = -5$$</p></section>
         <div class="callout good">check: (-1)² + 6(-1) + 5 = 0</div>
         """))
+        // Cards Dot designs in its UI language (C1): the panel's card fixtures.
+        for (name, markup) in panelFixtures() where name.hasPrefix("card-") {
+            // the strip title rides in the fixture's expect line ("title: due this week")
+            let expect = markup.range(of: #"<!--\s*expect:(.*?)-->"#, options: .regularExpression).map { markup[$0].dropFirst(4).dropLast(3) } ?? ""
+            let title = expect.split(separator: ";").map { $0.trimmingCharacters(in: .whitespaces) }
+                .first(where: { $0.hasPrefix("title:") }).map { $0.dropFirst(6).trimmingCharacters(in: .whitespaces) } ?? String(name.dropFirst(5))
+            out.append((String(name.dropFirst(5)), title, markup))
+        }
         return out
     }
 
@@ -347,12 +355,23 @@ enum Snapshots {
 
     /// A card as the board draws it: the same page, resources and accent, 440 wide, as tall as it needs.
     private static func renderCard(title: String, html: String, accentHex: String) -> NSImage? {
-        let candidates = [Bundle.main.resourceURL?.appendingPathComponent("board"), URL(fileURLWithPath: DotConfig.expand("~/Projects/dot/Resources/board"))].compactMap { $0 }
-        guard let resources = candidates.first(where: { FileManager.default.fileExists(atPath: $0.appendingPathComponent("board.html").path) }),
-              var page = try? String(contentsOf: resources.appendingPathComponent("board.html"), encoding: .utf8) else { return nil }
+        // A card Dot designed in its UI language (C1) renders in the panel's card page, as the board does.
+        let designed = CardMarkup.isUILanguage(html)
+        let template = designed ? "panel/card.html" : "board.html"
+        let candidates = [ProcessInfo.processInfo.environment["DOT_BOARD_DIR"].map { URL(fileURLWithPath: DotConfig.expand($0)) },
+                          Bundle.main.resourceURL?.appendingPathComponent("board"), URL(fileURLWithPath: DotConfig.expand("~/Projects/dot/Resources/board"))].compactMap { $0 }
+        guard let resources = candidates.first(where: { FileManager.default.fileExists(atPath: $0.appendingPathComponent(template).path) }),
+              var page = try? String(contentsOf: resources.appendingPathComponent(template), encoding: .utf8) else { return nil }
         // The same tokens the board uses (VI-01), so a snapshot shows the look a card really gets.
-        page = StyleTokens.load().applyingPointerAccent(accentHex).cardPage(template: page, content: html).html
-        let file = resources.appendingPathComponent("card-snapshot.html")
+        let tokens = StyleTokens.load().applyingPointerAccent(accentHex)
+        let file: URL
+        if designed {
+            page = page.replacingOccurrences(of: "{{ACCENT}}", with: tokens.look(tokens.lookName(forHTML: html)).accentHex)
+            file = resources.appendingPathComponent("panel/card-snapshot.html")
+        } else {
+            page = tokens.cardPage(template: page, content: html).html
+            file = resources.appendingPathComponent("card-snapshot.html")
+        }
         try? page.write(to: file, atomically: true, encoding: .utf8)
         let configuration = WKWebViewConfiguration()
         configuration.preferences.setValue(true, forKey: "allowFileAccessFromFileURLs")
@@ -385,6 +404,13 @@ enum Snapshots {
         web.loadFileURL(file, allowingReadAccessTo: resources)
         let deadline = Date().addingTimeInterval(12)
         while !delegate.done, Date() < deadline { spin(0.05) }
+        if designed {
+            var loaded = false
+            let load = "panel.load(\(CardMarkup.jsString(html)), {id: 'snapshot', title: \(CardMarkup.jsString(title))});"
+            web.evaluateJavaScript(load) { _, error in if let error { print("snapshot: card markup failed: \(error.localizedDescription)") }; loaded = true }
+            let loadDeadline = Date().addingTimeInterval(4)
+            while !loaded, Date() < loadDeadline { spin(0.05) }
+        }
         // Fonts, math and pictures settle a moment after load.
         spin(html.contains("gallery") ? 3.5 : 2.2)   // the entrance animation runs half a second; pictures longer
         var height: CGFloat = 300
@@ -437,14 +463,14 @@ enum Snapshots {
         return image
     }
 
-    private static func boardResources() -> URL? {
+    static func boardResources() -> URL? {
         // DOT_BOARD_DIR points a dev build at a worktree's Resources/board
         let candidates = [ProcessInfo.processInfo.environment["DOT_BOARD_DIR"].map { URL(fileURLWithPath: DotConfig.expand($0)) },
                           Bundle.main.resourceURL?.appendingPathComponent("board"), URL(fileURLWithPath: DotConfig.expand("~/Projects/dot/Resources/board"))].compactMap { $0 }
         return candidates.first(where: { FileManager.default.fileExists(atPath: $0.appendingPathComponent("panel/panel.html").path) })
     }
 
-    private static func panelFixtures() -> [(String, String)] {
+    static func panelFixtures() -> [(String, String)] {
         guard let dir = boardResources()?.appendingPathComponent("panel/fixtures"),
               let names = try? FileManager.default.contentsOfDirectory(atPath: dir.path) else { return [] }
         return names.filter { $0.hasSuffix(".ui") }.sorted().compactMap { name in

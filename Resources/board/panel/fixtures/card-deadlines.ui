@@ -1,0 +1,10 @@
+<!-- expect: .box table ; card ; light ; title: due this week -->
+<box tone="card">
+<table>
+<tr><th>What</th><th>When</th><th num>Left</th></tr>
+<tr class="hl"><td>Problem set 6</td><td>Tue 11:59 pm</td><td num>1 d</td></tr>
+<tr><td>Lab report</td><td>Thu 5:00 pm</td><td num>3 d</td></tr>
+<tr><td>Fellowship essay</td><td>Fri noon</td><td num>4 d</td></tr>
+</table>
+<cite label="Atlas deadlines">sample</cite>
+</box>

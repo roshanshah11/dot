@@ -265,6 +265,7 @@ case "--help", "-h":
       Dot --stack-demo [--muted] [--job]   a fake agent (or job) through the running Dot's stack (no voice, no chime)
       Dot --stack-selftest [--muted] [--job] [frames.json]   the same demo in this process, its window off screen, G7 to G9 checked
       Dot --page-selftest                                    a job page in its window: a tick and a letter Send through WebKit
+      Dot --card-selftest                                    cards Dot designs (C1) through a real card window off screen
       Dot --stack-selftest --hover | --edges                 a pretend pointer on an avatar; the left and right edge columns (J6)
       Dot --panel file.ui      show a UI-language explanation in the explainer panel (Dot --panel close hides it)
       Dot --prompt talk|think  print a session's system prompt
@@ -521,6 +522,13 @@ case "--stack-selftest":
 case "--bluetooth":
     // Bluetooth power in a process of its own (MacSettings): `Dot --bluetooth on|off|state` prints on or off.
     exit(BluetoothPower.run(arguments.dropFirst().first ?? "state"))
+case "--card-selftest":
+    // Designed cards (parity C1) through a real CardPanel off every display: page, blocks, accent, fit.
+    let cardApp = NSApplication.shared
+    cardApp.setActivationPolicy(.accessory)
+    cardApp.finishLaunching()
+    let cardPassed = MainActor.assumeIsolated { CardSelfTest.run() }
+    exit(cardPassed ? 0 : 1)
 case "--notch-selftest":
     // A typed answer through a real notch window off every display: every line must show (10-21).
     let notchApp = NSApplication.shared

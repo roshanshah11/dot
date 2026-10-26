@@ -60,6 +60,7 @@ a { color: var(--viz-c2); text-decoration: none; border-bottom: 1px solid rgba(9
 .cite { margin: 6px 0; font-size: 12px; color: var(--muted); }
 .box { display: flex; flex-direction: column; gap: 6px; }
 .box > * { margin-top: 0; margin-bottom: 0; }
+.box > .badge { align-self: flex-start; }   /* a pill, not a bar across the column */
 .box.tone-card { background: var(--raised); border: 1px solid var(--line); border-radius: 14px; padding: 12px 14px; }
 .box.tone-accent { background: rgba(255,107,44,0.07); border: 1px solid rgba(255,107,44,0.25); border-radius: 14px; padding: 12px 14px; }
 .box.tone-good { background: rgba(74,222,128,0.06); border: 1px solid rgba(74,222,128,0.2); border-radius: 14px; padding: 12px 14px; }

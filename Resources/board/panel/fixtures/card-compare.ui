@@ -1,0 +1,8 @@
+<!-- expect: .box .grid .badge:2 ; card ; title: two laptops -->
+<box tone="card">
+<grid cols="2">
+<box tone="plain"><text weight="bold">Model A</text><text size="sm">$1,199 · 2.7 lb · 18 h</text><badge tone="good">lighter</badge></box>
+<box tone="plain"><text weight="bold">Model B</text><text size="sm">$999 · 3.4 lb · 14 h</text><badge tone="warn">cheaper</badge></box>
+</grid>
+<cite label="maker spec pages">sample</cite>
+</box>
