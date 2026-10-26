@@ -307,6 +307,17 @@ final class AgentStack {
         panel?.sharingType = visible ? .readOnly : .none
     }
 
+    /// Out of the way of a system surface (NO-04): drawn clear and click-through until it closes.
+    private(set) var steppedAside = false
+    var stepAsideWindow: NSWindow? { panel?.isVisible == true ? panel : nil }
+
+    func stepAside(_ on: Bool) {
+        steppedAside = on
+        guard let panel else { return }
+        StepAside.fade(panel, out: on)
+        if on { panel.ignoresMouseEvents = true } else { updateMousePassThrough() }
+    }
+
     var isEmpty: Bool { model.isEmpty }
 
     // MARK: The clock
@@ -466,7 +477,7 @@ final class AgentStack {
         let top = model.side == .corner ? frame.minY + height : frame.maxY
         let point = CGPoint(x: mouse.x - left, y: top - mouse.y)
         let under = model.chipFrames.first { $0.rect.insetBy(dx: -2, dy: -2).contains(point) }?.id
-        let through = under == nil && model.expanded == nil
+        let through = steppedAside || (under == nil && model.expanded == nil)
         if panel.ignoresMouseEvents != through { panel.ignoresMouseEvents = through }
         decideHover(under: under)
     }

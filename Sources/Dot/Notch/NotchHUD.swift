@@ -809,7 +809,7 @@ final class NotchHUD {
         guard let panel, panel.isVisible else { return }
         let geometry = currentGeometry()
         let idle = !model.hasContent && model.presence
-        let through = idle && NotchGeometry.passesThrough(NSEvent.mouseLocation, geometry: geometry)
+        let through = steppedAside || (idle && NotchGeometry.passesThrough(NSEvent.mouseLocation, geometry: geometry))
         if panel.ignoresMouseEvents != through { panel.ignoresMouseEvents = through }
     }
 
@@ -817,10 +817,21 @@ final class NotchHUD {
     /// up at all (talk-only), so clicks are watched everywhere, and only the notch's own rect counts.
     var onNotchClick: (() -> Void)?
 
+    /// Out of the way of a system surface (NO-04): drawn clear and click-through until it closes.
+    private(set) var steppedAside = false
+    var stepAsideWindow: NSWindow? { panel?.isVisible == true ? panel : nil }
+
+    func stepAside(_ on: Bool) {
+        steppedAside = on
+        guard let panel else { return }
+        StepAside.fade(panel, out: on)
+        if on { panel.ignoresMouseEvents = true } else { updateMousePassThrough() }
+    }
+
     private func watchNotchClicks() {
         let decide: (NSEvent) -> Bool = { [weak self] event in
             MainActor.assumeIsolated {
-                guard let self, self.onNotchClick != nil else { return false }
+                guard let self, self.onNotchClick != nil, !self.steppedAside else { return false }
                 guard NotchGeometry.opensHome(NSEvent.mouseLocation, geometry: self.currentGeometry(), showing: self.model.hasContent,
                                               control: event.modifierFlags.contains(.control)) else { return false }
                 self.onNotchClick?()

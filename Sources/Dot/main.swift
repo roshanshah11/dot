@@ -79,6 +79,17 @@ case "--view":
     if let error = reply["error"] as? String { print("view: \(error)"); exit(4) }
     print(reply["text"] as? String ?? "ok")
     exit(0)
+case "--surfaces":
+    // NO-04: the other apps' windows above the desktop and which system surface Dot would step aside for. Run it with
+    // Spotlight, Control Center, Notification Center, Cmd-Shift-5 or Mission Control open to check the rule table.
+    let others = MainActor.assumeIsolated { StepAside.liveWindows() }.filter { $0.layer >= 0 && $0.alpha > 0.05 }
+    for w in others {
+        print("\(w.owner) layer \(w.layer) \(Int(w.frame.width))x\(Int(w.frame.height)) at \(Int(w.frame.minX)),\(Int(w.frame.minY))\(w.name.isEmpty ? "" : " \"\(w.name)\"")")
+    }
+    let sizes = NSScreen.screens.map(\.frame.size)
+    let up = sizes.lazy.compactMap { SystemSurfaces.up(others, screen: $0) }.first
+    print(up.map { "up: \($0.word) (Dot steps aside)" } ?? "up: nothing (Dot stays)")
+    exit(0)
 case "--xlsx-dump":
     // H3: what the notch viewer reads from a workbook, read only. --json prints every cell (for comparing with openpyxl).
     let rest = Array(arguments.dropFirst())
@@ -275,6 +286,7 @@ case "--help", "-h":
       Dot --skill-avatars                  each skill's picture by Dot's rule table
       Dot --xlsx-dump <file.xlsx> [--json] what the file viewer reads from a workbook (read only)
       Dot --view <file>                    show a file in the running Dot's notch viewer
+      Dot --surfaces                       the system surface Dot would step aside for right now, and the windows it read
       Dot --skill-draft "<links>" "<purpose>"   draft a SKILL.md from links and print it (saves nothing)
       Dot --agent-tell <name> "<message>" [--quiet]  pass an agent a message, like a typed follow-up [--json]
       Dot --agent-note <to> "<text>" [--from <name>]   leave an agent a note for its next step or turn [--json]

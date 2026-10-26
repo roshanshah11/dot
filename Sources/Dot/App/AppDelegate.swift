@@ -17,6 +17,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var agents: AgentManager!
     private var talk: Talk!
     private var home: HomeWindowController!
+    /// Fades Dot out while Spotlight, Control Center and the like are up (parity NO-04).
+    private let stepAside = StepAside()
     private var atlas: AtlasBridge!
     private var jev: Jev?
     private var control: ControlServer?
@@ -174,6 +176,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         home.onSettingsChanged = { [weak self] changed in Task { @MainActor in self?.applySettings(changed) } }
         home.onStartTask = { [weak self] text in self?.talk.startTask(fromHome: text) ?? false }
         hud.onNotchClick = { [weak self] in self?.home.toggleNotchDropdown() }
+        stepAside.anythingShown = { [weak self] in
+            guard let self else { return false }
+            return self.hud.stepAsideWindow != nil || self.stack.stepAsideWindow != nil || !self.overlay.stepAsideWindows.isEmpty
+        }
+        stepAside.apply = { [weak self] on in
+            self?.hud.stepAside(on)
+            self?.stack.stepAside(on)
+            self?.overlay.stepAside(on)
+        }
+        stepAside.start()
         routines = RoutineScheduler(config: config, agents: agents, hud: hud)
         routines.canRun = { [weak self] in
             guard let self else { return false }

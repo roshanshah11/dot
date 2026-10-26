@@ -53,7 +53,46 @@ enum SelfTest {
         check("a yes naming another act does not", ConsentVoice.interpret("yes, send it", guarded: email.guarded, card: words) == .needsExplicit)
         check("a request that starts with ok is not an answer (FX-01)", ConsentVoice.interpret("ok so explain this", guarded: physics.guarded, card: physics.title) == .none)
         editKeys(check)
+        stepAside(check, hud: hud)
         return ok
+    }
+
+    /// NO-04: a fake Spotlight in the window list fades the notch and the orb's overlay (marks and ink are drawn there)
+    /// and makes the notch click-through; closing it brings them back.
+    static func stepAside(_ check: (String, Bool) -> Void, hud: NotchHUD) {
+        let overlay = OverlayManager(colorHex: "#FF6B2B", presence: false)
+        let watch = StepAside()
+        var list: [SystemWindow] = []
+        watch.windows = { list }
+        watch.anythingShown = { true }
+        watch.apply = { on in hud.stepAside(on); overlay.stepAside(on) }
+        func settle() {
+            let until = Date().addingTimeInterval(0.4)
+            while Date() < until { RunLoop.main.run(mode: .default, before: Date(timeIntervalSinceNow: 0.02)) }
+        }
+        let shown = ConsentCard(id: UUID(), agentId: "scout", agent: "Scout", title: "run a command", detail: "", guarded: false,
+                                onAllow: {}, onDeny: {})
+        hud.present(shown)
+        settle()
+        let panel = hud.stepAsideWindow
+        check("the notch is up with a card (the case to step aside from)", panel != nil)
+        watch.read()
+        settle()
+        check("nothing up: Dot stays", watch.surface == nil && !hud.steppedAside && overlay.windows.allSatisfy { $0.contentView?.alphaValue == 1 })
+        list = [SystemWindow(owner: "Control Center", layer: 25, frame: CGRect(x: 1300, y: 0, width: 34, height: 33)),
+                SystemWindow(owner: "Spotlight", layer: 23, frame: CGRect(x: 456, y: 180, width: 600, height: 60))]
+        watch.read()
+        settle()
+        check("Spotlight up: the notch and the overlay fade out", watch.surface == .spotlight && hud.steppedAside
+              && (panel?.contentView?.alphaValue ?? 0) == 0 && !overlay.windows.isEmpty && overlay.windows.allSatisfy { $0.contentView?.alphaValue == 0 })
+        check("and the notch lets clicks through", panel.map(\.ignoresMouseEvents) ?? true)
+        list = [SystemWindow(owner: "Control Center", layer: 25, frame: CGRect(x: 1300, y: 0, width: 34, height: 33))]
+        watch.read()
+        settle()
+        check("Spotlight closed: they come back", watch.surface == nil && !hud.steppedAside
+              && (panel?.contentView?.alphaValue ?? 1) == 1 && overlay.windows.allSatisfy { $0.contentView?.alphaValue == 1 })
+        for window in overlay.windows { window.orderOut(nil) }
+        hud.dismissConsent(id: shown.id)
     }
 
     /// ⌘X ⌘C ⌘V ⌘A ⌘Z in Dot's own panels (2026-10-22): the keys go through the app's real event dispatch to a panel

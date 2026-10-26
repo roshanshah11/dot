@@ -1799,7 +1799,18 @@ final class OverlayManager {
         for index in handles.indices { setArmed(index, false) }
     }
 
+    /// Out of the way of a system surface (NO-04): the orb, ink and marks drawn clear, the orb's handle disarmed.
+    private(set) var steppedAside = false
+    var stepAsideWindows: [NSWindow] { windows.filter(\.isVisible) }
+
+    func stepAside(_ on: Bool) {
+        steppedAside = on
+        for window in windows { StepAside.fade(window, out: on) }
+        if on { for index in handles.indices { setArmed(index, false) } }
+    }
+
     private func setArmed(_ index: Int, _ on: Bool) {
+        let on = on && !steppedAside
         guard index < handles.count else { return }
         let handle = handles[index]
         if on {
