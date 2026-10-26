@@ -3333,11 +3333,16 @@ final class Talk {
             return "i couldn't find \(what) \(whereWord.map { "near \($0)" } ?? "nearby")."
         }
         let center = whereWord == nil ? home : places[0].coordinate
-        let map = await Places.snapshot(of: places, center: center, accentHex: config.pointerColorHex)
+        // the map, the walks and the Look Around pictures at once; the pins keep the nearest-first order
+        async let mapPNG = Places.snapshot(of: places, center: center, accentHex: config.pointerColorHex)
+        async let enriched = Places.enrich(places, from: home)
+        let (map, rich) = await (mapPNG, enriched)
         showCard(id: "place", rect: nil, title: "\(what) near \(whereWord ?? "campus")",
-                 html: Places.cardHTML(query: query, places: places, mapPNG: map, nearName: whereWord ?? "hyde park"), screen: nil)
-        Log.info("place: \(places.count) for \"\(query)\": " + places.map { "\($0.name) \(Int($0.distanceMeters)) m" }.joined(separator: ", "))
-        return Places.spokenLine(query: what, places: places)
+                 html: Places.cardHTML(query: query, places: rich, mapPNG: map, nearName: whereWord ?? "hyde park"), screen: nil)
+        Log.info("place: \(rich.count) for \"\(query)\": " + rich.map { place in
+            "\(place.name) \(Int(place.distanceMeters)) m" + (place.walkSeconds.map { ", walk \(Int($0)) s" } ?? "") + (place.lookAround == nil ? "" : ", look around")
+        }.joined(separator: "; "))
+        return Places.spokenLine(query: what, places: rich)
     }
 
     /// [IMAGES:subject]: a strip of pictures on the board. Returns the spoken line.

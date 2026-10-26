@@ -315,13 +315,18 @@ enum Snapshots {
         let third = Places.Place(name: "Medici on 57th", category: "restaurant", address: "1327 E 57th St, Chicago, IL", phone: "(773) 667-7394", url: nil, latitude: 41.7913, longitude: -87.5932, distanceMeters: 450)
         let group = DispatchGroup()
         var mapPNG: Data?
+        var nearby = [third, sample, second]
         group.enter()
         Task { @MainActor in
-            mapPNG = await Places.snapshot(of: [third, sample, second], center: CLLocationCoordinate2D(latitude: 41.7943, longitude: -87.5907), accentHex: accentHex)
+            mapPNG = await Places.snapshot(of: nearby, center: CLLocationCoordinate2D(latitude: 41.7943, longitude: -87.5907), accentHex: accentHex)
+            // the walks and Look Around pictures come from Apple Maps live (WI-02/03), from the home point in config
+            let config = DotConfig.peek()
+            nearby = await Places.enrich(nearby, from: CLLocationCoordinate2D(latitude: config.homeLatitude, longitude: config.homeLongitude))
+            print("snapshot: place extras " + nearby.map { "\($0.name): walk \($0.walkSeconds.map { "\(Int($0)) s" } ?? "none"), look around \($0.lookAround.map { "\($0.count) bytes" } ?? "none")" }.joined(separator: "; "))
             group.leave()
         }
-        wait(for: group, seconds: 12)
-        out.append(("place", "coffee near campus", Places.cardHTML(query: "coffee near campus", places: [third, sample, second], mapPNG: mapPNG, nearName: "hyde park")))
+        wait(for: group, seconds: 20)
+        out.append(("place", "coffee near campus", Places.cardHTML(query: "coffee near campus", places: nearby, mapPNG: mapPNG, nearName: "hyde park")))
         var pictures: [Images.Item] = []
         group.enter()
         Task { @MainActor in
