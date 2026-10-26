@@ -12,7 +12,38 @@ extension Snapshots {
         var out: [(String, NSImage)] = []
         if let image = fileCards(in: folder) { out.append(("file-cards", image)) }
         if let image = faces() { out.append(("faces", image)) }
+        out += permissions()
         out += thread(in: folder)
+        return out
+    }
+
+    /// ON-01/ON-03: the permission rows for the three programs, from a fixed sample (not his Mac's grants): Settings'
+    /// full list and the Agents page's summary.
+    private static func permissions() -> [(String, NSImage)] {
+        let dot = PermissionHolder(id: "dot", name: "Dot", runs: "talk, dictation, jobs and the tools they start", executable: "/Users/you/Applications/Dot.app",
+                                   rows: PermissionGuide.rows(["microphone": "granted", "screen": "missing", "accessibility": "granted", "calendar": "partial",
+                                                               "fullDisk": "missing", "automation:com.apple.systemevents": "granted"]))
+        let host = PermissionHolder(id: "host", name: "Agent host", runs: "your named agents (it keeps them running when Dot quits)",
+                                    executable: "/Users/you/Applications/Dot.app --host", rows: PermissionGuide.rows([:], forAgents: true),
+                                    note: "not answering (not running, or installed before this check); rows are unknown")
+        let cua = PermissionHolder(id: "cua", name: "cua-driver", runs: "an agent's clicks and screenshots in other apps",
+                                   executable: "/Applications/CuaDriver.app/Contents/MacOS/cua-driver",
+                                   rows: PermissionGuide.cuaRows(["accessibility": true, "screen_recording": true]))
+        var out: [(String, NSImage)] = []
+        let full = VStack(alignment: .leading, spacing: 12) {
+            PermissionHolderView(holder: dot)
+            Divider()
+            PermissionHolderView(holder: cua)
+        }
+        .padding(20).frame(width: 640, height: 760, alignment: .topLeading).background(Color(nsColor: .windowBackgroundColor))
+        let fullHost = NSHostingView(rootView: full)
+        fullHost.appearance = NSAppearance(named: .darkAqua)
+        if let image = drawHosted(fullHost, size: CGSize(width: 640, height: 760), wait: 0.5) { out.append(("permissions", image)) }
+        let summary = VStack(alignment: .leading, spacing: 12) { ForEach([dot, host, cua]) { PermissionHolderView(holder: $0, compact: true) } }
+            .padding(20).frame(width: 640, height: 260, alignment: .topLeading).background(Color(nsColor: .windowBackgroundColor))
+        let summaryHost = NSHostingView(rootView: summary)
+        summaryHost.appearance = NSAppearance(named: .darkAqua)
+        if let image = drawHosted(summaryHost, size: CGSize(width: 640, height: 260), wait: 0.3) { out.append(("agents-run-as", image)) }
         return out
     }
 

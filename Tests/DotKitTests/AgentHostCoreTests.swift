@@ -180,6 +180,9 @@ final class AgentHostCoreTests: XCTestCase {
         XCTAssertEqual(answer["ok"] as? Bool, false)
         XCTAssertTrue(HostProtocol.compatible(answer), "a refusal still says which protocol the host speaks")
         XCTAssertEqual(call(.write(id: "nobody", line: "x"))["ok"] as? Bool, false)
+        core.permissions = { ["accessibility": "granted", "screen": "missing"] }
+        XCTAssertEqual(call(.status)["permissions"] as? [String: String], ["accessibility": "granted", "screen": "missing"], "ON-03: the host reports its own grants")
+        XCTAssertEqual(HostRequest(object: HostRequest.status.object), .status)
         XCTAssertEqual(call(.spawn(HostSpawn(id: "bad", executable: "/no/such/claude", arguments: [], cwd: "/", environment: [:])))["ok"] as? Bool, false)
     }
 

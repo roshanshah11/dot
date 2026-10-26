@@ -26,6 +26,9 @@ final class HomeWindowController {
     }
 
     /// Starts a behind job from the focus pane's text (HO-10); false when it couldn't.
+    /// Restart Dot through its launch agent (ON-02's notice; Settings has the same button).
+    func relaunch() { model.relaunch() }
+
     var onStartTask: ((String) -> Bool)? {
         get { model.onStartTask }
         set { model.onStartTask = newValue }
@@ -137,6 +140,9 @@ final class HomeModel: ObservableObject {
     @Published var claudeMD = ""
     @Published var runs: [Ledger.Row] = []
     @Published var permissions = Permissions.status()
+    /// Dot, the agent host and cua-driver with their grants (ON-01, ON-03); read on demand, off the main thread.
+    @Published var holders: [PermissionHolder] = []
+    @Published var holdersLoading = false
     @Published var today: (turns: Int, costUSD: Double) = (0, 0)
     @Published var brief: TodayBrief?
     @Published var newAgentName = ""
@@ -413,6 +419,19 @@ final class HomeModel: ObservableObject {
     func markSeen(_ agent: AgentManager.Agent) {
         defaults.set(Date(), forKey: "dot.home.seen.\(agent.slug)")
         unread.remove(agent.slug)
+    }
+
+    func refreshHolders() {
+        guard !holdersLoading else { return }
+        holdersLoading = true
+        DispatchQueue.global(qos: .userInitiated).async {
+            let found = PermissionProbe.holders()
+            DispatchQueue.main.async { [weak self] in
+                self?.holders = found
+                self?.holdersLoading = false
+                self?.permissions = Permissions.status()
+            }
+        }
     }
 
     func refreshLive() {
@@ -1305,20 +1324,19 @@ struct HomeView: View {
                 }
             }
             HomeSection("Permissions") {
-                permissionRow("Microphone", model.permissions.microphone) { Permissions.requestMicrophone { _ in model.reload() }; Permissions.openSettings(.microphone) }
-                permissionRow("Screen Recording", model.permissions.screenRecording) { Permissions.requestScreenRecording(); Permissions.openSettings(.screenRecording) }
-                permissionRow("Accessibility", model.permissions.accessibility) { Permissions.requestAccessibility(); Permissions.openSettings(.accessibility) }
+                Text("What macOS has given each program that does Dot's work. Nothing is asked for until you press Open.")
+                    .font(.caption).foregroundStyle(.secondary)
+                ForEach(model.holders) { holder in
+                    PermissionHolderView(holder: holder) { model.refreshHolders() }
+                    if holder.id != model.holders.last?.id { Divider() }
+                }
+                HStack(spacing: 8) {
+                    Button("Check again") { model.refreshHolders() }.controlSize(.small).disabled(model.holdersLoading)
+                    if model.holdersLoading { ProgressView().controlSize(.small) }
+                }
             }
+            .onAppear { model.refreshHolders() }
             SettingsSaveBar(model: model)
-        }
-    }
-
-    private func permissionRow(_ name: String, _ granted: Bool, action: @escaping () -> Void) -> some View {
-        HStack {
-            Image(systemName: granted ? "checkmark.circle.fill" : "exclamationmark.circle").foregroundStyle(granted ? .green : .orange)
-            Text(name).font(.callout)
-            Spacer()
-            if !granted { Button("Grant", action: action).controlSize(.small) }
         }
     }
 

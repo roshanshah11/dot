@@ -87,6 +87,11 @@ final class Talk {
     let lecture: LectureListener
     private var dictionary = DictationDictionary()
     private var dictionaryLoadedAt = Date.distantPast
+    /// ON-02: bad captures in a row, and whether the notice went up this launch.
+    private var badCaptures = 0
+    private var captureNoticeShown = false
+    /// Restart through the launch agent (AppDelegate wires it to Home's relaunch).
+    var onRelaunch: () -> Void = {}
     /// The last dictation's field, watched for his correction (DI-05).
     private var dictationWatch: DictationWatch?
     /// The answer goes to the notch as text (a typed question, a muted Mac) instead of a bubble.
@@ -501,8 +506,24 @@ final class Talk {
         captureTask = Task { @MainActor in
             let context = AccessibilityContext.capture(maxElements: maxElements)
             let shots = (try? await ScreenCapture.captureAll(maxDimension: maxDimension, includeOtherScreens: others)) ?? []
+            self.checkCaptureHealth()
             return (shots, context)
         }
+    }
+
+    /// ON-02: a capture that was refused, or came back as the wallpaper alone or black twice running, means macOS
+    /// reset the Screen Recording grant (it does after updates). One notice a launch, with the two ways out.
+    private func checkCaptureHealth() {
+        let verdict = ScreenCapture.health
+        guard verdict != .ok else { badCaptures = 0; return }
+        badCaptures += 1
+        Log.warn("screen capture: \(verdict.rawValue) (\(badCaptures) in a row)")
+        guard !captureNoticeShown, verdict == .denied || badCaptures >= 2 else { return }
+        captureNoticeShown = true
+        hud.notify(NotchNotice(id: "screen-access", icon: "rectangle.dashed.badge.record", title: "screen access broke",
+                               detail: "macOS often resets Dot's Screen Recording after an update. Switch Dot off and on in Settings, then relaunch Dot.",
+                               tone: .warn, actionTitle: "Open Settings", action: { PermissionProbe.openPane("Privacy_ScreenCapture") },
+                               secondaryTitle: "Relaunch Dot", secondary: { [weak self] in self?.onRelaunch() }, seconds: 0))
     }
 
     private func endListening(heldFor: TimeInterval) {

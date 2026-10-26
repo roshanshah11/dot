@@ -24,9 +24,23 @@ struct AgentsPage: View {
                               isOn: $model.settings.agentHelpers)
             }
             routines
+            runsAs
             spend
             SettingsSaveBar(model: model)
         }
+    }
+
+    // MARK: What agents run as (ON-03)
+
+    private var runsAs: some View {
+        HomeSection("What agents run as") {
+            Text("macOS gives permissions to programs, not to agents. Jobs run inside Dot, your named agents in the agent host, and clicks in other apps go through cua-driver; each has only what macOS gave it.")
+                .font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            ForEach(model.holders) { holder in PermissionHolderView(holder: holder, compact: true) }
+            if model.holders.isEmpty, model.holdersLoading { ProgressView().controlSize(.small) }
+            Button("Open in Settings") { model.page = .settings }.controlSize(.small)
+        }
+        .onAppear { if model.holders.isEmpty { model.refreshHolders() } }
     }
 
     // MARK: Rules

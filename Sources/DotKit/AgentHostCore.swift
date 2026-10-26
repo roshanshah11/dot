@@ -66,6 +66,8 @@ public final class AgentHostCore {
     private var children: [String: Child] = [:]
     private var nextWaiter = 0
     private var sweeper: DispatchSourceTimer?
+    /// The host's own permission report (`status`); Dot's main passes the probes, which DotKit can't import.
+    public var permissions: () -> [String: String] = { [:] }
 
     public init(settings: Settings = Settings(), now: @escaping () -> Date = Date.init, log: ((String) -> Void)? = nil) {
         self.settings = settings
@@ -76,9 +78,11 @@ public final class AgentHostCore {
     deinit { sweeper?.cancel() }
 
     /// `Dot --host`: serve at `path` until killed. Settings from the environment ($DOT_HOST_DENY_AFTER).
-    public static func serve(path: String, environment: [String: String] = ProcessInfo.processInfo.environment) -> Never {
+    public static func serve(path: String, environment: [String: String] = ProcessInfo.processInfo.environment,
+                             permissions: @escaping () -> [String: String] = { [:] }) -> Never {
         Darwin.signal(SIGPIPE, SIG_IGN)
         let core = AgentHostCore(settings: .from(environment: environment))
+        core.permissions = permissions
         let server = UnixSocketServer(path: path, handler: core.handle)
         do {
             try server.start()
@@ -97,6 +101,12 @@ public final class AgentHostCore {
         let processes = (reply["processes"] as? [[String: Any]] ?? []).compactMap(HostProcessInfo.init(object:))
         let lines = processes.map { "\($0.id) pid \($0.pid) \($0.alive ? "alive" : "exited") seq \($0.lastSeq) waiting \($0.pending.count)\($0.attached ? " attached" : "")" }
         return (processes.filter(\.alive).count, lines + ["host: protocol \(reply["v"] as? Int ?? 0), \(processes.filter(\.alive).count) live"])
+    }
+
+    /// `status` from a host at `path`: its permission report, or nil (not running, or a host from before ON-03).
+    public static func permissions(path: String) -> [String: String]? {
+        guard let reply = try? UnixSocketClient.send(HostRequest.status.object, to: path, timeout: 3), reply["ok"] as? Bool == true else { return nil }
+        return reply["permissions"] as? [String: String]
     }
 
     /// Runs the 30-minute rule and forgets old exited processes every `sweepEvery`.
@@ -136,6 +146,8 @@ public final class AgentHostCore {
             case .signal(let id, let name): reply(signal(id: id, name: name))
             case .attach(let id, let from, let wait): attach(id: id, from: from, wait: wait, reply: reply)
             case .detach(let id): reply(detach(id: id))
+            case .status:
+                reply(HostProtocol.ok(["permissions": permissions(), "pid": Int(getpid()), "executable": CommandLine.arguments.first ?? ""]))
             }
         }
     }

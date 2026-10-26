@@ -17,7 +17,42 @@ struct ScreenShot {
 /// After Clicky's CompanionScreenCaptureUtility (MIT, Farza Majeed).
 @MainActor
 enum ScreenCapture {
+    /// The last capture's health (ON-02): denied, the wallpaper alone, or flat, the marks of a grant macOS reset.
+    private(set) static var health = CaptureHealth.Verdict.ok
+
+    /// Captures, and judges the result for a broken Screen Recording grant (`health`).
     static func captureAll(maxDimension: Int, includeOtherScreens: Bool) async throws -> [ScreenShot] {
+        do {
+            let (shots, shareable, luma) = try await capture(maxDimension: maxDimension, includeOtherScreens: includeOtherScreens)
+            health = CaptureHealth.verdict(preflight: CGPreflightScreenCaptureAccess(), errorCode: nil, shareableWindows: shareable,
+                                           listedWindows: otherAppWindows(), luma: luma)
+            return shots
+        } catch {
+            health = CaptureHealth.verdict(preflight: CGPreflightScreenCaptureAccess(), errorCode: (error as NSError).code,
+                                           shareableWindows: 0, listedWindows: 0, luma: [])
+            throw error
+        }
+    }
+
+    /// Other apps' ordinary windows on screen, from the window server (no grant needed for this count).
+    static func otherAppWindows() -> Int {
+        let own = ProcessInfo.processInfo.processIdentifier
+        let list = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]] ?? []
+        return list.filter { ($0[kCGWindowLayer as String] as? Int) == 0 && ($0[kCGWindowOwnerPID as String] as? Int32) != own
+            && ($0[kCGWindowAlpha as String] as? Double ?? 1) > 0.05 }.count
+    }
+
+    /// A 16 x 16 grey thumbnail of the image, averaged, for the black-image check.
+    static func luma(_ image: CGImage) -> [UInt8] {
+        var pixels = [UInt8](repeating: 0, count: 256)
+        guard let context = CGContext(data: &pixels, width: 16, height: 16, bitsPerComponent: 8, bytesPerRow: 16, space: CGColorSpaceCreateDeviceGray(),
+                                      bitmapInfo: CGImageAlphaInfo.none.rawValue) else { return [] }
+        context.interpolationQuality = .medium
+        context.draw(image, in: CGRect(x: 0, y: 0, width: 16, height: 16))
+        return pixels
+    }
+
+    private static func capture(maxDimension: Int, includeOtherScreens: Bool) async throws -> ([ScreenShot], Int, [UInt8]) {
         let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true)
         guard !content.displays.isEmpty else {
             throw NSError(domain: "Dot.ScreenCapture", code: 1, userInfo: [NSLocalizedDescriptionKey: "No display to capture"])
@@ -45,6 +80,8 @@ enum ScreenCapture {
         }
 
         var shots: [ScreenShot] = []
+        var luma: [UInt8] = []
+        let shareable = content.windows.filter { $0.windowLayer == 0 && $0.owningApplication?.processID != ownPid && $0.isOnScreen }.count
         for (index, display) in displays.enumerated() {
             let frame = screensByID[display.displayID]?.frame
                 ?? CGRect(x: display.frame.origin.x, y: display.frame.origin.y, width: CGFloat(display.width), height: CGFloat(display.height))
@@ -64,6 +101,7 @@ enum ScreenCapture {
             configuration.showsCursor = true
 
             let image = try await SCScreenshotManager.captureImage(contentFilter: filter, configuration: configuration)
+            if isCursor { luma = Self.luma(image) }
             guard let jpeg = NSBitmapImageRep(cgImage: image).representation(using: .jpeg, properties: [.compressionFactor: 0.8]) else {
                 continue
             }
@@ -82,6 +120,6 @@ enum ScreenCapture {
         guard !shots.isEmpty else {
             throw NSError(domain: "Dot.ScreenCapture", code: 2, userInfo: [NSLocalizedDescriptionKey: "Capture produced no image"])
         }
-        return shots
+        return (shots, shareable, luma)
     }
 }

@@ -175,6 +175,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         home.speakSample = { [weak self] text in SpeakLog.as("sample") { self?.speaker.speak(text) } }
         home.onSettingsChanged = { [weak self] changed in Task { @MainActor in self?.applySettings(changed) } }
         home.onStartTask = { [weak self] text in self?.talk.startTask(fromHome: text) ?? false }
+        talk.onRelaunch = { [weak self] in self?.home.relaunch() }
         hud.onNotchClick = { [weak self] in self?.home.toggleNotchDropdown() }
         stepAside.anythingShown = { [weak self] in
             guard let self else { return false }

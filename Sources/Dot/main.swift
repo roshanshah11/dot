@@ -224,7 +224,7 @@ case "--host":
         exit(0)
     }
     FileHandle.standardError.write(Data("messages: live chat.db readable=\(MessagesProbe.liveReadable())\n".utf8))
-    AgentHostCore.serve(path: socket)
+    AgentHostCore.serve(path: socket, permissions: { PermissionProbe.report() })
 case "--jobs":
     // The install gate (parity run): what an install would interrupt in the running Dot. Exit 0 idle, 1 busy, 3 no answer.
     let path = ProcessInfo.processInfo.environment[ControlServer.pathVariable].flatMap { $0.isEmpty ? nil : $0 }
@@ -273,6 +273,8 @@ case "--help", "-h":
       Dot --selftest           check the notch's permission-card queue (no agents, no model)
       Dot --gate               the agents' tool-call hook (Claude Code runs it; JSON on stdin)
       Dot --doc-check <file or url> [question]         how Dot reads a document: pages and passages, or why it can't
+      Dot --permissions                                what macOS gave Dot, the agent host and cua-driver (asks nothing)
+      Dot --capture-check                              one capture in memory: is the Screen Recording grant working
       Dot --barge-selftest [--talk] [--music]          talk over Dot on this route: no self-trigger, the output unchanged (plays sound)
       Dot --router-mcp --server <name> --spec <file>   one MCP server through the tool router (Claude Code runs it)
       Dot --router-selftest [--quick] [--no-claude]    the router against a fake server, then Claude Code and the job gate
@@ -312,6 +314,10 @@ case "--check":
     print("atlas today:       \(config.resolvedTodayCommand()?.joined(separator: " ") ?? "not available")")
     print("tts:               \(config.resolvedTTSCommand()?.joined(separator: " ") ?? "apple speech")")
     exit(status.allGranted ? 0 : 1)
+case "--permissions":
+    // ON-01/ON-03: what macOS gave Dot, the agent host and cua-driver; asks for nothing.
+    PermissionGuide.lines(PermissionProbe.holders()).forEach { print($0) }
+    exit(0)
 case "--today":
     let config = DotConfig.peek()
     guard let command = config.resolvedTodayCommand() else { print("atlas today helper not available"); exit(1) }
@@ -441,6 +447,18 @@ case "--stack-demo":
 case "--barge-selftest":
     // Talk over Dot on this Mac's real route (AU-01, AU-02). Plays sound: run it with him there, lid open.
     BargeSelfTest.run(Array(arguments.dropFirst()))
+case "--capture-check":
+    // ON-02: one capture of the cursor's screen, kept in memory only, and the health verdict on it.
+    let done = DispatchSemaphore(value: 0)
+    var verdict = "?"
+    Task { @MainActor in
+        let shots = (try? await ScreenCapture.captureAll(maxDimension: 640, includeOtherScreens: false)) ?? []
+        verdict = "capture: \(ScreenCapture.health.rawValue) (\(shots.count) shot(s), \(ScreenCapture.otherAppWindows()) other windows listed, grant \(CGPreflightScreenCaptureAccess() ? "on" : "off"))"
+        done.signal()
+    }
+    while done.wait(timeout: .now() + 0.05) == .timedOut { RunLoop.main.run(until: Date().addingTimeInterval(0.05)) }
+    print(verdict)
+    exit(verdict.hasPrefix("capture: ok") ? 0 : 1)
 case "--doc-check":
     // How Dot reads a document (AU-03, VO-11): its pages and the passages a deep answer would carry, or the line it says
     // when it can't read it.

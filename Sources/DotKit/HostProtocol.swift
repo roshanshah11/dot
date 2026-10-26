@@ -56,6 +56,8 @@ public enum HostRequest: Equatable {
     /// The stdout lines after seq `from`, waiting up to `wait` seconds for one.
     case attach(id: String, from: Int, wait: Double)
     case detach(id: String)
+    /// What macOS has granted the host itself (parity ON-03): it is the process macOS holds responsible for agents.
+    case status
 
     public var object: [String: Any] {
         var o: [String: Any] = ["v": HostProtocol.version]
@@ -67,6 +69,7 @@ public enum HostRequest: Equatable {
         case .list: o["verb"] = "list"
         case .attach(let id, let from, let wait): o.merge(["verb": "attach", "id": id, "from": from, "wait": wait]) { $1 }
         case .detach(let id): o.merge(["verb": "detach", "id": id]) { $1 }
+        case .status: o["verb"] = "status"
         }
         return o
     }
@@ -91,6 +94,7 @@ public enum HostRequest: Equatable {
         case "detach":
             guard !id.isEmpty else { return nil }
             self = .detach(id: id)
+        case "status": self = .status
         default: return nil
         }
     }
