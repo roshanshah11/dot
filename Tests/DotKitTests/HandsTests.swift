@@ -17,7 +17,7 @@ final class HandsMCPWireTests: XCTestCase {
     func testToolsList() {
         let list = HandsMCPWire.toolsList()["tools"] as! [[String: Any]]
         XCTAssertEqual(list.map { $0["name"] as! String },
-                       ["look", "open", "click", "type", "select", "key", "scroll", "back", "wait", "download", "upload", "show", "login", "play", "setting", "spotify", "howto_save", "ask_front_step"])
+                       ["look", "open", "click", "type", "select", "key", "scroll", "back", "wait", "download", "upload", "show", "login", "play", "setting", "spotify", "howto_save", "ask_front_step", "drive"])
         for tool in list {
             let schema = tool["inputSchema"] as! [String: Any]
             XCTAssertEqual(schema["type"] as? String, "object")

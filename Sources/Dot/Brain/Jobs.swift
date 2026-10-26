@@ -802,7 +802,7 @@ final class JobManager {
         (args[key] as? String).flatMap { $0.trimmingCharacters(in: .whitespaces).isEmpty ? nil : $0 }
     }
 
-    private func perform(_ job: Job, tool: String, args: [String: Any]) async -> (String, Bool, String?) {
+    func perform(_ job: Job, tool: String, args: [String: Any]) async -> (String, Bool, String?) {
         let started = Date()
         if tool == "click", args["his"] as? Bool == true, !job.isBrowserJob {
             let ref = str(args, "ref")
@@ -835,6 +835,7 @@ final class JobManager {
         }
         if tool == "howto_save" { return howtoSave(job, args: args) }
         if tool == "ask_front_step" { return await askFrontStep(job, what: str(args, "what") ?? "", app: str(args, "app")) }
+        if tool == "drive" { return await drive(job, steps: DriveLoop.steps(args["steps"]), goal: str(args, "goal") ?? job.goal, doneWhen: str(args, "done_when")) }
         if !job.isBrowserJob || (job.frontStepLive && ["look", "click", "type", "key"].contains(tool)) {
             return await performNative(job, tool: tool, args: args)
         }

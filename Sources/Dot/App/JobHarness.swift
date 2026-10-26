@@ -74,6 +74,7 @@ enum JobHarness {
             config.jobSpare = false
             JobManager.installPageGuide()
             let manager = JobManager(config: config, overlay: nil, speaker: nil, ledger: nil)
+            manager.jev = Jev(config: config)
             let server = ControlServer(path: socket)
             server.register("hands") { request, reply in manager.hands(request, reply) }
             _ = server.start()

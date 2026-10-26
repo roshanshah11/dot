@@ -1,7 +1,7 @@
 import Foundation
 
 /// JSON-RPC for `Dot --hands-mcp --job <id>`, the stdio MCP server a job sees as `dot`. The server answers initialize,
-/// tools/list and ping itself and relays tools/call to the running Dot. 18 tools; no eval, no tab switching, no port
+/// tools/list and ping itself and relays tools/call to the running Dot. 19 tools; no eval, no tab switching, no port
 /// or session arguments, so a job can't leave its tab or its rules.
 public enum HandsMCPWire {
     public struct Request {
@@ -69,6 +69,8 @@ public enum HandsMCPWire {
          schema(["site": str, "task": str, "steps": str], required: ["site", "task", "steps"])),
         ("ask_front_step", "A behind job that needs one step on his screen (in a Mac app, or his own tab): ask him with a card. what: the step in his words (\"press Allow in the Zoom dialog\"); app: the app, if you know it. It waits for his answer; on yes you get his screen for that one step through look, click, type and key (two minutes), then your tools go back to your window.",
          schema(["what": str, "app": str], required: ["what"])),
+        ("drive", "Dot clicks a path you planned, fast (about half a second a click): steps, one click each, in order (\"Notifications; Email alerts\"), and done_when, what proves it worked, in check: form (element \"Email alerts\" on). It hands back where it stopped when it isn't sure, a step needs typing, or a control is his.",
+         schema(["steps": str, "goal": str, "done_when": str], required: ["steps"])),
     ]
 
     public static var toolNames: [String] { tools.map(\.0) }

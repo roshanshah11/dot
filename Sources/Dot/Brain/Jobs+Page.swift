@@ -316,4 +316,73 @@ extension JobManager {
         Log.info("job[\(job.id)] front step in \(bundle) for \(Int(Self.frontStepSeconds)) s")
         return ("he said yes. \(target.localizedName ?? "the app") is in front: look, then do that one step with click, type or key. after two minutes your tools are your own window's again.", false, nil)
     }
+
+    // MARK: The fast click loop (CU-01)
+
+    /// drive: the model's planned clicks, run by Dot with Jev choosing each control. Every click goes through perform(),
+    /// so his rules and the commit guard apply exactly as to the model's own clicks.
+    func drive(_ job: Job, steps: [String], goal: String, doneWhen: String?) async -> (String, Bool, String?) {
+        guard !steps.isEmpty else { return ("error: give the steps, one click each, separated by ;", true, nil) }
+        guard let jev else { return ("error: the fast loop needs jev, which is off here; do the steps yourself", true, nil) }
+        var state = DriveLoop.State(steps: steps)
+        var done: [String] = []
+        let started = Date()
+        var (look, failed, _) = await perform(job, tool: "look", args: [:])
+        if failed { return ("drive: couldn't look first: \(look)", true, nil) }
+        while true {
+            switch state.next {
+            case .ask(let step):
+                let choices = DriveLoop.shortlist(DriveLoop.candidates(look: look), step: step)
+                guard !choices.isEmpty else { state.unsure(); state.unsure(); continue }
+                let (instructions, criteria) = DriveLoop.question(goal: goal, step: step, choices: choices)
+                let asked = Date()
+                let answer: Jev.Choice? = await withCheckedContinuation { continuation in
+                    jev.evaluate("drive", state: ["step": step, "goal": goal], questions: ["control": .choice(instructions: instructions, criteria: criteria)]) {
+                        continuation.resume(returning: $0?["control"]?.choice)
+                    }
+                }
+                let jevMs = Int(Date().timeIntervalSince(asked) * 1000)
+                switch DriveLoop.decide(choice: answer?.choice, probability: answer?.probability ?? 0) {
+                case .unsure(let why):
+                    Log.info("job[\(job.id)] drive: step \"\(step)\" unsure: \(why) (jev \(jevMs) ms)")
+                    state.unsure()
+                case .click(let ref):
+                    let name = choices.first { $0.ref == ref }?.name ?? ref
+                    let clickStarted = Date()
+                    let (after, clickFailed, _) = await perform(job, tool: "click", args: ["ref": ref])
+                    let ms = Int(Date().timeIntervalSince(clickStarted) * 1000)
+                    Log.info("act: drive \(ref) \"\(Log.short(name, 40))\" p=\(String(format: "%.2f", answer?.probability ?? 0)) jev \(jevMs) ms click \(ms) ms (job \(job.id), step \(state.index + 1)/\(state.steps.count))")
+                    if clickFailed || after.hasPrefix("stopped") || after.hasPrefix("paused") || after.hasPrefix("error") {
+                        return (Self.driveReport(done, stopped: "at \"\(step)\": \(Log.short(after, 300))", look: nil), clickFailed, nil)
+                    }
+                    done.append("\(step) (\(name))")
+                    state.clicked()
+                    look = after
+                }
+            case .handBack(let why):
+                Log.info("job[\(job.id)] drive: hands back after \(done.count) of \(steps.count): \(why)")
+                return (Self.driveReport(done, stopped: why, look: look), false, nil)
+            case .finished:
+                let ms = Int(Date().timeIntervalSince(started) * 1000)
+                var report = Self.driveReport(done, stopped: nil, look: nil) + " in \(ms) ms"
+                if let doneWhen, let check = DoneCheck.parse("check: " + doneWhen.replacingOccurrences(of: "check:", with: "")) {
+                    try? await Task.sleep(nanoseconds: 300_000_000)
+                    let result = await verify(job, [check])[0]
+                    report += result.passed ? "\ncheck passed: \(result.saw)" : "\ncheck NOT passed: \(result.saw)\n" + look
+                    Log.info("job[\(job.id)] drive: \(state.steps.count) clicks in \(ms) ms, check \(check) \(result.passed ? "passed" : "failed")")
+                } else {
+                    Log.info("job[\(job.id)] drive: \(state.steps.count) clicks in \(ms) ms")
+                    report += "\n" + look
+                }
+                return (report, false, nil)
+            }
+        }
+    }
+
+    static func driveReport(_ done: [String], stopped: String?, look: String?) -> String {
+        var out = done.isEmpty ? "drive: no clicks" : "drive: clicked " + done.joined(separator: ", ")
+        if let stopped { out += "\nstopped: \(stopped). carry on yourself from here." }
+        if let look { out += "\n" + look }
+        return out
+    }
 }
