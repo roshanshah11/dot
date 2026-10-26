@@ -109,6 +109,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         quitCleanlyOnSignals()
         agents.recoverAfterLaunch()
         talk = Talk(config: config, hud: hud, overlay: overlay, speaker: speaker, transcriber: transcriber, agents: agents, ledger: ledger, atlas: atlas, jev: jev)
+        // Talk over Dot (AU-01): Kokoro's sentences can play through the barge listener's voice-processing engine.
+        if let worker = (speaker as? QuietSpeaker)?.inner as? CommandSpeaker {
+            let barge = BargeListener(transcriber: transcriber, memoryURL: config.dotHome.appendingPathComponent(".barge-routes.json"))
+            worker.barge = barge
+            talk.barge = barge
+        }
         AtlasThread.shared.enabled = config.atlasThread
         AtlasThread.shared.start()
         // Lecture mode is offered as each class on his calendar begins.

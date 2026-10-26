@@ -1,5 +1,6 @@
 import AudioToolbox
 import CoreAudio
+import DotKit
 import IOKit
 import Foundation
 
@@ -102,6 +103,73 @@ enum AudioDevices {
             let builtIn = AudioObjectGetPropertyData(device, &transport, 0, nil, &kindSize, &kind) == noErr && kind == kAudioDeviceTransportTypeBuiltIn
             return (device, name(of: device), builtIn)
         }
+    }
+
+    // MARK: Barge-in routes (AU-02)
+
+    private static func transport(_ device: AudioDeviceID) -> UInt32 {
+        var address = AudioObjectPropertyAddress(mSelector: kAudioDevicePropertyTransportType, mScope: kAudioObjectPropertyScopeGlobal, mElement: kAudioObjectPropertyElementMain)
+        var kind = UInt32(0)
+        var size = UInt32(MemoryLayout<UInt32>.size)
+        _ = AudioObjectGetPropertyData(device, &address, 0, nil, &size, &kind)
+        return kind
+    }
+
+    /// What kind of output a device is, for BargeRoute.
+    static func outputKind(_ device: AudioDeviceID) -> BargeRoute.Output {
+        switch transport(device) {
+        case kAudioDeviceTransportTypeBuiltIn: return .builtIn
+        case kAudioDeviceTransportTypeBluetooth, kAudioDeviceTransportTypeBluetoothLE: return .bluetooth
+        case kAudioDeviceTransportTypeUSB: return .usb
+        case kAudioDeviceTransportTypeAirPlay: return .airplay
+        case kAudioDeviceTransportTypeHDMI, kAudioDeviceTransportTypeDisplayPort: return .display
+        case kAudioDeviceTransportTypeVirtual, kAudioDeviceTransportTypeAggregate, kAudioDeviceTransportTypeAutoAggregate: return .virtual
+        case kAudioDeviceTransportTypeThunderbolt, kAudioDeviceTransportTypeFireWire, kAudioDeviceTransportTypePCI: return .wired
+        default: return .unknown
+        }
+    }
+
+    /// The device's UID: stable across reconnects, so a probe result sticks to the headphones, not this session's id.
+    static func uid(of device: AudioDeviceID) -> String {
+        var address = AudioObjectPropertyAddress(mSelector: kAudioDevicePropertyDeviceUID, mScope: kAudioObjectPropertyScopeGlobal, mElement: kAudioObjectPropertyElementMain)
+        var uid: Unmanaged<CFString>?
+        var size = UInt32(MemoryLayout<Unmanaged<CFString>?>.size)
+        let status = withUnsafeMutablePointer(to: &uid) { AudioObjectGetPropertyData(device, &address, 0, nil, &size, $0) }
+        guard status == noErr, let value = uid?.takeRetainedValue() else { return "device-\(device)" }
+        return value as String
+    }
+
+    /// The output device as voice processing could change it: id, transport, nominal rate, channels, stream format.
+    static func snapshot(_ device: AudioDeviceID) -> RouteSnapshot {
+        var rateAddress = AudioObjectPropertyAddress(mSelector: kAudioDevicePropertyNominalSampleRate, mScope: kAudioObjectPropertyScopeGlobal, mElement: kAudioObjectPropertyElementMain)
+        var rate = Float64(0)
+        var rateSize = UInt32(MemoryLayout<Float64>.size)
+        _ = AudioObjectGetPropertyData(device, &rateAddress, 0, nil, &rateSize, &rate)
+        var configAddress = AudioObjectPropertyAddress(mSelector: kAudioDevicePropertyStreamConfiguration, mScope: kAudioObjectPropertyScopeOutput, mElement: kAudioObjectPropertyElementMain)
+        var channels = 0
+        var configSize = UInt32(0)
+        if AudioObjectGetPropertyDataSize(device, &configAddress, 0, nil, &configSize) == noErr, configSize > 0 {
+            let raw = UnsafeMutableRawPointer.allocate(byteCount: Int(configSize), alignment: 16)
+            defer { raw.deallocate() }
+            if AudioObjectGetPropertyData(device, &configAddress, 0, nil, &configSize, raw) == noErr {
+                channels = UnsafeMutableAudioBufferListPointer(raw.assumingMemoryBound(to: AudioBufferList.self)).reduce(0) { $0 + Int($1.mNumberChannels) }
+            }
+        }
+        var format = "?"
+        var streamsAddress = AudioObjectPropertyAddress(mSelector: kAudioDevicePropertyStreams, mScope: kAudioObjectPropertyScopeOutput, mElement: kAudioObjectPropertyElementMain)
+        var streamsSize = UInt32(0)
+        if AudioObjectGetPropertyDataSize(device, &streamsAddress, 0, nil, &streamsSize) == noErr, streamsSize >= UInt32(MemoryLayout<AudioStreamID>.size) {
+            var streams = [AudioStreamID](repeating: 0, count: Int(streamsSize) / MemoryLayout<AudioStreamID>.size)
+            if AudioObjectGetPropertyData(device, &streamsAddress, 0, nil, &streamsSize, &streams) == noErr, let stream = streams.first {
+                var formatAddress = AudioObjectPropertyAddress(mSelector: kAudioStreamPropertyPhysicalFormat, mScope: kAudioObjectPropertyScopeGlobal, mElement: kAudioObjectPropertyElementMain)
+                var asbd = AudioStreamBasicDescription()
+                var asbdSize = UInt32(MemoryLayout<AudioStreamBasicDescription>.size)
+                if AudioObjectGetPropertyData(stream, &formatAddress, 0, nil, &asbdSize, &asbd) == noErr {
+                    format = "\(Int(asbd.mSampleRate)) \(asbd.mChannelsPerFrame)ch \(asbd.mBitsPerChannel)bit"
+                }
+            }
+        }
+        return RouteSnapshot(deviceID: device, transport: outputKind(device).rawValue, nominalRate: rate, channels: channels, format: format)
     }
 
     /// Bluetooth headphones and earbuds (classic or LE): recording from their mic drops them into headset mode.

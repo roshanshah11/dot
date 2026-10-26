@@ -122,6 +122,7 @@ case "--help", "-h":
       Dot --selftest           check the notch's permission-card queue (no agents, no model)
       Dot --gate               the agents' tool-call hook (Claude Code runs it; JSON on stdin)
       Dot --doc-check <file or url> [question]         how Dot reads a document: pages and passages, or why it can't
+      Dot --barge-selftest [--talk] [--music]          talk over Dot on this route: no self-trigger, the output unchanged (plays sound)
       Dot --router-mcp --server <name> --spec <file>   one MCP server through the tool router (Claude Code runs it)
       Dot --router-selftest [--quick] [--no-claude]    the router against a fake server, then Claude Code and the job gate
       Dot --host [list]        the agent host that keeps agents running across a relaunch (launchd runs it)
@@ -274,6 +275,9 @@ case "--stack-demo":
                                                                  userInfo: ["muted": flags.contains("--muted"), "job": flags.contains("--job")], deliverImmediately: true)
     print("asked the running Dot for the stack demo; stack-demo: lines land in dot.log")
     exit(0)
+case "--barge-selftest":
+    // Talk over Dot on this Mac's real route (AU-01, AU-02). Plays sound: run it with him there, lid open.
+    BargeSelfTest.run(Array(arguments.dropFirst()))
 case "--doc-check":
     // How Dot reads a document (AU-03, VO-11): its pages and the passages a deep answer would carry, or the line it says
     // when it can't read it.

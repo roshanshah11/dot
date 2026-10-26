@@ -93,6 +93,16 @@ final class Talk {
     private var lastImages: [(data: Data, mediaType: String)] = []
     /// A turn that dies inside the CLI before the model is even called gets one more try.
     private var retriedTurn = false
+    /// Talk over Dot (AU-01): the listener that runs while Dot speaks, and the hands-free hold a barge starts.
+    var barge: BargeListener? {
+        didSet {
+            barge?.plan = { [weak self] in self?.bargePlan() ?? .off("no talk") }
+            barge?.onBarge = { [weak self] words in self?.bargedIn(words) }
+        }
+    }
+    private var bargeWords: String?
+    private var bargeStarted: Date?
+    private var bargeVoiceAt = Date.distantPast
     /// AU-03: the same failure twice in 10 minutes is said once; a document's read problem once per document.
     private var failureVoice = FailureVoice()
     private var documentProblemsSaid: Set<String> = []
@@ -466,6 +476,12 @@ final class Talk {
                 let level = self.recorder.level()
                 self.hud.model.level = level
                 self.overlay.setLevel(level)
+                // a barge's hold has no key to let go of: it ends after 1.1 s of quiet (20 s at most)
+                if let started = self.bargeStarted, self.phase == .listening {
+                    if level > 0.12 { self.bargeVoiceAt = Date() }
+                    let held = Date().timeIntervalSince(started)
+                    if held > 1.0, Date().timeIntervalSince(self.bargeVoiceAt) > 1.1 || held > 20 { self.endListening(heldFor: held) }
+                }
             }
         }
         startCapture()
@@ -484,6 +500,9 @@ final class Talk {
 
     private func endListening(heldFor: TimeInterval) {
         guard phase == .listening else { return }
+        let heardFirst = bargeWords
+        bargeWords = nil
+        bargeStarted = nil
         overlay.finishInk()
         levelTimer?.invalidate()
         levelTimer = nil
@@ -528,7 +547,8 @@ final class Talk {
             }
             try? FileManager.default.removeItem(at: stopped.url)
             loadDictionaryIfNeeded()
-            let spoken = dictionary.apply(to: text.trimmingCharacters(in: .whitespacesAndNewlines))
+            let whole = heardFirst.map { BargeDetector.merge(heard: $0, recorded: text) } ?? text
+            let spoken = dictionary.apply(to: whole.trimmingCharacters(in: .whitespacesAndNewlines))
             if spoken.count < 2, region != nil {
                 showRegionBar()
                 return
@@ -3334,6 +3354,31 @@ final class Talk {
         let block = DocumentPassages.block(question: question, title: document.title, pages: document.pages, isPDF: document.isPDF)
         Log.info("think: \(block == nil ? "no passage matches" : "\(block!.split(separator: "\n").count - 1) passage(s), \(block!.count) chars") from \"\(Log.short(document.title, 40))\" in \(Int(Date().timeIntervalSince(started) * 1000)) ms")
         return block
+    }
+
+    /// Where barge-in may listen for this speaking stretch (AU-02): the setting, then a call, lecture mode and the route.
+    func bargePlan() -> BargeRoute.Plan {
+        guard config.talkOverDot else { return .off("talk over dot is off") }
+        if textSurface || quietTurn { return .off("this answer is text") }
+        guard let output = AudioDevices.defaultOutput else { return .off("no output device") }
+        return BargeRoute.plan(enabled: true, output: AudioDevices.outputKind(output), lidClosed: AudioDevices.lidClosed,
+                               onCall: CallPresence.isOnCall(), lecture: lecture.isListening, probe: barge?.probeResult(for: output),
+                               inputIsBluetooth: AudioDevices.defaultInput.map(AudioDevices.isBluetooth) ?? false)
+    }
+
+    /// He talked over Dot: stop at once, hold the ink, and listen as if he pressed the key, keeping the words heard.
+    private func bargedIn(_ words: String) {
+        guard phase == .idle || phase == .speaking || phase == .thinking else { return }
+        Log.info("barge: cutting Dot off for \"\(Log.short(words, 60))\"")
+        bargeWords = words
+        bargeStarted = Date()
+        bargeVoiceAt = Date()
+        // a finished turn can still be speaking with the phase back at idle: stop it here, the pen holding (D4)
+        if phase == .idle { overlay.holdInk(); overlay.clearCaption(); stopSpeaking() }
+        beginListening(mode: .talk)
+        guard phase == .listening else { bargeWords = nil; bargeStarted = nil; return }
+        hud.model.transcript = words
+        overlay.setChip(Log.short(words, 48))
     }
 
     /// AU-03, NO-07: why a turn failed, as one plain line: in the notch every time, and spoken unless the answer is

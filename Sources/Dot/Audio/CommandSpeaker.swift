@@ -36,7 +36,13 @@ final class CommandSpeaker: NSObject, TTSProvider, AVAudioPlayerDelegate {
     private let fallback: TTSProvider
 
     var onFinishedAll: (() -> Void)?
-    var isSpeaking: Bool { player?.isPlaying == true || !items.isEmpty }
+    var isSpeaking: Bool { player?.isPlaying == true || throughBarge || !items.isEmpty }
+
+    /// Talk over Dot (AU-01): while it listens, sentences play through its voice-processing engine so the canceller
+    /// knows Dot's voice. nil, or a stretch where it won't start: AVAudioPlayer as before.
+    var barge: BargeListener?
+    private var throughBarge = false
+    private var bargeEnd: DispatchWorkItem?
 
     init(command: [String], environment: [String: String] = [:], fallback: TTSProvider) {
         self.command = command
@@ -151,8 +157,41 @@ final class CommandSpeaker: NSObject, TTSProvider, AVAudioPlayerDelegate {
         items = []
         player?.stop()
         player = nil
+        if throughBarge || barge?.isRunning == true {
+            throughBarge = false
+            MainActor.assumeIsolated { barge?.stopPlayback(); barge?.end() }
+        }
+        bargeEnd?.cancel()
         stopMeter()
         fallback.stop()
+    }
+
+    /// One sentence through the barge listener, starting it for this stretch if it isn't running. False: play as before.
+    private func playThroughBarge(_ url: URL, _ item: Item) -> Bool {
+        guard let barge else { return false }
+        bargeEnd?.cancel()
+        return MainActor.assumeIsolated {
+            guard barge.isRunning || barge.begin(),
+                  let duration = barge.play(url, sentence: item.text, done: { [weak self] in self?.bargeSentenceDone(url) }) else { return false }
+            throughBarge = true
+            meter?.invalidate()
+            meter = Timer.scheduledTimer(withTimeInterval: 0.08, repeats: true) { [weak self] _ in
+                guard let self, self.throughBarge else { return }
+                let level = MainActor.assumeIsolated { self.barge?.level ?? 0 }
+                SpeechActivity.level(SpeechLevel.openness(decibels: level * 50 - 50), metered: true)
+            }
+            SpeechActivity.sentence(duration: duration, isLast: !items.contains { !$0.isMarker })
+            item.onStart?()
+            return true
+        }
+    }
+
+    private func bargeSentenceDone(_ url: URL) {
+        guard throughBarge else { return }
+        throughBarge = false
+        SpeechActivity.level(0, metered: true)
+        if !cache.values.contains(url) { try? FileManager.default.removeItem(at: url) }
+        playNextIfIdle()
     }
 
     private func startMeter(_ player: AVAudioPlayer) {
@@ -218,7 +257,7 @@ final class CommandSpeaker: NSObject, TTSProvider, AVAudioPlayerDelegate {
     // MARK: Playback
 
     private func playNextIfIdle() {
-        guard player?.isPlaying != true else { return }
+        guard player?.isPlaying != true, !throughBarge else { return }
         while let item = items.first, item.ready {
             items.removeFirst()
             if item.isMarker {
@@ -230,6 +269,7 @@ final class CommandSpeaker: NSObject, TTSProvider, AVAudioPlayerDelegate {
                 SpeakLog.handOn { fallback.speak(item.text, onStart: item.onStart) }
                 continue
             }
+            if playThroughBarge(url, item) { return }
             do {
                 let player = try AVAudioPlayer(contentsOf: url)
                 player.delegate = self
@@ -244,7 +284,20 @@ final class CommandSpeaker: NSObject, TTSProvider, AVAudioPlayerDelegate {
                 try? FileManager.default.removeItem(at: url)
             }
         }
-        if items.isEmpty, player == nil { stopMeter(); onFinishedAll?() }
+        if items.isEmpty, player == nil {
+            stopMeter()
+            // the stretch ends a moment after the last sentence (the next answer's first sentence may be on its way)
+            if barge?.isRunning == true {
+                bargeEnd?.cancel()
+                let end = DispatchWorkItem { [weak self] in
+                    guard let self, !self.throughBarge, self.items.isEmpty else { return }
+                    MainActor.assumeIsolated { self.barge?.end() }
+                }
+                bargeEnd = end
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1.5, execute: end)
+            }
+            onFinishedAll?()
+        }
     }
 
     func audioPlayerDidFinishPlaying(_ player: AVAudioPlayer, successfully flag: Bool) {

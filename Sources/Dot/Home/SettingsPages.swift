@@ -291,6 +291,10 @@ struct VoicePage: View {
                 Text("on an edge, running jobs stay as small windows down the side of the screen you're on; hover one to widen it")
                     .font(.caption).foregroundStyle(.secondary)
             }
+            HomeSection("Talking over Dot") {
+                SettingToggle("Talk over Dot to cut it off", detail: "start talking while Dot speaks and it stops to listen, keeping what you said; never on a call or in lecture mode. With Bluetooth headphones it listens on the Mac's own mic, lid open only, and turns itself off for headphones it would switch into headset mode",
+                              isOn: $model.settings.talkOverDot)
+            }
             HomeSection("Drawing") {
                 SettingToggle("Pen sounds", detail: "the pen, pencil and paper sounds while Dot draws on the screen; never on a call", isOn: $model.settings.penSounds)
                 SettingToggle("Captions while Dot talks", detail: "what Dot says at the bottom of the screen, word by word; typed questions that draw always have them",
