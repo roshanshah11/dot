@@ -365,12 +365,17 @@ final class JobGateTests: XCTestCase {
                         "ls -t ~/Downloads ~/roshan 2>/dev/null | head -0; find ~/roshan -name '*.pdf' -exec ls -lT {} +",
                         "find -L $HOME -name x.pdf", "find / -name x", "find \(home) -maxdepth 6 -name x",
                         "rg --files ~/roshan | grep -i resume", "grep -ri resume ~", "ls -R ~/roshan", "fd resume ~",
-                        "echo $(find ~/roshan -name x)", "env LC_ALL=C find ${HOME}/roshan -name x"] {
+                        "echo $(find ~/roshan -name x)", "env LC_ALL=C find ${HOME}/roshan -name x",
+                        // the shell's directory follows cd (review, 10-26)
+                        "cd ~/roshan && find . -name '*.pdf'", "cd ~/roshan; rg --files | grep -i resume", "cd && ls -R",
+                        "cd ~/roshan && rg resume", "cd ~/roshan && grep -ri resume", "(cd ~/roshan; find . -name x)",
+                        "bash -c 'cd ~/roshan && find .'", "cd ~/roshan/Career && cd .. && fd resume", "cd / && find . -name x"] {
                 XCTAssertEqual(bash(cmd, c), .deny(JobGate.wideSearchLine), cmd)
             }
             for cmd in ["find ~/roshan/Career/Resumes -name '*.pdf'", "find . -name x", "ls -t ~/Downloads ~/roshan", "ls -la ~",
                         "rg -n Northwind ~/Downloads | head -20", "grep -i resume ~/roshan/Career/Resumes/Current/README.md",
-                        "find output -type f"] {
+                        "find output -type f", "cd ~/roshan/Career/Resumes && find . -name '*.pdf'", "cd ~/roshan && rg -n Northwind Career/Resumes",
+                        "cd ~/roshan && ls", "cd output && find .", "rg -e resume ~/Downloads", "grep -r resume"] {
                 XCTAssertNotEqual(bash(cmd, c), .deny(JobGate.wideSearchLine), cmd)
             }
             XCTAssertEqual(decide("Glob", ["pattern": "**/*esume*.pdf", "path": "\(home)/roshan"], c), .deny(JobGate.wideSearchLine))

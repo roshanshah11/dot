@@ -501,41 +501,67 @@ public enum JobGate {
     public static let wideSearchLine = "that searches his whole home or vault, which takes minutes: ask atlas search or recent_files first, or search the one folder it lives in (~/Dot/jobs/PROFILE.md says where his documents are)"
 
     /// The roots no search starts from: the disk, his home and the vault (10-26: two finds over the vault, cut off at 58 and
-    /// 81 s, and two 20 s Glob timeouts were 179 s of a 290 s resume upload; the full find takes 114 s).
-    static func isWideRoot(_ raw: String, _ c: JobGateContext) -> Bool {
-        var p = raw
-        for h in ["${HOME}", "$HOME"] where p == h || p.hasPrefix(h + "/") { p = c.home + p.dropFirst(h.count); break }
-        let resolved = resolve(c)(p)
-        return ["/", "/Users", c.home, c.vault].map(ConsentPolicy.canonical).contains(resolved)
+    /// 81 s, and two 20 s Glob timeouts were 179 s of a 290 s resume upload; the full find takes 114 s). A relative root is
+    /// taken from `cwd`, the shell's directory at that point (the job's folder unless a `cd` moved it).
+    static func isWideRoot(_ raw: String, _ c: JobGateContext, cwd: String? = nil) -> Bool {
+        ["/", "/Users", c.home, c.vault].map(ConsentPolicy.canonical).contains(searchPath(raw, cwd: cwd ?? c.jobFolder, c))
     }
 
-    /// A shell search (find, fd, rg, ag, grep -r, ls -R, tree) that starts at a wide root, in any segment.
-    static func wideSearch(command: String, context c: JobGateContext) -> String? {
+    static func searchPath(_ raw: String, cwd: String, _ c: JobGateContext) -> String {
+        var p = raw
+        for h in ["${HOME}", "$HOME"] where p == h || p.hasPrefix(h + "/") { p = c.home + p.dropFirst(h.count); break }
+        if p == "~" { p = c.home } else if p.hasPrefix("~/") { p = c.home + p.dropFirst(1) }
+        if p == "." || p == "./" { p = cwd } else if !p.hasPrefix("/") { p = (cwd as NSString).appendingPathComponent(p) }
+        return ConsentPolicy.canonical(p)
+    }
+
+    /// A shell search (find, fd, rg, ag, grep -r, ls -R, tree) that starts at a wide root, in any segment. The shell's
+    /// directory follows `cd`, so `cd ~/roshan && find .` is the vault search it is (review, 10-26).
+    static func wideSearch(command: String, context c: JobGateContext, cwd start: String? = nil) -> String? {
         let (segments, subs) = split(command)
         for sub in subs { if let why = wideSearch(command: sub, context: c) { return why } }
+        var cwd = start ?? c.jobFolder
         for segment in segments {
             var words = ShellSegment.words(segment)
+            if let f = words.first, f.hasPrefix("(") || f.hasPrefix("{") {
+                let rest = String(f.drop { $0 == "(" || $0 == "{" })
+                if rest.isEmpty { words.removeFirst() } else { words[0] = rest }
+            }
             while let first = words.first, ["env", "nohup", "time", "command", "builtin", "exec", "sudo"].contains((first as NSString).lastPathComponent)
                     || (first.contains("=") && !first.hasPrefix("-") && !first.hasPrefix("=")) {
                 words.removeFirst()
             }
             guard let first = words.first else { continue }
+            let name = (first as NSString).lastPathComponent
             var args = Array(words.dropFirst())
+            if name == "cd" || name == "pushd" {
+                if let target = args.first(where: { !$0.hasPrefix("-") }) { cwd = searchPath(target, cwd: cwd, c) } else if args.isEmpty { cwd = c.home }
+                continue
+            }
+            if ["bash", "zsh", "sh"].contains(name), args.count >= 2, args[0] == "-c" {
+                if let why = wideSearch(command: args[1], context: c, cwd: cwd) { return why }
+                continue
+            }
             let flagged = { (letters: String) in args.contains { a in a.hasPrefix("-") && !a.hasPrefix("--") && a.contains { letters.contains($0) } } }
-            var roots: [String] = []
-            switch (first as NSString).lastPathComponent {
+            let positional = args.filter { !$0.hasPrefix("-") }
+            // The paths each tool walks; none given means the shell's directory. nil: not a recursive search.
+            var paths: [String]?
+            switch name {
             case "find", "gfind":
                 while let a = args.first, ["-H", "-L", "-P", "-E", "-X", "-d", "-s", "-x"].contains(a) { args.removeFirst() }
-                roots = Array(args.prefix { !$0.hasPrefix("-") && $0 != "(" && $0 != "!" })
-            case "fd", "fdfind", "rg", "ag", "tree":
-                roots = args.filter { !$0.hasPrefix("-") }
-            case "grep", "egrep", "ggrep":
-                if flagged("rR") || args.contains("--recursive") { roots = args.filter { !$0.hasPrefix("-") } }
-            case "ls", "gls":
-                if flagged("R") || args.contains("--recursive") { roots = args.filter { !$0.hasPrefix("-") } }
+                paths = Array(args.prefix { !$0.hasPrefix("-") && $0 != "(" && $0 != "!" })
+            case "fd", "fdfind": paths = Array(positional.dropFirst())
+            case "rg", "ag": paths = args.contains("--files") ? positional : Array(positional.dropFirst())
+            case "grep", "egrep", "ggrep": if flagged("rR") || args.contains("--recursive") { paths = Array(positional.dropFirst()) }
+            case "ls", "gls": if flagged("R") || args.contains("--recursive") { paths = positional }
+            case "tree": paths = positional
             default: break
             }
-            if roots.contains(where: { isWideRoot($0, c) }) { return wideSearchLine }
+            guard var roots = paths else { continue }
+            if roots.isEmpty { roots = ["."] }
+            // A root named outright anywhere in the line counts too (a value flag can shift the positions).
+            roots += positional.filter { $0.hasPrefix("/") || $0.hasPrefix("~") || $0.hasPrefix("$HOME") || $0.hasPrefix("${HOME}") }
+            if roots.contains(where: { isWideRoot($0, c, cwd: cwd) }) { return wideSearchLine }
         }
         return nil
     }

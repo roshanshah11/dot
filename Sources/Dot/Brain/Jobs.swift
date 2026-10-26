@@ -58,6 +58,9 @@ final class JobManager {
         var outputs: [URL] = []
         /// Its login waits on his tick on a robot box: his clicks and keys then never pause it (10-22).
         var waitingOnHim = false
+        /// He used the tab since its last dot call: the next one is told to look first, held or not (a step that ran past
+        /// the 15 s auto-resume would otherwise come back to a page he changed with no word of it).
+        var usedTab = false
         /// Hosts its login already ran on: one try each, since a wrong try can lock the account.
         var loginTried: Set<String> = []
         /// Its live page (parity J1): page.md as last read, its stamp, the window showing it, and his taps already taken.
@@ -800,8 +803,7 @@ final class JobManager {
             // While he uses the tab the call is held, not the session interrupted: a search or a file step running when he
             // clicked keeps its result (10-26: two vault searches, 58 and 81 s, were thrown away by pauses). Held under the
             // bridge's 60 s; a look held through the pause then reads the page as he left it.
-            let held = job.phase == .paused
-            if held {
+            if job.phase == .paused {
                 let deadline = Date().addingTimeInterval(Self.heldCallSeconds)
                 while job.phase == .paused, Date() < deadline { try? await Task.sleep(nanoseconds: 200_000_000) }
                 if job.phase.isTerminal { reply(["text": "stopped: the job is over; end your turn", "isError": true]); return }
@@ -809,10 +811,12 @@ final class JobManager {
                     reply(["text": "paused: he is still using the tab, so nothing was done. call look to keep waiting; dot holds it until he stops", "isError": true])
                     return
                 }
-                if tool != "look" {
-                    reply(["text": "[resume] he used the tab while this waited, so it wasn't done: look first (the page may have changed; keep what he typed), then carry on", "isError": true])
-                    return
-                }
+            }
+            let held = job.usedTab
+            job.usedTab = false
+            if held, tool != "look" {
+                reply(["text": "[resume] he used the tab since your last look, so this wasn't done: look first (the page may have changed; keep what he typed), then carry on", "isError": true])
+                return
             }
             let started = Date()
             let (text, isError, image) = await self.perform(job, tool: tool, args: args)
@@ -834,8 +838,9 @@ final class JobManager {
 
     func perform(_ job: Job, tool: String, args: [String: Any]) async -> (String, Bool, String?) {
         let started = Date()
-        // drive's clicks come straight here: a pause stops the loop at its next click (the session isn't interrupted).
-        if job.phase == .paused, tool != "look" { return ("paused: he is using the tab, so nothing was done", true, nil) }
+        // drive's clicks come straight here: a pause, or one already over, stops the loop at its next click (the session
+        // isn't interrupted, and `hands` has taken the marker for every other call).
+        if job.phase == .paused || job.usedTab, tool != "look" { return ("paused: he used the tab, so nothing was done; look first", true, nil) }
         if tool == "click", args["his"] as? Bool == true, !job.isBrowserJob {
             let ref = str(args, "ref")
             let frame = ref.flatMap { job.nativeFrames[$0] }
@@ -1324,6 +1329,7 @@ final class JobManager {
     func pause(_ job: Job, reason: String) {
         guard let next = job.phase.next(.paused) else { return }
         job.phase = next
+        job.usedTab = true
         // No interrupt: the step in flight finishes and its result is kept; the next dot call waits in `hands` (10-26).
         Log.info("job[\(job.id)] paused (\(reason))")
         say("paused while you use the tab; i'll carry on \(Int(Self.autoResumeSeconds)) seconds after you stop, or say go on.", job: job, start: false, short: true)
@@ -1356,9 +1362,10 @@ final class JobManager {
         job.autoResume?.cancel()
         job.autoResume = nil
         job.phase = next
-        // A turn still running has its next dot call held, and that call says he used the tab; a turn that ended while
-        // paused gets the message to carry on.
+        // A turn still running hears it from its next dot call (`usedTab`), held or not; a turn that ended while paused
+        // gets the message to carry on.
         if job.session?.turnInFlight != true {
+            job.usedTab = false
             job.session?.send(text: "[resume] he used the tab and \(why). continue where you left off; look first, the page may have changed, and keep what he typed.")
         }
         Log.info("job[\(job.id)] resumed")
