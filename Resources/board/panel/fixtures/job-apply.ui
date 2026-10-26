@@ -1,0 +1,36 @@
+<!-- expect: .status .tiles .tile:3 .todo-item:5 .mark-now .mark-needs .is-out .letter .review-row:4 .table-wrap .page-off:2 ; page: tick t1 i2 ; review r1 ; letter l1 ; light -->
+<status tone="info">Applying to Lazard: cover letter drafted, waiting on you</status>
+<tiles>
+<tile label="Applied" value="12" tone="good" note="+3 today">
+<tile label="In review" value="4" tone="info" note="2 replied">
+<tile label="Need you" value="2" tone="warn" note="oldest is 2 days old">
+</tiles>
+<title size="sm">Today</title>
+<todo id="t1">
+<item id="i1" done="true" mark="done">Pull the Lazard 2027 summer posting</item>
+<item id="i2" done="false" mark="now">Tailor the resume bullets to <b>restructuring</b></item>
+<item id="i3" mark="needs">Approve the cover email below</item>
+<item id="i4" mark="out">Evercore summer program (closed 10/20)</item>
+<item>Read the PJT careers page (no id: it shows but cannot be ticked)</item>
+</todo>
+<title size="sm">The email it wants to send</title>
+<letter id="l1" proposal="p_7f3a">To: CANARY-to@example.com
+Subject: CANARY-subject
+CANARY-body: a page must never be able to put words in this card.</letter>
+<title size="sm">Firms it found</title>
+<review id="r1">
+<item id="a" mark="new" reason="restructuring group, posting open until 11/15">Lazard: Restructuring Summer Analyst</item>
+<item id="b" reason="Chicago office, rolling deadline">William Blair: IB Summer Analyst</item>
+<item id="c" reason="asks for a referral first">Moelis: Summer Analyst, New York</item>
+<item reason="no id: it shows but cannot be decided">Houlihan Lokey: FR Summer Analyst</item>
+</review>
+<table>
+<tr><th>Firm</th><th>Stage</th><th num>Days</th></tr>
+<tr mark="pick"><td>Lazard</td><td>drafting</td><td num>1</td></tr>
+<tr mark="needs"><td>Moelis</td><td>needs a referral</td><td num>3</td></tr>
+<tr mark="out"><td>Evercore</td><td>closed</td><td num>0</td></tr>
+</table>
+<list>
+<item mark="pick">Lead with the restructuring case competition</item>
+<item mark="out">Mention the tutoring business (too far from the role)</item>
+</list>

@@ -1,0 +1,24 @@
+<!-- expect: .status .pform .pfield:5 .pchoice:3 .timeline .tl-day:4 .countdown:3 .countdown.late .progress .sticky ; page: form f1 ; light -->
+<status tone="warn">Planning the Thanksgiving trip home: needs your dates</status>
+<row wrap gap="2">
+<countdown to="2027-01-15T17:00:00-06:00" label="fares hold">
+<countdown to="2026-10-01T12:00:00-05:00" label="early fare">
+</row>
+<progress value="0.375" label="3 of 8 steps">
+<form id="f1" submit="Save">
+<field name="dates" label="Dates" type="text" value="" required>
+<field name="who" label="Who is coming" type="choice" options="just me,me and Ava,family of 4" value="just me">
+<field name="budget" label="Budget per ticket" type="number" value="350">
+<field name="leave" label="Leave on" type="date" required>
+<field name="notes" label="Anything else" type="textarea" value="Window seat if possible.
+Morning flights.">
+</form>
+<title size="sm">The plan</title>
+<timeline>
+<day date="Tue 25" title="Asked about dates">Texted the family; two answers so far.</day>
+<day date="Thu 27" title="Fares checked">ORD to SFO round trip on United, cheapest is mid-morning.</day>
+<day date="Mon 1" title="Book by Monday"><countdown to="2026-12-01T12:00:00-06:00" label="book"></day>
+<day date="Wed 26" title="Fly home"></day>
+</timeline>
+<sticky><b>Remember:</b> Mom asked to land before 6 pm on Wednesday, and Ava's finals end Tuesday.</sticky>
+<progress value="1.7" label="clamped to full" tone="good">
