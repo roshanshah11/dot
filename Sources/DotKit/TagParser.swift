@@ -30,6 +30,7 @@ import Foundation
 ///   [CHECK:e12] [CROSS:x,y] [CONNECT:e3;e7:label] [TRACE:x1,y1;x2,y2;x3,y3:label] [STICKY:x,y:words]
 ///   [PHOTO:x,y:query] [TYPE_TEXT:e12:words]
 ///   [EDIT:m2:recolor:red] [EDIT:m2:move:x,y] [EDIT:m2:scale:1.4] [ERASE:m2] [UNDO] [ADD] [ADD:LABEL:...]
+///   [FIGURE:animal cell|nucleus: sphere 1 #7b5cff; ...]   a 3D figure he can turn and click (FigureRecipe)
 public enum DotTag: Equatable {
     case point(x: Int, y: Int, label: String, screen: Int?)
     case pointNone
@@ -71,6 +72,8 @@ public enum DotTag: Equatable {
     case ink(InkSpec)
     /// A change to the ink already on the screen, by mark id.
     case inkEdit(InkEdit)
+    /// A 3D figure in its own small panel (parity D5).
+    case figure(FigureRecipe)
 }
 
 public enum ShapeKind: String, Equatable, Sendable { case line, arrow, circle, curve, polygon }
@@ -94,7 +97,7 @@ public extension DotTag {
     /// Tags that draw or move something on screen (as opposed to handing off or escalating).
     var isVisual: Bool {
         switch self {
-        case .point, .highlight, .target, .hover, .shape, .card, .reveal, .step, .clearBoard, .type, .web, .find, .stock, .place, .images, .ink, .inkEdit: return true
+        case .point, .highlight, .target, .hover, .shape, .card, .reveal, .step, .clearBoard, .type, .web, .find, .stock, .place, .images, .ink, .inkEdit, .figure: return true
         case .pointNone, .agent, .newAgent, .tell, .jobMessage, .stopAgent, .routine, .think, .act: return false
         }
     }
@@ -133,11 +136,11 @@ public struct ParsedResponse: Equatable {
 public enum TagParser {
     static let tagNames = ["POINT", "HIGHLIGHT", "TARGET", "HOVER", "SHAPE", "CARD", "REVEAL", "STEP", "CLEAR_BOARD", "TYPE", "WEB", "FIND", "STOCK", "PLACE", "IMAGES", "AGENT", "NEW_AGENT", "TELL", "STOP_AGENT", "JOB", "ROUTINE", "THINK", "OPEN", "SCROLL", "KEY", "CLICK", "INSERT", "GO", "PLAY", "SETTING", "SPOTIFY",
                            "WRITE", "LABEL", "NUM", "FRAME", "UNDERLINE", "STRIKE", "CHECK", "CROSS", "CONNECT", "TRACE", "STICKY", "PHOTO",
-                           "TYPE_TEXT", "EDIT", "ERASE", "UNDO", "ADD"]
+                           "TYPE_TEXT", "EDIT", "ERASE", "UNDO", "ADD", "FIGURE"]
 
     // swiftlint:disable:next force_try
     static let pattern = try! NSRegularExpression(
-        pattern: #"\[(POINT|HIGHLIGHT|TARGET|HOVER|SHAPE|CARD|REVEAL|STEP|CLEAR_BOARD|TYPE_TEXT|TYPE|WEB|FIND|STOCK|PLACE|IMAGES|AGENT|NEW_AGENT|TELL|STOP_AGENT|JOB|ROUTINE|THINK|OPEN|SCROLL|KEY|CLICK|INSERT|GO|PLAY|SETTING|SPOTIFY|WRITE|LABEL|NUM|FRAME|UNDERLINE|STRIKE|CHECK|CROSS|CONNECT|TRACE|STICKY|PHOTO|EDIT|ERASE|UNDO|ADD)(?::([^\]]*))?\]"#,
+        pattern: #"\[(POINT|HIGHLIGHT|TARGET|HOVER|SHAPE|CARD|REVEAL|STEP|CLEAR_BOARD|TYPE_TEXT|TYPE|WEB|FIND|STOCK|PLACE|IMAGES|AGENT|NEW_AGENT|TELL|STOP_AGENT|JOB|ROUTINE|THINK|OPEN|SCROLL|KEY|CLICK|INSERT|GO|PLAY|SETTING|SPOTIFY|WRITE|LABEL|NUM|FRAME|UNDERLINE|STRIKE|CHECK|CROSS|CONNECT|TRACE|STICKY|PHOTO|EDIT|ERASE|UNDO|ADD|FIGURE)(?::([^\]]*))?\]"#,
         options: []
     )
 
@@ -199,6 +202,8 @@ public enum TagParser {
             return InkEdit.parseErase(payload).map { .inkEdit($0) }
         case "UNDO":
             return .inkEdit(.undo)
+        case "FIGURE":
+            return FigureRecipe.parse(payload).map { .figure($0) }
         case "ADD":
             // [ADD] keeps the drawing for this answer; [ADD:LABEL:e3:name] is one mark drawn on top of it
             let trimmed = payload.trimmingCharacters(in: .whitespaces)

@@ -400,6 +400,7 @@ extension OverlayManager {
 
     /// Every mark goes (Escape, a new answer that draws afresh): the pens run backwards together.
     func clearInk(animated: Bool = true) {
+        closeFigures()
         guard !inkBoard.isEmpty || models.contains(where: { !$0.ink.isEmpty }) else { return }
         let ids = inkBoard.marks.map(\.id)
         if animated, !ids.isEmpty, inkPen.sounds { PenSounds.shared.cleared() }

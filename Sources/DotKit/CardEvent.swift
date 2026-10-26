@@ -105,6 +105,12 @@ public struct CardEvent: Equatable {
                 if !shown.isEmpty { line += "; \(label) \(shown)" }
             }
             return line
+        case "part":
+            // a named part of a 3D figure (parity D5): a native figure panel or a three.js mesh on a card
+            let figure = data["figure"]?.textValue?.trimmingCharacters(in: .whitespaces) ?? ""
+            let part = data["part"]?.textValue?.trimmingCharacters(in: .whitespaces) ?? ""
+            guard !part.isEmpty else { return figure.isEmpty ? "he clicked the figure" : "he clicked the figure \"\(figure)\"" }
+            return "he clicked \"\(part)\"" + (figure.isEmpty ? "" : " on the figure \"\(figure)\"")
         case "tap":
             let label = data["label"]?.textValue?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
             let thing = label.isEmpty ? name : label

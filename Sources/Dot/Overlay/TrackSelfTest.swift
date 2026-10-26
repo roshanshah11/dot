@@ -46,6 +46,7 @@ enum TrackSelfTest {
         results.append(await preview(overlay: overlay))
         results.append(await safari(overlay: overlay))
         results.append(await safariInk(overlay: overlay))
+        results.append(await figureClicks(overlay: overlay))
         overlay.clearMarks()
         // put the pointer back where it was
         if let primary = NSScreen.screens.first?.frame.height { CGWarpMouseCursorPosition(CGPoint(x: pointer.x, y: primary - pointer.y)) }
@@ -57,6 +58,52 @@ enum TrackSelfTest {
             Log.info("track-selftest: \(r.name) anchor \(r.anchor ?? "?") moved \(Int(r.moved)) pt; drift during max \(fmt(r.driftDuring.max())), at rest \(r.driftRest.map { fmt($0) }.joined(separator: ",")); offscreen hidden \(r.hiddenOffscreen.map { "\($0)" } ?? "?") chevron \(r.chevronOffscreen.map { "\($0)" } ?? "?"); back \(r.restored.map { "\($0)" } ?? "?") drift \(fmt(r.driftRestored)) \(r.note)")
         }
         Log.info("track-selftest: wrote \(url.path)")
+    }
+
+    /// The figure panel takes only its own clicks (parity D5): a real click just outside it lands in the window
+    /// underneath (a fixture window counts it), and a real click on a part reaches Dot with the part's name.
+    private static func figureClicks(overlay: OverlayManager) async -> Scenario {
+        var s = Scenario(name: "figure-clicks")
+        guard let recipe = FigureRecipe.parse(FigureSelfTest.cell), let screen = NSScreen.main else { s.note = "no recipe or screen"; return s }
+        let counter = ClickCounter(frame: CGRect(x: 0, y: 0, width: 760, height: 520))
+        let fixture = NSWindow(contentRect: CGRect(x: screen.visibleFrame.midX - 380, y: screen.visibleFrame.midY - 260, width: 760, height: 520),
+                               styleMask: [.titled], backing: .buffered, defer: false)
+        fixture.title = "Dot figure selftest"
+        fixture.contentView = counter
+        fixture.isReleasedWhenClosed = false
+        fixture.orderFrontRegardless()
+        defer { fixture.orderOut(nil) }
+        var told: [String] = []
+        guard let panel = overlay.showFigure(recipe, anchor: nil, accentHex: "#ff6b2c", onPart: { told.append($0) }) else { s.note = "no figure"; return s }
+        defer { overlay.closeFigure(panel) }
+        panel.built.root.removeAction(forKey: "idle")
+        panel.setFrameOrigin(CGPoint(x: fixture.frame.midX - panel.frame.width / 2 + 120, y: fixture.frame.midY - panel.frame.height / 2))
+        try? await Task.sleep(nanoseconds: 800_000_000)
+        let primary = NSScreen.screens.first?.frame.height ?? 0
+        func click(_ appKit: CGPoint) async {
+            let p = CGPoint(x: appKit.x, y: primary - appKit.y)
+            for type in [CGEventType.mouseMoved, .leftMouseDown, .leftMouseUp] {
+                CGEvent(mouseEventSource: nil, mouseType: type, mouseCursorPosition: p, mouseButton: .left)?.post(tap: .cghidEventTap)
+                try? await Task.sleep(nanoseconds: 60_000_000)
+            }
+            try? await Task.sleep(nanoseconds: 400_000_000)
+        }
+        // just outside the panel's left edge: the overlay and the panel must let it through to the fixture
+        await click(CGPoint(x: panel.frame.minX - 14, y: panel.frame.midY))
+        let outside = counter.clicks == 1 && told.isEmpty
+        guard let local = panel.viewPoint(of: "nucleus") else { s.note = "no nucleus"; return s }
+        let onScreen = panel.convertPoint(toScreen: panel.view.convert(local, to: nil))
+        await click(onScreen)
+        let part = told == ["nucleus"] && counter.clicks == 1
+        s.restored = outside && part
+        s.note = "outside click reached the window: \(outside) (\(counter.clicks) counted); part click told Dot: \(told.joined(separator: ","))"
+        return s
+    }
+
+    private final class ClickCounter: NSView {
+        var clicks = 0
+        override func mouseDown(with event: NSEvent) { clicks += 1 }
+        override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
     }
 
     private static func fmt(_ x: Double?) -> String { x.map { String(format: "%.1f", $0) } ?? "-" }

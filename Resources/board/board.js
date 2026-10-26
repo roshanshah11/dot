@@ -60,10 +60,64 @@
         if (lib.css) loadCSS(BASE + lib.css);
         if (lib.module) return import(BASE + lib.module).then(function (m) { window[name === "three" ? "THREE" : name] = m; return m; });
         return loadScript(BASE + lib.script);
-      });
+      }).then(function (r) { if (name === "three") partClicks(window.THREE); return r; });
       return loaded[name];
     })).then(function (r) { return r.length === 1 ? r[0] : r; });
   }
+
+  // ---- 3D parts he can click (parity D5) ------------------------------------------------
+  // Every three.js scene on a card answers a click: the nearest named mesh under the pointer (a see-through shell
+  // gives way to what is inside it) reports {part, figure} to Dot as a "part" event. A drag that turned the scene is
+  // not a click. Card scripts that load three.js themselves are caught by the short watch below.
+  function partClicks(T) {
+    if (!T || !T.WebGLRenderer || T.WebGLRenderer.prototype.__dotParts) return;
+    var render = T.WebGLRenderer.prototype.render;
+    T.WebGLRenderer.prototype.__dotParts = true;
+    T.WebGLRenderer.prototype.render = function (scene, camera) {
+      var canvas = this.domElement;
+      canvas.__dotScene = scene; canvas.__dotCamera = camera;
+      if (!canvas.__dotWatched) {
+        canvas.__dotWatched = true;
+        var down = null;
+        canvas.addEventListener("pointerdown", function (e) { down = [e.clientX, e.clientY]; });
+        canvas.addEventListener("pointerup", function (e) {
+          var moved = !down || Math.hypot(e.clientX - down[0], e.clientY - down[1]) > 4;
+          down = null;
+          if (moved) return;
+          var hit = partAt(T, canvas, e.clientX, e.clientY);
+          if (hit) reportEvent("part", hit);
+        });
+      }
+      return render.apply(this, arguments);
+    };
+  }
+  function partAt(T, canvas, x, y) {
+    if (!canvas.__dotScene || !canvas.__dotCamera) return null;
+    var r = canvas.getBoundingClientRect(), ray = new T.Raycaster();
+    ray.setFromCamera(new T.Vector2((x - r.left) / r.width * 2 - 1, -(y - r.top) / r.height * 2 + 1), canvas.__dotCamera);
+    var named = [];
+    ray.intersectObjects(canvas.__dotScene.children, true).forEach(function (hit) {
+      for (var o = hit.object; o && !o.isScene; o = o.parent) {
+        if (o.name) {
+          var m = hit.object.material, glass = !!(m && m.transparent && m.opacity < 0.9);
+          named.push({name: o.name, glass: glass});
+          return;
+        }
+      }
+    });
+    var pick = named.filter(function (n) { return !n.glass; })[0] || named[0];
+    if (!pick) return null;
+    var holder = canvas.closest("[data-name],[aria-label]");
+    var figure = (holder && (holder.dataset.name || holder.getAttribute("aria-label"))) || canvas.__dotScene.name || document.title || "";
+    return {part: String(pick.name).slice(0, 60), figure: String(figure).slice(0, 60)};
+  }
+  (function watchThree() {
+    var tries = 0, timer = setInterval(function () {
+      if (window.THREE) partClicks(window.THREE);
+      if (++tries > 60 || (window.THREE && window.THREE.WebGLRenderer && window.THREE.WebGLRenderer.prototype.__dotParts)) clearInterval(timer);
+    }, 400);
+  })();
+  window.DotParts = {at: function (canvas, x, y) { return window.THREE ? partAt(window.THREE, canvas, x, y) : null; }};
 
   // ---- tokens -------------------------------------------------------------------------
   // Colors come from the CSS variables: board.css holds the defaults, the card's {{TOKENS}} block his merged tokens.
@@ -410,6 +464,8 @@
       var scene = new T.Scene(), camera = new T.PerspectiveCamera(45, W / H, 0.1, 100); camera.position.set(0, 0, 16);
       var renderer = new T.WebGLRenderer({antialias: true, alpha: true}); renderer.setPixelRatio(window.devicePixelRatio); renderer.setSize(W, H); div.innerHTML = ""; div.appendChild(renderer.domElement);
       scene.add(new T.AmbientLight(0xffffff, 0.7)); var light = new T.PointLight(0xffffff, 40); light.position.set(6, 8, 10); scene.add(light);
+      var NAMES = {A: "adenine", T: "thymine", G: "guanine", C: "cytosine"};
+      scene.name = div.dataset.name || "double helix";
       var colors = {A: 0x7cc7ff, T: 0xffd166, G: 0x9ef0b6, C: 0xff6b2c}, pairs = +(div.dataset.pairs || 14), seq = (div.dataset.seq || "ATGCGATTACGCAT").toUpperCase();
       var group = new T.Group(), backbone = new T.MeshStandardMaterial({color: 0xe8e0d4, roughness: 0.4});
       var s1 = [], s2 = [];
@@ -420,14 +476,16 @@
         var base = seq[i % seq.length], comp = {A: "T", T: "A", G: "C", C: "G"}[base] || "A";
         var half1 = new T.Mesh(new T.CylinderGeometry(0.16, 0.16, 2.6, 12), new T.MeshStandardMaterial({color: colors[base]}));
         var half2 = new T.Mesh(new T.CylinderGeometry(0.16, 0.16, 2.6, 12), new T.MeshStandardMaterial({color: colors[comp]}));
+        half1.name = NAMES[base] + " (" + base + "-" + comp + " pair)"; half2.name = NAMES[comp] + " (" + comp + "-" + base + " pair)";
         var mid = p1.clone().lerp(p2, 0.5);
         half1.position.copy(p1.clone().lerp(mid, 0.5)); half2.position.copy(p2.clone().lerp(mid, 0.5));
         half1.lookAt(mid); half1.rotateX(Math.PI / 2); half2.lookAt(mid); half2.rotateX(Math.PI / 2);
         group.add(half1, half2);
       }
       [s1, s2].forEach(function (pts) {
-        var curve = new T.CatmullRomCurve3(pts); group.add(new T.Mesh(new T.TubeGeometry(curve, 120, 0.22, 10, false), backbone));
-        pts.forEach(function (p) { var m = new T.Mesh(new T.SphereGeometry(0.3, 14, 14), backbone); m.position.copy(p); group.add(m); });
+        var curve = new T.CatmullRomCurve3(pts), tube = new T.Mesh(new T.TubeGeometry(curve, 120, 0.22, 10, false), backbone);
+        tube.name = "sugar-phosphate backbone"; group.add(tube);
+        pts.forEach(function (p) { var m = new T.Mesh(new T.SphereGeometry(0.3, 14, 14), backbone); m.name = "phosphate group"; m.position.copy(p); group.add(m); });
       });
       scene.add(group);
       var controls = new window.OrbitControls(camera, renderer.domElement); controls.enableZoom = false;

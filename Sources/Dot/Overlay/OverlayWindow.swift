@@ -912,6 +912,8 @@ final class OverlayManager {
     var inkBoard = InkBoard()
     var inkPen = InkPenState()
     var captionSerial = 0
+    /// 3D figures up (parity D5); they close with the drawing.
+    var figurePanels: [FigurePanel] = []
     /// Marks hidden because their content scrolled out of view, restored when it comes back.
     private var hiddenRing: (Ring, Int)?
     private var hiddenHighlight: (CGRect, Int)?

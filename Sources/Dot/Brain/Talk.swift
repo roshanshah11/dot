@@ -2813,6 +2813,7 @@ final class Talk {
             }
             lines.append("[on screen] your ink: " + marks.joined(separator: "; "))
         }
+        for figure in overlay.figureLines { lines.append("[on screen] your \(figure)") }
         lines.append(contentsOf: panels.contextLines())
         lines.append(contentsOf: calendarLines(for: transcript))
         if let stale = AtlasFreshness.parse(replicaState: try? Data(contentsOf: replicaStateURL), boxWatch: try? Data(contentsOf: boxWatchURL)).staleLine(now: Date()) {
@@ -3192,6 +3193,9 @@ final class Talk {
             case .images(let query):
                 Task { @MainActor in _ = await self.imagesCard(query) }
                 label = label ?? Log.short(query, 24)
+            case .figure(let recipe):
+                showFigure(recipe)
+                label = label ?? recipe.title
             default:
                 break
             }
@@ -3656,6 +3660,36 @@ final class Talk {
                 break
             }
         }
+    }
+
+    /// A 3D figure (parity D5): a real molecule goes to a card through 3Dmol; parts are built in a figure panel beside
+    /// the place named, and a click on a part becomes a turn about that part.
+    private func showFigure(_ recipe: FigureRecipe) {
+        Log.info("figure: \(Log.short(recipe.tagText, 160))")
+        if let pdb = recipe.molecule {
+            showCard(id: "figure-\(pdb)", rect: nil, title: recipe.title,
+                     html: "<div class=\"molecule\" data-pdb=\"\(pdb)\" data-style=\"cartoon\" data-height=\"320\"></div>", screen: nil)
+            return
+        }
+        let anchor = recipe.place.flatMap { place in shot(forScreen: nil).flatMap { inkRect(place, label: "", kind: .frame, in: $0) } }
+        overlay.showFigure(recipe, anchor: anchor, accentHex: config.pointerColorHex) { [weak self] part in
+            self?.figurePart(part, figure: recipe.title)
+        }
+    }
+
+    /// He clicked a part of a figure: Dot answers about that part, and the drawing and the figure stay up.
+    private func figurePart(_ part: String, figure: String) {
+        endBench()
+        driveRequested = false
+        guard let session = session(for: .talk) else { return }
+        if phase == .speaking { overlay.clearCaption(); stopSpeaking() }
+        let summary = CardEvent(card: "figure", kind: "part", data: ["part": .text(part), "figure": .text(figure)]).summary
+        let message = "[part] \(summary). say what that part is and does in a sentence or two, the way you would to him pointing at it; the figure stays up, so add to it rather than redraw it."
+        let (built, _) = buildMessage(message, kind: .talk)
+        lastMessage = built
+        lastImages = []
+        sendTurn(built, images: [], to: session, kind: .talk)
+        inkTurnFresh = false
     }
 
     /// Captions while Dot talks (parity D7): on with Home > Voice > Drawing, and always for a typed question that draws.

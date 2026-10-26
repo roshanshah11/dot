@@ -1,0 +1,13 @@
+<!doctype html>
+<html data-card="parts-fixture" data-look="study" data-look-fixed><head><meta charset="utf-8">
+<title>Dot board: 3D parts he can click</title>
+<link rel="stylesheet" href="../board.css">
+<script src="../board.js"></script>
+<style> html { background: var(--card-bg); } body { max-width: 520px; } </style>
+</head><body>
+<h2>Click a part of the figure</h2>
+<!-- Dot --figure-selftest builds a three.js scene in #figure (no WebGL needed: the click is a raycast) -->
+<div id="figure" data-name="test cell" style="width: 300px; height: 300px"></div>
+<!-- Open by hand in Dot's card window to see the named helix answer clicks. -->
+<div class="helix" data-name="double helix" data-height="220" data-pairs="10"></div>
+</body></html>
