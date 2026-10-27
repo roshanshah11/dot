@@ -1758,6 +1758,9 @@ final class Talk {
 
     /// Classes whose after-class pass is still running after he closed them.
     private var finishingLectures: [LectureSession] = []
+    /// A class is being written or finished: an install now would end it. `lectureSession` is cleared when he ends the
+    /// class, before the after-class pass (its retranscription, then the model) has run.
+    var lectureBusy: Bool { lectureSession != nil || !finishingLectures.isEmpty }
     private var recheckTimer: Timer?
     private var recheckFile: URL { config.talkRootURL.appendingPathComponent("lecture-rechecks.json") }
 
