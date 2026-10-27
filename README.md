@@ -110,7 +110,8 @@ Checked against the code on 2026-10-26 (parity US-11). Paths are this Mac's.
   `~/.claude/projects/-Users-roshanshah-Dot-agents-<name>/` for agents (`-Dot-jobs-<id>/` for jobs). Claude Code
   deletes a session 30 days after its last use (`cleanupPeriodDays`, its default); Dot deletes its own sooner when Home >
   General > Privacy says so (`claudeSessionDays`: 1, 3, 7 or 14 days; 30, the default, leaves it to Claude Code), two
-  minutes after launch and every 6 hours, never another project's sessions and never an agent's current one. Lecture mode saves the slides and board pictures
+  minutes after launch and every 6 hours, never another project's sessions (each session's own recorded folder must be Dot's) and never
+  one a Dot process is on now. Lecture mode saves the slides and board pictures
   it puts in the notes, in the course folder's `notes-images/`, with the notes and the class transcript.
 - **Dot's own state.** `~/Dot/home-state.sqlite` (drafts, scroll positions, reactions, prompt cards, agent icons,
   dictation suggestions); `~/Dot/agents/<name>/` (each agent's folder, its outputs and pictures); `~/Dot/rules.json`,

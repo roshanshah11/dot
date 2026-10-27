@@ -125,7 +125,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             Task { @MainActor in self?.talk.offerLecture() }
         }
         // Dot's own Claude Code sessions past claudeSessionDays (Home > General > Privacy); at 30 it does nothing.
-        SessionSweeper.start { [weak self] in self?.config ?? DotConfig.load(save: false) }
+        SessionSweeper.start(config: { [weak self] in self?.config ?? DotConfig.load(save: false) },
+                             live: { [weak self] in self?.talk.liveSessionIds ?? [] })
         // The fast lane: a job's dot tools ask the running Dot here (`Dot --hands-mcp`).
         control.register("hands") { [weak self] request, reply in
             guard let self else { reply(["error": "dot is quitting"]); return }
@@ -311,7 +312,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func applySettings(_ changed: DotConfig) {
         let before = config
         config = changed
-        if changed.claudeSessionDays < before.claudeSessionDays { SessionSweeper.run(changed) }
+        if changed.claudeSessionDays < before.claudeSessionDays { SessionSweeper.run(changed, live: talk.liveSessionIds) }
         // The window saves the copy it took at launch; keys the app set since must not go back.
         if config.lastSeenVersion != before.lastSeenVersion { config.lastSeenVersion = before.lastSeenVersion; config.save() }
         if changed.showCompanion != before.showCompanion {

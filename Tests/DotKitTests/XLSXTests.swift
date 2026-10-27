@@ -177,6 +177,28 @@ final class XLSXTests: XCTestCase {
         XCTAssertTrue(book.sheets[0].truncated)
     }
 
+    func testSharedFormulas() throws {
+        XCTAssertEqual(XLSXFormula.shift("B2*2", rows: 3, columns: 0), "B5*2")
+        XCTAssertEqual(XLSXFormula.shift("SUM($B$2:B2)/C$1", rows: 2, columns: 1), "SUM($B$2:C4)/D$1")
+        XCTAssertEqual(XLSXFormula.shift("LOG10(A1)&\"A1\"&'Q1 data'!A1&Q1!B2", rows: 1, columns: 1), "LOG10(B2)&\"A1\"&'Q1 data'!B2&Q1!C3")
+        XCTAssertEqual(XLSXFormula.shift("SUM(A:A)+SUM(2:3)+Table1[Amount]", rows: 1, columns: 2), "SUM(C:C)+SUM(3:4)+Table1[Amount]")
+        XCTAssertEqual(XLSXFormula.shift("A1+#REF!+TRUE+3.5E+2", rows: 1, columns: 0), "A2+#REF!+TRUE+3.5E+2")
+        XCTAssertEqual(XLSXFormula.shift("XFD1+A1048576", rows: 1, columns: 1), "#REF!+#REF!")
+        XCTAssertEqual(XLSXFormula.shift("a1+$b$2+sum(c3:D$4)", rows: 1, columns: 1), "B2+$b$2+sum(D4:E$4)", "either case, as openpyxl reads it")
+        let xml = """
+        <worksheet><sheetData>
+        <row r="2"><c r="B2"><f t="shared" ref="B2:C3" si="0">A2*2</f><v>2</v></c><c r="C2"><f t="shared" si="0"/><v>4</v></c></row>
+        <row r="3"><c r="B3"><f t="shared" si="0"/><v>6</v></c><c r="D3"><f t="shared" si="7"/><v>1</v></c></row>
+        </sheetData></worksheet>
+        """
+        let sheet = try XLSXParts.sheet(Data(xml.utf8), name: "S", hidden: false, strings: [], styles: [], date1904: false, maxCells: 100)
+        func formula(_ ref: String) -> String? { XLSXRef.parse(ref).flatMap { sheet.cell(row: $0.row, column: $0.column)?.formula } }
+        XCTAssertEqual(formula("B2"), "A2*2")
+        XCTAssertEqual(formula("C2"), "B2*2")
+        XCTAssertEqual(formula("B3"), "A3*2")
+        XCTAssertNil(formula("D3"), "a dependent whose master never came keeps its cached value only")
+    }
+
     func testRefsAndPaths() {
         XCTAssertEqual(XLSXRef.parse("AB12")?.row, 11)
         XCTAssertEqual(XLSXRef.parse("AB12")?.column, 27)
@@ -187,6 +209,8 @@ final class XLSXTests: XCTestCase {
         XCTAssertEqual(XLSXRef.column(27), "AB")
         XCTAssertEqual(XLSXRef.column(701), "ZZ")
         XCTAssertEqual(XLSXRange(ref: "C3"), XLSXRange(firstRow: 2, firstColumn: 2, lastRow: 2, lastColumn: 2))
+        XCTAssertEqual(XLSXRange(ref: "D4:B2"), XLSXRange(firstRow: 1, firstColumn: 1, lastRow: 3, lastColumn: 3))
+        for damaged in ["", ":", "A1:B2:C3"] { XCTAssertNil(XLSXRange(ref: damaged), damaged) }   // a damaged merge, not a crash
         XCTAssertEqual(XLSXPaths.resolve("worksheets/sheet1.xml", base: "xl"), "xl/worksheets/sheet1.xml")
         XCTAssertEqual(XLSXPaths.resolve("/xl/styles.xml", base: "xl"), "xl/styles.xml")
         XCTAssertEqual(XLSXPaths.resolve("../customXml/item1.xml", base: "xl"), "customXml/item1.xml")

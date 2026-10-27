@@ -73,6 +73,8 @@ struct ConsentCard: Identifiable {
     var onAlways: (() -> Void)? = nil
     /// Its agent stopped or its session ended: the question is answered no (FX-07).
     var onWithdraw: (() -> Void)? = nil
+    /// A send a job queued in Atlas: his yes goes through Atlas, not the job, so the card stays when the job ends.
+    var outlivesJob = false
 
     init(id: UUID = UUID(), agentId: String = "", agent: String, title: String, detail: String, guarded: Bool = false,
          onAllow: @escaping () -> Void, onDeny: @escaping () -> Void, onAlways: (() -> Void)? = nil) {
@@ -645,10 +647,11 @@ final class NotchHUD {
         syncConsent()
     }
 
-    /// The agent stopped or its session ended: its questions leave with it. Returns how many.
+    /// The agent stopped or its session ended: its questions leave with it, except (`keepQueued`) a queued send's,
+    /// which only Atlas needs. Returns how many.
     @discardableResult
-    func withdrawConsent(agent: String) -> Int {
-        let gone = consentQueue.removeAll(agent: agent)
+    func withdrawConsent(agent: String, keepQueued: Bool = false) -> Int {
+        let gone = consentQueue.removeAll(agent: agent) { !(keepQueued && $0.outlivesJob) }
         if !gone.isEmpty { syncConsent() }
         for entry in gone { entry.item.onWithdraw?() }
         return gone.count

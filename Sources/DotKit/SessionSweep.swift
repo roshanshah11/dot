@@ -22,6 +22,25 @@ public enum SessionSweep {
         }
     }
 
+    /// The folder a session started in: the first "cwd" in the head of its file (Claude Code writes one on each record,
+    /// ahead of the message). nil when the head has none.
+    public static func startCwd(head: String) -> String? {
+        guard let re = try? NSRegularExpression(pattern: #""cwd"\s*:\s*("(?:[^"\\]|\\.)*")"#),
+              let m = re.firstMatch(in: head, range: NSRange(head.startIndex..., in: head)),
+              let r = Range(m.range(at: 1), in: head) else { return nil }
+        return (try? JSONSerialization.jsonObject(with: Data(head[r].utf8), options: .fragmentsAllowed)) as? String
+    }
+
+    /// Whether Dot started a session in `cwd`: talk's folder, or one agent's or one job's own folder. The folder name
+    /// alone can't tell (`/Dot/agents-email/x` and `/Dot/agents/email-x` both name `-Dot-agents-email-x`).
+    public static func isDots(cwd: String, talk: String, agents: String, jobs: String) -> Bool {
+        func std(_ p: String) -> String { (p as NSString).standardizingPath }
+        let path = std(cwd)
+        if path == std(talk) { return true }
+        let parent = (path as NSString).deletingLastPathComponent
+        return parent == std(agents) || parent == std(jobs)
+    }
+
     /// The session ids to delete: last written more than `days` ago and not in use. Nothing when `days` is outside
     /// 1...29 (30 and up is Claude Code's own; 0 or less is a slip, not "delete everything").
     public static func expired(_ sessions: [(id: String, modified: Date)], days: Int, inUse: Set<String>, now: Date) -> [String] {

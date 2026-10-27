@@ -68,6 +68,8 @@ final class AgentManager {
     private var runs: [String: Run] = [:]
     /// Agents with a turn in flight or helpers at work, for the install gate (`Dot --jobs`, IdleReport).
     var workingAgents: [String] { runs.values.filter(\.isWorking).map(\.agent.slug).sorted() }
+    /// The conversations an agent process is on right now (running or hosted): the session sweep leaves them be.
+    var liveSessionIds: Set<String> { Set(runs.values.filter { $0.session.isRunning || $0.session.isHosted }.map(\.session.sessionId)) }
     /// What each working agent is doing now, for the orb (VI-04).
     private var activities: [String: AgentActivity] = [:]
     /// The agent he last spoke to by name or replied to: a follow-up with no name goes there (G2).

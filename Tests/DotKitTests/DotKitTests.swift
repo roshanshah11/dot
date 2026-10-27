@@ -821,6 +821,12 @@ final class ConsentQueueTests: XCTestCase {
         queue.remove(id: physics)
         XCTAssertTrue(queue.isEmpty)
         XCTAssertNil(queue.current)
+        // A job ends: its step question goes, the send it queued in Atlas stays for his yes (review, 10-27).
+        let step = UUID(), send = UUID()
+        queue.add(id: step, agent: "job-a1", item: "step: one step on your screen")
+        queue.add(id: send, agent: "job-a1", item: "send: email to the trek office")
+        XCTAssertEqual(queue.removeAll(agent: "job-a1") { !$0.hasPrefix("send:") }.map(\.id), [step])
+        XCTAssertEqual(queue.current?.id, send)
     }
 }
 

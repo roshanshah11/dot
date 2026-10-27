@@ -74,6 +74,11 @@ final class Talk {
     /// The next talk conversation, started before the current one reaches its turn limit.
     private var spareTalk: ClaudeSession?
     private var thinkSession: ClaudeSession?
+    /// Every conversation a process of Dot's is on now (talk, think, jobs, agents), which the session sweep keeps.
+    var liveSessionIds: Set<String> {
+        let own = [talkSession, spareTalk, thinkSession, activeSession].compactMap { $0 }.filter(\.isRunning).map(\.sessionId)
+        return Set(own).union(jobs.liveSessionIds).union(agents.liveSessionIds)
+    }
 
     private(set) var phase: Phase = .idle
     private var mode: HotkeyMonitor.Mode = .talk
@@ -268,7 +273,7 @@ final class Talk {
         jobs.talkIsIdle = { [weak self] in self.map { $0.phase == .idle && !$0.speaker.isSpeaking } ?? true }
         jobs.presentCard = { [weak hud] card in hud?.present(card, chime: true) }
         jobs.dismissCard = { [weak hud] id in hud?.dismissConsent(id: id) }
-        jobs.withdrawCards = { [weak hud] agent in hud?.withdrawConsent(agent: agent) }
+        jobs.withdrawCards = { [weak hud] agent in hud?.withdrawConsent(agent: agent, keepQueued: true) }
         jobs.jev = jev
         NSWorkspace.shared.notificationCenter.addObserver(forName: NSWorkspace.didActivateApplicationNotification, object: nil, queue: .main) { [weak self] note in
             guard let app = note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication else { return }

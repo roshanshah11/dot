@@ -121,9 +121,10 @@ enum SelfTest {
             e.flags = f
             _ = monitor.handle(type: .flagsChanged, event: e)
         }
-        func key(_ code: CGKeyCode, down: Bool, _ f: CGEventFlags) -> Bool {
+        func key(_ code: CGKeyCode, down: Bool, _ f: CGEventFlags, repeating: Bool = false) -> Bool {
             guard let e = CGEvent(keyboardEventSource: nil, virtualKey: code, keyDown: down) else { return false }
             e.flags = f
+            if repeating { e.setIntegerValueField(.keyboardEventAutorepeat, value: 1) }
             return monitor.handle(type: down ? .keyDown : .keyUp, event: e)
         }
         func drain() -> [HotkeyMonitor.Event] {
@@ -153,6 +154,16 @@ enum SelfTest {
         let released = drain()
         check("option+Space talks and its key never reaches the app", kept && repeatKept && upKept && pressed == [.pressed(.talk)]
               && released.contains { if case .released(.talk, _) = $0 { return true }; return false })
+        flags([.maskAlternate])
+        let early = key(49, down: true, [.maskAlternate])
+        flags([])   // option comes up while Space is still down: the hold ends here
+        let endedEarly = drain()
+        let lateRepeat = key(49, down: true, [], repeating: true)
+        let lateUp = key(49, down: false, [])
+        check("letting go of option first still keeps Space's repeats and key-up from the app",
+              early && lateRepeat && lateUp && endedEarly.contains { if case .released(.talk, _) = $0 { return true }; return false })
+        check("and Space on its own reaches the app after", !key(49, down: true, []) && !key(49, down: false, []))
+        _ = drain()
         flags([.maskControl, .maskAlternate]); flags([])
         check("the old chord no longer fires once another is recorded", drain().isEmpty)
         check("other keys pass through", !key(2, down: true, []) && !key(2, down: false, []))
@@ -160,6 +171,19 @@ enum SelfTest {
         monitor.paused = true
         _ = key(49, down: true, [.maskAlternate]); _ = key(49, down: false, [.maskAlternate])
         check("nothing fires while he records a chord", drain().isEmpty)
+
+        // Settings' recorder: a bare key ends the recording on its key-up (no flags change follows) and is refused
+        let recorder = ChordRecorder()
+        var recorded: Chord?
+        recorder.start(.dictation) { recorded = $0 }
+        func nsKey(_ type: NSEvent.EventType) -> NSEvent? {
+            NSEvent.keyEvent(with: type, location: .zero, modifierFlags: [], timestamp: 0, windowNumber: 0, context: nil,
+                             characters: "d", charactersIgnoringModifiers: "d", isARepeat: false, keyCode: 2)
+        }
+        if let down = nsKey(.keyDown), let up = nsKey(.keyUp) { _ = recorder.handle(down); _ = recorder.handle(up) }
+        check("recording a bare key ends on its key-up, and the check refuses it",
+              recorder.recording == nil && recorded?.keyCode == 2 && recorded.flatMap { ChordRules.problem($0, conversation: false) } != nil)
+        recorder.cancel()
     }
 
     /// DI-05: the correction watch over a scripted field. His fix inside the range, then five quiet seconds, gives a

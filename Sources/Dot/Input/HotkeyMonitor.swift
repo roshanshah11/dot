@@ -51,6 +51,9 @@ final class HotkeyMonitor {
     private(set) var dictation = Chord.dictationDefault
     /// The key of a keyed chord being held, swallowed until it comes up.
     private var holdKey: UInt16?
+    /// A keyed chord's key, kept from the app in front until its own key-up, even when a modifier came up first and
+    /// ended the hold (else its repeats and key-up would reach an app that never saw it go down).
+    private var swallowKey: UInt16?
     private var activeTap = false
     /// While he records a new chord in Settings nothing fires.
     var paused = false
@@ -134,6 +137,7 @@ final class HotkeyMonitor {
     private func press(_ hit: ChordMatch.Hit, key: UInt16?) {
         held = true
         holdKey = key
+        if let key { swallowKey = key }
         mode = hit == .dictate ? .dictate : (hit == .agent ? .agent : .talk)
         pressedAt = Date()
         dragStart = nil
@@ -178,13 +182,17 @@ final class HotkeyMonitor {
             }
         case .keyUp:
             let keyCode = UInt16(event.getIntegerValueField(.keyboardEventKeycode))
-            if held, let holdKey, keyCode == holdKey {
-                release(at: event.location)
+            if let swallowKey, keyCode == swallowKey {
+                self.swallowKey = nil
+                if held, holdKey == keyCode { release(at: event.location) }
                 return true
             }
         case .keyDown:
             let keyCode = UInt16(event.getIntegerValueField(.keyboardEventKeycode))
-            if held, let holdKey, keyCode == holdKey { return true }   // its repeats
+            if let swallowKey, keyCode == swallowKey {
+                if held || event.getIntegerValueField(.keyboardEventAutorepeat) != 0 { return true }   // its repeats, held or not
+                self.swallowKey = nil   // a fresh press: its key-up came while the tap was off
+            }
             if !held, activeTap, event.getIntegerValueField(.keyboardEventAutorepeat) == 0,
                let hit = ChordMatch.pressed(key: keyCode, active, conversation: conversation, dictation: dictation) {
                 press(hit, key: keyCode)

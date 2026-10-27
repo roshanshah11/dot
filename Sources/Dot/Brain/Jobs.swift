@@ -150,6 +150,7 @@ final class JobManager {
     }
 
     var running: [Job] { jobs.filter { $0.phase.isLive } }
+    var liveSessionIds: Set<String> { Set(running.compactMap { $0.session?.sessionId }) }
     var pausedJob: Job? { jobs.last { $0.phase == .paused } }
     var frontJob: Job? { running.last { $0.placement == .front } }
     var newest: Job? { running.last }
@@ -688,7 +689,7 @@ final class JobManager {
         guard job.phase.isLive else { return }
         job.phase = stopReason != nil ? .stopped : (failed ? .failed : .done)
         job.endedAt = Date()
-        withdrawCards?("job-\(job.id)")
+        withdrawCards?("job-\(job.id)")   // its step cards; a queued send's card stays for his yes
         job.endLine = line
         job.pendingDone?.cancel()
         if !job.bench {
@@ -1243,7 +1244,7 @@ final class JobManager {
         let pid8 = String(card.proposal.prefix(8))
         var answered = false
         let cardId = UUID()
-        let consent = ConsentCard(id: cardId, agentId: "job-\(job.id)", agent: "dot", title: card.title, detail: card.detail, guarded: card.guarded, onAllow: { [weak self, weak job] in
+        var consent = ConsentCard(id: cardId, agentId: "job-\(job.id)", agent: "dot", title: card.title, detail: card.detail, guarded: card.guarded, onAllow: { [weak self, weak job] in
             guard let self, !answered else { return }
             answered = true
             self.dismissCard?(cardId)
@@ -1265,6 +1266,7 @@ final class JobManager {
                 job?.session?.send(text: "[dot] he said no; nothing was sent.")
             }
         })
+        consent.outlivesJob = true   // the job usually ends its turn right after queuing; his yes still sends it
         Log.info("proposal: card \(pid8) \(card.operation) shown for job[\(job.id)]")
         if let presentCard { presentCard(consent) } else { Log.warn("proposal: no card surface; \(pid8) waits in Atlas") }
     }

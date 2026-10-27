@@ -283,7 +283,8 @@ public enum JobGate {
             }
             guard let first = words.first else { continue }
             let word = (first as NSString).lastPathComponent
-            if ["bash", "zsh", "sh"].contains(word), words.count >= 3, words[1] == "-c", case .deny(let why) = atlasBash(words[2]) { return .deny(why) }
+            if ["bash", "zsh", "sh"].contains(word), let inner = ShellSegment.commandString(Array(words.dropFirst())),
+               case .deny(let why) = atlasBash(inner) { return .deny(why) }
             if screenDrivers.contains(word) { return .deny("\(word) isn't in a job: drive pages and apps with the dot tools, which ring submit, send and buy for him") }
             if secretTools.contains(word) { return .deny(secretLine) }
             if word == "atlasctl" || word == "atlas" {
@@ -374,7 +375,7 @@ public enum JobGate {
                 continue
             }
             if ["bash", "zsh", "sh"].contains(w) {
-                if words.count >= 3, words[1] == "-c" { return bash(words[2], context: c) }
+                if let inner = ShellSegment.commandString(Array(words.dropFirst())) { return bash(inner, context: c) }
                 return .deny(notInJob)
             }
             break
@@ -519,13 +520,25 @@ public enum JobGate {
     /// directory follows `cd`, so `cd ~/roshan && find .` is the vault search it is (review, 10-26).
     static func wideSearch(command: String, context c: JobGateContext, cwd start: String? = nil) -> String? {
         let (segments, subs) = split(command)
-        for sub in subs { if let why = wideSearch(command: sub, context: c) { return why } }
         var cwd = start ?? c.jobFolder
+        var visited = [cwd]   // a $(...) runs wherever the line is when it gets there: each place it has been
+        // ( opens a subshell, whose cd ends with it ({ groups in the same shell): the directory outside each one still
+        // open, and how many the last segment closed (review, 10-27: `cd /; (cd /tmp); find .` searches /).
+        var outside: [String] = []
+        var closing = 0
         for segment in segments {
+            for _ in 0..<closing { if let back = outside.popLast() { cwd = back } }
+            closing = 0
             var words = ShellSegment.words(segment)
             if let f = words.first, f.hasPrefix("(") || f.hasPrefix("{") {
+                for ch in f.prefix(while: { $0 == "(" || $0 == "{" }) where ch == "(" { outside.append(cwd) }
                 let rest = String(f.drop { $0 == "(" || $0 == "{" })
                 if rest.isEmpty { words.removeFirst() } else { words[0] = rest }
+            }
+            if let l = words.last, l.hasSuffix(")") {
+                closing = l.reversed().prefix(while: { $0 == ")" }).count
+                let rest = String(l.dropLast(closing))
+                if rest.isEmpty { words.removeLast() } else { words[words.count - 1] = rest }
             }
             while let first = words.first, ["env", "nohup", "time", "command", "builtin", "exec", "sudo"].contains((first as NSString).lastPathComponent)
                     || (first.contains("=") && !first.hasPrefix("-") && !first.hasPrefix("=")) {
@@ -536,10 +549,11 @@ public enum JobGate {
             var args = Array(words.dropFirst())
             if name == "cd" || name == "pushd" {
                 if let target = args.first(where: { !$0.hasPrefix("-") }) { cwd = searchPath(target, cwd: cwd, c) } else if args.isEmpty { cwd = c.home }
+                visited.append(cwd)
                 continue
             }
-            if ["bash", "zsh", "sh"].contains(name), args.count >= 2, args[0] == "-c" {
-                if let why = wideSearch(command: args[1], context: c, cwd: cwd) { return why }
+            if ["bash", "zsh", "sh"].contains(name), let inner = ShellSegment.commandString(args) {
+                if let why = wideSearch(command: inner, context: c, cwd: cwd) { return why }
                 continue
             }
             let flagged = { (letters: String) in args.contains { a in a.hasPrefix("-") && !a.hasPrefix("--") && a.contains { letters.contains($0) } } }
@@ -548,8 +562,15 @@ public enum JobGate {
             var paths: [String]?
             switch name {
             case "find", "gfind":
-                while let a = args.first, ["-H", "-L", "-P", "-E", "-X", "-d", "-s", "-x"].contains(a) { args.removeFirst() }
-                paths = Array(args.prefix { !$0.hasPrefix("-") && $0 != "(" && $0 != "!" })
+                // its own flags (-H -L -P -E -X -d -s -x, apart or combined), BSD's -f <path>, then -- before the paths
+                var named: [String] = []
+                while let a = args.first {
+                    if a == "--" { args.removeFirst(); break }
+                    if a == "-f", args.count > 1 { named.append(args[1]); args.removeFirst(2); continue }
+                    guard a.count > 1, a.hasPrefix("-"), a.dropFirst().allSatisfy({ "HLPEXdsx".contains($0) }) else { break }
+                    args.removeFirst()
+                }
+                paths = named + Array(args.prefix { !$0.hasPrefix("-") && $0 != "(" && $0 != "!" })
             case "fd", "fdfind": paths = Array(positional.dropFirst())
             case "rg", "ag": paths = args.contains("--files") ? positional : Array(positional.dropFirst())
             case "grep", "egrep", "ggrep": if flagged("rR") || args.contains("--recursive") { paths = Array(positional.dropFirst()) }
@@ -562,6 +583,9 @@ public enum JobGate {
             // A root named outright anywhere in the line counts too (a value flag can shift the positions).
             roots += positional.filter { $0.hasPrefix("/") || $0.hasPrefix("~") || $0.hasPrefix("$HOME") || $0.hasPrefix("${HOME}") }
             if roots.contains(where: { isWideRoot($0, c, cwd: cwd) }) { return wideSearchLine }
+        }
+        for sub in subs {
+            for dir in Set(visited) { if let why = wideSearch(command: sub, context: c, cwd: dir) { return why } }
         }
         return nil
     }
@@ -631,6 +655,26 @@ public enum JobGate {
 
 /// One shell segment as words, quotes grouped and redirections dropped (`> out.txt`, `2>/dev/null`, `< in`).
 enum ShellSegment {
+    /// The command a shell runs from -c, its flags apart or combined (`bash -c x`, `bash -lc x`, `sh -e -c x`,
+    /// `zsh -o pipefail -c x`), from the words after the shell's name; nil when it runs no -c command.
+    static func commandString(_ args: [String]) -> String? {
+        var sawC = false
+        var i = 0
+        while i < args.count {
+            let a = args[i]
+            if a == "--" || a == "-" { i += 1; break }
+            guard a.count > 1, a.hasPrefix("-") || a.hasPrefix("+") else { break }
+            if a == "--rcfile" || a == "--init-file" { i += 2; continue }   // bash's long options that take a file
+            if !a.hasPrefix("--") {
+                let letters = a.dropFirst()
+                if letters.contains("c") { sawC = true }
+                if letters.last == "o" || letters.last == "O" { i += 1 }   // -o pipefail: the option's name
+            }
+            i += 1
+        }
+        return sawC && i < args.count ? args[i] : nil
+    }
+
     static func words(_ segment: String) -> [String] {
         var out: [String] = []
         var skipNext = false

@@ -594,8 +594,8 @@ final class ChordRecorder: ObservableObject {
         return out
     }
 
-    /// True when the event was part of the recording (kept from the window).
-    private func handle(_ event: NSEvent) -> Bool {
+    /// True when the event was part of the recording (kept from the window). Internal for the self-test.
+    func handle(_ event: NSEvent) -> Bool {
         switch event.type {
         case .keyDown:
             if event.keyCode == 53, seen.isEmpty { cancel(); return true }
@@ -603,6 +603,8 @@ final class ChordRecorder: ObservableObject {
             update(Self.modifiers(event.modifierFlags))
             return true
         case .keyUp:
+            // the key with nothing held (a bare key): no flags change follows, so it ends here and the check says why
+            if let key, event.keyCode == key.code, Self.modifiers(event.modifierFlags).subtracting([.fn]).isEmpty { finish() }
             return true
         case .flagsChanged:
             let now = Self.modifiers(event.modifierFlags)

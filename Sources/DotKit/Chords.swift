@@ -85,6 +85,12 @@ public enum ChordRules {
            dictation.modifiers.subtracting([.shift]) == conversation.modifiers {
             return "that is the talk chord with Shift, which hands a request to an agent"
         }
+        // A modifier-only chord fires the moment its modifiers are down, and a held chord blocks the other, so the
+        // other can't be those modifiers plus more: control+option would start talk before control+option+D's D.
+        for (first, name, other, otherName) in [(conversation, "talk", dictation, "dictation"), (dictation, "dictation", conversation, "talk")]
+        where !first.keyed && first.modifiers.isSubset(of: other.modifiers) {
+            return "\(first.words) starts \(name) before \(other.words) is all down, so \(otherName) could never start; pick chords where neither is the other plus more"
+        }
         return nil
     }
 

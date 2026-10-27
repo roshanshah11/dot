@@ -45,9 +45,9 @@ public struct ConsentQueue<Item> {
 
     /// Removes every question one agent asked (it was stopped, or its session ended) and returns them.
     @discardableResult
-    public mutating func removeAll(agent: String) -> [Entry] {
-        let gone = entries.filter { $0.agent == agent }
-        entries.removeAll { $0.agent == agent }
+    public mutating func removeAll(agent: String, where matches: (Item) -> Bool = { _ in true }) -> [Entry] {
+        let gone = entries.filter { $0.agent == agent && matches($0.item) }
+        entries.removeAll { $0.agent == agent && matches($0.item) }
         if let pinned, !entries.contains(where: { $0.id == pinned }) { self.pinned = nil }
         return gone
     }

@@ -137,8 +137,8 @@ public struct XLSXRange: Equatable {
 
     /// "B2:D4", or one cell "B2".
     public init?(ref: String) {
-        let ends = ref.split(separator: ":").map(String.init)
-        guard let a = XLSXRef.parse(ends[0]), let b = XLSXRef.parse(ends.count > 1 ? ends[1] : ends[0]) else { return nil }
+        let ends = ref.split(separator: ":").map(String.init)   // "" and ":" give no parts: a damaged file, not a crash
+        guard ends.count <= 2, let first = ends.first, let a = XLSXRef.parse(first), let b = XLSXRef.parse(ends.last ?? first) else { return nil }
         self.init(firstRow: min(a.row, b.row), firstColumn: min(a.column, b.column), lastRow: max(a.row, b.row), lastColumn: max(a.column, b.column))
     }
 
@@ -165,6 +165,96 @@ public enum XLSXRef {
         var n = index + 1, out = ""
         while n > 0 { let r = (n - 1) % 26; out = String(UnicodeScalar(UInt8(65 + r))) + out; n = (n - 1) / 26 }
         return out
+    }
+}
+
+/// Excel's shared formulas: one master cell holds `<f t="shared" si="0">B2*2</f>` and the cells filled from it hold an
+/// empty `<f t="shared" si="0"/>`. Each one's formula is the master's with every relative reference moved by the
+/// distance between the two cells, as filling does; `$` parts stay. Strings, quoted sheet names and bracketed parts
+/// (tables, other workbooks) are left as written.
+public enum XLSXFormula {
+    static let maxRow = 1_048_576, maxColumn = 16_384
+
+    public static func shift(_ formula: String, rows: Int, columns: Int) -> String {
+        guard rows != 0 || columns != 0 else { return formula }
+        let c = Array(formula)
+        var out = ""
+        var i = 0
+        while i < c.count {
+            let ch = c[i]
+            if ch == "\"" || ch == "'" {
+                var j = i + 1
+                while j < c.count {
+                    if c[j] == ch { if j + 1 < c.count, c[j + 1] == ch { j += 2; continue }; break }
+                    j += 1
+                }
+                let end = min(j, c.count - 1)
+                out += String(c[i...end]); i = end + 1
+                continue
+            }
+            if ch == "[" {
+                var j = i, depth = 0
+                repeat { if c[j] == "[" { depth += 1 } else if c[j] == "]" { depth -= 1 }; j += 1 } while j < c.count && depth > 0
+                out += String(c[i..<j]); i = j
+                continue
+            }
+            if i == 0 || !word(c[i - 1]), let (text, next) = reference(c, at: i, rows: rows, columns: columns) {
+                out += text; i = next
+                continue
+            }
+            out.append(ch); i += 1
+        }
+        return out
+    }
+
+    private static func word(_ ch: Character) -> Bool { ch.isLetter || ch.isNumber || ch == "_" || ch == "." || ch == "$" }
+
+    /// `[$]letters` (either case, as Excel reads them) or `[$]digits` from `at`: the part, whether it was absolute, its
+    /// text as written, and where it ends.
+    private static func part(_ c: [Character], _ at: Int, letters: Bool) -> (value: Int, absolute: Bool, text: String, end: Int)? {
+        var j = at
+        let absolute = j < c.count && c[j] == "$"
+        if absolute { j += 1 }
+        var value = 0, count = 0
+        while j < c.count, let a = c[j].asciiValue, letters ? (65...90).contains(a) || (97...122).contains(a) : (48...57).contains(a) {
+            value = letters ? value * 26 + Int((a >= 97 ? a - 32 : a) - 64) : value * 10 + Int(a - 48)
+            count += 1; j += 1
+            if count > (letters ? 3 : 7) { return nil }
+        }
+        return count == 0 ? nil : (value, absolute, String(c[at..<j]), j)
+    }
+
+    /// A moved part comes out in capitals (as openpyxl's translator writes it); a `$` part stays as written.
+    private static func moved(_ p: (value: Int, absolute: Bool, text: String, end: Int), by: Int, limit: Int, letters: Bool) -> String? {
+        if p.absolute { return p.text }
+        let v = p.value + by
+        guard (1...limit).contains(v) else { return nil }
+        return letters ? XLSXRef.column(v - 1) : String(v)
+    }
+
+    /// A cell (B2), a column range (B:D) or a row range (2:5) starting at `at`, moved; nil when there is none there.
+    private static func reference(_ c: [Character], at: Int, rows: Int, columns: Int) -> (String, Int)? {
+        func ends(_ j: Int) -> Bool { j >= c.count || !(word(c[j]) || c[j] == "(" || c[j] == "!") }
+        if let col = part(c, at, letters: true), col.value <= maxColumn {
+            if let row = part(c, col.end, letters: false), row.value >= 1, row.value <= maxRow, ends(row.end) {
+                guard let a = moved(col, by: columns, limit: maxColumn, letters: true),
+                      let b = moved(row, by: rows, limit: maxRow, letters: false) else { return ("#REF!", row.end) }
+                return (a + b, row.end)
+            }
+            if col.end < c.count, c[col.end] == ":", let other = part(c, col.end + 1, letters: true), other.value <= maxColumn, ends(other.end) {
+                guard let a = moved(col, by: columns, limit: maxColumn, letters: true),
+                      let b = moved(other, by: columns, limit: maxColumn, letters: true) else { return ("#REF!", other.end) }
+                return (a + ":" + b, other.end)
+            }
+            return nil
+        }
+        if let first = part(c, at, letters: false), first.end < c.count, c[first.end] == ":",
+           let other = part(c, first.end + 1, letters: false), ends(other.end) {
+            guard let a = moved(first, by: rows, limit: maxRow, letters: false),
+                  let b = moved(other, by: rows, limit: maxRow, letters: false) else { return ("#REF!", other.end) }
+            return (a + ":" + b, other.end)
+        }
+        return nil
     }
 }
 
@@ -358,6 +448,8 @@ enum XLSXParts {
         // the cell being read
         var ref: (row: Int, column: Int)?, type = "n", styleIndex = 0
         var v: String?, f: String?, inline: String?
+        var sharedIndex: String?   // the cell's <f t="shared" si>
+        var shared: [String: (row: Int, column: Int, text: String)] = [:]   // si -> its master cell's formula
         var capture: String?   // "v", "f" or "t"
         var inIs = false, phonetic = 0
         var parsed: [String: [ExcelFormat.Section]] = [:]   // format code -> sections, tokenized once per sheet
@@ -382,7 +474,13 @@ enum XLSXParts {
                 if let v, let date = XLSXDates.iso(v) { value = .number(XLSXDates.serial(date, date1904: date1904)) }
             default: if let n = v.flatMap({ Double($0.trimmingCharacters(in: .whitespaces)) }) { value = .number(n) }
             }
-            let formula = f.flatMap { $0.isEmpty ? nil : $0 }
+            var formula = f.flatMap { $0.isEmpty ? nil : $0 }
+            if let si = sharedIndex {
+                if let text = formula { shared[si] = (at.row, at.column, text) }
+                else if let master = shared[si] {
+                    formula = XLSXFormula.shift(master.text, rows: at.row - master.row, columns: at.column - master.column)
+                }
+            }
             var shown = ExcelFormat.Shown("")
             switch value {
             case .number(let n): shown = ExcelFormat.shown(n, parsed: sections(style.format), date1904: date1904)
@@ -427,9 +525,11 @@ enum XLSXParts {
                 col = ref!.column
                 type = a["t"] ?? "n"
                 styleIndex = Int(a["s"] ?? "0") ?? 0
-                v = nil; f = nil; inline = nil
+                v = nil; f = nil; inline = nil; sharedIndex = nil
             case "v": capture = "v"; v = v ?? ""
-            case "f": capture = "f"; f = f ?? ""
+            case "f":
+                capture = "f"; f = f ?? ""
+                if a["t"] == "shared" { sharedIndex = a["si"] }
             case "is": inIs = true; inline = inline ?? ""
             case "rPh": phonetic += 1
             case "t" where inIs && phonetic == 0: capture = "t"

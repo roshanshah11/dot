@@ -369,13 +369,22 @@ final class JobGateTests: XCTestCase {
                         // the shell's directory follows cd (review, 10-26)
                         "cd ~/roshan && find . -name '*.pdf'", "cd ~/roshan; rg --files | grep -i resume", "cd && ls -R",
                         "cd ~/roshan && rg resume", "cd ~/roshan && grep -ri resume", "(cd ~/roshan; find . -name x)",
-                        "bash -c 'cd ~/roshan && find .'", "cd ~/roshan/Career && cd .. && fd resume", "cd / && find . -name x"] {
+                        "bash -c 'cd ~/roshan && find .'", "cd ~/roshan/Career && cd .. && fd resume", "cd / && find . -name x",
+                        // find's -- and BSD -f, and a shell's combined flags (review, 10-27)
+                        "cd ~/roshan/Career && find -- .. -name x", "find -L -- ~ -name x", "cd ~/roshan/Career && find -f .. -name x",
+                        "find -sx ~/roshan -name x", "bash -lc 'find ~/roshan -name x'", "sh -e -c 'cd ~/roshan && find .'",
+                        "zsh -o pipefail -c 'rg --files ~/roshan'", "bash --rcfile /dev/null -c 'cd ~ && ls -R'",
+                        // a subshell's cd ends with it; a $(...) runs where the line is
+                        "cd /; (cd /tmp); find .", "cd ~/roshan && (cd output) && find . -name x", "cd ~/roshan && echo $(find . -name x)",
+                        "((cd /tmp); find ~ -name x)"] {
                 XCTAssertEqual(bash(cmd, c), .deny(JobGate.wideSearchLine), cmd)
             }
             for cmd in ["find ~/roshan/Career/Resumes -name '*.pdf'", "find . -name x", "ls -t ~/Downloads ~/roshan", "ls -la ~",
                         "rg -n Northwind ~/Downloads | head -20", "grep -i resume ~/roshan/Career/Resumes/Current/README.md",
                         "find output -type f", "cd ~/roshan/Career/Resumes && find . -name '*.pdf'", "cd ~/roshan && rg -n Northwind Career/Resumes",
-                        "cd ~/roshan && ls", "cd output && find .", "rg -e resume ~/Downloads", "grep -r resume"] {
+                        "cd ~/roshan && ls", "cd output && find .", "rg -e resume ~/Downloads", "grep -r resume",
+                        "find -- output -type f", "bash -lc 'find output -type f'", "bash script.sh -c",
+                        "(cd output; find .)", "cd output; (cd /tmp); find .", "{ cd output; find .; }", "cd output && echo $(find . -name x)"] {
                 XCTAssertNotEqual(bash(cmd, c), .deny(JobGate.wideSearchLine), cmd)
             }
             XCTAssertEqual(decide("Glob", ["pattern": "**/*esume*.pdf", "path": "\(home)/roshan"], c), .deny(JobGate.wideSearchLine))
@@ -408,7 +417,9 @@ final class JobGateTests: XCTestCase {
         let a = ctx(permissions: .atlas)
         // pages and apps are driven with the dot tools, which ring Submit, Send and Buy for him
         for cmd in ["~/bin/hb click @e5", "cd /tmp && cbg a click @e1", "bash -c \"rba run x\"", "cliclick c:1,1", "xargs -n 1 hb open",
-                    "agent-browser click @e2", "env A=1 cua-driver click 1 1"] {
+                    "agent-browser click @e2", "env A=1 cua-driver click 1 1",
+                    // a shell's flags combined or apart still unwrap (review, 10-27)
+                    "bash -lc 'hb click @e5'", "sh -e -c 'rba run x'", "zsh -o pipefail -c 'cliclick c:1,1'"] {
             XCTAssertTrue(denied(bash(cmd, a)), cmd)
         }
         // a job never approves a send it queued

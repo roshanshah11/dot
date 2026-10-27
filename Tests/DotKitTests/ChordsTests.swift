@@ -37,6 +37,14 @@ final class ChordsTests: XCTestCase {
         XCTAssertNotNil(ChordRules.clash(conversation: talk, dictation: talk))
         XCTAssertNotNil(ChordRules.clash(conversation: talk, dictation: Chord([.control, .option, .shift])), "agent mode")
         XCTAssertNil(ChordRules.clash(conversation: talk, dictation: dictate))
+        // one modifier-only chord inside the other: the smaller one fires first and blocks the bigger one
+        let dKey = Chord([.control, .option], keyCode: 2, keyLabel: "D")
+        XCTAssertNotNil(ChordRules.clash(conversation: talk, dictation: dKey), "control+option starts talk before D")
+        XCTAssertNotNil(ChordRules.clash(conversation: talk, dictation: Chord([.control, .option, .command])))
+        XCTAssertNotNil(ChordRules.clash(conversation: Chord([.control, .option, .command]), dictation: talk), "either way round")
+        XCTAssertNotNil(ChordRules.clash(conversation: Chord([.control, .fn], keyCode: 49, keyLabel: "Space"), dictation: dictate))
+        XCTAssertNil(ChordRules.clash(conversation: Chord([.option], keyCode: 49, keyLabel: "Space"), dictation: dKey), "two keyed chords match exactly")
+        XCTAssertNil(ChordRules.clash(conversation: Chord([.option, .command]), dictation: dKey), "option+command isn't inside control+option")
     }
 
     func testFallbackAndMigration() throws {

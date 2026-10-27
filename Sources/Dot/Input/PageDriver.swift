@@ -158,9 +158,10 @@ final class PageDriver {
     /// Files this job downloaded, which `upload` may use.
     private(set) var downloaded: [String] = []
     /// A file chooser the page opened while Dot held choosers (Page.setInterceptFileChooserDialog): the backend node of
-    /// the file input it was for (0 when the page gave none), and when.
+    /// the file input it was for (0 when the page gave none); and the last one a click caught, with the button clicked
+    /// (only an upload on that same button uses it: a page with two upload buttons has two inputs) and when.
     private var caughtChooser: Int?
-    private var lastChooser: (node: Int, at: Date)?
+    private var lastChooser: (node: Int, button: Int?, at: Date)?
     /// The password Dot's login filled (memory only, gone at finish) and the fields it went into: no text a job reads
     /// carries either (10-22).
     var secret: String?
@@ -625,7 +626,8 @@ final class PageDriver {
         guard clicked else { return .error("the click didn't go through") }
         if leaveDialog { return .stopped("the page asks to leave; his call", his: "leave page") }
         if let chooser {
-            if chooser > 0 { lastChooser = (chooser, Date()) }
+            // a chooser with no input named leaves nothing to reuse, not the one before it
+            lastChooser = chooser > 0 ? (chooser, await backendNode(t.objectId), Date()) : nil
             return .ok("that opened a file picker; dot caught it, so no Mac file window opened. put the file in with upload on \(ref ?? "this button")", point: pt)
         }
         return .ok("clicked \(name)", point: pt)
@@ -878,6 +880,12 @@ final class PageDriver {
     }
     """
 
+    /// The element's backend node id, which stays the same across look-ups (object ids don't).
+    private func backendNode(_ objectId: String) async -> Int? {
+        guard let s = sessionId, let described = await cdp.send("DOM.describeNode", ["objectId": objectId], session: s) else { return nil }
+        return (described["node"] as? [String: Any])?["backendNodeId"] as? Int
+    }
+
     private func fileInputNode(_ objectId: String, maxDepth: Int) async -> Int? {
         guard let s = sessionId,
               let found = await cdp.send("Runtime.callFunctionOn", ["objectId": objectId, "functionDeclaration": Self.fileInputFunction,
@@ -899,7 +907,10 @@ final class PageDriver {
         guard FileManager.default.fileExists(atPath: path) else { return .error("no file at \(path)") }
         let file = (path as NSString).lastPathComponent
         var node = await fileInputNode(t.objectId, maxDepth: 0)
-        if node == nil, let last = lastChooser, Date().timeIntervalSince(last.at) < 120 { node = last.node }
+        if node == nil, let last = lastChooser, Date().timeIntervalSince(last.at) < 120, let button = last.button,
+           await backendNode(t.objectId) == button {
+            node = last.node
+        }
         if node == nil {
             switch verdict(t.info) {
             case .his(let what): return .stopped("his to press: \(what)", his: what, point: await point(t.info))

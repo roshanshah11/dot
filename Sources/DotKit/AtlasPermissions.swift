@@ -91,7 +91,8 @@ public enum AtlasDeny {
             }
             guard let first = words.first else { continue }
             let word = (first as NSString).lastPathComponent
-            if ["bash", "zsh", "sh"].contains(word), words.count >= 3, words[1] == "-c", let hit = closedCommand(in: words[2]) { return hit }
+            if ["bash", "zsh", "sh"].contains(word), let inner = ShellSegment.commandString(Array(words.dropFirst())),
+               let hit = closedCommand(in: inner) { return hit }
             let named = [word] + words.dropFirst()
             if let hit = commands.first(where: { named.count >= $0.count && Array(named.prefix($0.count)) == $0 }) {
                 return hit.joined(separator: " ")
