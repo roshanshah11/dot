@@ -74,6 +74,15 @@ if (( ! INSTALL )); then
   echo "built and signed $APP (not installed)"
   exit 0
 fi
+# A relaunch ends a class lecture mode is writing, and it does not come back on its own (2026-10-27: an install at
+# 13:17 cut a seminar off two minutes in). The note writer and the after-class pass are claude children of Dot whose
+# system prompts open with these words. DOT_INSTALL_DURING_LECTURE=1 installs anyway.
+if [[ -z "${DOT_INSTALL_DURING_LECTURE:-}" ]] &&
+   pgrep -f "You take a student's class notes for him, live|Class is over. During it, Dot wrote these notes live" >/dev/null; then
+  echo "lecture mode is writing a class now: built and signed $APP, not installed (a relaunch would end the class)" >&2
+  echo "install after class, or set DOT_INSTALL_DURING_LECTURE=1 to end it" >&2
+  exit 3
+fi
 
 mkdir -p ~/Applications
 INSTALLED=~/Applications/Dot.app
