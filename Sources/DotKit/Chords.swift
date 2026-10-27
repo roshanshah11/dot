@@ -29,10 +29,22 @@ public struct Chord: Codable, Equatable, Sendable {
     /// How the key reads ("Space", "D").
     public var keyLabel: String?
 
+    /// A keyed chord never holds Fn: macOS sets it on arrows and F-keys, so the recorder drops it and the event tap
+    /// ignores it. Dropping it here too (a hand-edited config) keeps what Settings shows, what the tap matches and what
+    /// the clash rules compare the same chord: control+fn+space is control+space.
     public init(_ modifiers: Set<ChordModifier>, keyCode: UInt16? = nil, keyLabel: String? = nil) {
-        self.modifiers = modifiers
+        self.modifiers = keyCode == nil ? modifiers : modifiers.subtracting([.fn])
         self.keyCode = keyCode
         self.keyLabel = keyLabel
+    }
+
+    private enum CodingKeys: String, CodingKey { case modifiers, keyCode, keyLabel }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.init(try c.decode(Set<ChordModifier>.self, forKey: .modifiers),
+                  keyCode: try c.decodeIfPresent(UInt16.self, forKey: .keyCode),
+                  keyLabel: try c.decodeIfPresent(String.self, forKey: .keyLabel))
     }
 
     public static let conversationDefault = Chord([.control, .option])
@@ -62,7 +74,7 @@ public enum ChordRules {
             return "Shift is the agent switch: hold it with the talk chord to hand the request to an agent"
         }
         if let key = chord.keyCode {
-            if chord.modifiers.subtracting([.shift, .fn]).isEmpty {
+            if chord.modifiers.subtracting([.shift]).isEmpty {
                 return "a key needs control, option or command with it, or it fires while you type"
             }
             if system.contains(where: { $0.0 == chord.modifiers && $0.1 == key }) {
@@ -87,15 +99,13 @@ public enum ChordRules {
         }
         // A modifier-only chord fires the moment its modifiers are down, and a held chord blocks the other, so the
         // other can't be those modifiers plus more: control+option would start talk before control+option+D's D.
-        // A keyed chord is matched without Fn (ChordMatch: macOS sets it for arrows and F-keys), so it is compared so.
-        func held(_ chord: Chord) -> Set<ChordModifier> { chord.keyed ? chord.modifiers.subtracting([.fn]) : chord.modifiers }
         for (first, name, other, otherName) in [(conversation, "talk", dictation, "dictation"), (dictation, "dictation", conversation, "talk")]
-        where !first.keyed && first.modifiers.isSubset(of: held(other)) {
+        where !first.keyed && first.modifiers.isSubset(of: other.modifiers) {
             return "\(first.words) starts \(name) before \(other.words) is all down, so \(otherName) could never start; pick chords where neither is the other plus more"
         }
         // the talk chord with Shift (an agent) is a chord too: dictation can't be inside it either (option+shift
         // would start dictation before option+shift+space's space)
-        if !dictation.keyed, dictation.modifiers.contains(.shift), dictation.modifiers.isSubset(of: held(conversation).union([.shift])) {
+        if !dictation.keyed, dictation.modifiers.contains(.shift), dictation.modifiers.isSubset(of: conversation.modifiers.union([.shift])) {
             return "\(dictation.words) starts dictation before the talk chord with Shift is all down, so handing a request to an agent could never start"
         }
         return nil
@@ -127,8 +137,8 @@ public enum ChordMatch {
     /// A keyed chord going down with this key. Fn is ignored for keys (macOS sets it for arrows and function keys).
     public static func pressed(key: UInt16, _ active: Set<ChordModifier>, conversation: Chord, dictation: Chord) -> Hit? {
         let mods = active.subtracting([.fn])
-        if dictation.keyCode == key, mods == dictation.modifiers.subtracting([.fn]) { return .dictate }
-        if conversation.keyCode == key, mods.subtracting([.shift]) == conversation.modifiers.subtracting([.fn]) {
+        if dictation.keyCode == key, mods == dictation.modifiers { return .dictate }
+        if conversation.keyCode == key, mods.subtracting([.shift]) == conversation.modifiers {
             return mods.contains(.shift) ? .agent : .talk
         }
         return nil
@@ -137,7 +147,6 @@ public enum ChordMatch {
     /// Is the chord behind `hit` still held?
     public static func held(_ hit: Hit, _ active: Set<ChordModifier>, conversation: Chord, dictation: Chord) -> Bool {
         let chord = hit == .dictate ? dictation : conversation
-        let needed = chord.keyed ? chord.modifiers.subtracting([.fn]) : chord.modifiers
-        return needed.isSubset(of: active)
+        return chord.modifiers.isSubset(of: active)
     }
 }

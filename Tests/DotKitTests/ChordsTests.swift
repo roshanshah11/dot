@@ -42,10 +42,14 @@ final class ChordsTests: XCTestCase {
         XCTAssertNotNil(ChordRules.clash(conversation: talk, dictation: dKey), "control+option starts talk before D")
         XCTAssertNotNil(ChordRules.clash(conversation: talk, dictation: Chord([.control, .option, .command])))
         XCTAssertNotNil(ChordRules.clash(conversation: Chord([.control, .option, .command]), dictation: talk), "either way round")
-        // a keyed chord is matched without Fn, as ChordMatch does: control+fn+space is control+space, which never holds fn
-        XCTAssertNil(ChordRules.clash(conversation: Chord([.control, .fn], keyCode: 49, keyLabel: "Space"), dictation: dictate))
+        // a keyed chord drops Fn (the tap ignores it), so a hand-edited control+fn+space is control+space, which macOS
+        // owns: Dot never shows fn on a chord it would start without fn, so control+fn dictation can't get in first
+        let fnSpace = Chord([.control, .fn], keyCode: 49, keyLabel: "Space")
+        XCTAssertEqual(fnSpace, Chord([.control], keyCode: 49, keyLabel: "Space"))
+        XCTAssertEqual(fnSpace.caps, ["⌃ control", "Space"])
+        XCTAssertNotNil(ChordRules.effective(conversation: fnSpace, dictation: dictate).fallback, "control+space is macOS's")
         XCTAssertNil(ChordRules.clash(conversation: Chord([.option, .fn], keyCode: 49, keyLabel: "Space"), dictation: Chord([.option, .shift, .fn])),
-                     "option+shift+space starts the agent with no fn held, so option+shift+fn never gets in its way")
+                     "the talk chord shows and starts as option+space, so option+shift+fn never gets in its way")
         XCTAssertNotNil(ChordRules.clash(conversation: Chord([.control, .option, .fn], keyCode: 49, keyLabel: "Space"), dictation: talk),
                         "control+option is still inside control+option+space")
         XCTAssertNil(ChordRules.clash(conversation: Chord([.option], keyCode: 49, keyLabel: "Space"), dictation: dKey), "two keyed chords match exactly")
@@ -65,6 +69,10 @@ final class ChordsTests: XCTestCase {
         let saved = Chord([.option, .command], keyCode: 49, keyLabel: "Space")
         let data = try JSONEncoder().encode(saved)
         XCTAssertEqual(try JSONDecoder().decode(Chord.self, from: data), saved)
+        // a hand-edited config's fn on a keyed chord is dropped as it loads; a modifier-only chord keeps it
+        let edited = #"{"modifiers":["control","option","fn"],"keyCode":49,"keyLabel":"Space"}"#
+        XCTAssertEqual(try JSONDecoder().decode(Chord.self, from: Data(edited.utf8)).modifiers, [.control, .option])
+        XCTAssertEqual(try JSONDecoder().decode(Chord.self, from: JSONEncoder().encode(dictate)), dictate)
         XCTAssertEqual(saved.caps, ["⌥ option", "⌘ command", "Space"])
         XCTAssertEqual(saved.words, "option+command+space")
         XCTAssertEqual(Chord.conversationDefault.words, "control+option")
