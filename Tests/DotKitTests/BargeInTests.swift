@@ -27,8 +27,8 @@ final class BargeInTests: XCTestCase {
 
     func testDotsOwnEchoIsRejected() {
         var d = BargeDetector()
-        // Dot plays loud; what leaks past the canceller stays under leak x far end: never sustained
-        run(&d, from: 0, to: 1.0, mic: 0.05, farEnd: 0.3)
+        // Dot plays loud; what leaks past the canceller (8% of its level at worst, measured) stays under the gate
+        run(&d, from: 0, to: 1.0, mic: 0.024, farEnd: 0.3)
         XCTAssertEqual(d.verdict(heard: "values a share", dotSaying: "the dividend discount model values a share"), .quiet)
         // loud enough to pass the gate, but the words are Dot's own sentence
         var e = BargeDetector()
@@ -36,6 +36,25 @@ final class BargeInTests: XCTestCase {
         XCTAssertEqual(e.verdict(heard: "discount model values", dotSaying: "the dividend discount model values a share"), .echo)
         // his words over Dot's voice still cut it off
         XCTAssertEqual(e.verdict(heard: "no stop that", dotSaying: "the dividend discount model values a share"), .barge(words: "no stop that"))
+    }
+
+    func testSpeechWithSyllableGapsHoldsTheStretch() {
+        // "one, two, three" over Dot: 120 ms syllables with 80 ms dips, frames every 20 ms
+        var d = BargeDetector()
+        var t: TimeInterval = 0
+        for _ in 0..<3 {
+            run(&d, from: t, to: t + 0.12, mic: 0.06, farEnd: 0.1)
+            run(&d, from: t + 0.12, to: t + 0.2, mic: 0.004, farEnd: 0.1)
+            t += 0.2
+        }
+        XCTAssertEqual(d.verdict(heard: "one two three", dotSaying: "the terminal value"), .barge(words: "one two three"))
+        // a dip longer than the gap ends it: two bursts 300 ms apart never add up
+        var e = BargeDetector()
+        run(&e, from: 0, to: 0.15, mic: 0.06)
+        run(&e, from: 0.15, to: 0.45, mic: 0.003)
+        run(&e, from: 0.45, to: 0.6, mic: 0.06)
+        run(&e, from: 0.6, to: 0.8, mic: 0.003)
+        XCTAssertEqual(e.verdict(heard: "one two", dotSaying: ""), .quiet)
     }
 
     func testLoudStretchIsRememberedThenForgotten() {
@@ -56,7 +75,11 @@ final class BargeInTests: XCTestCase {
         XCTAssertEqual(plan(.wired), .listen(mic: .systemDefault))
         XCTAssertEqual(plan(.bluetooth), .listen(mic: .builtIn))
         XCTAssertEqual(plan(.bluetooth, lid: true), .off("bluetooth out with the lid shut: no built-in mic to listen on"))
-        XCTAssertEqual(plan(.bluetooth, probe: nil), .probe(mic: .builtIn))
+        XCTAssertEqual(plan(.bluetooth, probe: nil), .off("bluetooth not tested yet: run Dot --barge-selftest --talk with it connected"),
+                       "an untested headset is never probed in ordinary use")
+        XCTAssertEqual(BargeRoute.plan(enabled: true, output: .bluetooth, lidClosed: false, onCall: false, lecture: false, probe: nil,
+                                       inputIsBluetooth: false, selfTest: true), .probe(mic: .builtIn), "only the self-test probes it")
+        XCTAssertEqual(plan(.builtIn, probe: nil), .probe(mic: .systemDefault), "wired and built-in outputs still probe on first use")
         XCTAssertEqual(plan(.bluetooth, probe: .failed), .off("voice processing changed this output when it was probed"))
         XCTAssertEqual(plan(.builtIn, btMic: true), .listen(mic: .builtIn))
         if case .off = plan(.builtIn, lid: true, btMic: true) {} else { XCTFail("a bluetooth-only mic with the lid shut is off") }

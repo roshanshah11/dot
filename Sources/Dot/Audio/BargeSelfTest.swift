@@ -42,7 +42,7 @@ enum BargeSelfTest {
         do { try await transcriber.warmUp() } catch { check(false, "speech models load: \(error)"); return }
         let listener = BargeListener(transcriber: transcriber, memoryURL: memoryURL)
         let plan = BargeRoute.plan(enabled: true, output: kind, lidClosed: AudioDevices.lidClosed, onCall: CallPresence.isOnCall(), lecture: false,
-                                   probe: nil, inputIsBluetooth: AudioDevices.defaultInput.map(AudioDevices.isBluetooth) ?? false)
+                                   probe: nil, inputIsBluetooth: AudioDevices.defaultInput.map(AudioDevices.isBluetooth) ?? false, selfTest: true)
         print("route plan: \(plan)")
         if case .off(let why) = plan { check(false, "this route can't use barge-in: \(why)"); return }
         listener.plan = { plan }
@@ -89,6 +89,10 @@ enum BargeSelfTest {
                 if let now = AudioDevices.defaultOutput.map(AudioDevices.snapshot) { worst += before.changes(to: now) }
                 if i < 2, barged != nil { break }
                 if i == 2, barged != nil { listener.stopPlayback(); break }
+            }
+            if i == 2, barged == nil {
+                let grace = Date().addingTimeInterval(2.5)   // his words over the last sentence are still being read
+                while barged == nil, Date() < grace { try? await Task.sleep(nanoseconds: 50_000_000) }
             }
             if i == 1 {
                 check(barged == nil, "Dot's own voice never tripped the detector (\(String(format: "%.1f", playedSeconds)) s of Dot talking)\(barged.map { ": heard \"\($0)\"" } ?? "")")

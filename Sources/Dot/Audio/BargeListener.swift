@@ -81,6 +81,9 @@ final class BargeListener {
         let engine = AVAudioEngine()
         let input = engine.inputNode
         _ = engine.outputNode
+        // The mixer must exist before voice processing turns on: made after it, the mixer's link to the output fails
+        // to initialize (-10875 on the MacBook speakers, 2026-10-26), and so does any player or tap on it.
+        _ = engine.mainMixerNode
         do {
             if mic == .builtIn {
                 guard let builtIn = AudioDevices.inputDevices().first(where: \.builtIn) else {
@@ -221,7 +224,7 @@ final class BargeListener {
     private func startRecognizer() {
         let transcriber = self.transcriber
         partials = Task { @MainActor [weak self] in
-            guard let stream = try? await transcriber.makeStream() else { return }
+            guard let stream = try? await transcriber.makeStream(quick: true) else { return }
             guard let self, self.isRunning else { await stream.cancel(); return }
             self.stream = stream
             do { try await stream.startStreaming(source: .microphone) } catch { Log.warn("barge: recognizer: \(error)"); return }

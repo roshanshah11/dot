@@ -22,12 +22,17 @@ actor Transcriber {
     }
 
     /// A fresh sliding-window recognizer over the same models: feed it buffers while the key is
-    /// held and words arrive as he says them; `finish()` returns the whole utterance.
-    func makeStream() async throws -> SlidingWindowAsrManager {
+    /// held and words arrive as he says them; `finish()` returns the whole utterance. `quick`: 1 s windows with
+    /// 0.3 s ahead, for talking over Dot (words within about 1.5 s; the default waits for 4 s plus 1 s ahead, since
+    /// the recognizer only reads a window once its right context has arrived).
+    func makeStream(quick: Bool = false) async throws -> SlidingWindowAsrManager {
         _ = try await ensureLoaded()
         guard let models else { throw NSError(domain: "Dot", code: 1, userInfo: [NSLocalizedDescriptionKey: "speech models not loaded"]) }
-        let config = SlidingWindowAsrConfig(chunkSeconds: 4.0, hypothesisChunkSeconds: 0.8, leftContextSeconds: 1.5, rightContextSeconds: 1.0,
-                                            minContextForConfirmation: 4.0, confirmationThreshold: 0.85)
+        let config = quick
+            ? SlidingWindowAsrConfig(chunkSeconds: 1.0, hypothesisChunkSeconds: 0.5, leftContextSeconds: 1.5, rightContextSeconds: 0.3,
+                                     minContextForConfirmation: 2.0, confirmationThreshold: 0.85)
+            : SlidingWindowAsrConfig(chunkSeconds: 4.0, hypothesisChunkSeconds: 0.8, leftContextSeconds: 1.5, rightContextSeconds: 1.0,
+                                     minContextForConfirmation: 4.0, confirmationThreshold: 0.85)
         let stream = SlidingWindowAsrManager(config: config)
         try await stream.loadModels(models)
         return stream

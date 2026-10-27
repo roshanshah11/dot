@@ -8,10 +8,15 @@ public struct BargeDetector {
     public struct Tuning: Equatable {
         /// RMS under this is room noise.
         public var floor: Float = 0.012
-        /// What of Dot's own output can leak past the canceller, as a share of its level.
-        public var leak: Float = 0.35
-        /// Loud frames needed in a row, in seconds.
+        /// What of Dot's own output can leak past the canceller, as a share of its level. Measured 2026-10-26 on the
+        /// MacBook speakers: with him silent, what was left of Dot's voice peaked at 8% of its level (-64 dB, median
+        /// -96 dB), while his voice over Dot ran -41 dB median, -21 dB p90. 0.35 kept most of his frames out.
+        public var leak: Float = 0.15
+        /// A loud stretch this long, in seconds.
         public var sustain: TimeInterval = 0.25
+        /// A dip shorter than this (the gap between two syllables) doesn't end a loud stretch. Without it a counted
+        /// "one, two" never held a quarter second in the 2026-10-26 recording; with it, it did at 0.6 s.
+        public var gap: TimeInterval = 0.2
         /// A loud stretch counts for this long after it ends (the words arrive later than the sound).
         public var memory: TimeInterval = 1.5
         /// Real words needed.
@@ -42,13 +47,11 @@ public struct BargeDetector {
     public mutating func frame(mic: Float, farEnd: Float, at t: TimeInterval) {
         let gate = max(tuning.floor, farEnd * tuning.leak)
         if mic > gate {
-            if loudSince == nil { loudSince = t }
-            if let start = loudSince, t - start >= tuning.sustain { sustained = true }
+            if loudSince == nil || t - lastLoud > tuning.gap { loudSince = t }
             lastLoud = t
-        } else if let start = loudSince, t - start < tuning.sustain {
-            loudSince = nil   // a click or a cough's burst: under the sustain, forgotten
-        } else {
-            loudSince = nil
+            if let start = loudSince, t - start >= tuning.sustain { sustained = true }
+        } else if t - lastLoud > tuning.gap {
+            loudSince = nil   // quiet for longer than a syllable gap: a click or a cough's burst under the sustain is forgotten
         }
         if sustained, t - lastLoud > tuning.memory { sustained = false }
     }
@@ -110,8 +113,10 @@ public enum BargeRoute {
 
     public enum Probe: String, Codable, Equatable { case passed, failed }
 
+    /// `selfTest`: `Dot --barge-selftest` is asking, the one place an untested Bluetooth output may be probed (his
+    /// call 2026-10-26: Bluetooth stays off until he has run the test with it).
     public static func plan(enabled: Bool, output: Output, lidClosed: Bool, onCall: Bool, lecture: Bool,
-                            probe: Probe?, inputIsBluetooth: Bool) -> Plan {
+                            probe: Probe?, inputIsBluetooth: Bool, selfTest: Bool = false) -> Plan {
         guard enabled else { return .off("talk over dot is off") }
         if onCall { return .off("on a call") }
         if lecture { return .off("in lecture mode") }
@@ -126,6 +131,9 @@ public enum BargeRoute {
             // a Bluetooth mic would put the headset in headset mode: the built-in one listens instead
             mic = inputIsBluetooth ? .builtIn : .systemDefault
             if inputIsBluetooth, lidClosed { return .off("the only mic is bluetooth and the lid is shut") }
+        }
+        if output == .bluetooth, probe == nil, !selfTest {
+            return .off("bluetooth not tested yet: run Dot --barge-selftest --talk with it connected")
         }
         switch probe {
         case .failed?: return .off("voice processing changed this output when it was probed")
