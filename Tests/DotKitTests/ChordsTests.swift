@@ -45,6 +45,10 @@ final class ChordsTests: XCTestCase {
         XCTAssertNotNil(ChordRules.clash(conversation: Chord([.control, .fn], keyCode: 49, keyLabel: "Space"), dictation: dictate))
         XCTAssertNil(ChordRules.clash(conversation: Chord([.option], keyCode: 49, keyLabel: "Space"), dictation: dKey), "two keyed chords match exactly")
         XCTAssertNil(ChordRules.clash(conversation: Chord([.option, .command]), dictation: dKey), "option+command isn't inside control+option")
+        let optionSpace = Chord([.option], keyCode: 49, keyLabel: "Space")
+        XCTAssertNotNil(ChordRules.clash(conversation: optionSpace, dictation: Chord([.option, .shift])), "option+shift blocks the agent's option+shift+space")
+        XCTAssertNil(ChordRules.clash(conversation: optionSpace, dictation: Chord([.control, .shift])))
+        XCTAssertNil(ChordRules.clash(conversation: .conversationDefault, dictation: .dictationDefault), "today's pair")
     }
 
     func testFallbackAndMigration() throws {

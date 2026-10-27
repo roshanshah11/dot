@@ -185,6 +185,11 @@ final class XLSXTests: XCTestCase {
         XCTAssertEqual(XLSXFormula.shift("A1+#REF!+TRUE+3.5E+2", rows: 1, columns: 0), "A2+#REF!+TRUE+3.5E+2")
         XCTAssertEqual(XLSXFormula.shift("XFD1+A1048576", rows: 1, columns: 1), "#REF!+#REF!")
         XCTAssertEqual(XLSXFormula.shift("a1+$b$2+sum(c3:D$4)", rows: 1, columns: 1), "B2+$b$2+sum(D4:E$4)", "either case, as openpyxl reads it")
+        // 3-D references: the sheets stay, the cell moves (openpyxl's translator agrees on all three)
+        XCTAssertEqual(XLSXFormula.shift("SUM(S1:S3!A1)", rows: 1, columns: 1), "SUM(S1:S3!B2)")
+        XCTAssertEqual(XLSXFormula.shift("SUM(Jan:Mar!B2)", rows: 1, columns: 1), "SUM(Jan:Mar!C3)")
+        XCTAssertEqual(XLSXFormula.shift("SUM('Q1 x:Q2 x'!A1)", rows: 1, columns: 1), "SUM('Q1 x:Q2 x'!B2)")
+        XCTAssertEqual(XLSXFormula.shift("SUM(A1:B2)", rows: 1, columns: 1), "SUM(B2:C3)", "a plain range still moves")
         let xml = """
         <worksheet><sheetData>
         <row r="2"><c r="B2"><f t="shared" ref="B2:C3" si="0">A2*2</f><v>2</v></c><c r="C2"><f t="shared" si="0"/><v>4</v></c></row>

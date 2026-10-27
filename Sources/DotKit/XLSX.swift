@@ -198,6 +198,10 @@ public enum XLSXFormula {
                 out += String(c[i..<j]); i = j
                 continue
             }
+            if i == 0 || !word(c[i - 1]), let end = sheetRange(c, at: i) {   // a 3-D reference's sheets stay as named
+                out += String(c[i..<end]); i = end
+                continue
+            }
             if i == 0 || !word(c[i - 1]), let (text, next) = reference(c, at: i, rows: rows, columns: columns) {
                 out += text; i = next
                 continue
@@ -208,6 +212,20 @@ public enum XLSXFormula {
     }
 
     private static func word(_ ch: Character) -> Bool { ch.isLetter || ch.isNumber || ch == "_" || ch == "." || ch == "$" }
+
+    /// `S1:S3!` at `at`, an unquoted range of sheets: where the names end (at the `!`). Its names can look like cells.
+    private static func sheetRange(_ c: [Character], at: Int) -> Int? {
+        func name(_ j: Int) -> Int {
+            var k = j
+            while k < c.count, c[k].isLetter || c[k].isNumber || c[k] == "_" || c[k] == "." { k += 1 }
+            return k
+        }
+        let a = name(at)
+        guard a > at, a < c.count, c[a] == ":" else { return nil }
+        let b = name(a + 1)
+        guard b > a + 1, b < c.count, c[b] == "!" else { return nil }
+        return b
+    }
 
     /// `[$]letters` (either case, as Excel reads them) or `[$]digits` from `at`: the part, whether it was absolute, its
     /// text as written, and where it ends.
