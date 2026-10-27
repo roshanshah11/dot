@@ -81,4 +81,23 @@ final class SessionSweepTests: XCTestCase {
         XCTAssertEqual(SessionSweep.expired(sessions, days: 0, inUse: [], now: now), [])
         XCTAssertEqual(SessionSweep.expired(sessions, days: -3, inUse: [], now: now), [])
     }
+
+    func testSidecarTombstones() throws {
+        let fm = FileManager.default
+        let folder = fm.temporaryDirectory.appendingPathComponent("sweep-\(UUID().uuidString)", isDirectory: true)
+        defer { try? fm.removeItem(at: folder) }
+        for id in ["gone", "kept"] {
+            try fm.createDirectory(at: folder.appendingPathComponent("\(id)/tool-results", isDirectory: true), withIntermediateDirectories: true)
+            try Data("x".utf8).write(to: folder.appendingPathComponent("\(id)/tool-results/1.txt"))
+            try Data("{}".utf8).write(to: folder.appendingPathComponent("\(id).jsonl"))
+        }
+        let dead = try XCTUnwrap(SessionSweep.tombstone("gone", in: folder))
+        XCTAssertFalse(fm.fileExists(atPath: folder.appendingPathComponent("gone").path))
+        XCTAssertTrue(fm.fileExists(atPath: dead.appendingPathComponent("tool-results/1.txt").path), "renamed whole, not deleted yet")
+        XCTAssertNil(SessionSweep.tombstone("never", in: folder), "a session with no sidecar")
+        // the next sweep finds it, and only it, even if this one never got to delete it
+        XCTAssertEqual(SessionSweep.tombstones(in: folder).map(\.lastPathComponent), [dead.lastPathComponent])
+        XCTAssertTrue(fm.fileExists(atPath: folder.appendingPathComponent("kept/tool-results/1.txt").path))
+        XCTAssertTrue(fm.fileExists(atPath: folder.appendingPathComponent("gone.jsonl").path), "the .jsonl is the caller's")
+    }
 }

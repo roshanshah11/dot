@@ -2,8 +2,8 @@ import DotKit
 import Foundation
 
 /// Deletes Dot's own Claude Code sessions older than `claudeSessionDays` (SessionSweep): two minutes after launch, then
-/// every 6 hours. Talk's, agents' and jobs' folders only; at 30 days (the default) it does nothing and Claude Code's own
-/// cleanup is the only one.
+/// every 6 hours. Talk's, agents' and jobs' folders only; at 30 days (the default) it deletes no session and Claude Code's
+/// own cleanup is the only one.
 @MainActor
 enum SessionSweeper {
     private static var timer: Timer?
@@ -22,8 +22,7 @@ enum SessionSweeper {
     /// The files are read off the main thread; each is deleted on it, where sessions start, after `live` is asked
     /// again and the file is seen unwritten since, so a conversation resumed meanwhile stays (review, 10-27).
     static func run(_ config: DotConfig, live: @escaping @MainActor () -> Set<String>) {
-        let days = config.claudeSessionDays
-        guard (1..<SessionSweep.claudeDefault).contains(days) else { return }
+        let days = config.claudeSessionDays   // outside 1...29 nothing expires; tombstones still go
         let talk = config.talkRootURL.path, agents = config.agentsRootURL.path, jobs = JobManager.root.path
         let inUse = live()
         DispatchQueue.global(qos: .utility).async {
@@ -34,6 +33,7 @@ enum SessionSweeper {
             var found: [Candidate] = []
             var skipped = 0
             for folder in folders {
+                for dead in SessionSweep.tombstones(in: folder) { try? fm.removeItem(at: dead) }   // a sweep a quit cut off
                 let files = (try? fm.contentsOfDirectory(at: folder, includingPropertiesForKeys: [.contentModificationDateKey])) ?? []
                 let sessions = files.filter { $0.pathExtension == "jsonl" }.compactMap { url -> (id: String, modified: Date)? in
                     guard let date = (try? url.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate else { return nil }
@@ -68,10 +68,10 @@ enum SessionSweeper {
             guard now == c.modified, (try? fm.removeItem(at: c.file)) != nil else { continue }   // written since: in use again
             removed += 1
             bytes += c.size
-            sidecars.append(c.folder.appendingPathComponent(c.id, isDirectory: true))
+            if let dead = SessionSweep.tombstone(c.id, in: c.folder) { sidecars.append(dead) }
         }
-        // what Claude Code keeps beside a session (large tool results), off the main thread: with its .jsonl gone no
-        // session can resume into it, so only the unlink above needed to be here
+        // what Claude Code keeps beside a session (large tool results), renamed above and deleted off the main thread:
+        // with its .jsonl gone no session can resume into it, and the next sweep finishes one a quit cut off
         let gone = sidecars
         if !gone.isEmpty {
             DispatchQueue.global(qos: .utility).async { for dir in gone { try? FileManager.default.removeItem(at: dir) } }

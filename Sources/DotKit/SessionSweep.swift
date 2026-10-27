@@ -72,4 +72,21 @@ public enum SessionSweep {
         let cutoff = now.addingTimeInterval(-Double(days) * 86400)
         return sessions.filter { $0.modified < cutoff && !inUse.contains($0.id) }.map(\.id).sorted()
     }
+
+    /// What a swept session's sidecar folder is renamed to before it is deleted off the main thread, so a sweep cut off
+    /// by a quit is finished by the next one rather than left beside no session forever (review, 10-27).
+    static let tombstonePrefix = ".dot-swept-"
+
+    /// Renames the folder Claude Code keeps beside session `id` (large tool results) to its tombstone: one rename, safe
+    /// on the main thread. Nil when the session has none.
+    public static func tombstone(_ id: String, in folder: URL) -> URL? {
+        let dead = folder.appendingPathComponent(tombstonePrefix + id, isDirectory: true)
+        return (try? FileManager.default.moveItem(at: folder.appendingPathComponent(id, isDirectory: true), to: dead)) != nil ? dead : nil
+    }
+
+    /// The tombstones in a folder: this sweep's, or ones a quit left behind.
+    public static func tombstones(in folder: URL) -> [URL] {
+        ((try? FileManager.default.contentsOfDirectory(at: folder, includingPropertiesForKeys: nil)) ?? [])
+            .filter { $0.lastPathComponent.hasPrefix(tombstonePrefix) }
+    }
 }
