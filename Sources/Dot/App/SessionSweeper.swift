@@ -62,13 +62,19 @@ enum SessionSweeper {
     private static func delete(_ found: [Candidate], live: Set<String>, days: Int, skipped: Int) {
         let fm = FileManager.default
         var removed = 0, bytes = 0
+        var sidecars: [URL] = []
         for c in found where !live.contains(c.id) {
             let now = (try? c.file.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate
             guard now == c.modified, (try? fm.removeItem(at: c.file)) != nil else { continue }   // written since: in use again
             removed += 1
             bytes += c.size
-            // what Claude Code keeps beside a session (large tool results), when there is any
-            try? fm.removeItem(at: c.folder.appendingPathComponent(c.id, isDirectory: true))
+            sidecars.append(c.folder.appendingPathComponent(c.id, isDirectory: true))
+        }
+        // what Claude Code keeps beside a session (large tool results), off the main thread: with its .jsonl gone no
+        // session can resume into it, so only the unlink above needed to be here
+        let gone = sidecars
+        if !gone.isEmpty {
+            DispatchQueue.global(qos: .utility).async { for dir in gone { try? FileManager.default.removeItem(at: dir) } }
         }
         if removed > 0 {
             Log.info("sessions: deleted \(removed) of Dot's Claude Code sessions older than \(days) days (\(bytes / 1_000_000) MB)")
