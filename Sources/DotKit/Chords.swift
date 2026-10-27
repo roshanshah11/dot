@@ -87,13 +87,15 @@ public enum ChordRules {
         }
         // A modifier-only chord fires the moment its modifiers are down, and a held chord blocks the other, so the
         // other can't be those modifiers plus more: control+option would start talk before control+option+D's D.
+        // A keyed chord is matched without Fn (ChordMatch: macOS sets it for arrows and F-keys), so it is compared so.
+        func held(_ chord: Chord) -> Set<ChordModifier> { chord.keyed ? chord.modifiers.subtracting([.fn]) : chord.modifiers }
         for (first, name, other, otherName) in [(conversation, "talk", dictation, "dictation"), (dictation, "dictation", conversation, "talk")]
-        where !first.keyed && first.modifiers.isSubset(of: other.modifiers) {
+        where !first.keyed && first.modifiers.isSubset(of: held(other)) {
             return "\(first.words) starts \(name) before \(other.words) is all down, so \(otherName) could never start; pick chords where neither is the other plus more"
         }
         // the talk chord with Shift (an agent) is a chord too: dictation can't be inside it either (option+shift
         // would start dictation before option+shift+space's space)
-        if !dictation.keyed, dictation.modifiers.contains(.shift), dictation.modifiers.isSubset(of: conversation.modifiers.union([.shift])) {
+        if !dictation.keyed, dictation.modifiers.contains(.shift), dictation.modifiers.isSubset(of: held(conversation).union([.shift])) {
             return "\(dictation.words) starts dictation before the talk chord with Shift is all down, so handing a request to an agent could never start"
         }
         return nil

@@ -312,7 +312,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func applySettings(_ changed: DotConfig) {
         let before = config
         config = changed
-        if changed.claudeSessionDays < before.claudeSessionDays { SessionSweeper.run(changed, live: talk.liveSessionIds) }
+        if changed.claudeSessionDays < before.claudeSessionDays { SessionSweeper.run(changed) { [weak self] in self?.talk.liveSessionIds ?? [] } }
         // The window saves the copy it took at launch; keys the app set since must not go back.
         if config.lastSeenVersion != before.lastSeenVersion { config.lastSeenVersion = before.lastSeenVersion; config.save() }
         if changed.showCompanion != before.showCompanion {

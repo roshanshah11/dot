@@ -376,7 +376,7 @@ final class JobGateTests: XCTestCase {
                         "zsh -o pipefail -c 'rg --files ~/roshan'", "bash --rcfile /dev/null -c 'cd ~ && ls -R'",
                         // a subshell's cd ends with it; a $(...) runs where the line is
                         "cd /; (cd /tmp); find .", "cd ~/roshan && (cd output) && find . -name x", "cd ~/roshan && echo $(find . -name x)",
-                        "((cd /tmp); find ~ -name x)"] {
+                        "((cd /tmp); find ~ -name x)", "cd ~/roshan; ls $(find . -name x) | wc -l", "(cd ~/roshan; echo $(find .))"] {
                 XCTAssertEqual(bash(cmd, c), .deny(JobGate.wideSearchLine), cmd)
             }
             for cmd in ["find ~/roshan/Career/Resumes -name '*.pdf'", "find . -name x", "ls -t ~/Downloads ~/roshan", "ls -la ~",
@@ -384,7 +384,8 @@ final class JobGateTests: XCTestCase {
                         "find output -type f", "cd ~/roshan/Career/Resumes && find . -name '*.pdf'", "cd ~/roshan && rg -n Northwind Career/Resumes",
                         "cd ~/roshan && ls", "cd output && find .", "rg -e resume ~/Downloads", "grep -r resume",
                         "find -- output -type f", "bash -lc 'find output -type f'", "bash script.sh -c",
-                        "(cd output; find .)", "cd output; (cd /tmp); find .", "{ cd output; find .; }", "cd output && echo $(find . -name x)"] {
+                        "(cd output; find .)", "cd output; (cd /tmp); find .", "{ cd output; find .; }", "cd output && echo $(find . -name x)",
+                        "echo $(find . -name x); cd ~/roshan", "cd $(echo output) && find ."] {
                 XCTAssertNotEqual(bash(cmd, c), .deny(JobGate.wideSearchLine), cmd)
             }
             XCTAssertEqual(decide("Glob", ["pattern": "**/*esume*.pdf", "path": "\(home)/roshan"], c), .deny(JobGate.wideSearchLine))

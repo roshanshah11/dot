@@ -38,7 +38,18 @@ final class SessionSweepTests: XCTestCase {
         XCTAssertFalse(dots("/Users/r/Dot/agents"))
     }
 
-    /// Every real Dot session on this Mac is recognised from its own head (none here: skipped).
+    func testCwdFarIntoTheFile() throws {
+        let file = FileManager.default.temporaryDirectory.appendingPathComponent("sweep-\(UUID().uuidString).jsonl")
+        defer { try? FileManager.default.removeItem(at: file) }
+        // a first record whose screenshot comes before its cwd, across the 1 MiB read boundary
+        let shot = String(repeating: "iVBORw0KGgo", count: 110_000)
+        try Data(#"{"type":"user","message":{"content":[{"type":"image","data":"\#(shot)"}]},"cwd":"/Users/r/Dot/talk","sessionId":"s"}"#.utf8).write(to: file)
+        XCTAssertGreaterThan(try FileManager.default.attributesOfItem(atPath: file.path)[.size] as? Int ?? 0, 1 << 20)
+        XCTAssertEqual(SessionSweep.startCwd(file: file), "/Users/r/Dot/talk")
+        XCTAssertNil(SessionSweep.startCwd(file: file, limit: 1 << 20), "past the limit it gives up (and the sweep keeps the file)")
+    }
+
+    /// Every real Dot session on this Mac is recognised from its own record (none here: skipped).
     func testRealDotSessionsAreRecognised() throws {
         let home = NSHomeDirectory()
         let projects = URL(fileURLWithPath: home).appendingPathComponent(".claude/projects")
@@ -48,11 +59,11 @@ final class SessionSweepTests: XCTestCase {
         var checked = 0
         for folder in folders {
             for file in ((try? FileManager.default.contentsOfDirectory(at: folder, includingPropertiesForKeys: nil)) ?? []) where file.pathExtension == "jsonl" {
-                guard let handle = try? FileHandle(forReadingFrom: file) else { continue }
-                let head = String(decoding: (try? handle.read(upToCount: 65_536)) ?? Data(), as: UTF8.self)
-                try? handle.close()
-                guard let cwd = SessionSweep.startCwd(head: head) else { continue }   // a session cut off before its first record
-                XCTAssertTrue(SessionSweep.isDots(cwd: cwd, talk: roots.talk, agents: roots.agents, jobs: roots.jobs), "\(folder.lastPathComponent): \(cwd)")
+                // a file with no record yet has nothing to find; any other must say where it started
+                guard ((try? file.resourceValues(forKeys: [.fileSizeKey]))?.fileSize ?? 0) > 2048 else { continue }
+                let cwd = SessionSweep.startCwd(file: file)
+                XCTAssertNotNil(cwd, "\(folder.lastPathComponent)/\(file.lastPathComponent): no cwd found")
+                if let cwd { XCTAssertTrue(SessionSweep.isDots(cwd: cwd, talk: roots.talk, agents: roots.agents, jobs: roots.jobs), "\(folder.lastPathComponent): \(cwd)") }
                 checked += 1
             }
         }

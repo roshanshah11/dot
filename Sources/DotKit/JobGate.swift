@@ -519,14 +519,13 @@ public enum JobGate {
     /// A shell search (find, fd, rg, ag, grep -r, ls -R, tree) that starts at a wide root, in any segment. The shell's
     /// directory follows `cd`, so `cd ~/roshan && find .` is the vault search it is (review, 10-26).
     static func wideSearch(command: String, context c: JobGateContext, cwd start: String? = nil) -> String? {
-        let (segments, subs) = split(command)
+        let (segments, owned) = pieces(command)
         var cwd = start ?? c.jobFolder
-        var visited = [cwd]   // a $(...) runs wherever the line is when it gets there: each place it has been
         // ( opens a subshell, whose cd ends with it ({ groups in the same shell): the directory outside each one still
         // open, and how many the last segment closed (review, 10-27: `cd /; (cd /tmp); find .` searches /).
         var outside: [String] = []
         var closing = 0
-        for segment in segments {
+        for (index, segment) in segments.enumerated() {
             for _ in 0..<closing { if let back = outside.popLast() { cwd = back } }
             closing = 0
             var words = ShellSegment.words(segment)
@@ -540,6 +539,8 @@ public enum JobGate {
                 let rest = String(l.dropLast(closing))
                 if rest.isEmpty { words.removeLast() } else { words[words.count - 1] = rest }
             }
+            // its $(...) runs here, before the segment itself (review, 10-27: `echo $(find .); cd ~/roshan` searches the job folder)
+            for sub in owned[index] { if let why = wideSearch(command: sub, context: c, cwd: cwd) { return why } }
             while let first = words.first, ["env", "nohup", "time", "command", "builtin", "exec", "sudo"].contains((first as NSString).lastPathComponent)
                     || (first.contains("=") && !first.hasPrefix("-") && !first.hasPrefix("=")) {
                 words.removeFirst()
@@ -549,7 +550,6 @@ public enum JobGate {
             var args = Array(words.dropFirst())
             if name == "cd" || name == "pushd" {
                 if let target = args.first(where: { !$0.hasPrefix("-") }) { cwd = searchPath(target, cwd: cwd, c) } else if args.isEmpty { cwd = c.home }
-                visited.append(cwd)
                 continue
             }
             if ["bash", "zsh", "sh"].contains(name), let inner = ShellSegment.commandString(args) {
@@ -584,9 +584,6 @@ public enum JobGate {
             roots += positional.filter { $0.hasPrefix("/") || $0.hasPrefix("~") || $0.hasPrefix("$HOME") || $0.hasPrefix("${HOME}") }
             if roots.contains(where: { isWideRoot($0, c, cwd: cwd) }) { return wideSearchLine }
         }
-        for sub in subs {
-            for dir in Set(visited) { if let why = wideSearch(command: sub, context: c, cwd: dir) { return why } }
-        }
         return nil
     }
 
@@ -603,9 +600,16 @@ public enum JobGate {
     /// Top-level segments of a command (split on unquoted | ; & and newlines) and the bodies of its command
     /// substitutions ($(...), backticks, <(...), >(...)), which run too and are checked the same way.
     static func split(_ command: String) -> (segments: [String], substitutions: [String]) {
+        let (segments, owned) = pieces(command)
+        return (segments, owned.flatMap { $0 })
+    }
+
+    /// The segments, each with the substitution bodies inside it (`cd $(...)`'s runs before that cd, where the line is).
+    static func pieces(_ command: String) -> (segments: [String], owned: [[String]]) {
         let cleaned = command.replacingOccurrences(of: #"[0-9]*>&[0-9-]+|&>>?"#, with: " >", options: .regularExpression)
         var segments: [String] = []
-        var subs: [String] = []
+        var owned: [[String]] = []
+        var pending: [String] = []   // the substitutions of the segment being read
         var current = ""
         var quote: Character?
         var escaped = false
@@ -628,28 +632,31 @@ public enum JobGate {
             if ch == "\\", quote != "'" { current.append(ch); escaped = true; i += 1; continue }
             if quote == "'" { if ch == "'" { quote = nil }; current.append(ch); i += 1; continue }
             if ch == "$", i + 1 < chars.count, chars[i + 1] == "(" {
-                let (body, next) = capture(from: i + 2); subs.append(body); current.append("X"); i = next; continue
+                let (body, next) = capture(from: i + 2); pending.append(body); current.append("X"); i = next; continue
             }
             if quote == nil, (ch == "<" || ch == ">"), i + 1 < chars.count, chars[i + 1] == "(" {
-                let (body, next) = capture(from: i + 2); subs.append(body); current.append("X"); i = next; continue
+                let (body, next) = capture(from: i + 2); pending.append(body); current.append("X"); i = next; continue
             }
             if ch == "`" {
                 var j = i + 1; var body = ""
                 while j < chars.count, chars[j] != "`" { body.append(chars[j]); j += 1 }
-                subs.append(body); current.append("X"); i = j + 1; continue
+                pending.append(body); current.append("X"); i = j + 1; continue
             }
             if quote == "\"" { if ch == "\"" { quote = nil }; current.append(ch); i += 1; continue }
             if ch == "'" || ch == "\"" { quote = ch; current.append(ch); i += 1; continue }
             if "|;&\n".contains(ch) {
                 let t = current.trimmingCharacters(in: .whitespaces)
-                if !t.isEmpty { segments.append(t) }
+                if !t.isEmpty { segments.append(t); owned.append(pending); pending = [] }
                 current = ""; i += 1; continue
             }
             current.append(ch); i += 1
         }
         let t = current.trimmingCharacters(in: .whitespaces)
-        if !t.isEmpty { segments.append(t) }
-        return (segments, subs)
+        if !t.isEmpty { segments.append(t); owned.append(pending); pending = [] }
+        if !pending.isEmpty {
+            if owned.isEmpty { segments.append("X"); owned.append(pending) } else { owned[owned.count - 1] += pending }
+        }
+        return (segments, owned)
     }
 }
 

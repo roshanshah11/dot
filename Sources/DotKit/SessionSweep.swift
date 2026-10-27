@@ -31,6 +31,30 @@ public enum SessionSweep {
         return (try? JSONSerialization.jsonObject(with: Data(head[r].utf8), options: .fragmentsAllowed)) as? String
     }
 
+    /// startCwd over a session file, read a MiB at a time until its first "cwd" (a first message with a screenshot puts
+    /// it far in: 114 of the 163 Dot sessions on his Mac had it past 64 KiB, one at 553 KB, 2026-10-27). nil when the
+    /// first `limit` bytes have none.
+    public static func startCwd(file: URL, limit: Int = 32 << 20) -> String? {
+        guard let handle = try? FileHandle(forReadingFrom: file) else { return nil }
+        defer { try? handle.close() }
+        let key = Data("\"cwd\"".utf8)
+        var carry = Data()   // a key split across two reads
+        var read = 0
+        while read < limit {
+            guard let piece = try? handle.read(upToCount: 1 << 20), !piece.isEmpty else { return nil }
+            read += piece.count
+            var window = Data(carry + piece)
+            if let r = window.range(of: key) {
+                let start = r.lowerBound - window.startIndex
+                if window.count - start < 8192, let more = try? handle.read(upToCount: 8192) { window.append(more) }   // the value, whole
+                let tail = window.subdata(in: (window.startIndex + start)..<min(window.endIndex, window.startIndex + start + 8192))
+                return startCwd(head: String(decoding: tail, as: UTF8.self))
+            }
+            carry = Data(window.suffix(key.count - 1))
+        }
+        return nil
+    }
+
     /// Whether Dot started a session in `cwd`: talk's folder, or one agent's or one job's own folder. The folder name
     /// alone can't tell (`/Dot/agents-email/x` and `/Dot/agents/email-x` both name `-Dot-agents-email-x`).
     public static func isDots(cwd: String, talk: String, agents: String, jobs: String) -> Bool {

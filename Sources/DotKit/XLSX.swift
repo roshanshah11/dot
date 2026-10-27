@@ -137,7 +137,8 @@ public struct XLSXRange: Equatable {
 
     /// "B2:D4", or one cell "B2".
     public init?(ref: String) {
-        let ends = ref.split(separator: ":").map(String.init)   // "" and ":" give no parts: a damaged file, not a crash
+        // empty ends kept, so "", "A1:", ":A1" and "A1::B2" are a damaged file's merge (nil), not a crash or another range
+        let ends = ref.split(separator: ":", omittingEmptySubsequences: false).map(String.init)
         guard ends.count <= 2, let first = ends.first, let a = XLSXRef.parse(first), let b = XLSXRef.parse(ends.last ?? first) else { return nil }
         self.init(firstRow: min(a.row, b.row), firstColumn: min(a.column, b.column), lastRow: max(a.row, b.row), lastColumn: max(a.column, b.column))
     }

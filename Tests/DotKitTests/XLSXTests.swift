@@ -215,7 +215,7 @@ final class XLSXTests: XCTestCase {
         XCTAssertEqual(XLSXRef.column(701), "ZZ")
         XCTAssertEqual(XLSXRange(ref: "C3"), XLSXRange(firstRow: 2, firstColumn: 2, lastRow: 2, lastColumn: 2))
         XCTAssertEqual(XLSXRange(ref: "D4:B2"), XLSXRange(firstRow: 1, firstColumn: 1, lastRow: 3, lastColumn: 3))
-        for damaged in ["", ":", "A1:B2:C3"] { XCTAssertNil(XLSXRange(ref: damaged), damaged) }   // a damaged merge, not a crash
+        for damaged in ["", ":", "A1:B2:C3", "A1:", ":A1", "A1::B2"] { XCTAssertNil(XLSXRange(ref: damaged), damaged) }   // a damaged merge
         XCTAssertEqual(XLSXPaths.resolve("worksheets/sheet1.xml", base: "xl"), "xl/worksheets/sheet1.xml")
         XCTAssertEqual(XLSXPaths.resolve("/xl/styles.xml", base: "xl"), "xl/styles.xml")
         XCTAssertEqual(XLSXPaths.resolve("../customXml/item1.xml", base: "xl"), "customXml/item1.xml")

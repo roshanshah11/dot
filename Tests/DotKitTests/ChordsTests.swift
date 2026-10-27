@@ -42,7 +42,12 @@ final class ChordsTests: XCTestCase {
         XCTAssertNotNil(ChordRules.clash(conversation: talk, dictation: dKey), "control+option starts talk before D")
         XCTAssertNotNil(ChordRules.clash(conversation: talk, dictation: Chord([.control, .option, .command])))
         XCTAssertNotNil(ChordRules.clash(conversation: Chord([.control, .option, .command]), dictation: talk), "either way round")
-        XCTAssertNotNil(ChordRules.clash(conversation: Chord([.control, .fn], keyCode: 49, keyLabel: "Space"), dictation: dictate))
+        // a keyed chord is matched without Fn, as ChordMatch does: control+fn+space is control+space, which never holds fn
+        XCTAssertNil(ChordRules.clash(conversation: Chord([.control, .fn], keyCode: 49, keyLabel: "Space"), dictation: dictate))
+        XCTAssertNil(ChordRules.clash(conversation: Chord([.option, .fn], keyCode: 49, keyLabel: "Space"), dictation: Chord([.option, .shift, .fn])),
+                     "option+shift+space starts the agent with no fn held, so option+shift+fn never gets in its way")
+        XCTAssertNotNil(ChordRules.clash(conversation: Chord([.control, .option, .fn], keyCode: 49, keyLabel: "Space"), dictation: talk),
+                        "control+option is still inside control+option+space")
         XCTAssertNil(ChordRules.clash(conversation: Chord([.option], keyCode: 49, keyLabel: "Space"), dictation: dKey), "two keyed chords match exactly")
         XCTAssertNil(ChordRules.clash(conversation: Chord([.option, .command]), dictation: dKey), "option+command isn't inside control+option")
         let optionSpace = Chord([.option], keyCode: 49, keyLabel: "Space")
