@@ -292,7 +292,7 @@ struct VoicePage: View {
                     .font(.caption).foregroundStyle(.secondary)
             }
             HomeSection("Talking over Dot") {
-                SettingToggle("Talk over Dot to cut it off", detail: "start talking while Dot speaks and it stops to listen, keeping what you said; never on a call or in lecture mode. With Bluetooth headphones it listens on the Mac's own mic, lid open only, and turns itself off for headphones it would switch into headset mode",
+                SettingToggle("Talk over Dot to cut it off", detail: "start talking while Dot speaks and it stops to listen, keeping what you said; never on a call or in lecture mode. Tested on the Mac's speakers. Bluetooth headphones stay off until Dot --barge-selftest --talk passes with them connected; then it listens on the Mac's own mic, lid open only, and turns itself off for headphones it would switch into headset mode",
                               isOn: $model.settings.talkOverDot)
             }
             HomeSection("Drawing") {

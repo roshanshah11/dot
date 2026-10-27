@@ -69,6 +69,9 @@ struct DotConfig: Codable {
     var routeTools = true
     /// Talk over Dot to cut it off (parity AU-01): off until the live headset test passes on his Mac (04-voice.md).
     var talkOverDot = false
+    /// Days Dot keeps its own Claude Code sessions (talk, agents, jobs), screenshots included (SessionSweep). 30 is Claude
+    /// Code's own retention, and Dot then deletes nothing.
+    var claudeSessionDays = SessionSweep.claudeDefault
     /// make_image (parity AG-14): OpenRouter image-output models in order of preference (picked 2026-10-26 from
     /// OpenRouter's list: Nano Banana 2.1, then GPT-5.4 Image 2); the newest image model when none is listed any more.
     var imageModels = ["google/gemini-nano-banana-2.1", "openai/gpt-5.4-image-2"]
@@ -292,6 +295,7 @@ struct DotConfig: Codable {
         stackSide = get(.stackSide, d.stackSide)
         routeTools = get(.routeTools, d.routeTools)
         talkOverDot = get(.talkOverDot, d.talkOverDot)
+        claudeSessionDays = get(.claudeSessionDays, d.claudeSessionDays)
         imageModels = get(.imageModels, d.imageModels)
         imageKeyFile = get(.imageKeyFile, d.imageKeyFile)
         dictionaryFile = get(.dictionaryFile, d.dictionaryFile)

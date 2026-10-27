@@ -32,8 +32,8 @@ is newer.
 | 3 Speed | CU-01 | Fast click loop | built, installed | 3c3ea1d | fixture rows through drive |
 |  | CU-03 | Done check | built, installed | 5bf1e47 |  |
 |  | IN-03 | Tool router | built, installed (on) | 4e0aeea, 7c2d3b7, 8cd2de0 |  |
-| 4 Voice | AU-01 | Talk over Dot | built, installed, off | 7c5c3c1 | Dot --barge-selftest with sound, then his headset |
-|  | AU-02 | Echo cancellation | built, installed, off | 7c5c3c1 | same |
+| 4 Voice | AU-01 | Talk over Dot | built, installed, passed on the MacBook speakers (setting off by default) | 7c5c3c1, bbe2952 | his Beats: Dot --barge-selftest --talk with them connected |
+|  | AU-02 | Echo cancellation | built, installed, passed on the MacBook speakers | 7c5c3c1, bbe2952 | same |
 |  | AU-03 | Says why it failed | built, installed | 5904684 |  |
 |  | NO-07 | Unreadable-document notice | built, installed | 5904684 |  |
 |  | VO-11 | Doc passages in deep answers | built, installed | 5904684 | Dot --ask --dry with a PDF in front |

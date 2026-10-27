@@ -17,9 +17,11 @@ bottom with the date. "His ask" quotes the message that created the item.
          task, the History page and file viewer, `Dot --surfaces` with Spotlight open, a Focus on, a dictation fixed by
          hand, recording a chord, `Dot --card` on `panel/fixtures/card-flight.ui`, a place card, a circled region pasted
          into Notes, code colours in the panel.
-      3. [ ] His: the `dot-pmset` sudo rule (routines while asleep), OpenRouter credits (`make_image`), the Atlas
-         patch (atlas-dot-agent-tools.patch.md), `Dot --barge-selftest` with sound before turning on Talk over Dot,
-         Full Disk Access for Dot and the host, and how long Claude Code keeps talk and agent transcripts (30 days).
+      3. [ ] His: the `dot-pmset` sudo rule (routines while asleep), OpenRouter credits (`make_image`), Full Disk
+         Access for Dot and the host, the number for Home > General > Privacy > "Keep Dot's Claude Code sessions"
+         (built 2026-10-27, still 30 days), and `Dot --barge-selftest --talk` with his Beats. Done 2026-10-27: Talk
+         over Dot passed on the MacBook speakers (bbe2952; the setting is his to turn on in Home > Voice), and the Atlas
+         tools `dot_agent_start` and `dot_agent_status` are in Atlas/harness/atlas/mcp.py (uncommitted there).
 
 - [ ] 2026-10-20 The fast lane, overnight (plan set ~/Dot/plans/2026-10-20-dot-fast-lane, after two interview rounds), his asks ("its different when i need help on my screen vs for it to do things. its in ability to do long standing tasks irks me", and the rule: "dont limit the amount of steps at all ... assume everything can get done w the fast model multi steps and then if needed i will say spawn a background agent"):
       1. [x] Jobs: every action with more than one small step runs as a job, its own Claude Code session (Sonnet; Opus for prose and decks under his name) with Dot's hands, Atlas, his skills and no step or time limit. Front (his tab or app) for open / go to / show me; behind (a Comet window of its own) for result-only asks and "in a separate tab". Behind the `jobsEnabled` flag; flag off is today's talk prompt byte for byte.

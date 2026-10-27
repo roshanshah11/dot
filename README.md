@@ -107,8 +107,10 @@ Checked against the code on 2026-10-26 (parity US-11). Paths are this Mac's.
 - **Screenshots.** Dot holds them in memory for the turn and writes none itself, but every question sends a screenshot
   of each screen (`includeOtherScreens`, on) to Claude, and Claude Code saves each session's messages, screenshots
   included, under `~/.claude/projects/-Users-roshanshah-Dot-talk/` for talk and
-  `~/.claude/projects/-Users-roshanshah-Dot-agents-<name>/` for agents. It deletes a session 30 days after its last
-  use (`cleanupPeriodDays`, its default; your settings don't change it). Lecture mode saves the slides and board pictures
+  `~/.claude/projects/-Users-roshanshah-Dot-agents-<name>/` for agents (`-Dot-jobs-<id>/` for jobs). Claude Code
+  deletes a session 30 days after its last use (`cleanupPeriodDays`, its default); Dot deletes its own sooner when Home >
+  General > Privacy says so (`claudeSessionDays`: 1, 3, 7 or 14 days; 30, the default, leaves it to Claude Code), two
+  minutes after launch and every 6 hours, never another project's sessions and never an agent's current one. Lecture mode saves the slides and board pictures
   it puts in the notes, in the course folder's `notes-images/`, with the notes and the class transcript.
 - **Dot's own state.** `~/Dot/home-state.sqlite` (drafts, scroll positions, reactions, prompt cards, agent icons,
   dictation suggestions); `~/Dot/agents/<name>/` (each agent's folder, its outputs and pictures); `~/Dot/rules.json`,
@@ -136,8 +138,9 @@ Checked against the code on 2026-10-26 (parity US-11). Paths are this Mac's.
 
 - Conversation text: `rm -r ~/Dot/transcripts ~/Dot/index` (History then rebuilds from agents' folders and Murmur only).
 - What Claude Code saved, screenshots included: `rm -r ~/.claude/projects/-Users-roshanshah-Dot-talk
-  ~/.claude/projects/-Users-roshanshah-Dot-agents-*` (agents can't resume those sessions after), or a lower
-  `cleanupPeriodDays` in `~/.claude/settings.json`.
+  ~/.claude/projects/-Users-roshanshah-Dot-agents-*` (agents can't resume those sessions after), or a shorter
+  "Keep Dot's Claude Code sessions" in Home > General > Privacy. A lower `cleanupPeriodDays` in
+  `~/.claude/settings.json` would also delete every other Claude Code chat past that age.
 - Dot's state: quit Dot, then `rm ~/Dot/home-state.sqlite`. An agent: its folder in `~/Dot/agents/`.
 - The log: `rm ~/Library/Logs/Dot/dot.log`; a new one starts.
 - Lecture material: the course folder in School; class audio left by a skipped pass: `~/Library/Caches/Dot/lecture-audio`.
@@ -207,7 +210,8 @@ with `ATLAS_MCP_TOOLS=now,search,facts,...` so only those tools ride along.
 | `inkCaptions` | `false` | A caption strip at the bottom of the screen while Dot talks (always on for a typed question that draws) |
 | `stackSide` | `corner` | Where agents and jobs sit: `corner`, or a column at the `left` or `right` edge |
 | `routeTools` | `true` | Agents' and jobs' MCP servers go through Dot's tool router; `false` runs them direct |
-| `talkOverDot` | `false` | Talk over Dot to cut it off; off until the live headset test passes |
+| `talkOverDot` | `false` | Talk over Dot to cut it off (Home > Voice). Passed on the MacBook speakers 2026-10-26; Bluetooth output stays off until `Dot --barge-selftest --talk` passes with it |
+| `claudeSessionDays` | `30` | Days Dot keeps its own Claude Code sessions (talk, agents, jobs); 30 leaves it to Claude Code |
 | `imageModels`, `imageKeyFile` | Nano Banana 2.1, GPT-5.4 Image 2; `~/.secrets.env` | `make_image`'s OpenRouter models in order, and where `OPENROUTER_API_KEY` lives when it isn't in the environment |
 
 ### Computer use (optional)
@@ -304,7 +308,8 @@ The plan set is `~/Dot/plans/2026-10-26-heyclicky-parity/`; each item's commit i
   handle). Each agent loads only its own servers, Atlas and computer use always kept.
 - **Voice.** A failed turn says why in one plain line (logged out, offline, usage limit and its reset, overloaded), a
   PDF Dot can't read says so once, and deep answers quote the open document's best passages with page numbers. Talking
-  over Dot to cut it off (`talkOverDot`) is built and off until the live headset test passes.
+  over Dot to cut it off (`talkOverDot`, off by default) passed its live test on the MacBook speakers; Bluetooth
+  output stays off until the same test passes with it connected.
 - **Agents.** `Dot --agent-start`, `--agent-status` and `--agent-note` work from outside; agents leave each other notes;
   routines can wake the Mac (a sudo rule for `pmset` that only he installs; the lid must be open); on Sunday evenings
   a habit in two weeks of asks that no agent owns becomes a quiet "start an agent" card; `make_image` goes through

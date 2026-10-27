@@ -240,7 +240,8 @@ final class JobManager {
         let folder = resume?.folder ?? (bench ? URL(fileURLWithPath: "/tmp/dot-bench/jobs/\(id)", isDirectory: true) : Self.root.appendingPathComponent(id, isDirectory: true))
         try? FileManager.default.createDirectory(at: folder.appendingPathComponent("output"), withIntermediateDirectories: true)
         var options = ClaudeSession.Options(cwd: folder, model: model)
-        if let resume { options.sessionId = resume.sessionId; options.resume = true }
+        // a session Dot's sweep deleted (claudeSessionDays) can't resume: the job carries on fresh in its own folder
+        if let resume, AgentManager.conversationExists(resume.sessionId) { options.sessionId = resume.sessionId; options.resume = true }
         options.appendSystemPrompt = Prompts.job + Prompts.courseIndex(in: config.talkRootURL)
         options.tools = nil
         var disallowed = ["Task", "Agent", "NotebookEdit", "AskUserQuestion", "EnterPlanMode", "ExitPlanMode", "Bash(security *)"] + AgentManager.disallowedAgentTools

@@ -1330,6 +1330,17 @@ struct HomeView: View {
                     Button("Open agents folder") { NSWorkspace.shared.open(model.config.agentsRootURL) }.controlSize(.small)
                 }
             }
+            HomeSection("Privacy") {
+                Picker("Keep Dot's Claude Code sessions", selection: $model.settings.claudeSessionDays) {
+                    Text("1 day").tag(1)
+                    Text("3 days").tag(3)
+                    Text("7 days").tag(7)
+                    Text("14 days").tag(14)
+                    Text("30 days (Claude Code's own)").tag(SessionSweep.claudeDefault)
+                }
+                Text("each talk, agent and job session's messages and screenshots, in ~/.claude/projects; older ones are deleted. Your other Claude Code chats keep Claude Code's 30 days. What Dot heard stays in ~/Dot/transcripts")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
             HomeSection("Permissions") {
                 Text("What macOS has given each program that does Dot's work. Nothing is asked for until you press Open.")
                     .font(.caption).foregroundStyle(.secondary)
