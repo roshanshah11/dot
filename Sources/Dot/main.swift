@@ -272,6 +272,7 @@ case "--help", "-h":
       Dot --quip-test          three sample moments through the quip model (quipModel), each line and its check
       Dot --track-selftest     the running Dot checks that marks stay on scrolled content (posts real scrolls; run while away)
       Dot --selftest           check the notch's permission-card queue (no agents, no model)
+      Dot --call-replay <folder> [--speed 1] [--interview] [--no-helper]   a recorded call through call mode, into a scratch folder
       Dot --gate               the agents' tool-call hook (Claude Code runs it; JSON on stdin)
       Dot --doc-check <file or url> [question]         how Dot reads a document: pages and passages, or why it can't
       Dot --permissions                                what macOS gave Dot, the agent host and cua-driver (asks nothing)
@@ -379,6 +380,13 @@ case "--lecture-replay":
     replayApp.finishLaunching()
     let passed = MainActor.assumeIsolated { LectureReplay.run(Array(arguments.dropFirst())) }
     exit(passed ? 0 : 1)
+case "--call-replay":
+    // A recorded two-sided call through call mode's real pipeline, into a scratch folder (CallReplay).
+    let callApp = NSApplication.shared
+    callApp.setActivationPolicy(.accessory)
+    callApp.finishLaunching()
+    let callPassed = MainActor.assumeIsolated { CallReplay.run(Array(arguments.dropFirst())) }
+    exit(callPassed ? 0 : 1)
 case "--voices":
     // Who spoke when in a recording (the after-class diarizer), printed as turns: `Dot --voices clip.wav [--min N] [--threshold T]`.
     let voiceArgs = Array(arguments)

@@ -168,12 +168,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Quips and an offer's "ok, later." wait while Dot is busy, a lecture is heard or Murmur records.
         noticer.canSpeakUp = { [weak self] in
             guard let self else { return false }
-            return self.talk.isIdle && !self.talk.lecture.isListening && !(self.murmur?.isRecording ?? false)
+            return self.talk.isIdle && !self.talk.lecture.isListening && !self.talk.isOnCallMode && !(self.murmur?.isRecording ?? false)
         }
         wireAlive()
         wireContextQuips()
         hud.setPresence(config.notchPresence)
         applyRecordingVisibility()
+        // call mode: every Dot window leaves screen shares for the call; recordings a crash left are swept; tomorrow's
+        // calls get their prep at 9 PM
+        talk.onCallChanged = { [weak self] _ in self?.applyRecordingVisibility() }
+        CallEar.sweepLeftovers()
+        scheduleCallPrep()
         home = HomeWindowController(agents: agents, ledger: ledger, config: config, atlas: atlas)
         home.speakSample = { [weak self] text in SpeakLog.as("sample") { self?.speaker.speak(text) } }
         home.onSettingsChanged = { [weak self] changed in Task { @MainActor in self?.applySettings(changed) } }
@@ -240,7 +245,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         hudModel.onStopAgent = { [weak self] id in
             Task { @MainActor in
                 guard let self else { return }
-                if id == "walkthrough" || id == "lesson" || id == "lecture" { self.talk.stopTask(id) } else { self.agents.stop(id) }
+                if id == "walkthrough" || id == "lesson" || id == "lecture" || id == "call" { self.talk.stopTask(id) } else { self.agents.stop(id) }
             }
         }
         wireStack()
@@ -370,6 +375,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let line = "\(next.title.lowercased()) in \(next.startsIn) min"
         let title = next.title
         let startsIn = next.startsIn
+        // a call or an interview: the card starts call mode (and dials, when he is the one calling) instead of a brief
+        if config.callMode, let items = talk.localCalendar.items(days: 1),
+           let call = CallCalendar.current(items, now: Date(), early: Double(minutes + 1) * 60), call.title.caseInsensitiveCompare(title) == .orderedSame {
+            let dials = call.phone != nil && !call.theyCall
+            let first = call.person.split(separator: " ").first.map { String($0).lowercased() } ?? "them"
+            hud.notify(NotchNotice(id: "meeting", icon: "phone", title: line,
+                                   detail: call.kind == .interview ? "call mode listens and writes the debrief after" : "call mode: your prep, live notes, the recap after",
+                                   tone: .info, actionTitle: dials ? "call \(first)" : "start call", action: { [weak self] in
+                                       Task { @MainActor in await self?.talk.startCall(event: call, dial: dials) }
+                                   }, secondaryTitle: "dismiss", secondary: {}, seconds: 600))
+            if !Quiet.now(config) { overlay.greet(line, for: 12) }
+            Log.info("notice: \(line) (call mode offered)")
+            return
+        }
         hud.notify(NotchNotice(id: "meeting", icon: "calendar", title: line,
                                detail: brief.today.first(where: { $0.contains(title) }).map { String($0.dropFirst(10)).trimmingCharacters(in: .whitespaces) },
                                tone: .info, actionTitle: "brief me", action: { [weak self] in
@@ -383,6 +402,63 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             SpeakLog.as("notice") { speaker.speak("heads up, \(next.title.lowercased()) in \(next.startsIn) minutes.") }
         }
         Log.info("notice: \(line)")
+    }
+
+    // MARK: Call prep (call mode, his pick 2026-10-28: "on its own, the night before")
+
+    private var callPrepTimer: Timer?
+    private var callPrepState: URL { config.talkRootURL.appendingPathComponent("call-prep.json") }
+
+    /// At `callPrepHour` each night, and once at launch when Dot was off then: tomorrow's calls and interviews get a
+    /// prep file each from an agent, unless one is already in Interview Prep.
+    private func scheduleCallPrep() {
+        callPrepTimer?.invalidate()
+        guard config.callMode, config.callPrepHour > 0 else { return }
+        let now = Date()
+        let tonight = Calendar.current.date(bySettingHour: config.callPrepHour, minute: 0, second: 0, of: now) ?? now
+        let tomorrow = CallFiles.day(Calendar.current.date(byAdding: .day, value: 1, to: now) ?? now)
+        let ran = (try? JSONSerialization.jsonObject(with: Data(contentsOf: callPrepState)) as? [String: String])?["day"]
+        if now >= tonight, ran != tomorrow {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 120) { [weak self] in self?.runCallPrep() }
+        }
+        let next = CallPrepSchedule.nextRun(after: now, hour: config.callPrepHour)
+        callPrepTimer = Timer.scheduledTimer(withTimeInterval: max(60, next.timeIntervalSince(now)), repeats: false) { [weak self] _ in
+            Task { @MainActor in
+                self?.runCallPrep()
+                self?.scheduleCallPrep()
+            }
+        }
+    }
+
+    private func runCallPrep() {
+        let now = Date()
+        let tomorrow = CallFiles.day(Calendar.current.date(byAdding: .day, value: 1, to: now) ?? now)
+        if let data = try? JSONSerialization.jsonObject(with: Data(contentsOf: callPrepState)) as? [String: String], data["day"] == tomorrow { return }
+        guard let items = talk.localCalendar.items(days: 2, now: now) else { Log.warn("call prep: no calendar; skipped"); return }
+        let calls = CallCalendar.tomorrow(items, now: now)
+        let folder = URL(fileURLWithPath: DotConfig.expand("~/roshan/Career/Interview Prep"), isDirectory: true)
+        let names = (try? FileManager.default.contentsOfDirectory(atPath: folder.path)) ?? []
+        var started = 0
+        for call in calls where CallFiles.findPrep(in: names, for: call) == nil {
+            agents.handoff(brief: Self.prepBrief(call, folder: folder), agentName: nil, context: nil, shots: nil, quiet: true)
+            started += 1
+        }
+        try? JSONSerialization.data(withJSONObject: ["day": tomorrow]).write(to: callPrepState)
+        Log.info("call prep: \(calls.count) call(s) tomorrow, \(started) prep agent(s) started")
+    }
+
+    static func prepBrief(_ call: CallEvent, folder: URL) -> String {
+        let f = DateFormatter(); f.dateFormat = "EEEE, MMMM d 'at' h:mm a"; f.locale = Locale(identifier: "en_US_POSIX")
+        let file = folder.appendingPathComponent(CallFiles.prepName(call)).path
+        let firm = call.firm.isEmpty ? "" : " (\(call.firm))"
+        if call.kind == .chat {
+            return """
+            Write the prep for Roshan's coffee chat tomorrow, \(f.string(from: call.start)): "\(call.title)", with \(call.who)\(firm). Save it to \(file). It is pinned on his screen during the call and Dot ticks its items off live, so use these headings: ## Who (who they are and their path, from Atlas, the networking tracker `python3 ~/.claude/skills/networking/scripts/nw.py person "\(call.who)"` and the linkedin CLI; what they and he have in common), ## Firm (their group and firm, boutique or bulge bracket and what that changes), ## Market items (2 or 3 current deals or trends tied to their group, each with a one-line view he could hold and a question asking theirs), ## Questions (4 to 6 about what they actually do; never day-in-the-life or "what's the job like"), ## Stories (the one or two of his they are likely to ask for, in a line each), ## The close (ask who else to talk to). Follow "How Atlas preps a chat" in ~/roshan/Career/Networking/Coffee chat lessons.md. One page. Don't contact anyone.
+            """
+        }
+        return """
+        Write the prep for Roshan's interview tomorrow, \(f.string(from: call.start)): "\(call.title)"\(call.person.isEmpty ? "" : ", with \(call.person)"). Save it to \(file). It is pinned on his screen while the interview runs (Dot only listens then), so make it glanceable: ## Firm and role (what they do, the role, what this round tests), ## Likely questions (each with his best answer in two lines from ~/roshan/Career/Interview Prep/roshan_interview_data_pack_merged.md and his stories; never invent experience), ## Technicals to review (three, with the answer), ## Questions for them (three), ## Logistics (time, link or number, who calls whom). Read past prep and transcripts for this firm in that folder first. Don't contact anyone.
+        """
     }
 
     /// `Dot --ask ...` and `Dot --agent ...` from a shell reach the running app here.
@@ -691,13 +767,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
     /// HeyClicky's "Show in screen recordings": every Dot window takes the same sharing type.
     private func applyRecordingVisibility() {
-        overlay.setVisibleInRecordings(config.showInRecordings)
-        hud.setVisibleInRecordings(config.showInRecordings)
-        stack.setVisibleInRecordings(config.showInRecordings)
-        ActionBarPanel.visibleInRecordings = config.showInRecordings
-        CardPanel.visibleInRecordings = config.showInRecordings
+        // on a call (call mode) nothing of Dot's is in a share, whatever the setting: a Teams interviewer sees none of it
+        let visible = config.showInRecordings && !(talk?.isOnCallMode ?? false)
+        overlay.setVisibleInRecordings(visible)
+        hud.setVisibleInRecordings(visible)
+        stack.setVisibleInRecordings(visible)
+        ActionBarPanel.visibleInRecordings = visible
+        CardPanel.visibleInRecordings = visible
         // last, so a window on the iMac display ends shown whatever the setters above did (CaptureGuard)
-        CaptureGuard.visibleInRecordings = config.showInRecordings
+        CaptureGuard.visibleInRecordings = visible
         CaptureGuard.start()
         CaptureGuard.sweep()
     }

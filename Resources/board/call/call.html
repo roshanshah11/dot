@@ -1,0 +1,30 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width">
+<link rel="stylesheet" href="call.css">
+<script src="../vendor/marked.min.js"></script>
+</head>
+<body>
+<div id="app">
+  <header id="head">
+    <div id="top">
+      <div id="who"></div>
+      <div id="buttons"><button id="dial" hidden>Call</button><button id="end">End call</button></div>
+    </div>
+    <div id="sub"><span id="kind"></span><span id="clock"></span><span id="status"></span></div>
+  </header>
+  <main id="cols">
+    <section id="prep"><div class="label">Prep</div><div id="prepBody" class="md"></div></section>
+    <section id="live">
+      <div id="nudge" hidden></div>
+      <div id="checkBox"><div class="label">Checklist</div><ol id="checklist"></ol></div>
+      <div id="helpBox"><div class="label">Live</div><div id="help"><p class="empty" id="helpEmpty">Facts and follow-ups show up here when they name something.</p></div></div>
+      <div id="linesBox"><div class="label">Hearing</div><div id="lines"></div></div>
+    </section>
+  </main>
+</div>
+<script src="call.js"></script>
+</body>
+</html>

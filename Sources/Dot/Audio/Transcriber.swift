@@ -59,6 +59,15 @@ actor Transcriber {
         return (paragraphs.filter { !$0.text.isEmpty }, seconds)
     }
 
+    /// A whole recording's tokens with their times (call mode's after-call pass splits each side into turns itself).
+    func transcribeTokens(url: URL) async throws -> [TranscriptParagraphs.Token] {
+        let asr = try await ensureLoaded()
+        var state = try TdtDecoderState()
+        let result = try await asr.transcribe(url, decoderState: &state, language: nil)
+        let tokens = (result.tokenTimings ?? []).map { TranscriptParagraphs.Token(text: $0.token, start: $0.startTime) }
+        return tokens.isEmpty && !result.text.isEmpty ? [TranscriptParagraphs.Token(text: result.text, start: 0)] : tokens
+    }
+
     private func keep(_ models: AsrModels) { self.models = models }
 
     private func ensureLoaded() async throws -> AsrManager {

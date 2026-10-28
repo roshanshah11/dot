@@ -24,7 +24,7 @@ final class AudioRecorder {
     private var engine: AVAudioEngine?
     private var file: AVAudioFile?
     private var fileURL: URL?
-    private var startedAt: Date?
+    private(set) var startedAt: Date?
     private var tapInstalled = false
     private let lock = NSLock()
     private var lastLevel: Float = 0

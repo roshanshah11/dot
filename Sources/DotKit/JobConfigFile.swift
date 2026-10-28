@@ -93,10 +93,15 @@ public enum ResearchConfigFile {
     public static let tools = ["now", "search", "facts", "people", "calendar", "get", "remember"]
 
     public static func make(talkMCP: Data, stamp: String) -> Data? {
+        make(talkMCP: talkMCP, session: "dot-afterclass-\(stamp)", tools: tools)
+    }
+
+    /// The talk config's Atlas server alone, as its own Atlas session with only `tools` (call mode's live helper reads).
+    public static func make(talkMCP: Data, session: String, tools: [String]) -> Data? {
         guard let root = try? JSONSerialization.jsonObject(with: talkMCP) as? [String: Any],
               let all = root["mcpServers"] as? [String: Any], var atlas = all["atlas"] as? [String: Any] else { return nil }
         var env = (atlas["env"] as? [String: Any]) ?? [:]
-        env["ATLAS_CHAT_SESSION"] = "dot-afterclass-\(stamp)"
+        env["ATLAS_CHAT_SESSION"] = session
         env["ATLAS_MCP_TOOLS"] = tools.joined(separator: ",")
         atlas["env"] = env
         atlas["timeout"] = JobConfigFile.atlasTimeoutMs

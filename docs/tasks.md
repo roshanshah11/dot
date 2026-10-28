@@ -5,6 +5,17 @@ bottom with the date. "His ask" quotes the message that created the item.
 
 ## Now
 
+- [ ] 2026-10-28 Call mode, his ask ("build dot for calls/interviews", grilled the same day: chats + real interviews,
+      calls moved to the Mac, "cluely tupe tool" as facts + follow-ups in chats only, both sides with no disclosure,
+      prep on its own the night before, "Yes, build it").
+      1. [x] Built: DotKit CallMode (calendar → call, turns, echo, close ask, checklist, helper lines, file names), the
+         system audio tap (Core Audio process tap minus Dot), CallEar (two recognizers), CallHelper (talk model, Atlas +
+         web), the call window (prep left, live right, never shared), CallSession, CallAfter (whole-file transcript into
+         Networking or Interview Prep, then the recap / debrief agent), the card's "start call" / "call <name>", voice
+         phrases, the 9 PM prep. `Dot --call-replay ~/Dot/talk/call-demo` (scripts/make-call-fixture.py) passes.
+      2. [ ] His first real call on the Mac: the one-time System Audio Recording allow, AirPods through the Phone app,
+         the first recap and thank-you draft.
+
 - [ ] 2026-10-26 HeyClicky parity, overnight (plan set ~/Dot/plans/2026-10-26-heyclicky-parity, run log
       ~/.claude/overnight/runs/2026-10-26-0255-build-the-heyclicky-parity-plan-agreed-in-grilli.md), his asks ("what
       does HeyClicky have that Dot doesnt have. make a full exhaustive list", "lets go through all 99 things and organize

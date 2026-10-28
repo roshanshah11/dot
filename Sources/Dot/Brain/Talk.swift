@@ -1319,6 +1319,20 @@ final class Talk {
         case .stopListening:
             await stopLecture()
             return
+        case .startCall:
+            await startCall()
+            return
+        case .endCall:
+            phase = .idle
+            hud.set(phase: .hidden)
+            await endCall()
+            return
+        case .showCall:
+            phase = .idle
+            hud.set(phase: .hidden)
+            callSession?.showWindow()
+            settle()
+            return
         case .lectureDemo(let name):
             await startLectureDemo(name: name, speed: 2, from: 0, audible: true)
             return
@@ -1662,6 +1676,88 @@ final class Talk {
     /// Lecture mode's class while one is on (2026-10-22): notes in his style, the panel explaining on its own.
     private(set) var lectureSession: LectureSession?
     private var notesWindow: NotesWindow?
+
+    // MARK: Call mode (10-28)
+
+    private(set) var callSession: CallSession?
+    private var callWindow: CallWindow?
+    /// True while a call is on and false after: AppDelegate hides every Dot window from screen sharing for the call.
+    var onCallChanged: ((Bool) -> Void)?
+    var isOnCallMode: Bool { callSession?.ended == false }
+
+    /// The call on the calendar now (or a call with no calendar event), its prep pinned, both sides heard. `dial`: the
+    /// card's button also dials the number on the event through the Mac's Phone app.
+    func startCall(event given: CallEvent? = nil, dial: Bool = false) async {
+        phase = .idle
+        hud.set(phase: .hidden)
+        defer { scheduleIdleCheck() }
+        guard config.callMode else { hud.flash(status: "call mode is off (callMode in the config)", for: 5); return }
+        if let live = callSession, !live.ended {
+            live.showWindow()
+            if dial, live.canDial { live.dial() }
+            hud.flash(status: "call mode is on, \(live.minutes) min in", for: 4)
+            return
+        }
+        if lecture.isListening { hud.flash(status: "lecture mode is on; end the class first", for: 5); return }
+        let now = Date()
+        let event = given ?? CallCalendar.current(localCalendar.items(days: 1, now: now) ?? [], now: now)
+            ?? CallEvent(title: "Call", start: now, end: now.addingTimeInterval(30 * 60), kind: .chat)
+        let career = URL(fileURLWithPath: DotConfig.expand("~/roshan/Career"), isDirectory: true)
+        let prepFolder = career.appendingPathComponent("Interview Prep", isDirectory: true)
+        let names = (try? FileManager.default.contentsOfDirectory(atPath: prepFolder.path)) ?? []
+        let prepURL = CallFiles.findPrep(in: names, for: event).map { prepFolder.appendingPathComponent($0) }
+        let prep = prepURL.flatMap { try? String(contentsOf: $0, encoding: .utf8) } ?? ""
+        let window = callWindow ?? CallWindow()
+        callWindow = window
+        let session = CallSession(event: event, prepURL: prepURL, prep: prep, ear: CallEar(transcriber: transcriber), window: window, config: config,
+                                  transcriber: transcriber, folder: career.appendingPathComponent(event.kind == .chat ? "Networking" : "Interview Prep", isDirectory: true))
+        session.handoff = { [weak self] brief in
+            guard let self else { return }
+            self.agents.handoff(brief: brief, agentName: nil, context: nil, shots: nil)
+        }
+        session.onEnded = { [weak self] ended in self?.callEnded(ended) }
+        window.onClose = { [weak self] in self?.hud.flash(status: "the call goes on; say \"show the call\" to bring it back", for: 5) }
+        callSession = session
+        QuietSpeaker.quiet = true
+        onCallChanged?(true)
+        await pauseMusicForCall()
+        do {
+            try await session.start()
+        } catch {
+            callSession = nil
+            QuietSpeaker.quiet = lectureSession != nil
+            onCallChanged?(false)
+            window.close()
+            hud.flash(status: "call mode: the microphone didn't open", for: 6)
+            Log.error("call: didn't start: \(error)")
+            return
+        }
+        if dial, session.canDial { session.dial() }
+        hud.upsertAgent(AgentRow(id: "call", name: session.heading, line: session.listenOnly ? "listening; the debrief comes after" : "on the call; End call in the window",
+                                 state: .running, kind: .lesson, canStop: true))
+    }
+
+    func endCall() async {
+        guard let session = callSession, !session.ended else { return }
+        await session.end(reason: "he ended it")
+    }
+
+    private func callEnded(_ session: CallSession) {
+        QuietSpeaker.quiet = lectureSession != nil
+        onCallChanged?(false)
+        hud.removeAgent(id: "call")
+        hud.flash(status: session.result?.line ?? "call over", for: 8)
+        if let transcript = session.result?.transcript, !benchMode {
+            AtlasThread.shared.record(kind: "job", asked: "call mode: \(session.heading)", said: "saved \(transcript.path)")
+        }
+    }
+
+    /// Spotify pauses when a call starts: the tap hears whatever the Mac plays.
+    private func pauseMusicForCall() async {
+        guard !NSRunningApplication.runningApplications(withBundleIdentifier: "com.spotify.client").isEmpty else { return }
+        let outcome = await hands.spotify(.pause)
+        Log.info("call: spotify \(outcome.ok ? "paused" : "not paused (\(outcome.line))")")
+    }
 
     func startLecture(title: String, replay: URL? = nil, replaySpeed: Double = 1) async {
         phase = .idle
@@ -2147,6 +2243,8 @@ final class Talk {
         /// The basics pass: a small thing Dot does itself; a job for a new agent, never the running one.
         case act(ActionCommand), agentFresh
         case answer, agent, think, explain, reopenPanel, closePanel, showTranscript, followUp(String), continueWalkthrough, drive, closeBoard, lessonNext, lessonBack, lessonAgain, lecture, suggestion(String), dismiss, find(String), listen, stopListening, lectureDemo(String?), recapLecture, openNotes(String, Int?), dictionary(heard: String?, correct: String), place(what: String, whereWord: String?), images(String)
+        /// Call mode (10-28): start it on the call now, end it, bring its window back.
+        case startCall, endCall, showCall
         /// Round seven (G2): his spoken answer to the card on show; a named agent told, stopped or asked after.
         case consentAnswer(ConsentVoice.Answer), tellAgent(String), stopAgent(String), agentStatus(String?)
         /// Tonight's voice verbs (VO-01 to VO-13, MB-07).
@@ -2185,6 +2283,9 @@ final class Talk {
             case .dictionary: return "dictionary"
             case .place: return "place"
             case .images: return "images"
+            case .startCall: return "startCall"
+            case .endCall: return "endCall"
+            case .showCall: return "showCall"
             case .consentAnswer(let answer): return "consentAnswer(\(answer))"
             case .tellAgent(let slug): return "tellAgent(\(slug))"
             case .stopAgent(let slug): return "stopAgent(\(slug))"
@@ -2239,6 +2340,14 @@ final class Talk {
     /// "find the part about x", "where does it talk about x", "go to the section on x": Dot reads
     /// the document itself and scrolls there, no model needed when the words are plainly in it.
     private static let findWords = try! NSRegularExpression(pattern: #"^(?:(?:can you |could you |please )?(?:find|go to|jump to|scroll to|take me to|show me|navigate to) (?:the |that |a )?(?:part|section|bit|page|place|paragraph|passage|spot|where it talks?|where it says)(?: of (?:the|this) (?:paper|pdf|document|reading|chapter))?(?: (?:about|on|that talks about|that says|where it says|about the|on the))?|where (?:does|do|is) (?:it|this|the (?:paper|pdf|document|reading|chapter|text)) (?:talk about|explain|mention|discuss|say|cover|define|introduce|go over)|which page (?:is|has|talks about|covers)) (.+?)\W*$"#, options: .caseInsensitive)
+    private static let startCallWords = try! NSRegularExpression(
+        pattern: #"^(?:(?:hey )?dot,? )?(?:(?:start|turn on|begin) )?call mode(?: on)?\W*$|^(?:(?:hey )?dot,? )?(?:take notes (?:on|for|during)|listen (?:to|in on)|start (?:notes on|listening to)) (?:this|the|my) (?:call|interview|coffee chat|phone call|chat)\W*$|^(?:(?:hey )?dot,? )?(?:start|begin) (?:the |my )?(?:call|interview|coffee chat)(?: notes)?\W*$"#,
+        options: .caseInsensitive)
+    private static let endCallWords = try! NSRegularExpression(
+        pattern: #"^(?:(?:hey )?dot,? )?(?:end|stop|finish|wrap up) (?:the |this |my )?(?:call|interview|coffee chat)(?: mode| notes)?\W*$|^(?:the )?(?:call|interview)(?:'s| is) (?:over|done|finished)\W*$|^call mode off\W*$"#,
+        options: .caseInsensitive)
+    private static let showCallWords = try! NSRegularExpression(
+        pattern: #"^(?:(?:hey )?dot,? )?(?:show|open|bring up) (?:me )?(?:the |my )?(?:call|interview)(?: window| notes| prep)?\W*$"#, options: .caseInsensitive)
     private static let listenWords = try! NSRegularExpression(pattern: #"^(?:(?:dot,? )?(?:start )?listen(?:ing)? (?:to )?(?:the |this )?(?:lecture|class|talk|lecturer|meeting)|(?:start|begin) (?:the )?lecture(?: mode)?|lecture mode(?: on)?)\W*$"#, options: .caseInsensitive)
     /// "show the transcript", "open my transcript", "pull up the conversation" (10-21; Control+Command+T does the same).
     private static let transcriptWords = try! NSRegularExpression(pattern: #"^(?:dot,? )?(?:show|open|pull up|bring up)(?: me)? (?:the |my |our |today's )?(?:whole |full )?(?:transcript|conversation)(?: so far)?\W*$"#, options: .caseInsensitive)
@@ -2573,6 +2682,10 @@ final class Talk {
         if config.lectureNotes, let m = Self.lectureDemoWords.firstMatch(in: spelled, range: spelledRange) {
             return .lectureDemo(Range(m.range(at: 1), in: spelled).map { String(spelled[$0]) })
         }
+        // call mode's words come before lecture's: "take notes on this call" is a call even with a class on the calendar
+        if config.callMode, Self.startCallWords.firstMatch(in: text, range: range) != nil { return callSession?.ended == false ? .showCall : .startCall }
+        if callSession?.ended == false, Self.endCallWords.firstMatch(in: text, range: range) != nil { return .endCall }
+        if callSession != nil, Self.showCallWords.firstMatch(in: text, range: range) != nil { return .showCall }
         if Self.listenWords.firstMatch(in: spelled, range: spelledRange) != nil { return .listen }
         if let m = Self.openNotesWords.firstMatch(in: text, range: range), let r = Range(m.range(at: 1), in: text) {
             let number = Range(m.range(at: 2), in: text).flatMap { Int(text[$0]) }
@@ -4293,6 +4406,7 @@ final class Talk {
         case "lesson": clearBoard()
         case "lecture": Task { @MainActor in await stopLecture() }
         case "lecture-offer": hud.removeAgent(id: "lecture-offer")
+        case "call": Task { @MainActor in await endCall() }
         default: break
         }
     }

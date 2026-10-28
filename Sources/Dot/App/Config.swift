@@ -198,6 +198,13 @@ struct DotConfig: Codable {
     var lectureModel = "sonnet"
     /// The last after-class pass: names, sources, context at a talk, the speakers to Atlas (2026-10-27).
     var lectureResearch = true
+    /// Call mode (10-28): coffee chats and interviews taken on the Mac. "start call" on the meeting card, or "take notes on
+    /// this call"; both sides heard, the prep pinned, a recap, the lessons, the tracker and a thank-you draft after.
+    var callMode = true
+    /// The live helper in a coffee chat (a fact and a follow-up when they name something); interviews are listen-only.
+    var callHelper = true
+    /// The hour (24 h) the next day's calls get their prep written by an agent; 0 turns it off.
+    var callPrepHour = 21
     var jobModel = "sonnet"
     /// Decks and anything written under his name that he didn't dictate (his rule: prose under his name runs on Opus).
     var jobProseModel = "opus"
@@ -345,6 +352,9 @@ struct DotConfig: Codable {
         lectureNotes = get(.lectureNotes, d.lectureNotes)
         lectureModel = get(.lectureModel, d.lectureModel)
         lectureResearch = get(.lectureResearch, d.lectureResearch)
+        callMode = get(.callMode, d.callMode)
+        callHelper = get(.callHelper, d.callHelper)
+        callPrepHour = get(.callPrepHour, d.callPrepHour)
         jobModel = get(.jobModel, d.jobModel)
         jobProseModel = get(.jobProseModel, d.jobProseModel)
         jobEffort = c.contains(.jobEffort) ? (try? c.decodeIfPresent(String.self, forKey: .jobEffort)) : d.jobEffort

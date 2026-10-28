@@ -52,6 +52,8 @@ rm -rf "$APP/Contents/Resources/jobs"
 cp -R Resources/jobs "$APP/Contents/Resources/jobs"
 rm -rf "$APP/Contents/Resources/lecture"
 cp -R Resources/lecture "$APP/Contents/Resources/lecture"
+rm -rf "$APP/Contents/Resources/call"
+cp -R Resources/call "$APP/Contents/Resources/call"
 # SwiftPM resource bundles (FluidAudio ships none today; copy whatever exists).
 for bundle in .build/$CONFIG/*.bundle(N); do
   cp -R "$bundle" "$APP/Contents/Resources/"
