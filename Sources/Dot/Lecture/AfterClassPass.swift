@@ -38,27 +38,37 @@ enum LectureAudio {
     /// His Murmur recording of the class (he records long ones in Murmur as a backup, 2026-10-27), copied into the cache,
     /// when Dot's own recording is missing or covers at least two minutes less of the class than Murmur's. Murmur keeps
     /// the file in its temp folder only until it has transcribed it, so this finds it only while it is recording or just
-    /// after. Nil when there is none or Dot's own is as good.
-    static func murmurBackup(began: Date, ended: Date, own: URL?) -> URL? {
+    /// after. `from` is how far back the class goes: Dot's own start, or well before it when Dot resumed after a restart
+    /// (its own recording then starts at the restart). The copy is trimmed to `from...ended` and comes back with the time
+    /// its first sample was recorded, which the transcript's clock counts from. Nil when there is none or Dot's own is
+    /// as good.
+    static func murmurBackup(from: Date, ended: Date, own: URL?) -> (url: URL, start: Date)? {
         let temp = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0].appendingPathComponent("Murmur/temp", isDirectory: true)
         let keys: [URLResourceKey] = [.creationDateKey, .contentModificationDateKey]
         let candidates = ((try? FileManager.default.contentsOfDirectory(at: temp, includingPropertiesForKeys: keys)) ?? [])
             .filter { $0.pathExtension.lowercased() == "wav" }
-            .compactMap { url -> (url: URL, covers: TimeInterval)? in
-                guard let v = try? url.resourceValues(forKeys: Set(keys)), let made = v.creationDate, let changed = v.contentModificationDate else { return nil }
-                let covers = min(changed, ended).timeIntervalSince(max(made, began))
-                return covers > 60 ? (url, covers) : nil
+            .compactMap { url -> (url: URL, made: Date, start: Date, seconds: TimeInterval)? in
+                guard let v = try? url.resourceValues(forKeys: Set(keys)), let made = v.creationDate, let changed = v.contentModificationDate,
+                      let kept = LectureRecording.overlap(made: made, changed: changed, from: from, to: ended) else { return nil }
+                return (url, made, kept.start, kept.seconds)
             }
-        guard let best = candidates.max(by: { $0.covers < $1.covers }) else { return nil }
+        guard let best = candidates.max(by: { $0.seconds < $1.seconds }) else { return nil }
         let ownSeconds = own.flatMap { try? AVAudioFile(forReading: $0) }.map { Double($0.length) / $0.processingFormat.sampleRate } ?? 0
-        guard ownSeconds < best.covers - 120 else { return nil }
-        let target = folder.appendingPathComponent("murmur-\(Int(began.timeIntervalSince1970)).wav")
+        guard ownSeconds < best.seconds - 120 else { return nil }
+        let target = folder.appendingPathComponent("murmur-\(Int(from.timeIntervalSince1970)).wav")
         do {
             try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
             try? FileManager.default.removeItem(at: target)
-            try FileManager.default.copyItem(at: best.url, to: target)
-            Log.info(String(format: "lecture: after class: using his Murmur recording (%.0f min) over Dot's own (%.0f min)", best.covers / 60, ownSeconds / 60))
-            return target
+            var start = best.start
+            do {
+                try LectureRecording.trim(best.url, to: target, skip: best.start.timeIntervalSince(best.made), seconds: best.seconds)
+            } catch {   // unreadable mid-recording: the whole file, its clock from when Murmur started it
+                try? FileManager.default.removeItem(at: target)
+                try FileManager.default.copyItem(at: best.url, to: target)
+                start = best.made
+            }
+            Log.info(String(format: "lecture: after class: using his Murmur recording (%.0f min) over Dot's own (%.0f min)", best.seconds / 60, ownSeconds / 60))
+            return (target, start)
         } catch {
             Log.warn("lecture: after class: couldn't copy the Murmur recording: \(error)")
             return nil

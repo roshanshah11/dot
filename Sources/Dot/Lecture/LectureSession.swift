@@ -26,6 +26,8 @@ final class LectureSession {
     private let listener: LectureListener
     private let explainers: LectureExplainers
     private let startedAt = Date()
+    /// How far back a Murmur backup may reach for a session resumed after a restart: the longest class.
+    private static let resumeReach: TimeInterval = 3 * 3600
     /// The day the class is on: today, except in the lecture demo (the recording's day, so "next week" lands right).
     private let classDay: Date
     /// When the calendar says the class ends: the recall comes up a few minutes after if he hasn't ended it.
@@ -78,6 +80,8 @@ final class LectureSession {
     /// The class audio transcribed again, started the moment class ends (it runs during the recall).
     private var retranscription: Task<String?, Never>?
     private var keptAudio: (url: URL, owned: Bool)?
+    /// When the kept audio's first sample was recorded: Dot's own start, or a Murmur backup's.
+    private var keptAudioStart: Date?
 
     var cycleSeconds: TimeInterval = 30
     var cycleWords = 75
@@ -107,12 +111,15 @@ final class LectureSession {
         if let top = file.sections.first, let head = CourseNotesFile.classHeading(top.components(separatedBy: "\n")[0]), head.date == today,
            let resumed = ClassNotes.parse(section: top), LectureLive.key(for: fileURL.path, in: Self.liveFile) == resumed.key {
             notes = resumed
+            resumedMidClass = true
         } else {
             notes = ClassNotes(number: file.nextClassNumber, date: now)
         }
     }
 
     var isResumed: Bool { !notes.blocks.isEmpty }
+    /// Picked up after a restart (isResumed stops telling once this session adds a line).
+    private var resumedMidClass = false
     /// Lecture time per wall second (the replay test plays faster than real time).
     var clockScale = 1.0
     var minutes: Int { Int(Date().timeIntervalSince(startedAt) * clockScale / 60) }
@@ -580,13 +587,17 @@ final class LectureSession {
     /// The kept audio goes to the recognizer at once, so the new transcript is ready by the time the recall is done.
     private func startRetranscription() {
         keptAudio = listener.takeKeptAudio()
-        // Dot's own recording missing or cut short (a restart mid-class): his Murmur recording of the same class instead
-        if let backup = LectureAudio.murmurBackup(began: startedAt, ended: Date(), own: keptAudio?.url) {
+        keptAudioStart = startedAt
+        // Dot's own recording missing or cut short (a restart mid-class): his Murmur recording of the same class instead,
+        // reaching back past the restart to the start of class
+        let from = resumedMidClass ? startedAt.addingTimeInterval(-Self.resumeReach) : startedAt
+        if let backup = LectureAudio.murmurBackup(from: from, ended: Date(), own: keptAudio?.url) {
             if let own = keptAudio, own.owned { LectureAudio.discard(own.url) }
-            keptAudio = (backup, true)
+            keptAudio = (backup.url, true)
+            keptAudioStart = backup.start
         }
         guard let audio = keptAudio, let transcriber else { return }
-        let began = startedAt, file = transcriptURL, title = "\(course) \(notes.key)", talk = course == LectureCourses.otherLectures
+        let began = keptAudioStart ?? startedAt, file = transcriptURL, title = "\(course) \(notes.key)", talk = course == LectureCourses.otherLectures
         retranscription = Task { @MainActor in
             await AfterClassPass.retranscribe(audio: audio.url, began: began, transcriber: transcriber, title: title, into: file, talk: talk)
         }

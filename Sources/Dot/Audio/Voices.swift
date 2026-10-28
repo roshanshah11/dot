@@ -9,9 +9,13 @@ import Foundation
 enum Voices {
     static func turns(in url: URL, talk: Bool) async -> [TranscriptParagraphs.Turn] {
         let sortformer = await sortformerTurns(in: url)
-        if !sortformer.isEmpty { return sortformer }
-        return await turns(in: url, minSpeakers: talk ? 2 : nil)
+        // at a talk one voice means the voices were merged: the clustering with its two-voice floor gets a try
+        if !sortformer.isEmpty, !talk || voices(sortformer) > 1 { return sortformer }
+        let clustered = await turns(in: url, minSpeakers: talk ? 2 : nil)
+        return voices(clustered) > voices(sortformer) ? clustered : sortformer
     }
+
+    private static func voices(_ turns: [TranscriptParagraphs.Turn]) -> Int { Set(turns.map(\.speaker)).count }
 
     /// `minSpeakers`: at a talk at least a host and a guest (10-27: with no floor the clustering heard a host and two
     /// founders through one PA as a single voice).
