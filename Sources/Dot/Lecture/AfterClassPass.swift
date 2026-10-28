@@ -229,7 +229,8 @@ enum AfterClassPass {
 }
 
 /// `Dot --after-class <notes.md> --class "CLASS 1 (Sun Oct 25)" [--transcript FILE] [--audio FILE] [--his N] [--out FOLDER]
-/// [--ahead FILE] [--research]`: (`--research` runs the last pass too, and its Atlas saves are real)
+/// [--ahead FILE] [--research] [--began "yyyy-MM-dd HH:mm:ss"]`: (`--research` runs the last pass too, and its Atlas saves
+/// are real; `--began` is when the audio's first sample was recorded, so the transcript's clock matches the notes' times)
 /// the after-class pass on a saved class, into a scratch copy, never his notes or his Desktop. `--his N` marks the class's
 /// first N lines as his (classes saved before 10-25 kept no authorship). Prints what it added and fixed; exit 0 when the
 /// pass came back.
@@ -238,7 +239,7 @@ enum AfterClassReplay {
     static func run(_ args: [String]) -> Bool {
         func value(_ flag: String) -> String? { args.firstIndex(of: flag).flatMap { $0 + 1 < args.count ? args[$0 + 1] : nil } }
         guard let notesPath = args.first(where: { !$0.hasPrefix("--") }), let key = value("--class") else {
-            print("usage: Dot --after-class <notes.md> --class \"CLASS N (date)\" [--transcript FILE] [--audio FILE] [--his N] [--out FOLDER] [--ahead FILE] [--research]")
+            print("usage: Dot --after-class <notes.md> --class \"CLASS N (date)\" [--transcript FILE] [--audio FILE] [--his N] [--out FOLDER] [--ahead FILE] [--research] [--began \"yyyy-MM-dd HH:mm:ss\"]")
             return false
         }
         let config = DotConfig.peek()
@@ -275,7 +276,9 @@ enum AfterClassReplay {
             var transcript = value("--transcript").flatMap { try? String(contentsOfFile: DotConfig.expand($0), encoding: .utf8) } ?? ""
             var source = "the live machine transcript"
             if let audio = value("--audio") {
-                if let fresh = await AfterClassPass.retranscribe(audio: URL(fileURLWithPath: DotConfig.expand(audio)), began: started, transcriber: Transcriber(),
+                let clock = DateFormatter(); clock.dateFormat = "yyyy-MM-dd HH:mm:ss"; clock.locale = Locale(identifier: "en_US_POSIX")
+                let began = value("--began").flatMap(clock.date(from:)) ?? started
+                if let fresh = await AfterClassPass.retranscribe(audio: URL(fileURLWithPath: DotConfig.expand(audio)), began: began, transcriber: Transcriber(),
                                                                  title: "\(course) \(key)", into: transcriptOut, talk: course == LectureCourses.otherLectures) {
                     transcript = fresh
                     source = "transcribed again from the class audio"

@@ -397,6 +397,31 @@ case "--voices":
     }
     while !voiceDone { RunLoop.main.run(until: Date().addingTimeInterval(0.1)) }
     exit(0)
+case "--notes-pdf":
+    // `Dot --notes-pdf <notes.md> --class "CLASS N (date)" --out <file.pdf>`: one class's PDF again from its notes file, the
+    // way the lecture window exports it (2026-10-27: tonight's talk notes, fixed by hand after the after-class pass).
+    let pdfArgs = Array(arguments.dropFirst())
+    func pdfValue(_ flag: String) -> String? { pdfArgs.firstIndex(of: flag).flatMap { $0 + 1 < pdfArgs.count ? pdfArgs[$0 + 1] : nil } }
+    guard let pdfNotes = pdfArgs.first(where: { !$0.hasPrefix("--") }), let pdfKey = pdfValue("--class"), let pdfOut = pdfValue("--out") else {
+        print("usage: Dot --notes-pdf <notes.md> --class \"CLASS N (date)\" --out <file.pdf>"); exit(1)
+    }
+    let pdfApp = NSApplication.shared
+    pdfApp.setActivationPolicy(.accessory)
+    pdfApp.finishLaunching()
+    let pdfSource = URL(fileURLWithPath: DotConfig.expand(pdfNotes))
+    guard let pdfText = try? String(contentsOf: pdfSource, encoding: .utf8),
+          let pdfSection = CourseNotesFile.parse(pdfText, fallbackTitle: "notes").section(key: pdfKey), let pdfClass = ClassNotes.parse(section: pdfSection) else {
+        print("FAIL: no \(pdfKey) in \(pdfSource.path)"); exit(1)
+    }
+    var pdfDone = false, pdfMade = false
+    Task { @MainActor in
+        let md = CourseNotesFile(title: pdfClass.title.isEmpty ? pdfClass.key : pdfClass.title, sections: [pdfClass.markdown]).markdown
+        pdfMade = (try? await NotesWindow().exportPDF(markdown: md, baseURL: pdfSource.deletingLastPathComponent(), to: URL(fileURLWithPath: DotConfig.expand(pdfOut)))) != nil
+        pdfDone = true
+    }
+    while !pdfDone { RunLoop.main.run(until: Date().addingTimeInterval(0.1)) }
+    print(pdfMade ? "pdf \(DotConfig.expand(pdfOut))" : "FAIL: the pdf export failed")
+    exit(pdfMade ? 0 : 1)
 case "--after-class":
     // The after-class pass on a saved class, into a scratch copy (AfterClassReplay): never his notes or his Desktop.
     let afterApp = NSApplication.shared
