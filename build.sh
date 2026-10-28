@@ -77,12 +77,13 @@ fi
 # A relaunch ends a class lecture mode is writing or finishing, and it does not come back on its own (2026-10-27: an
 # install at 13:17 cut a seminar off two minutes in). The running Dot says so itself (`Dot --jobs`: lecture is true from
 # the start of class to the end of the after-class pass, retranscription included), asked through the binary just built
-# since an older one may not know the flag. A Dot that doesn't answer falls back to its claude children: the note writer
-# and the after-class pass, whose system prompts open with these words. DOT_INSTALL_DURING_LECTURE=1 installs anyway.
+# since an older one may not know the flag. A Dot that says false, or doesn't answer, is checked against its claude
+# children too: the note writer and the after-class pass, whose system prompts open with these words. A Dot from before
+# f8c9d68 says false all through the after-class pass (review, 10-28). DOT_INSTALL_DURING_LECTURE=1 installs anyway.
 lecture_busy() {
   local report
   report=$("$BIN" --jobs --json 2>/dev/null || true)   # exits 1 when busy, 3 when Dot doesn't answer
-  if [[ "$report" == *'"lecture":'* ]]; then [[ "$report" == *'"lecture":true'* ]]; return; fi
+  [[ "$report" == *'"lecture":true'* ]] && return 0
   pgrep -f "You take a student's class notes for him, live|Class is over. During it, Dot wrote these notes live" >/dev/null
 }
 if [[ -z "${DOT_INSTALL_DURING_LECTURE:-}" ]] && lecture_busy; then
