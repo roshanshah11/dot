@@ -16,6 +16,11 @@ final class IdleReportTests: XCTestCase {
         XCTAssertFalse(IdleReport(lecture: true).idle)
         XCTAssertFalse(IdleReport(call: true).idle)
         XCTAssertEqual(IdleReport(call: true).reasons, ["call mode is on"])
+        // a Dot from before call mode doesn't say: unknown, not "no call", and left out of the wire for build.sh
+        let old = IdleReport(wire: ["v": 1, "jobs": [], "lecture": false])
+        XCTAssertNotNil(old)
+        XCTAssertNil(old?.call)
+        XCTAssertNil(old?.wire["call"])
     }
 
     func testReasonsNameTheWork() {

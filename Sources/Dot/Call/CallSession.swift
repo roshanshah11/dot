@@ -25,8 +25,10 @@ final class CallSession {
     private var nudgeUp = false
     private var tick: Timer?
     private var replaying = false
-    /// When the Mac's audio first carried sound this call (nil until then), and whether he's been told it hasn't.
-    private var theirSoundAt: Date?
+    /// When their words first came through the Mac's audio (nil until then), whether any sound has, and whether he's
+    /// been told nothing has.
+    private var theirWordsAt: Date?
+    private var anySound = false
     private var warnedSilent = false
     private(set) var ended = false
     private(set) var helps: [CallHelp] = []
@@ -131,20 +133,25 @@ final class CallSession {
 
     private var bothSides: String { listenOnly ? "listening to both sides; the debrief comes after" : "hearing both sides" }
 
-    /// The tap starting proves nothing: without System Audio Recording (or with the call on his phone) it records exact
-    /// silence. Both sides are claimed once any sound comes through the Mac's audio; a minute in with him talking and
-    /// none, the window says so and why.
+    /// The tap starting proves nothing: without System Audio Recording it records exact silence, and with the call on his
+    /// phone it records only the Mac's own sounds (a notification is sound, not them). Both sides are claimed once the
+    /// recognizer turns the Mac's audio into a few of their words; a minute in with him talking and none, the window
+    /// says which of the two it looks like.
     private func theirSide() {
-        guard ear.hearsThem, !replaying, theirSoundAt == nil, let peak = ear.theirPeak() else { return }
-        if peak > 0.001 {
-            theirSoundAt = Date()
+        guard ear.hearsThem, !replaying, theirWordsAt == nil else { return }
+        if let peak = ear.theirPeak(), peak > 0.001 { anySound = true }
+        let theirWords = ear.lines.filter { $0.side == .them }.reduce(0) { $0 + $1.text.split(separator: " ").count }
+        if theirWords >= 3 {
+            theirWordsAt = Date()
             window.status(bothSides)
-            Log.info("call: their side is coming through the Mac's audio")
-        } else if !warnedSilent, Date().timeIntervalSince(ear.began) > 60, ear.lines.contains(where: { $0.side == .me }) {
-            warnedSilent = true
-            window.status("no sound from them yet: is the call on this Mac? Dot needs System Audio Recording (System Settings > Privacy & Security)")
-            Log.warn("call: a minute in, the system audio tap has heard nothing (no System Audio Recording, or the call isn't on this Mac)")
+            Log.info("call: their words are coming through the Mac's audio")
+            return
         }
+        guard !warnedSilent, Date().timeIntervalSince(ear.began) > 60, ear.lines.contains(where: { $0.side == .me }) else { return }
+        warnedSilent = true
+        window.status(anySound ? "no words from them yet: is the call on this Mac, not your phone?"
+                               : "no sound from the Mac yet: is the call on this Mac? Dot needs System Audio Recording (System Settings > Privacy & Security)")
+        Log.warn("call: a minute in, no words from their side (\(anySound ? "the Mac's audio has sound: the call may be on another device" : "the tap has heard nothing: no System Audio Recording, or the call isn't on this Mac"))")
     }
 
     private func everySecond() {

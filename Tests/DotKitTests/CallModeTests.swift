@@ -201,12 +201,17 @@ final class CallModeTests: XCTestCase {
     }
 
     func testSecondCallSameDayGetsItsOwnFiles() {
-        let taken: Set<String> = ["/v/2026-10-28_Alex_Example_call_transcript.md", "/v/2026-10-28_Alex_Example_call_transcript_2.md"]
+        let chat = CallEvent(title: "Call: Alex Example", start: t0, end: t0, kind: .chat, person: "Alex Example")
+        let day = CallFiles.day(t0)
         let folder = URL(fileURLWithPath: "/v", isDirectory: true)
-        XCTAssertEqual(CallFiles.unused("2026-10-28_Alex_Example_call_transcript.md", in: folder, exists: { taken.contains($0.path) }),
-                       "2026-10-28_Alex_Example_call_transcript_3.md")
-        XCTAssertEqual(CallFiles.unused("2026-10-28_Northwind_interview_debrief.md", in: folder, exists: { taken.contains($0.path) }),
-                       "2026-10-28_Northwind_interview_debrief.md")
+        func number(_ taken: Set<String>) -> Int { CallFiles.callNumber(chat, in: folder, exists: { taken.contains($0.lastPathComponent) }) }
+        XCTAssertEqual(number([]), 1)
+        // the first call's transcript is saved and its recap agent hasn't written yet: the second call is still 2
+        XCTAssertEqual(number(["\(day)_Alex_Example_call_transcript.md"]), 2)
+        XCTAssertEqual(number(["\(day)_Alex_Example_coffee_chat_recap.md"]), 2)
+        XCTAssertEqual(CallFiles.transcriptName(chat, n: 2), "\(day)_Alex_Example_call_transcript_2.md")
+        XCTAssertEqual(CallFiles.recapName(chat, n: 2), "\(day)_Alex_Example_coffee_chat_recap_2.md")
+        XCTAssertEqual(CallFiles.recapName(chat), "\(day)_Alex_Example_coffee_chat_recap.md")
     }
 
     func testPrepSchedule() {

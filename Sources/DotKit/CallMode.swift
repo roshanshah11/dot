@@ -373,23 +373,23 @@ public enum CallFiles {
         "\(day(event.start))_\(base(event))_\(event.kind == .chat ? "call" : "interview")_prep.md"
     }
 
-    /// The transcript: Networking for a chat, Interview Prep for an interview.
-    public static func transcriptName(_ event: CallEvent) -> String {
-        "\(day(event.start))_\(base(event))_\(event.kind == .chat ? "call" : "interview")_transcript.md"
+    /// The transcript: Networking for a chat, Interview Prep for an interview. `n` is the call's number that day (callNumber).
+    public static func transcriptName(_ event: CallEvent, n: Int = 1) -> String {
+        "\(day(event.start))_\(base(event))_\(event.kind == .chat ? "call" : "interview")_transcript\(n > 1 ? "_\(n)" : "").md"
     }
 
     /// "2026-10-11_Alex_Example_coffee_chat_recap.md" (Networking) or "2026-10-21_Northwind_interview_debrief.md".
-    public static func recapName(_ event: CallEvent) -> String {
-        event.kind == .chat ? "\(day(event.start))_\(base(event))_coffee_chat_recap.md" : "\(day(event.start))_\(base(event))_interview_debrief.md"
+    public static func recapName(_ event: CallEvent, n: Int = 1) -> String {
+        "\(day(event.start))_\(base(event))_\(event.kind == .chat ? "coffee_chat_recap" : "interview_debrief")\(n > 1 ? "_\(n)" : "").md"
     }
 
-    /// `name` in `folder`, or with _2, _3, ... before the extension when that file exists: a second call with the same
-    /// person, or at the same firm, the same day never overwrites the first's transcript or recap.
-    public static func unused(_ name: String, in folder: URL, exists: (URL) -> Bool = { FileManager.default.fileExists(atPath: $0.path) }) -> String {
-        let stem = (name as NSString).deletingPathExtension, ext = (name as NSString).pathExtension
-        var candidate = name, n = 2
-        while exists(folder.appendingPathComponent(candidate)) { candidate = "\(stem)_\(n)\(ext.isEmpty ? "" : "." + ext)"; n += 1 }
-        return candidate
+    /// The call's number among the day's calls with the same person or firm: the first n whose transcript and recap are
+    /// both free in `folder`. The transcript is written under it at once, so the next call skips n even while this one's
+    /// recap agent is still writing; the recap takes the same n, so two agents never get one path.
+    public static func callNumber(_ event: CallEvent, in folder: URL, exists: (URL) -> Bool = { FileManager.default.fileExists(atPath: $0.path) }) -> Int {
+        var n = 1
+        while exists(folder.appendingPathComponent(transcriptName(event, n: n))) || exists(folder.appendingPathComponent(recapName(event, n: n))) { n += 1 }
+        return n
     }
 
     static let firmWords: Set<String> = ["co", "inc", "llc", "lp", "llp", "ltd", "plc", "the", "and"]

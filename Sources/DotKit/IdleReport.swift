@@ -22,10 +22,11 @@ public struct IdleReport: Equatable, Sendable {
     /// Allow / Not now cards waiting on him.
     public var cardsWaiting: Int
     public var lecture: Bool
-    /// Call mode on, or its after-call pass still saving the transcript.
-    public var call: Bool
+    /// Call mode on, or its after-call pass still saving the transcript; nil when the running Dot is from before call mode
+    /// and doesn't say (build.sh then reads its log), and left out of the wire then.
+    public var call: Bool?
 
-    public init(jobs: [Job] = [], queued: Int = 0, workingAgents: [String] = [], cardsWaiting: Int = 0, lecture: Bool = false, call: Bool = false) {
+    public init(jobs: [Job] = [], queued: Int = 0, workingAgents: [String] = [], cardsWaiting: Int = 0, lecture: Bool = false, call: Bool? = false) {
         self.jobs = jobs; self.queued = queued; self.workingAgents = workingAgents; self.cardsWaiting = cardsWaiting
         self.lecture = lecture; self.call = call
     }
@@ -38,16 +39,18 @@ public struct IdleReport: Equatable, Sendable {
         for slug in workingAgents { out.append("agent \(slug) working") }
         if cardsWaiting > 0 { out.append("\(cardsWaiting) card\(cardsWaiting == 1 ? "" : "s") waiting on him") }
         if lecture { out.append("lecture mode is on") }
-        if call { out.append("call mode is on") }
+        if call == true { out.append("call mode is on") }
         return out
     }
 
     public var idle: Bool { reasons.isEmpty }
 
     public var wire: [String: Any] {
-        ["v": 1, "idle": idle, "reasons": reasons, "queued": queued, "workingAgents": workingAgents,
-         "cardsWaiting": cardsWaiting, "lecture": lecture, "call": call,
-         "jobs": jobs.map { ["id": $0.id, "phase": $0.phase, "goal": $0.goal, "waitingOnHim": $0.waitingOnHim] as [String: Any] }]
+        var out: [String: Any] = ["v": 1, "idle": idle, "reasons": reasons, "queued": queued, "workingAgents": workingAgents,
+                                  "cardsWaiting": cardsWaiting, "lecture": lecture,
+                                  "jobs": jobs.map { ["id": $0.id, "phase": $0.phase, "goal": $0.goal, "waitingOnHim": $0.waitingOnHim] as [String: Any] }]
+        if let call { out["call"] = call }
+        return out
     }
 
     /// Reads a reply back; nil for anything that isn't a version-1 report (an older Dot answers "unknown verb").
@@ -59,6 +62,6 @@ public struct IdleReport: Equatable, Sendable {
             jobs.append(Job(id: id, phase: phase, goal: row["goal"] as? String ?? "", waitingOnHim: row["waitingOnHim"] as? Bool ?? false))
         }
         self.init(jobs: jobs, queued: wire["queued"] as? Int ?? 0, workingAgents: wire["workingAgents"] as? [String] ?? [],
-                  cardsWaiting: wire["cardsWaiting"] as? Int ?? 0, lecture: wire["lecture"] as? Bool ?? false, call: wire["call"] as? Bool ?? false)
+                  cardsWaiting: wire["cardsWaiting"] as? Int ?? 0, lecture: wire["lecture"] as? Bool ?? false, call: wire["call"] as? Bool)
     }
 }

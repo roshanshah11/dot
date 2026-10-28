@@ -86,6 +86,13 @@ lecture_busy() {
   local report
   report=$("$BIN" --jobs --json 2>/dev/null || true)   # exits 1 when busy, 3 when Dot doesn't answer
   [[ "$report" == *'"lecture":true'* || "$report" == *'"call":true'* ]] && return 0   # call mode: a relaunch loses the call
+  # A Dot from before call mode's busy report doesn't say (no "call" in it) and can still be on a call: its log does, a
+  # call line in the last 3 hours that the after-call pass hasn't closed.
+  if [[ "$report" != *'"call":'* ]]; then
+    local last
+    last=$(grep -E "^[0-9]{4}-[0-9]{2}-[0-9]{2} [0-9:.]+ [A-Z]+ call: (on with|ended|after:)" "${DOT_LOG:-$HOME/Library/Logs/Dot/dot.log}" 2>/dev/null | tail -1)
+    [[ -n "$last" && "$last" != *"call: after:"* && "${last[1,19]}" > "$(date -v-3H '+%Y-%m-%d %H:%M:%S')" ]] && return 0
+  fi
   pgrep -f "You take a student's class notes for him, live|Class is over. During it, Dot wrote these notes live" >/dev/null
 }
 if [[ -z "${DOT_INSTALL_DURING_LECTURE:-}" ]] && lecture_busy; then
