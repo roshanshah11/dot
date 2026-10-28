@@ -157,7 +157,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             FileViewer.show(url)
             reply(["ok": true, "text": FileViewer.canShow(url) ? "showing \(url.lastPathComponent)" : "opened \(url.lastPathComponent) in its app"])
         }
-        // An agent's own tools (AG-18 note_to and list_agents, AG-14 make_image), from `Dot --agent-mcp`.
+        // An agent's own tools (AG-18 note_to and list_agents), from `Dot --agent-mcp`.
         control.register("agent-tool") { [weak self] request, reply in
             guard let self else { reply(["error": "dot is quitting"]); return }
             self.agents.agentTool(agent: request["agent"] as? String ?? "", tool: request["tool"] as? String ?? "",

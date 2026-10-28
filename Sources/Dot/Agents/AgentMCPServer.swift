@@ -2,7 +2,7 @@ import DotKit
 import Foundation
 
 /// `Dot --agent-mcp --agent <slug>`: the stdio MCP server an agent sees as `dot-agents` (AG-18 note_to and
-/// list_agents, AG-14 make_image). It answers initialize, tools/list and ping itself (AgentMCPWire) and relays each
+/// list_agents). It answers initialize, tools/list and ping itself (AgentMCPWire) and relays each
 /// tools/call to the running Dot over the control socket. Nothing but JSON-RPC goes to stdout; it exits when stdin closes.
 enum AgentMCPServer {
     static func run(_ arguments: [String]) -> Never {

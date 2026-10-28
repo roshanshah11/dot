@@ -281,7 +281,7 @@ public enum WakePlan {
     }
 }
 
-/// `Dot --agent-mcp --agent <slug>`: the stdio MCP server every agent sees as `dot-agents` (AG-18, AG-14). Kept apart
+/// `Dot --agent-mcp --agent <slug>`: the stdio MCP server every agent sees as `dot-agents` (AG-18). Kept apart
 /// from a job's `dot` server (its page tools), which agents never get. It answers initialize, tools/list and ping
 /// itself and relays each call to the running Dot (control verb `agent-tool`).
 public enum AgentMCPWire {
@@ -294,10 +294,6 @@ public enum AgentMCPWire {
          HandsMCPWire.schema(["agent": HandsMCPWire.str, "text": HandsMCPWire.str], required: ["agent", "text"])),
         ("list_agents", "Dot's agents: each one's name, what it is doing now and its last report, so you know who to note.",
          HandsMCPWire.schema([:])),
-        ("make_image", "Make a picture with an image model and save it as a PNG in your output/ folder: a thumbnail, a diagram or "
-            + "an illustration for a deck, a slide picture. Never a real person's face. aspect: 1:1, 16:9, 9:16, 4:3, 3:4, 3:2 or 2:3. "
-            + "file: a name for the PNG (optional). Takes up to two minutes.",
-         HandsMCPWire.schema(["prompt": HandsMCPWire.str, "aspect": HandsMCPWire.str, "file": HandsMCPWire.str], required: ["prompt"])),
     ]
 
     public static var toolNames: [String] { tools.map(\.0) }
@@ -323,7 +319,7 @@ public enum AgentMCPWire {
     }
 
     /// How long the server waits on Dot for each tool.
-    public static func timeout(_ tool: String) -> TimeInterval { tool == "make_image" ? 200 : 20 }
+    public static func timeout(_ tool: String) -> TimeInterval { 20 }
 
     /// The entry added to an agent's MCP config.
     public static func configEntry(executable: String, agent slug: String, socket: String?) -> [String: Any] {
@@ -343,87 +339,5 @@ public enum AgentMCPWire {
         servers[server] = configEntry(executable: executable, agent: slug, socket: socket)
         root["mcpServers"] = servers
         return try? JSONSerialization.data(withJSONObject: root, options: [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes])
-    }
-}
-
-/// One make_image call (AG-14), checked before any money is spent.
-public struct ImageRequest: Equatable {
-    public static let aspects = ["1:1", "16:9", "9:16", "4:3", "3:4", "3:2", "2:3"]
-    public static let maxPrompt = 4000
-
-    public var prompt: String
-    public var aspect: String
-    /// A bare PNG name inside output/.
-    public var file: String
-
-    /// `now` names the file when no name was given.
-    public static func make(prompt raw: String, aspect rawAspect: String?, file rawFile: String?, now: Date = Date()) -> Result<ImageRequest, Problem> {
-        let prompt = raw.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !prompt.isEmpty else { return .failure(.init("an empty prompt")) }
-        guard prompt.count <= maxPrompt else { return .failure(.init("a prompt over \(maxPrompt) characters")) }
-        let aspect = (rawAspect ?? "").trimmingCharacters(in: .whitespaces).isEmpty ? "1:1" : rawAspect!.trimmingCharacters(in: .whitespaces)
-        guard aspects.contains(aspect) else { return .failure(.init("aspect \(aspect): use one of \(aspects.joined(separator: ", "))")) }
-        var file = (rawFile ?? "").trimmingCharacters(in: .whitespaces)
-        if file.contains("/") || file.contains("..") || file.hasPrefix(".") { return .failure(.init("file must be a bare name inside output/, not a path")) }
-        if file.isEmpty {
-            let words = BargeDetector.realWords(prompt).prefix(5).joined(separator: "-")
-            let f = DateFormatter()
-            f.locale = Locale(identifier: "en_US_POSIX")
-            f.dateFormat = "HHmmss"
-            file = (words.isEmpty ? "image" : words) + "-" + f.string(from: now)
-        }
-        file = String(file.map { $0.isLetter || $0.isNumber || $0 == "-" || $0 == "_" || $0 == "." ? $0 : "-" }).prefix(80).description
-        if !file.lowercased().hasSuffix(".png") { file += ".png" }
-        return .success(ImageRequest(prompt: prompt, aspect: aspect, file: file))
-    }
-
-    public struct Problem: Error, Equatable { public let why: String; public init(_ why: String) { self.why = why } }
-
-    /// OpenRouter's chat completions body for an image-output model.
-    public func body(model: String) -> [String: Any] {
-        ["model": model,
-         "modalities": ["image", "text"],
-         "messages": [["role": "user", "content": prompt]],
-         "image_config": ["aspect_ratio": aspect]]
-    }
-
-    /// The image-output model to use: the first preferred one OpenRouter still lists with image output, else its
-    /// newest image model (`models` is /api/v1/models' data).
-    public static func pickModel(preferred: [String], models: [[String: Any]]) -> String? {
-        let images = models.filter { (($0["architecture"] as? [String: Any])?["output_modalities"] as? [String])?.contains("image") == true }
-            .filter { ($0["id"] as? String).map { !$0.hasPrefix("openrouter/") } ?? false }
-        let ids = Set(images.compactMap { $0["id"] as? String })
-        if let hit = preferred.first(where: ids.contains) { return hit }
-        return images.max { ($0["created"] as? Double ?? 0) < ($1["created"] as? Double ?? 0) }?["id"] as? String
-    }
-
-    /// The PNG bytes in an OpenRouter reply (`choices[0].message.images[].image_url.url` as data: URLs), or why none.
-    public static func images(in reply: [String: Any]) -> Result<[Data], Problem> {
-        if let error = reply["error"] as? [String: Any] { return .failure(.init("the image model said: \(error["message"] as? String ?? "an error")")) }
-        let message = ((reply["choices"] as? [[String: Any]])?.first?["message"] as? [String: Any]) ?? [:]
-        let urls = (message["images"] as? [[String: Any]] ?? []).compactMap { ($0["image_url"] as? [String: Any])?["url"] as? String }
-        let pngs = urls.compactMap { url -> Data? in
-            guard url.hasPrefix("data:image/"), let comma = url.firstIndex(of: ",") else { return nil }
-            return Data(base64Encoded: String(url[url.index(after: comma)...]))
-        }
-        if pngs.isEmpty {
-            let said = (message["content"] as? String).map { $0.trimmingCharacters(in: .whitespacesAndNewlines) } ?? ""
-            return .failure(.init(said.isEmpty ? "no image came back" : "no image came back; the model said: \(String(said.prefix(300)))"))
-        }
-        return .success(pngs)
-    }
-}
-
-/// A value from a dotenv-style file (`NAME=value` or `export NAME="value"`).
-public enum DotEnv {
-    public static func value(_ name: String, in text: String) -> String? {
-        for raw in text.split(whereSeparator: \.isNewline) {
-            var line = raw.trimmingCharacters(in: .whitespaces)
-            if line.hasPrefix("export ") { line = String(line.dropFirst(7)).trimmingCharacters(in: .whitespaces) }
-            guard line.hasPrefix(name + "=") else { continue }
-            let value = line.dropFirst(name.count + 1).trimmingCharacters(in: CharacterSet(charactersIn: "\"' "))
-            return value.isEmpty ? nil : value
-        }
-        return nil
     }
 }

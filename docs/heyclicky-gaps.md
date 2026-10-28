@@ -42,7 +42,7 @@ is newer.
 |  | AG-22 | Routines while asleep | built, installed | 1f9ed38, f604a23 | his sudo rule for pmset; lid open |
 |  | AG-17 | Agent suggestions | built, installed | 5059e08 |  |
 |  | AG-08 | Own tools per agent, Atlas kept | built, installed | 6f15c2e |  |
-|  | AG-14 | Images via OpenRouter | built, installed; blocked | 1f9ed38 | OpenRouter credits (balance negative) |
+|  | AG-14 | Images via OpenRouter | removed 2026-10-28 | 1f9ed38 | his call: he needs no agent images and no OpenRouter |
 |  | SK-02 | Skill from links | built, installed | 5059e08, d539528 |  |
 |  | SK-05 | Skill avatars | built, installed | 5059e08 |  |
 | 6 Home | HO-07 | Draft per thread | built, installed | e0b0886 |  |

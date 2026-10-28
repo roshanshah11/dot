@@ -133,12 +133,11 @@ final class AgentWireTests: XCTestCase {
         XCTAssertFalse(grant[0].contains("ALL, "), "no blanket grant")
     }
     func testAgentMCPWire() {
-        XCTAssertEqual(AgentMCPWire.toolNames, ["note_to", "list_agents", "make_image"])
+        XCTAssertEqual(AgentMCPWire.toolNames, ["note_to", "list_agents"], "make_image went with OpenRouter, his call 2026-10-28")
         let initialize = HandsMCPWire.parse(#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18"}}"#)!
         XCTAssertTrue(AgentMCPWire.localReply(initialize)!.contains("\"name\":\"dot-agents\""))
         let call = HandsMCPWire.parse(#"{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"note_to"}}"#)!
         XCTAssertNil(AgentMCPWire.localReply(call), "calls are relayed")
-        XCTAssertEqual(AgentMCPWire.timeout("make_image"), 200)
     }
 
     func testAgentMCPConfigKeepsOtherServers() throws {
@@ -156,52 +155,5 @@ final class AgentWireTests: XCTestCase {
         let routedServers = (try JSONSerialization.jsonObject(with: routed.config) as? [String: Any])?["mcpServers"] as? [String: Any]
         XCTAssertEqual((routedServers?["dot-agents"] as? [String: Any])?["args"] as? [String], ["--agent-mcp", "--agent", "scout"])
         XCTAssertFalse(routed.routed.contains("dot-agents"))
-    }
-
-    func testImageRequestChecks() {
-        let now = Date(timeIntervalSince1970: 1_800_000_000)
-        let ok = try? ImageRequest.make(prompt: " a clean diagram of a DCF ", aspect: nil, file: nil, now: now).get()
-        XCTAssertEqual(ok?.prompt, "a clean diagram of a DCF")
-        XCTAssertEqual(ok?.aspect, "1:1")
-        XCTAssertTrue(ok?.file.hasPrefix("clean-diagram-of-dcf-") == true && ok?.file.hasSuffix(".png") == true, ok?.file ?? "")
-        XCTAssertEqual(try? ImageRequest.make(prompt: "x", aspect: "16:9", file: "cover slide", now: now).get().file, "cover-slide.png")
-        XCTAssertEqual(try? ImageRequest.make(prompt: "x", aspect: "16:9", file: "Thumb.PNG", now: now).get().file, "Thumb.PNG")
-        XCTAssertThrowsError(try ImageRequest.make(prompt: "  ", aspect: nil, file: nil).get())
-        XCTAssertThrowsError(try ImageRequest.make(prompt: "x", aspect: "5:1", file: nil).get())
-        XCTAssertThrowsError(try ImageRequest.make(prompt: "x", aspect: nil, file: "../../.ssh/a.png").get())
-        XCTAssertThrowsError(try ImageRequest.make(prompt: "x", aspect: nil, file: "/tmp/a.png").get())
-        XCTAssertThrowsError(try ImageRequest.make(prompt: String(repeating: "x", count: 4001), aspect: nil, file: nil).get())
-        let body = ImageRequest(prompt: "p", aspect: "16:9", file: "a.png").body(model: "m")
-        XCTAssertEqual(body["modalities"] as? [String], ["image", "text"])
-        XCTAssertEqual((body["image_config"] as? [String: String])?["aspect_ratio"], "16:9")
-    }
-
-    func testImageModelPickAndReply() {
-        let models: [[String: Any]] = [
-            ["id": "google/gemini-2.5-flash-image", "created": 1.0, "architecture": ["output_modalities": ["image", "text"]]],
-            ["id": "openai/gpt-5.4-image-2", "created": 3.0, "architecture": ["output_modalities": ["image", "text"]]],
-            ["id": "openrouter/auto", "created": 9.0, "architecture": ["output_modalities": ["text", "image"]]],
-            ["id": "anthropic/claude-opus-5.5", "created": 8.0, "architecture": ["output_modalities": ["text"]]],
-        ]
-        XCTAssertEqual(ImageRequest.pickModel(preferred: ["google/gemini-nano-banana-2.1", "openai/gpt-5.4-image-2"], models: models), "openai/gpt-5.4-image-2")
-        XCTAssertEqual(ImageRequest.pickModel(preferred: ["gone/model"], models: models), "openai/gpt-5.4-image-2", "else the newest real image model")
-        XCTAssertNil(ImageRequest.pickModel(preferred: [], models: []))
-        let png = Data([0x89, 0x50, 0x4E, 0x47])
-        let reply: [String: Any] = ["choices": [["message": ["content": "here", "images": [["type": "image_url", "image_url": ["url": "data:image/png;base64," + png.base64EncodedString()]]]]]]]
-        XCTAssertEqual(try? ImageRequest.images(in: reply).get(), [png])
-        if case .failure(let p) = ImageRequest.images(in: ["choices": [["message": ["content": "I can't draw that person."]]]]) {
-            XCTAssertEqual(p.why, "no image came back; the model said: I can't draw that person.")
-        } else { XCTFail("a refusal is not an image") }
-        if case .failure(let p) = ImageRequest.images(in: ["error": ["message": "insufficient credits"]]) {
-            XCTAssertEqual(p.why, "the image model said: insufficient credits")
-        } else { XCTFail("an error is not an image") }
-    }
-
-    func testDotEnv() {
-        let text = "export JINA_API_KEY=abc\nOPENROUTER_API_KEY=\"sk-or-1\"\n# EMPTY_KEY=\nEMPTY_KEY=\n"
-        XCTAssertEqual(DotEnv.value("OPENROUTER_API_KEY", in: text), "sk-or-1")
-        XCTAssertEqual(DotEnv.value("JINA_API_KEY", in: text), "abc")
-        XCTAssertNil(DotEnv.value("EMPTY_KEY", in: text))
-        XCTAssertNil(DotEnv.value("JINA", in: text), "a prefix of a name is not the name")
     }
 }

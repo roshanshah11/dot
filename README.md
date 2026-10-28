@@ -130,7 +130,6 @@ Checked against the code on 2026-10-26 (parity US-11). Paths are this Mac's.
 |---|---|---|
 | Anthropic, through Claude Code (`claude -p`, your subscription) | your words, the screenshots, the window's accessibility text; for agents, their brief, the files they open and their tool results | every turn and every agent step |
 | TypeSafe (Jev, `api.typesafe.ai`) | text only: your words, the app and window title, on-screen control labels, agents' tasks, upcoming deadline titles, and an agent's commands and tool output for the safety check | routing a turn, notices, checking agent commands; only while a TypeSafe key is set (one is, on this Mac) |
-| OpenRouter | an agent's picture prompt, as text | an agent makes an image |
 | Apple (MapKit) | the place search, the home point, the places for walking times and Look Around | a place card |
 | Yahoo Finance | the ticker | a stock card |
 | Wikimedia Commons | the picture search words | a pictures card |
@@ -216,7 +215,6 @@ with `ATLAS_MCP_TOOLS=now,search,facts,...` so only those tools ride along.
 | `routeTools` | `true` | Agents' and jobs' MCP servers go through Dot's tool router; `false` runs them direct |
 | `talkOverDot` | `false` | Talk over Dot to cut it off (Home > Voice). Passed on the MacBook speakers 2026-10-26; Bluetooth output stays off until `Dot --barge-selftest --talk` passes with it |
 | `claudeSessionDays` | `30` | Days Dot keeps its own Claude Code sessions (talk, agents, jobs); 30 leaves it to Claude Code |
-| `imageModels`, `imageKeyFile` | Nano Banana 2.1, GPT-5.4 Image 2; `~/.secrets.env` | `make_image`'s OpenRouter models in order, and where `OPENROUTER_API_KEY` lives when it isn't in the environment |
 
 ### Computer use (optional)
 
@@ -316,8 +314,8 @@ The plan set is `~/Dot/plans/2026-10-26-heyclicky-parity/`; each item's commit i
   output stays off until the same test passes with it connected.
 - **Agents.** `Dot --agent-start`, `--agent-status` and `--agent-note` work from outside; agents leave each other notes;
   routines can wake the Mac (a sudo rule for `pmset` that only he installs; the lid must be open); on Sunday evenings
-  a habit in two weeks of asks that no agent owns becomes a quiet "start an agent" card; `make_image` goes through
-  OpenRouter; a skill can be drafted from links and is saved only on Save; skills get avatars.
+  a habit in two weeks of asks that no agent owns becomes a quiet "start an agent" card; a skill can be drafted from
+  links and is saved only on Save; skills get avatars. Agents make no images (his call 2026-10-28: no OpenRouter).
 - **Home.** Each thread keeps its draft and scroll; tapbacks, starter messages, a focus pane with Send task, prompt
   cards; file cards with thumbnails; a click on the idle notch drops Home down from it; agents have icons and moods; Home > History searches
   past chats; the notch file viewer reads xlsx and csv in a grid.

@@ -15,7 +15,7 @@ case "--history-mcp":
     // Talk's search_history tool (parity H1): reads the history index itself.
     HistoryMCPServer.run()
 case "--agent-mcp":
-    // An agent's own tools (`dot-agents`: note_to, list_agents, make_image), relayed to the running Dot.
+    // An agent's own tools (`dot-agents`: note_to, list_agents), relayed to the running Dot.
     AgentMCPServer.run(Array(arguments.dropFirst()))
 case "--agent-start", "--agent-status", "--agent-list", "--agent-tell", "--agent-note", "--agent-archive":
     // Agents from outside (parity AG-19): start one, tell it something, leave it a note, or read where they stand.

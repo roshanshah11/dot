@@ -429,7 +429,7 @@ final class AgentManager {
         }
         options.maxTurns = 200
         options.mcpConfigPath = config.mcpConfigPath(config.agentMCPConfig)
-        // AG-18, AG-14: its own `dot-agents` server (note_to, list_agents, make_image), added to the servers it inherits;
+        // AG-18: its own `dot-agents` server (note_to, list_agents), added to the servers it inherits;
         // IN-03: those servers through the router under their own names, so the gate and deny lists are unchanged.
         let base = options.mcpConfigPath.flatMap { FileManager.default.contents(atPath: $0) }
         let file = config.agentsRootURL.appendingPathComponent(".mcp/\(agent.slug).json")
@@ -755,7 +755,7 @@ final class AgentManager {
     private func permission(_ request: PermissionRequest, run: Run, completion: @escaping (Bool, String?) -> Void) {
         // A router handle's result (IN-03): the call it collects already passed this gate.
         if RouterCore.isCheck(request.toolName) { completion(true, nil); return }
-        // Its own `dot-agents` tools (AG-18, AG-14): a note lands in another agent's folder, a picture in its own output/.
+        // Its own `dot-agents` tools (AG-18): a note lands in another agent's folder.
         if request.toolName.hasPrefix("mcp__\(AgentMCPWire.server)__") { completion(true, nil); return }
         // Atlas's permissions (his call 2026-10-21): a prompt Claude Code still sends, or a call from a session started
         // guarded, is answered at once; only Atlas's deny list refuses. No card, no Jev, no allowances.
@@ -1554,27 +1554,6 @@ final class AgentManager {
         case "list_agents":
             let others = statuses(roster().filter { $0.slug != agent.slug })
             reply(["text": others.isEmpty ? "no other agents" : others.map(\.line).joined(separator: "\n")])
-        case "make_image":
-            switch ImageRequest.make(prompt: args["prompt"] as? String ?? "", aspect: args["aspect"] as? String, file: args["file"] as? String) {
-            case .failure(let problem):
-                reply(["text": "not made: \(problem.why)", "isError": true])
-            case .success(let request):
-                appendTranscript(agent, role: "progress", text: "making a picture: \(Log.short(request.prompt, 120))")
-                ImageMaker.shared.make(request, into: agent.outputFolder, config: config) { [weak self] result in
-                    switch result {
-                    case .success(let made):
-                        self?.appendTranscript(agent, role: "artifact", text: made.file.lastPathComponent)
-                        self?.ledger.record(kind: "image", agent: agent.slug, model: made.model,
-                                            result: ResultInfo(sessionId: nil, subtype: "image", isError: false, costUSD: made.costUSD, durationMs: 0,
-                                                               durationApiMs: 0, numTurns: 1, inputTokens: 0, outputTokens: 0, cacheReadTokens: 0,
-                                                               cacheCreationTokens: 0, resultText: nil),
-                                            summary: Log.short(request.prompt, 200))
-                        reply(["text": "saved \(made.file.path) (\(made.model), \(made.bytes / 1024) KB)"])
-                    case .failure(let problem):
-                        reply(["text": "not made: \(problem.why)", "isError": true])
-                    }
-                }
-            }
         default:
             reply(["error": "no tool \(tool)"])
         }

@@ -72,11 +72,6 @@ struct DotConfig: Codable {
     /// Days Dot keeps its own Claude Code sessions (talk, agents, jobs), screenshots included (SessionSweep). 30 is Claude
     /// Code's own retention, and Dot then deletes nothing.
     var claudeSessionDays = SessionSweep.claudeDefault
-    /// make_image (parity AG-14): OpenRouter image-output models in order of preference (picked 2026-10-26 from
-    /// OpenRouter's list: Nano Banana 2.1, then GPT-5.4 Image 2); the newest image model when none is listed any more.
-    var imageModels = ["google/gemini-nano-banana-2.1", "openai/gpt-5.4-image-2"]
-    /// Where OPENROUTER_API_KEY lives when it is not in the environment (dotenv format, `export` allowed).
-    var imageKeyFile = "~/.secrets.env"
     /// Course terms and names the recognizer should write his way (one per line, "heard => correct").
     var dictionaryFile = "~/.config/dot/dictionary.txt"
     /// Where Murmur keeps its dictation history, read for "what did i say in the meeting".
@@ -298,8 +293,6 @@ struct DotConfig: Codable {
         routeTools = get(.routeTools, d.routeTools)
         talkOverDot = get(.talkOverDot, d.talkOverDot)
         claudeSessionDays = get(.claudeSessionDays, d.claudeSessionDays)
-        imageModels = get(.imageModels, d.imageModels)
-        imageKeyFile = get(.imageKeyFile, d.imageKeyFile)
         dictionaryFile = get(.dictionaryFile, d.dictionaryFile)
         murmurHistoryFile = get(.murmurHistoryFile, d.murmurHistoryFile)
         murmurLogDirectory = get(.murmurLogDirectory, d.murmurLogDirectory)
