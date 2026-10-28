@@ -779,12 +779,16 @@ enum DotIPC {
     static let stackDemo = Notification.Name("com.roshan.dot.stack-demo")
 
     /// The CLI's post to the running Dot. A distributed notification with no Dot to hear it just vanishes, and the
-    /// CLI said "sent" anyway (10-28: a --track-selftest that never ran), so it first asks Dot's control socket, which
-    /// answers anything while Dot is up, and otherwise says so and exits 3, as --agent-* and --view do.
+    /// CLI said "sent" anyway (10-28: a --track-selftest that never ran), so it first checks that Dot is up and
+    /// otherwise says so and exits 3, as --agent-* and --view do. Up means the control socket answers (anything), or,
+    /// since Dot carries on without the socket when it can't bind (ControlServer.start), the Dot app is running: the
+    /// host and the MCP helpers aren't apps, so only Dot itself counts.
     static func send(_ name: Notification.Name, _ userInfo: [String: Any]? = nil) {
         let socket = ProcessInfo.processInfo.environment[ControlServer.pathVariable].flatMap { $0.isEmpty ? nil : $0 }
             ?? (NSHomeDirectory() as NSString).appendingPathComponent("Dot/control.sock")
-        guard (try? UnixSocketClient.send(["verb": "ping"], to: socket, timeout: 3)) != nil else {
+        let up = (try? UnixSocketClient.send(["verb": "ping"], to: socket, timeout: 3)) != nil
+            || NSRunningApplication.runningApplications(withBundleIdentifier: "com.roshan.dot").contains { $0.processIdentifier != getpid() }
+        guard up else {
             print("Dot isn't running, so nothing was sent; start it with: launchctl kickstart gui/\(getuid())/com.roshan.dot")
             exit(3)
         }
