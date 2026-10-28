@@ -39,17 +39,18 @@ enum LectureAudio {
     /// when Dot's own recording is missing or covers at least two minutes less of the class than Murmur's. Murmur keeps
     /// the file in its temp folder only until it has transcribed it, so this finds it only while it is recording or just
     /// after. `from` is how far back the class goes: Dot's own start, or well before it when Dot resumed after a restart
-    /// (its own recording then starts at the restart). The copy is trimmed to `from...ended` and comes back with the time
-    /// its first sample was recorded, which the transcript's clock counts from. Nil when there is none or Dot's own is
-    /// as good.
-    static func murmurBackup(from: Date, ended: Date, own: URL?) -> (url: URL, start: Date)? {
+    /// (its own recording then starts at the restart). `live` is where Dot's own part of the class began: a file that
+    /// stopped before then is not this class's (LectureRecording.classPart). The copy is trimmed to `from...ended` and
+    /// comes back with the time its first sample was recorded, which the transcript's clock counts from. Nil when there
+    /// is none or Dot's own is as good.
+    static func murmurBackup(from: Date, live: Date, ended: Date, own: URL?) -> (url: URL, start: Date)? {
         let temp = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0].appendingPathComponent("Murmur/temp", isDirectory: true)
         let keys: [URLResourceKey] = [.creationDateKey, .contentModificationDateKey]
         let candidates = ((try? FileManager.default.contentsOfDirectory(at: temp, includingPropertiesForKeys: keys)) ?? [])
             .filter { $0.pathExtension.lowercased() == "wav" }
             .compactMap { url -> (url: URL, made: Date, start: Date, seconds: TimeInterval)? in
                 guard let v = try? url.resourceValues(forKeys: Set(keys)), let made = v.creationDate, let changed = v.contentModificationDate,
-                      let kept = LectureRecording.overlap(made: made, changed: changed, from: from, to: ended) else { return nil }
+                      let kept = LectureRecording.classPart(made: made, changed: changed, from: from, live: live, to: ended) else { return nil }
                 return (url, made, kept.start, kept.seconds)
             }
         guard let best = candidates.max(by: { $0.seconds < $1.seconds }) else { return nil }
@@ -150,8 +151,7 @@ enum AfterClassPass {
             Log.warn("lecture: research: no talk MCP config, so no Atlas; skipped")
             return nil
         }
-        let f = DateFormatter(); f.dateFormat = "yyyyMMddHHmm"; f.locale = Locale(identifier: "en_US_POSIX")
-        let stamp = f.string(from: Date())
+        let stamp = ResearchConfigFile.stamp(Date())
         let mcp = FileManager.default.temporaryDirectory.appendingPathComponent("dot-research-\(stamp).json")
         guard let data = ResearchConfigFile.make(talkMCP: talkMCP, stamp: stamp), (try? data.write(to: mcp)) != nil else {
             Log.warn("lecture: research: the talk MCP config has no atlas server; skipped")

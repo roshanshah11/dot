@@ -15,6 +15,22 @@ final class LectureRecordingTests: XCTestCase {
         XCTAssertNil(LectureRecording.overlap(made: t0, changed: t0.addingTimeInterval(600), from: t0.addingTimeInterval(700), to: t0.addingTimeInterval(900)), "before the window")
     }
 
+    func testAResumedClassOnlyTakesAFileStillRecordingAfterTheRestart() {
+        let t0 = Date(timeIntervalSince1970: 1_800_000_000), hour = 3600.0
+        // class 10:00-11:00 (t0 = 10:00), Dot restarted at 10:50, so it reaches back to 7:50
+        let from = t0.addingTimeInterval(-hour + -10 * 60 - hour), live = t0.addingTimeInterval(50 * 60), end = t0.addingTimeInterval(hour)
+        // an hour recorded 8:30-9:30 and never transcribed: longer than Dot's ten minutes, but not this class
+        XCTAssertNil(LectureRecording.classPart(made: t0.addingTimeInterval(-1.5 * hour), changed: t0.addingTimeInterval(-0.5 * hour), from: from, live: live, to: end))
+        // his backup of this class, started at 9:58 and still going: all of it from 9:58
+        let mine = LectureRecording.classPart(made: t0.addingTimeInterval(-120), changed: end.addingTimeInterval(30), from: from, live: live, to: end)
+        XCTAssertEqual(mine?.start, t0.addingTimeInterval(-120))
+        XCTAssertEqual(mine?.seconds, hour + 120)
+        // stopped a minute after the restart: too little of Dot's part to say it's this room
+        XCTAssertNil(LectureRecording.classPart(made: t0, changed: live.addingTimeInterval(50), from: from, live: live, to: end))
+        // no restart: from is live and it is overlap
+        XCTAssertEqual(LectureRecording.classPart(made: t0, changed: end, from: t0, live: t0, to: end)?.seconds, hour)
+    }
+
     func testTrimKeepsTheRequestedSecondsFromTheSkip() throws {
         let dir = FileManager.default.temporaryDirectory.appendingPathComponent("lecture-recording-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)

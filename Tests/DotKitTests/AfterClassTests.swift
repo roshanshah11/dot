@@ -148,6 +148,11 @@ final class AfterClassTests: XCTestCase {
         XCTAssertFalse(ResearchConfigFile.allowed.contains { $0.contains("send") || $0 == "Read" || $0.hasPrefix("Bash") })
         XCTAssertEqual(ResearchConfigFile.saved(in: "~d4: Ben: met in comp arch\nAtlas saved: Ben (3), Ana (2)"), "Ben (3), Ana (2)")
         XCTAssertNil(ResearchConfigFile.saved(in: "nothing"))
+        // two passes in the same second still get their own file and session
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        let (a, b) = (ResearchConfigFile.stamp(now), ResearchConfigFile.stamp(now))
+        XCTAssertNotEqual(a, b)
+        XCTAssertTrue(a.hasPrefix(ResearchConfigFile.stamp(now).prefix(15)), "the second, then a random tail")
     }
 
     func testRechecksAt8pmAnd8am() {

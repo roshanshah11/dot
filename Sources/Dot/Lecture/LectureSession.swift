@@ -591,7 +591,7 @@ final class LectureSession {
         // Dot's own recording missing or cut short (a restart mid-class): his Murmur recording of the same class instead,
         // reaching back past the restart to the start of class
         let from = resumedMidClass ? startedAt.addingTimeInterval(-Self.resumeReach) : startedAt
-        if let backup = LectureAudio.murmurBackup(from: from, ended: Date(), own: keptAudio?.url) {
+        if let backup = LectureAudio.murmurBackup(from: from, live: startedAt, ended: Date(), own: keptAudio?.url) {
             if let own = keptAudio, own.owned { LectureAudio.discard(own.url) }
             keptAudio = (backup.url, true)
             keptAudioStart = backup.start

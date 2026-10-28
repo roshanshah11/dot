@@ -103,6 +103,13 @@ public enum ResearchConfigFile {
         return try? JSONSerialization.data(withJSONObject: ["mcpServers": ["atlas": atlas]], options: [.prettyPrinted, .sortedKeys])
     }
 
+    /// One pass's name for its config file and its Atlas session: to the second plus a random tail, so two passes in
+    /// the same minute (or second) neither share a file nor are filed as one session (review, 10-28).
+    public static func stamp(_ date: Date) -> String {
+        let f = DateFormatter(); f.dateFormat = "yyyyMMdd-HHmmss"; f.locale = Locale(identifier: "en_US_POSIX")
+        return "\(f.string(from: date))-\(UUID().uuidString.prefix(6).lowercased())"
+    }
+
     /// The tool names the pass may use without asking: the web, his research folders and the Atlas tools above.
     public static var allowed: [String] {
         ["WebSearch", "WebFetch", "Glob", "Read(~/roshan/Career/**)", "Read(~/roshan/Areas/Knowledge/**)", "Read(~/roshan/School/**)",
