@@ -88,14 +88,17 @@ public enum CallCalendar {
         items.compactMap(event).filter { $0.start.addingTimeInterval(-early) <= now && now < $0.end }.min { $0.start < $1.start }
     }
 
-    /// The call a meeting card is for. The card's title is the brief's, cut to 48 characters, so it only has to start the
-    /// calendar's: a whole-title match left a 58-character "<Firm> video interview, hiring manager (confirmed, Teams)"
-    /// (10-28) with a "brief me" card and no call mode.
+    /// The call a meeting card is for. The card's title is the brief's, cut to `TodayBrief.titleLimit` characters, so a
+    /// title that long only has to start the calendar's (a whole-title match left a 58-character "<Firm> video interview,
+    /// hiring manager (confirmed, Teams)" with a "brief me" card, 10-28); a shorter one is whole and must match exactly.
     public static func current(_ items: [CalendarItem], now: Date, early: TimeInterval = 15 * 60, titled title: String) -> CallEvent? {
-        let clipped = title.trimmingCharacters(in: .whitespaces).lowercased()
-        guard !clipped.isEmpty else { return nil }
-        return items.compactMap(event).filter { $0.start.addingTimeInterval(-early) <= now && now < $0.end && $0.title.lowercased().hasPrefix(clipped) }
-            .min { $0.start < $1.start }
+        let wanted = title.trimmingCharacters(in: .whitespaces).lowercased()
+        guard !wanted.isEmpty else { return nil }
+        let clipped = title.count >= TodayBrief.titleLimit
+        return items.compactMap(event).filter { call in
+            let name = call.title.lowercased()
+            return call.start.addingTimeInterval(-early) <= now && now < call.end && (clipped ? name.hasPrefix(wanted) : name == wanted)
+        }.min { $0.start < $1.start }
     }
 
     /// Tomorrow's calls and interviews, in order (the 9 PM prep).

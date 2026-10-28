@@ -70,6 +70,10 @@ final class CallModeTests: XCTestCase {
         XCTAssertEqual(CallCalendar.current(items, now: soon, early: 11 * 60, titled: "call: alex example (northwind)")?.person, "Alex Example")
         XCTAssertNil(CallCalendar.current(items, now: soon, early: 11 * 60, titled: "Mechanics: lecture"))
         XCTAssertNil(CallCalendar.current(items, now: soon, early: 11 * 60, titled: " "))
+        // a title shorter than the clip is whole: "Northwind" is its own event, not the interview's card
+        let short = [item("Northwind interview", minutes: 60), item("Northwind")]
+        XCTAssertNil(CallCalendar.current(short, now: soon, early: 11 * 60, titled: "Northwind"))
+        XCTAssertEqual(CallCalendar.current(short, now: soon, early: 11 * 60, titled: "Northwind interview")?.kind, .interview)
     }
 
     func testInterleaveAndMarkdown() {

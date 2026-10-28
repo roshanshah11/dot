@@ -74,8 +74,11 @@ public struct TodayBrief: Codable, Equatable {
         }
     }
 
+    /// How much of an event's title `nextEvent` keeps.
+    public static let titleLimit = 48
+
     /// The event happening now or the next one today, from lines like
-    /// "Thu 10-15 10:00–10:15 Call: Sam Rivera (at Phone)". Returns the title and minutes until it
+    /// "Thu 10-15 10:00–10:15 Call: Sam Rivera (at Phone)". Returns the title (cut to `titleLimit`) and minutes until it
     /// starts (negative while it is on) and minutes until it ends.
     public func nextEvent(from date: Date = Date()) -> (title: String, startsIn: Int, endsIn: Int)? {
         let pattern = try! NSRegularExpression(pattern: #"^\w{3} \d{2}-\d{2} (\d{1,2}):(\d{2})[–-](\d{1,2}):(\d{2}) (.+)$"#)
@@ -91,7 +94,7 @@ public struct TodayBrief: Codable, Equatable {
             guard end > minuteOfDay else { continue }
             var title = ns.substring(with: m.range(at: 5))
             if let paren = title.range(of: " (at ") { title = String(title[..<paren.lowerBound]) }
-            let candidate = (String(title.prefix(48)), start - minuteOfDay, end - minuteOfDay)
+            let candidate = (String(title.prefix(Self.titleLimit)), start - minuteOfDay, end - minuteOfDay)
             if best == nil || candidate.1 < best!.1 { best = candidate }
         }
         return best
