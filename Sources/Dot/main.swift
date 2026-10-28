@@ -179,7 +179,7 @@ case "--job-test":
     // The bench: his click or key for the newest bench job, through the pause rule. Refused outside the bench.
     let kind = arguments.dropFirst().first ?? "click"
     guard kind == "click" || kind == "key" else { print("usage: Dot --job-test click|key"); exit(2) }
-    DistributedNotificationCenter.default().postNotificationName(DotIPC.jobTest, object: nil, userInfo: ["kind": kind], deliverImmediately: true)
+    DotIPC.send(DotIPC.jobTest, ["kind": kind])
     print("sent to Dot")
     exit(0)
 case "--login-check":
@@ -211,7 +211,7 @@ case "--occlusion":
     // The covered check, computed by the running Dot with its own Accessibility grant: logs both verdicts.
     let point = arguments.dropFirst().first ?? ""
     guard point.split(separator: ",").count == 2 else { print("usage: Dot --occlusion x,y   (screen points, top-left origin)"); exit(2) }
-    DistributedNotificationCenter.default().postNotificationName(DotIPC.occlusion, object: nil, userInfo: ["text": point], deliverImmediately: true)
+    DotIPC.send(DotIPC.occlusion, ["text": point])
     print("sent to Dot; see dot.log for the occlusion line")
     exit(0)
 case "--host":
@@ -436,7 +436,7 @@ case "--lecture-demo":
     var demoInfo: [String: String] = ["speed": demoValue("--speed") ?? "2", "from": demoValue("--from") ?? "0"]
     if demoArgs.count > 1, !demoArgs[1].hasPrefix("--") { demoInfo["name"] = demoArgs[1] }
     if arguments.contains("--mute") { demoInfo["mute"] = "1" }
-    DistributedNotificationCenter.default().postNotificationName(DotIPC.lectureDemo, object: nil, userInfo: demoInfo, deliverImmediately: true)
+    DotIPC.send(DotIPC.lectureDemo, demoInfo)
     print("sent to Dot: \(demoInfo["name"] ?? "the default") lecture demo at \(demoInfo["speed"]!)x from minute \(demoInfo["from"]!)\(demoInfo["mute"] == nil ? ", out loud" : ", muted")")
     exit(0)
 case "--selftest":
@@ -477,16 +477,14 @@ case "--ask", "--agent":
     // --dry is for --ask: a brief sent with --agent would still start the agent.
     guard !(dry && arguments.first == "--agent") else { print("--dry works with --ask only; Dot --agent always starts the agent"); exit(2) }
     let name = arguments.first == "--ask" ? DotIPC.ask : DotIPC.agent
-    DistributedNotificationCenter.default().postNotificationName(name, object: nil, userInfo: ["text": text, "quiet": quiet, "drive": drive, "dry": dry,
-                                                                                            "bench": bench, "spoken": spoken, "shift": shift, "cometPort": cometPort], deliverImmediately: true)
+    DotIPC.send(name, ["text": text, "quiet": quiet, "drive": drive, "dry": dry, "bench": bench, "spoken": spoken, "shift": shift, "cometPort": cometPort])
     print("sent to Dot")
     exit(0)
 case "--stack-demo":
     // A fake agent (or with --job a fake behind job) through the running Dot's stack, for G7 to G9 (04): no real agent,
     // no chime, no voice, no volume change; --muted fakes a muted Mac.
     let flags = Set(arguments.dropFirst())
-    DistributedNotificationCenter.default().postNotificationName(DotIPC.stackDemo, object: nil,
-                                                                 userInfo: ["muted": flags.contains("--muted"), "job": flags.contains("--job")], deliverImmediately: true)
+    DotIPC.send(DotIPC.stackDemo, ["muted": flags.contains("--muted"), "job": flags.contains("--job")])
     print("asked the running Dot for the stack demo; stack-demo: lines land in dot.log")
     exit(0)
 case "--barge-selftest":
@@ -595,20 +593,20 @@ case "--figure-selftest":
     exit(figurePassed ? 0 : 1)
 case "--track-selftest":
     // Ask the running Dot to run the box-tracking check on the real screen (its grants, not the terminal's).
-    DistributedNotificationCenter.default().postNotificationName(DotIPC.trackSelftest, object: nil, userInfo: nil, deliverImmediately: true)
+    DotIPC.send(DotIPC.trackSelftest)
     print("asked the running Dot to run the tracking selftest; results land in ~/Dot/selftests and dot.log")
     exit(0)
 case "--type", "--stt", "--card", "--panel", "--find", "--dictionary", "--listen":
     let text = arguments.dropFirst().joined(separator: " ")
     guard !text.isEmpty || arguments.first == "--listen" else { print("usage: Dot --type \"text\" | Dot --stt file.wav | Dot --card file.html | Dot --panel file.ui | Dot --find \"phrase\" | Dot --dictionary \"heard => correct\""); exit(2) }
     let names: [String: Notification.Name] = ["--type": DotIPC.type, "--stt": DotIPC.stt, "--card": DotIPC.card, "--panel": DotIPC.panel, "--find": DotIPC.find, "--dictionary": DotIPC.dictionary, "--listen": DotIPC.listen]
-    DistributedNotificationCenter.default().postNotificationName(names[arguments.first!]!, object: nil, userInfo: ["text": text], deliverImmediately: true)
+    DotIPC.send(names[arguments.first!]!, ["text": text])
     print("sent to Dot")
     exit(0)
 case "--home", "--stop", "--refresh", "--input", "--stop-listening":
     let names: [String: Notification.Name] = ["--home": DotIPC.home, "--stop": DotIPC.stop, "--input": DotIPC.input, "--refresh": DotIPC.refresh, "--stop-listening": DotIPC.stopListening]
     let name = names[arguments.first!]!
-    DistributedNotificationCenter.default().postNotificationName(name, object: nil, userInfo: nil, deliverImmediately: true)
+    DotIPC.send(name)
     exit(0)
 default:
     // An unknown flag never starts the app: a build that lacked a new flag read it as "launch" and ran a second Dot

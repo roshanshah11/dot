@@ -777,4 +777,17 @@ enum DotIPC {
     static let jobTest = Notification.Name("com.roshan.dot.job-test")
     static let occlusion = Notification.Name("com.roshan.dot.occlusion")
     static let stackDemo = Notification.Name("com.roshan.dot.stack-demo")
+
+    /// The CLI's post to the running Dot. A distributed notification with no Dot to hear it just vanishes, and the
+    /// CLI said "sent" anyway (10-28: a --track-selftest that never ran), so it first asks Dot's control socket, which
+    /// answers anything while Dot is up, and otherwise says so and exits 3, as --agent-* and --view do.
+    static func send(_ name: Notification.Name, _ userInfo: [String: Any]? = nil) {
+        let socket = ProcessInfo.processInfo.environment[ControlServer.pathVariable].flatMap { $0.isEmpty ? nil : $0 }
+            ?? (NSHomeDirectory() as NSString).appendingPathComponent("Dot/control.sock")
+        guard (try? UnixSocketClient.send(["verb": "ping"], to: socket, timeout: 3)) != nil else {
+            print("Dot isn't running, so nothing was sent; start it with: launchctl kickstart gui/\(getuid())/com.roshan.dot")
+            exit(3)
+        }
+        DistributedNotificationCenter.default().postNotificationName(name, object: nil, userInfo: userInfo, deliverImmediately: true)
+    }
 }
