@@ -7,7 +7,7 @@ import Foundation
 /// slide timeline and materials (LectureDemo): a recorded lecture through lecture mode's real pipeline (the ear's recognizer, the
 /// note writer, the notes window off every display, the end-of-class recall, gap-fill, save and PDF), in this process
 /// and into a scratch folder, never his notes. Explainers are only logged (they need talk). Prints the notes, the
-/// explain triggers and the timings; exit 0 when it produced notes and a PDF.
+/// explain triggers and the timings; exit 0 when it produced notes and a PDF. `--ear` runs the recognizer alone (ear).
 @MainActor
 enum LectureReplay {
     static func run(_ args: [String]) -> Bool {
@@ -17,7 +17,7 @@ enum LectureReplay {
         let demo = args.contains("--demo") ? LectureDemo.load(demoName) : nil
         if args.contains("--demo"), demo == nil { print("FAIL: no \(demoName ?? "default") demo in \(LectureDemo.root.path)"); return false }
         guard let audioPath = demo?.audio ?? args.indices.first(where: { !args[$0].hasPrefix("--") && !flagged.contains($0) }).map({ args[$0] }) else {
-            print("usage: Dot --lecture-replay <audio>|--demo [--speed 4] [--course NAME] [--materials FOLDER] [--out FOLDER] [--recall TEXT] [--minutes N] [--from MIN]")
+            print("usage: Dot --lecture-replay <audio>|--demo [--ear] [--speed 4] [--course NAME] [--materials FOLDER] [--out FOLDER] [--recall TEXT] [--minutes N] [--from MIN]")
             return false
         }
         let audio = URL(fileURLWithPath: DotConfig.expand(audioPath))
@@ -37,6 +37,10 @@ enum LectureReplay {
         for path in demo?.materials ?? [] {
             let source = URL(fileURLWithPath: DotConfig.expand(path))
             try? FileManager.default.copyItem(at: source, to: folder.appendingPathComponent(source.lastPathComponent))
+        }
+        if args.contains("--ear") {
+            let courseMap = value("--course-map").flatMap { try? String(contentsOfFile: DotConfig.expand($0), encoding: .utf8) } ?? ""
+            return ear(audio, terms: courseMap + "\n" + LectureMaterials.gather(folder: folder, notesFile: nil).text, speed: speed, from: from)
         }
         let config = DotConfig.peek()
         let transcriber = Transcriber()
@@ -122,5 +126,40 @@ enum LectureReplay {
         }
         print("FAIL: the class never finished")
         return false
+    }
+
+    /// `--ear`: the recognizer alone, boosted with the course's terms the way lecture mode boosts them, no note writer: the
+    /// words that reached the feed next to a batch transcription of the same file (the check for an ear that drops words,
+    /// MATH 20250 10-28). Exit 0 when the feed has at least 80% of the batch's words.
+    private static func ear(_ audio: URL, terms: String, speed: Double, from: Double) -> Bool {
+        let transcriber = Transcriber()
+        let listener = LectureListener(transcriber: transcriber)
+        var ended = false, ready = false, ok = false
+        listener.onReplayEnded = { ended = true }
+        let terms = LectureTerms.extract(terms, limit: 150)
+        Task { @MainActor in
+            defer { ready = true }
+            ok = await listener.start(title: "ear check", replay: audio, speed: speed, from: from)
+            if ok { await listener.setTerms(terms) }
+        }
+        while !ready { RunLoop.main.run(until: Date().addingTimeInterval(0.1)) }
+        guard ok else { print("FAIL: the recognizer didn't start"); return false }
+        print("boosting \(terms.count) terms: \(terms.prefix(20).joined(separator: ", "))")
+        let deadline = Date().addingTimeInterval(4 * 3600)
+        while !ended, Date() < deadline { RunLoop.main.run(until: Date().addingTimeInterval(0.1)) }
+        var batch: String?
+        var done = false
+        Task { @MainActor in
+            _ = await listener.stop()
+            batch = try? await transcriber.transcribe(wavURL: audio)
+            done = true
+        }
+        while !done { RunLoop.main.run(until: Date().addingTimeInterval(0.1)) }
+        let feed = listener.feed
+        listener.discardTranscript()
+        let fed = feed.split(separator: " ").count, whole = batch?.split(separator: " ").count ?? 0
+        print("heard \(listener.heardWords) words, \(listener.confirmedWords) in confirmed chunks; feed \(fed) words; batch \(whole) words")
+        print("feed tail: …\(feed.suffix(300))")
+        return whole > 0 && Double(fed) >= 0.8 * Double(whole)
     }
 }

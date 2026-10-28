@@ -22,10 +22,13 @@ final class LectureListener {
     private var segments: [(at: Date, text: String)] = []
     private var liveText = ""
     private var liveSince = Date()
-    /// What lecture mode's note writer reads: every confirmed chunk in order, never rewritten (the live tail can
-    /// still change, and a finished segment's tidy text can differ from its chunks).
+    /// What lecture mode's note writer reads: every chunk in order, never rewritten (a finished segment's tidy text
+    /// can differ from its chunks).
     private(set) var feed = ""
-    private var confirmedInSegment = ""
+    private var fedInSegment = ""
+    /// Words heard, and how many came in chunks the recognizer confirmed (a low share is a hard room: accent, distance).
+    private(set) var heardWords = 0
+    private(set) var confirmedWords = 0
     /// When the recognizer last produced words: a gap means the speaker paused (explainers wait for one).
     private(set) var lastHeardAt = Date.distantPast
     /// The words heard most recently, live (the notes window's "hearing" line).
@@ -78,7 +81,9 @@ final class LectureListener {
         liveText = ""
         liveSince = Date()
         feed = ""
-        confirmedInSegment = ""
+        fedInSegment = ""
+        heardWords = 0
+        confirmedWords = 0
         let day = DateFormatter(); day.dateFormat = "yyyy-MM-dd HH.mm"; day.locale = Locale(identifier: "en_US_POSIX")
         let folder = TranscriptLog.directory.appendingPathComponent("lectures", isDirectory: true)
         try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
@@ -111,14 +116,13 @@ final class LectureListener {
         }
         if replaying, keepAudio, let replayURL { keptAudio = (replayURL, false) }
         if let stream {
-            let tail = liveText, done = confirmedInSegment
-            if let text = try? await stream.finish(), !text.trimmingCharacters(in: .whitespaces).isEmpty { appendSegment(text); feedRest(of: text, confirmed: done) }
-            else if !tail.isEmpty { appendSegment(tail); feedRest(of: tail, confirmed: done) }
+            let fed = fedInSegment
+            closeSegment(final: try? await stream.finish(), fed: fed)
         }
         stream = nil
         liveText = ""
         let minutes = Int((startedAt.map { Date().timeIntervalSince($0) } ?? 0) / 60)
-        Log.info("lecture: stopped after \(minutes) min, \(transcript.count) chars")
+        Log.info("lecture: stopped after \(minutes) min, \(transcript.count) chars; \(heardWords) words heard, \(confirmedWords) in confirmed chunks")
         return transcript
     }
 
@@ -144,20 +148,22 @@ final class LectureListener {
         reader?.cancel()
         reader = Task { @MainActor in
             do { try await stream.startStreaming(source: .microphone) } catch { Log.warn("lecture: stream start: \(error)"); return }
-            var confirmed = ""
+            var heard = ""
             for await update in await stream.transcriptionUpdates {
                 if Task.isCancelled { break }
                 let text = update.text.trimmingCharacters(in: .whitespaces)
                 guard !text.isEmpty else { continue }
                 self.lastHeardAt = Date()
-                // Each update is the latest chunk; confirmed chunks accumulate, a volatile one shows after them.
-                if update.isConfirmed {
-                    confirmed += (confirmed.isEmpty ? "" : " ") + text
-                    liveText = confirmed
-                    self.confirmedInSegment = confirmed
-                    self.feed += (self.feed.isEmpty ? "" : " ") + text
-                }
-                else { liveText = confirmed + (confirmed.isEmpty ? "" : " ") + text }
+                // Each update is the next 4 s of audio (the window moves a chunk at a time and never redoes one), so every
+                // chunk goes on the feed. Only confirmed ones (confidence 0.85) used to: the MATH 20250 lecturer rarely got
+                // there, and about 25 words a minute reached the writer (10-26, 10-28).
+                let count = text.split(separator: " ").count
+                self.heardWords += count
+                if update.isConfirmed { self.confirmedWords += count }
+                heard += (heard.isEmpty ? "" : " ") + text
+                liveText = heard
+                self.fedInSegment = heard
+                self.feed += (self.feed.isEmpty ? "" : " ") + text
             }
         }
     }
@@ -168,13 +174,12 @@ final class LectureListener {
         guard isListening, let old = stream else { return }
         guard let fresh = try? await makeStream() else { return }
         reader?.cancel()
-        let tail = liveText, done = confirmedInSegment
-        confirmedInSegment = ""
+        let fed = fedInSegment
+        fedInSegment = ""
         if !replaying { recorder.swapStream(fresh) }
         stream = fresh
         readUpdates()
-        if let text = try? await old.finish(), !text.trimmingCharacters(in: .whitespaces).isEmpty { appendSegment(text); feedRest(of: text, confirmed: done) }
-        else if !tail.isEmpty { appendSegment(tail); feedRest(of: tail, confirmed: done) }
+        closeSegment(final: try? await old.finish(), fed: fed)
         liveText = ""
         liveSince = Date()
         onStatus?("listening, \(elapsedMinutes) min")
@@ -248,11 +253,14 @@ final class LectureListener {
         }
     }
 
-    /// A segment ended: the words its final text has past what was confirmed chunk by chunk go on the feed too.
-    private func feedRest(of final: String, confirmed: String) {
-        let done = confirmed.split(separator: " ").count
-        let words = final.split(separator: " ")
-        guard words.count > done else { return }
+    /// A segment ended: its text is the stream's final text, and the words that has past what went on the feed chunk by
+    /// chunk (the last chunk, flushed by finish) go on the feed too. With boosting on, the final text keeps only the
+    /// chunks FluidAudio confirmed, so when it is shorter than the feed the fed chunks stand for the segment.
+    private func closeSegment(final: String?, fed: String) {
+        let done = fed.split(separator: " ").count
+        let words = (final ?? "").split(separator: " ")
+        guard words.count > done else { appendSegment(fed); return }
+        appendSegment(words.joined(separator: " "))
         feed += (feed.isEmpty ? "" : " ") + words[done...].joined(separator: " ")
     }
 

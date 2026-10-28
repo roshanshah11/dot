@@ -3,7 +3,9 @@ import Foundation
 /// The course's own words for the speech recognizer (lecture mode, 2026-10-22): the way Granola sends a meeting's
 /// keyterms with the audio, Dot boosts the terms in the course map and the slides so "RT-qPCR" stops coming out as
 /// "are tea q pcr". A term is an acronym or a mixed-case token (PCR, mRNA, qPCR, LC-MS), a bolded phrase, or a
-/// capitalized word that isn't sentence-initial; the most frequent come first, up to `limit`.
+/// capitalized word that isn't sentence-initial; the most frequent come first, up to `limit`. An ordinary word in capitals
+/// is not a term: a page header ("LA CHAPTER III LINEAR MAPS AND QUOTIENT SPACES") and a book title ("Linear Algebra Done
+/// Wrong") boosted AND, SPACES and Done, and "V one" came out "V Done" (MATH 20250, 10-28).
 public enum LectureTerms {
     static let stop: Set<String> = ["The", "This", "That", "These", "Those", "There", "Then", "When", "What", "Which", "Where", "While",
                                     "Week", "Exam", "Class", "Lecture", "Notes", "Slide", "Reading", "Monday", "Tuesday", "Wednesday",
@@ -11,11 +13,23 @@ public enum LectureTerms {
                                     "July", "August", "September", "October", "November", "December", "Chapter", "Section", "Part",
                                     "And", "But", "For", "With", "From", "Into", "About", "After", "Before", "Each", "Both", "Also"]
 
+    /// The Mac's word list, lowercase entries only (its capitalized ones are names: Krebs and Golgi stay terms).
+    static let ordinary: Set<String> = {
+        guard let list = try? String(contentsOfFile: "/usr/share/dict/words", encoding: .utf8) else { return [] }
+        return Set(list.split(separator: "\n").filter { $0.first?.isLowercase == true }.map(String.init))
+    }()
+
     public static func extract(_ text: String, limit: Int = 150) -> [String] {
         var count: [String: Int] = [:]
+        let lowercase = Set(text.split(whereSeparator: { !$0.isLetter }).filter { $0.first?.isLowercase == true }.map(String.init))
         func add(_ term: String, _ weight: Int = 1) {
             let t = term.trimmingCharacters(in: CharacterSet(charactersIn: " .,;:()[]\"'*`"))
             guard t.count >= 2, t.count <= 40, !stop.contains(t), t.rangeOfCharacter(from: .letters) != nil else { return }
+            if t.allSatisfy(\.isLetter) {
+                let lower = t.lowercased()
+                let singular = lower.hasSuffix("s") ? String(lower.dropLast()) : lower
+                guard !ordinary.contains(lower), !lowercase.contains(lower), !lowercase.contains(singular), t.wholeMatch(of: #/[IVX]+/#) == nil else { return }
+            }
             count[t, default: 0] += weight
         }
         // **bold phrases**

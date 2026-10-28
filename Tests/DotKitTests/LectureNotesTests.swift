@@ -65,9 +65,23 @@ final class LectureNotesTests: XCTestCase {
         """
         let terms = LectureTerms.extract(text)
         XCTAssertEqual(terms.first, "PCR", "the most frequent term leads")
-        for t in ["real-time PCR", "LC-MS", "qPCR", "mRNA", "Krebs", "Electron", "Transport"] { XCTAssertTrue(terms.contains(t), t) }
-        for t in ["Detection", "The", "Monday", "Exam", "Then"] { XCTAssertFalse(terms.contains(t), t) }
+        for t in ["real-time PCR", "LC-MS", "qPCR", "mRNA", "Krebs"] { XCTAssertTrue(terms.contains(t), t) }
+        for t in ["Detection", "The", "Monday", "Exam", "Then", "Electron", "Transport"] { XCTAssertFalse(terms.contains(t), t) }
         XCTAssertEqual(LectureTerms.extract(text, limit: 2).count, 2)
+    }
+
+    func testOrdinaryWordsInCapitalsAreNotTerms() {
+        let text = """
+        The textbook is by Treil, Linear Algebra Done Wrong. Office hours with Wu.
+        LA CHAPTER III LINEAR MAPS AND QUOTIENT SPACES
+        A linear map between quotient spaces; the SVD and the RREF of LP.
+        LA CHAPTER III LINEAR MAPS AND QUOTIENT SPACES
+        """
+        let terms = LectureTerms.extract(text)
+        for t in ["SVD", "RREF", "Treil"] { XCTAssertTrue(terms.contains(t), t) }
+        for t in ["Done", "Wrong", "AND", "LA", "CHAPTER", "III", "LINEAR", "MAPS", "QUOTIENT", "SPACES", "Linear", "Algebra"] {
+            XCTAssertFalse(terms.contains(t), t)
+        }
     }
 
     func testSpokenCourseNamesFindTheirFolder() {
