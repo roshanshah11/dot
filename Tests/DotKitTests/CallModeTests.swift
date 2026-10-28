@@ -59,6 +59,19 @@ final class CallModeTests: XCTestCase {
         XCTAssertEqual(CallCalendar.tomorrow(items, now: t0).count, 0)
     }
 
+    func testCardTitleClippedToBrief() {
+        // the meeting card's title is the brief's, cut to 48 characters
+        let long = "Northwind video interview, hiring manager (confirmed, Teams)"
+        let items = [item(long, minutes: 60), item("Call: Alex Example (Northwind)")]
+        let soon = t0.addingTimeInterval(-10 * 60)
+        let card = CallCalendar.current(items, now: soon, early: 11 * 60, titled: String(long.prefix(48)))
+        XCTAssertEqual(card?.kind, .interview)
+        XCTAssertEqual(card?.firm, "Northwind")
+        XCTAssertEqual(CallCalendar.current(items, now: soon, early: 11 * 60, titled: "call: alex example (northwind)")?.person, "Alex Example")
+        XCTAssertNil(CallCalendar.current(items, now: soon, early: 11 * 60, titled: "Mechanics: lecture"))
+        XCTAssertNil(CallCalendar.current(items, now: soon, early: 11 * 60, titled: " "))
+    }
+
     func testInterleaveAndMarkdown() {
         let lines = CallTranscript.interleave(me: [(0, "hi, thanks for taking the time"), (40, "what drew you to it?"), (44, "and how long did it take?")], meOffset: 0,
                                               them: [(5, "of course"), (60, "the sourcing side")], themOffset: 2)

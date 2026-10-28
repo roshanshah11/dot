@@ -377,7 +377,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let startsIn = next.startsIn
         // a call or an interview: the card starts call mode (and dials, when he is the one calling) instead of a brief
         if config.callMode, let items = talk.localCalendar.items(days: 1),
-           let call = CallCalendar.current(items, now: Date(), early: Double(minutes + 1) * 60), call.title.caseInsensitiveCompare(title) == .orderedSame {
+           let call = CallCalendar.current(items, now: Date(), early: Double(minutes + 1) * 60, titled: title) {
             let dials = call.phone != nil && !call.theyCall
             let first = call.person.split(separator: " ").first.map { String($0).lowercased() } ?? "them"
             hud.notify(NotchNotice(id: "meeting", icon: "phone", title: line,
