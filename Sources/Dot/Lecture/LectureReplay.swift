@@ -39,8 +39,9 @@ enum LectureReplay {
             try? FileManager.default.copyItem(at: source, to: folder.appendingPathComponent(source.lastPathComponent))
         }
         if args.contains("--ear") {
+            guard from == 0 else { print("FAIL: --ear compares the whole file with a batch transcription; cut the audio instead of --from"); return false }
             let courseMap = value("--course-map").flatMap { try? String(contentsOfFile: DotConfig.expand($0), encoding: .utf8) } ?? ""
-            return ear(audio, terms: courseMap + "\n" + LectureMaterials.gather(folder: folder, notesFile: nil).text, speed: speed, from: from)
+            return ear(audio, terms: courseMap + "\n" + LectureMaterials.gather(folder: folder, notesFile: nil).text, speed: speed)
         }
         let config = DotConfig.peek()
         let transcriber = Transcriber()
@@ -131,7 +132,7 @@ enum LectureReplay {
     /// `--ear`: the recognizer alone, boosted with the course's terms the way lecture mode boosts them, no note writer: the
     /// words that reached the feed next to a batch transcription of the same file (the check for an ear that drops words,
     /// MATH 20250 10-28). Exit 0 when the feed has at least 80% of the batch's words.
-    private static func ear(_ audio: URL, terms: String, speed: Double, from: Double) -> Bool {
+    private static func ear(_ audio: URL, terms: String, speed: Double) -> Bool {
         let transcriber = Transcriber()
         let listener = LectureListener(transcriber: transcriber)
         var ended = false, ready = false, ok = false
@@ -139,8 +140,9 @@ enum LectureReplay {
         let terms = LectureTerms.extract(terms, limit: 150)
         Task { @MainActor in
             defer { ready = true }
-            ok = await listener.start(title: "ear check", replay: audio, speed: speed, from: from)
-            if ok { await listener.setTerms(terms) }
+            // the terms first, so the first chunks are boosted too (the CTC model can take a while to download)
+            await listener.setTerms(terms)
+            ok = await listener.start(title: "ear check", replay: audio, speed: speed)
         }
         while !ready { RunLoop.main.run(until: Date().addingTimeInterval(0.1)) }
         guard ok else { print("FAIL: the recognizer didn't start"); return false }
