@@ -13,10 +13,13 @@ public enum LectureTerms {
                                     "July", "August", "September", "October", "November", "December", "Chapter", "Section", "Part",
                                     "And", "But", "For", "With", "From", "Into", "About", "After", "Before", "Each", "Both", "Also"]
 
-    /// The Mac's word list, lowercase entries only (its capitalized ones are names: Krebs and Golgi stay terms).
-    static let ordinary: Set<String> = {
-        guard let list = try? String(contentsOfFile: "/usr/share/dict/words", encoding: .utf8) else { return [] }
-        return Set(list.split(separator: "\n").filter { $0.first?.isLowercase == true }.map(String.init))
+    /// The Mac's word list split by case: lowercase entries are ordinary words, capitalized ones names. A name stays a term
+    /// even when it is also a word (Jordan and jordan, Mark and mark are both listed); Krebs and Golgi are only names.
+    static let dictionary: (ordinary: Set<String>, names: Set<String>) = {
+        guard let list = try? String(contentsOfFile: "/usr/share/dict/words", encoding: .utf8) else { return ([], []) }
+        var ordinary = Set<String>(), names = Set<String>()
+        for w in list.split(separator: "\n") { if w.first?.isLowercase == true { ordinary.insert(String(w)) } else { names.insert(String(w)) } }
+        return (ordinary, names)
     }()
 
     public static func extract(_ text: String, limit: Int = 150) -> [String] {
@@ -28,7 +31,7 @@ public enum LectureTerms {
             if t.allSatisfy(\.isLetter) {
                 let lower = t.lowercased()
                 let singular = lower.hasSuffix("s") ? String(lower.dropLast()) : lower
-                guard !ordinary.contains(lower), !lowercase.contains(lower), !lowercase.contains(singular), t.wholeMatch(of: #/[IVX]+/#) == nil else { return }
+                guard dictionary.names.contains(t) || !dictionary.ordinary.contains(lower), !lowercase.contains(lower), !lowercase.contains(singular), t.wholeMatch(of: #/[IVX]+/#) == nil else { return }
             }
             count[t, default: 0] += weight
         }

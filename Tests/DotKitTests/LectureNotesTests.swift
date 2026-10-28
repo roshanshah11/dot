@@ -73,12 +73,13 @@ final class LectureNotesTests: XCTestCase {
     func testOrdinaryWordsInCapitalsAreNotTerms() {
         let text = """
         The textbook is by Treil, Linear Algebra Done Wrong. Office hours with Wu.
+        We reach the Jordan form, which Mark proves in section.
         LA CHAPTER III LINEAR MAPS AND QUOTIENT SPACES
         A linear map between quotient spaces; the SVD and the RREF of LP.
         LA CHAPTER III LINEAR MAPS AND QUOTIENT SPACES
         """
         let terms = LectureTerms.extract(text)
-        for t in ["SVD", "RREF", "Treil"] { XCTAssertTrue(terms.contains(t), t) }
+        for t in ["SVD", "RREF", "Treil", "Jordan", "Mark"] { XCTAssertTrue(terms.contains(t), t) }   // names that are also words
         for t in ["Done", "Wrong", "AND", "LA", "CHAPTER", "III", "LINEAR", "MAPS", "QUOTIENT", "SPACES", "Linear", "Algebra"] {
             XCTAssertFalse(terms.contains(t), t)
         }
