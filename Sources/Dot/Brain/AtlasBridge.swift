@@ -97,7 +97,12 @@ final class AtlasBridge {
                     // a minute later, not at the next timer: a meeting card needs the brief before its ten minutes are up
                     if self.retries < 3 {
                         self.retries += 1
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 60) { [weak self] in self?.refresh(reason: "retry") }
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 60) { [weak self] in
+                            guard let self else { return }
+                            // a refresh already under way stands in for this one, and retries itself if it fails
+                            if self.refreshing { self.retries -= 1; return }
+                            self.refresh(reason: "retry")
+                        }
                     }
                 }
             }
