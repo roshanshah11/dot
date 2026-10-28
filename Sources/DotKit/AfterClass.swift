@@ -22,7 +22,8 @@ public enum AfterClass {
 
     /// The reply onto the notes. A run of lines given the same anchor keeps its order (each goes after the one before
     /// it); `## title` only when the class has none and he didn't title it himself.
-    public static func apply(_ reply: String, to notes: inout ClassNotes, titleLocked: Bool) -> Outcome {
+    /// `fixAdded`: the research pass may correct a line the after-class pass added, too.
+    public static func apply(_ reply: String, to notes: inout ClassNotes, titleLocked: Bool, fixAdded: Bool = false) -> Outcome {
         var out = Outcome()
         // anchor -> the last line placed for it, so "+after d5: a" then "+after d5: b" reads a, b
         var last: [String: String] = [:]
@@ -53,7 +54,7 @@ public enum AfterClass {
                 }
             case .rewrite(let id, let text):
                 group = nil
-                if let block = notes.fix(id, text: text) { out.fixed.append(block) }
+                if let block = notes.fix(id, text: text, added: fixAdded) { out.fixed.append(block) }
             case .title(let title):
                 if !titleLocked, notes.title.isEmpty { notes.title = title; out.title = title }
             default:
@@ -65,9 +66,10 @@ public enum AfterClass {
 
     /// The one message the pass gets: the notes with ids, the whole lecture, and the materials.
     public static func message(heading: String, course: String, notes: ClassNotes, transcript: String, transcriptSource: String,
-                               materials: String, slidePictures: Int, calendar: String = "") -> String {
+                               materials: String, slidePictures: Int, calendar: String = "", ahead: String = "") -> String {
         var parts = ["[after class] \(heading), \(course)"]
         if !calendar.isEmpty { parts.append("his calendar around the class (for names, the event, the agenda; not a source of notes):\n" + calendar) }
+        if !ahead.isEmpty { parts.append("his calendar for the week after (a meeting with the speakers or their firm says who they are and what he went for; not a source of notes):\n" + ahead) }
         parts.append("the notes now, with ids (whose each line is: dot, his, added):\n" + notes.tail(10_000).joined(separator: "\n"))
         parts.append("the whole lecture, \(transcriptSource) (names and terms may still be misspelled):\n" + transcript)
         if !materials.isEmpty { parts.append("the course's slides and readings:\n" + materials) }
@@ -91,34 +93,76 @@ public enum TranscriptParagraphs {
         public init(text: String, start: TimeInterval) { self.text = text; self.start = start }
     }
 
-    /// A paragraph ends at a sentence's end once it is `seconds` long, or anywhere at twice that.
-    public static func group(_ tokens: [Token], seconds: TimeInterval = 30) -> [(start: TimeInterval, text: String)] {
-        var out: [(start: TimeInterval, text: String)] = []
+    /// One voice's stretch of the recording, from the diarizer ("S1", "S2": numbered in the order they first speak).
+    public struct Turn: Equatable, Sendable {
+        public let speaker: String
+        public let start: TimeInterval
+        public let end: TimeInterval
+        public init(speaker: String, start: TimeInterval, end: TimeInterval) { self.speaker = speaker; self.start = start; self.end = end }
+    }
+
+    /// The diarizer's raw speaker ids as S1, S2, ... in the order each first speaks, with stretches of one voice under
+    /// `minimum` seconds dropped (a cough, a crosstalk blip) so they never split a paragraph.
+    public static func turns(_ raw: [(speaker: String, start: TimeInterval, end: TimeInterval)], minimum: TimeInterval = 1) -> [Turn] {
+        var label: [String: String] = [:]
+        return raw.filter { $0.end - $0.start >= minimum }.sorted { $0.start < $1.start }.map { seg in
+            let name = label[seg.speaker] ?? { let n = "S\(label.count + 1)"; label[seg.speaker] = n; return n }()
+            return Turn(speaker: name, start: seg.start, end: seg.end)
+        }
+    }
+
+    /// The voice speaking at `time`: the turn holding it, else the nearest within 1.5 s (tokens land in the gaps).
+    static func speaker(at time: TimeInterval, in turns: [Turn]) -> String? {
+        if let hit = turns.last(where: { $0.start <= time && time <= $0.end }) { return hit.speaker }
+        let near = turns.min { min(abs($0.start - time), abs($0.end - time)) < min(abs($1.start - time), abs($1.end - time)) }
+        guard let near, min(abs(near.start - time), abs(near.end - time)) <= 1.5 else { return nil }
+        return near.speaker
+    }
+
+    /// A paragraph ends at a sentence's end once it is `seconds` long, or anywhere at twice that; with `turns`, also
+    /// wherever the voice changes at a word, so each paragraph is one speaker's.
+    public static func group(_ tokens: [Token], seconds: TimeInterval = 30, turns: [Turn] = []) -> [(start: TimeInterval, text: String)] {
+        grouped(tokens, seconds: seconds, turns: turns).map { ($0.start, $0.text) }
+    }
+
+    public static func grouped(_ tokens: [Token], seconds: TimeInterval = 30, turns: [Turn]) -> [(start: TimeInterval, speaker: String?, text: String)] {
+        var out: [(start: TimeInterval, speaker: String?, text: String)] = []
         var text = ""
         var start: TimeInterval = 0
+        var voice: String?
         for token in tokens {
             // SentencePiece marks a word's start with "▁"; some decoders give a leading space instead
             let piece = token.text.replacingOccurrences(of: "\u{2581}", with: " ")
             let startsWord = piece.hasPrefix(" ")
-            if text.isEmpty { start = token.start }
-            else if startsWord, token.start - start >= seconds,
-                    text.last.map({ ".?!".contains($0) }) == true || token.start - start >= seconds * 2 {
-                out.append((start, text.trimmingCharacters(in: .whitespaces)))
+            let now = turns.isEmpty ? nil : speaker(at: token.start, in: turns)
+            if text.isEmpty { start = token.start; voice = now }
+            else if startsWord, (now != nil && now != voice) || (token.start - start >= seconds &&
+                    (text.last.map({ ".?!".contains($0) }) == true || token.start - start >= seconds * 2)) {
+                out.append((start, voice, text.trimmingCharacters(in: .whitespaces)))
                 text = ""
                 start = token.start
+                voice = now ?? voice
             }
             text += piece
         }
         let rest = text.trimmingCharacters(in: .whitespaces)
-        if !rest.isEmpty { out.append((start, rest)) }
-        return out.map { ($0.start, $0.text.replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression)) }
+        if !rest.isEmpty { out.append((start, voice, rest)) }
+        return out.map { ($0.start, $0.speaker, $0.text.replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression)) }
     }
 
-    /// "**11:42:10** words" blocks from paragraphs, clocked from when the recording began.
+    /// "**11:42:10** words" blocks from paragraphs, clocked from when the recording began; a paragraph with a voice reads
+    /// "**11:42:10** [S2] words".
     public static func markdown(_ paragraphs: [(start: TimeInterval, text: String)], began: Date, title: String) -> String {
+        markdown(paragraphs.map { ($0.start, nil, $0.text) }, began: began, title: title)
+    }
+
+    public static func markdown(_ paragraphs: [(start: TimeInterval, speaker: String?, text: String)], began: Date, title: String) -> String {
         let f = DateFormatter(); f.dateFormat = "HH:mm:ss"; f.locale = Locale(identifier: "en_US_POSIX")
-        let body = paragraphs.map { "**\(f.string(from: began.addingTimeInterval($0.start)))** \($0.text)" }.joined(separator: "\n\n")
-        return "# \(title) transcript (made again from the class audio after class, text only)\n\n" + body + "\n"
+        let body = paragraphs.map { "**\(f.string(from: began.addingTimeInterval($0.start)))** \($0.speaker.map { "[\($0)] " } ?? "")\($0.text)" }
+            .joined(separator: "\n\n")
+        let voices = Set(paragraphs.compactMap(\.speaker)).count
+        let note = voices > 1 ? ", \(voices) voices told apart by machine as [S1], [S2], ...; one person can be split in two or two merged" : ""
+        return "# \(title) transcript (made again from the class audio after class, text only\(note))\n\n" + body + "\n"
     }
 }
 
@@ -193,6 +237,20 @@ public enum LectureCalendarNotes {
                 if !notes.isEmpty { line += ": " + (notes.count > 400 ? String(notes.prefix(400)) + "…" : notes) }
                 return line
             }
+            .joined(separator: "\n")
+    }
+
+    /// The days after a class or talk, one line per timed event: a meeting with the same people or firm tells the pass
+    /// and the research who this was and what it was for (10-27: a founders' talk the night before his meeting with
+    /// that startup, and Dot knew neither).
+    public static func ahead(_ items: [CalendarItem], from start: Date, days: Int = 7, cap: Int = 80) -> String {
+        let f = DateFormatter(); f.dateFormat = "EEE MM-dd h:mm a"; f.locale = Locale(identifier: "en_US_POSIX")
+        let t = DateFormatter(); t.dateFormat = "h:mm a"; t.locale = Locale(identifier: "en_US_POSIX")
+        let end = start.addingTimeInterval(Double(days) * 86_400)
+        return items.filter { !$0.allDay && $0.start >= start && $0.start < end }
+            .sorted { $0.start < $1.start }
+            .prefix(cap)
+            .map { "- \(f.string(from: $0.start))-\(t.string(from: $0.end)): \($0.title)" + ($0.location.isEmpty ? "" : " (\($0.location))") }
             .joined(separator: "\n")
     }
 }

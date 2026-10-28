@@ -1712,7 +1712,16 @@ final class Talk {
             Log.warn("lecture: mode failed to start: no microphone")
             return
         }
-        let courseText = Self.courseMapText(label: course, root: config.talkRootURL)
+        var courseText = Self.courseMapText(label: course, root: config.talkRootURL)
+        // a talk has no course map: the calendar now and the week after is its only context (10-27: Dot didn't know a
+        // founders' talk came the night before his meeting with that startup)
+        if course == LectureCourses.otherLectures, let items = localCalendar.items(days: 8, now: now.addingTimeInterval(-3600)) {
+            let here = LectureCalendarNotes.lines(items, from: now, to: now.addingTimeInterval(3600))
+            let ahead = LectureCalendarNotes.ahead(items, from: now, days: 7, cap: 40)
+            courseText = "This is a talk, not a class. His calendar now:\n\(here.isEmpty ? "(nothing on it)" : here)\n\n"
+                + "His next 7 days (a meeting with these speakers or their firm says who they are and why he is here; not a source of notes):\n"
+                + (ahead.isEmpty ? "(nothing)" : ahead)
+        }
         let session = makeLectureSession(course: course, courseTitle: courseTitle, folder: school.appendingPathComponent(course, isDirectory: true),
                                          endsAt: cls?.end, courseText: courseText).session
         session.screenText = { [weak self] in await self?.lectureScreenText() ?? "" }
@@ -1721,6 +1730,9 @@ final class Talk {
         session.transcriber = transcriber
         session.calendarAround = { [weak self] from, to in
             LectureCalendarNotes.lines(self?.localCalendar.items(days: 1, now: from.addingTimeInterval(-3600)) ?? [], from: from, to: to)
+        }
+        session.calendarAhead = { [weak self] from in
+            LectureCalendarNotes.ahead(self?.localCalendar.items(days: 8, now: from) ?? [], from: from)
         }
         session.onAfterClass = { [weak self, weak session] _ in
             guard let self, let session else { return }

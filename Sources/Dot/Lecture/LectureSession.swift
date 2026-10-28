@@ -38,7 +38,6 @@ final class LectureSession {
     private var lastSlide = ""
     private var tickTimer: Timer?
     private var secondTimer: Timer?
-    private var recallTimer: DispatchWorkItem?
     private var saveWork: DispatchWorkItem?
     private var photos: BoardPhotos?
     private var setup: NoteWriter.Setup?
@@ -70,6 +69,8 @@ final class LectureSession {
     var transcriber: Transcriber?
     /// His calendar between two times, as lines (the after-class pass reads the events around the class).
     var calendarAround: ((Date, Date) -> String)?
+    /// The week after the class, one line per event: who a talk's speakers are and what he went for.
+    var calendarAhead: ((Date) -> String)?
     /// False once another class has the window: this one's pass then writes the file only.
     var ownsWindow = true
     /// He typed the title himself: Dot's own title never replaces it (10-25: "i tried to type a title and it didnt work").
@@ -83,8 +84,6 @@ final class LectureSession {
     static let gapFillCap = 6
     /// Which class each notes file has going on now (LectureLive), for a restart mid-class.
     static var liveFile: URL { DotConfig.peek().talkRootURL.appendingPathComponent("lecture-live.json") }
-    static let recallSeconds = 120
-    static let whySeconds = 90
     /// A gap this long in the words means the speaker paused: a ready explainer can open.
     var pauseSeconds: TimeInterval = 1.2
 
@@ -302,8 +301,8 @@ final class LectureSession {
                 if let placed = notes.addAfter(id, text: text) { ops2.append(.insertAfter(placed.after, Self.windowBlock(placed.block))); added += 1 }
             case .feedback(let line):
                 window.recallFeedback(line)
-            case .why(let question):
-                pendingWhy = question
+            case .why:
+                break
             case .deadline(let due, let title, let block):
                 deadlines.append(("dl\(deadlines.count + 1)", due, title, block))
             case .slide:
@@ -322,7 +321,6 @@ final class LectureSession {
         return "+\(added) ~\(rewritten)" + (notes.title.isEmpty ? "" : " [\(Log.short(notes.title, 40))]")
     }
 
-    private var pendingWhy: String?
 
     private func explainContext() -> String {
         var context = "what was just said (machine transcribed; names and terms may be misspelled):\n\"\(Log.short(listener.recent(seconds: 90), 1400))\""
@@ -474,10 +472,8 @@ final class LectureSession {
         case .source(let id):
             if let found = source(for: id) { window.showSource(id: id, time: found.time, text: found.text) }
             else { window.showSource(id: id, time: "", text: "no transcript for this line") }
-        case .recall(let text):
-            Task { phase == .why ? await whyAnswered(text) : await recall(text) }
-        case .skipRecall:
-            Task { phase == .why ? await whyAnswered(nil) : await recall(nil) }
+        case .recall, .skipRecall:
+            break   // the recall quiz is gone (2026-10-27); the window never shows it
         case .addDeadlines(let ids):
             Task { await addDeadlines(ids) }
         case .end:
@@ -509,55 +505,9 @@ final class LectureSession {
             while writer.isBusy, waited < 600 { try? await Task.sleep(nanoseconds: 100_000_000); waited += 1 }
             await cycle(final: true)
         }
-        phase = .recall
-        window.showRecall(seconds: Self.recallSeconds, prompt: "before u look: what were the 3 big ideas today?")
-        armRecallTimer(Self.recallSeconds)
-        Log.info("lecture: ended after \(minutes) min, \(notes.blocks.count) lines; asking for the 3 big ideas")
-    }
-
-    private func armRecallTimer(_ seconds: Int) {
-        recallTimer?.cancel()
-        let work = DispatchWorkItem { [weak self] in
-            Task { @MainActor in
-                guard let self else { return }
-                if self.phase == .why { await self.whyAnswered(nil) } else { await self.recall(nil) }
-            }
-        }
-        recallTimer = work
-        DispatchQueue.main.asyncAfter(deadline: .now() + .seconds(seconds + 30), execute: work)
-    }
-
-    /// His 3 big ideas (nil: skipped or timed out): feedback and one "why", or straight on to the rest.
-    func recall(_ text: String?) async {
-        guard phase == .recall else { return }
-        recallTimer?.cancel()
-        if let text, !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            phase = .finishing
-            let message = "[recall] his 3 big ideas: \"\(text)\"\n\n" + NoteWriter.resource("notes-recall.md")
-            let reply = await ask(message)
-            if let reply { apply(reply, live: false) }
-            Log.info("lecture: recall answered (\(text.split(separator: " ").count) words)\(pendingWhy.map { "; why: \(Log.short($0, 80))" } ?? "")")
-            if let why = pendingWhy {
-                pendingWhy = nil
-                phase = .why
-                window.showRecall(seconds: Self.whySeconds, prompt: why)
-                armRecallTimer(Self.whySeconds)
-                return
-            }
-        }
+        // no "3 big ideas" quiz any more (his call 2026-10-27, "Drop it"): the after-class work starts at once
+        Log.info("lecture: ended after \(minutes) min, \(notes.blocks.count) lines; finishing the notes")
         phase = .finishing
-        await wrapUp()
-    }
-
-    /// His answer to the "why" (nil: skipped): feedback, then the rest.
-    func whyAnswered(_ text: String?) async {
-        guard phase == .why else { return }
-        phase = .finishing
-        recallTimer?.cancel()
-        if let text, !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            let reply = await ask("[why] his answer: \"\(text)\"")
-            if let reply { apply(reply, live: false) }
-        }
         await wrapUp()
     }
 
@@ -630,10 +580,15 @@ final class LectureSession {
     /// The kept audio goes to the recognizer at once, so the new transcript is ready by the time the recall is done.
     private func startRetranscription() {
         keptAudio = listener.takeKeptAudio()
+        // Dot's own recording missing or cut short (a restart mid-class): his Murmur recording of the same class instead
+        if let backup = LectureAudio.murmurBackup(began: startedAt, ended: Date(), own: keptAudio?.url) {
+            if let own = keptAudio, own.owned { LectureAudio.discard(own.url) }
+            keptAudio = (backup, true)
+        }
         guard let audio = keptAudio, let transcriber else { return }
-        let began = startedAt, file = transcriptURL, title = "\(course) \(notes.key)"
+        let began = startedAt, file = transcriptURL, title = "\(course) \(notes.key)", talk = course == LectureCourses.otherLectures
         retranscription = Task { @MainActor in
-            await AfterClassPass.retranscribe(audio: audio.url, began: began, transcriber: transcriber, title: title, into: file)
+            await AfterClassPass.retranscribe(audio: audio.url, began: began, transcriber: transcriber, title: title, into: file, talk: talk)
         }
     }
 
@@ -658,7 +613,8 @@ final class LectureSession {
         let pictures = AfterClassPass.slidePictures(notes, folder: folder)
         let message = AfterClass.message(heading: notes.heading, course: courseTitle == course ? course : "\(course), \(courseTitle)", notes: notes,
                                          transcript: transcript, transcriptSource: fresh != nil ? "transcribed again from the class audio" : "the live machine transcript",
-                                         materials: materials.text, slidePictures: pictures.count, calendar: calendarAround?(startedAt, Date()) ?? "")
+                                         materials: materials.text, slidePictures: pictures.count, calendar: calendarAround?(startedAt, Date()) ?? "",
+                                         ahead: calendarAhead?(Date()) ?? "")
         guard let reply = await AfterClassPass.ask(config: config, message: message, images: pictures) else {
             return "after class: the pass didn't come back; the notes are as they were"
         }
@@ -670,7 +626,32 @@ final class LectureSession {
         saveNow()
         await exportPDF()
         Log.info("lecture: \(outcome.summary)\(outcome.title.map { ", titled \"\($0)\"" } ?? "") from \(fresh != nil ? "the audio" : "the live transcript")\(materials.files.isEmpty ? "" : " and \(materials.files.joined(separator: ", "))")")
-        return outcome.summary
+        let researched = await research(transcript: transcript)
+        return outcome.summary + (researched.map { "; " + $0 } ?? "")
+    }
+
+    /// The last pass, with sources: names right, garbled facts fixed, context at a talk, the speakers saved to Atlas.
+    private func research(transcript: String) async -> String? {
+        guard let config, config.lectureResearch, !notes.blocks.isEmpty else { return nil }
+        showAfterClass("after class: checking names and facts")
+        let talk = course == LectureCourses.otherLectures
+        let message = (talk ? "[research] a talk, not a class\n\n" : "[research] a class\n\n")
+            + AfterClass.message(heading: notes.heading, course: courseTitle == course ? course : "\(course), \(courseTitle)", notes: notes,
+                                 transcript: transcript, transcriptSource: "the whole class", materials: "", slidePictures: 0,
+                                 calendar: calendarAround?(startedAt, Date()) ?? "", ahead: calendarAhead?(Date()) ?? "")
+        guard let reply = await AfterClassPass.research(config: config, message: message) else { return "research didn't come back" }
+        let outcome = AfterClass.apply(reply, to: &notes, titleLocked: true, fixAdded: true)
+        if ownsWindow {
+            window.apply(outcome.added.map { .insertAfter($0.after, Self.windowBlock($0.block)) } + outcome.fixed.map { .replace(Self.windowBlock($0)) })
+        }
+        if !outcome.added.isEmpty || !outcome.fixed.isEmpty {
+            saveNow()
+            await exportPDF()
+        }
+        let saved = ResearchConfigFile.saved(in: reply)
+        let line = "research: \(outcome.fixed.count) fixed, \(outcome.added.count) added" + (saved.map { ", saved to Atlas: \($0)" } ?? "")
+        Log.info("lecture: \(line)")
+        return line
     }
 
     private func showAfterClass(_ line: String) {

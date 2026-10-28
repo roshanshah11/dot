@@ -379,6 +379,24 @@ case "--lecture-replay":
     replayApp.finishLaunching()
     let passed = MainActor.assumeIsolated { LectureReplay.run(Array(arguments.dropFirst())) }
     exit(passed ? 0 : 1)
+case "--voices":
+    // Who spoke when in a recording (the after-class diarizer), printed as turns: `Dot --voices clip.wav [--min N] [--threshold T]`.
+    let voiceArgs = Array(arguments)
+    func voiceValue(_ flag: String) -> String? { voiceArgs.firstIndex(of: flag).flatMap { $0 + 1 < voiceArgs.count ? voiceArgs[$0 + 1] : nil } }
+    guard voiceArgs.count > 1, !voiceArgs[1].hasPrefix("--") else { print("usage: Dot --voices <audio> [--min N] [--threshold T]"); exit(2) }
+    let voiceURL = URL(fileURLWithPath: DotConfig.expand(voiceArgs[1]))
+    var voiceDone = false
+    Task {
+        let turns = voiceArgs.contains("--sortformer") ? await Voices.sortformerTurns(in: voiceURL)
+            : await Voices.turns(in: voiceURL, minSpeakers: voiceValue("--min").flatMap(Int.init), threshold: voiceValue("--threshold").flatMap(Double.init))
+        for t in turns { print(String(format: "%@ %7.1f-%7.1f", t.speaker, t.start, t.end)) }
+        var talked: [String: Double] = [:]
+        for t in turns { talked[t.speaker, default: 0] += t.end - t.start }
+        print(talked.sorted { $0.key < $1.key }.map { String(format: "%@ %.0f s", $0.key, $0.value) }.joined(separator: ", "))
+        voiceDone = true
+    }
+    while !voiceDone { RunLoop.main.run(until: Date().addingTimeInterval(0.1)) }
+    exit(0)
 case "--after-class":
     // The after-class pass on a saved class, into a scratch copy (AfterClassReplay): never his notes or his Desktop.
     let afterApp = NSApplication.shared

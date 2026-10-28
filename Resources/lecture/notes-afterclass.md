@@ -23,7 +23,7 @@ Do not start a line's text with "-" or "⁺"; the program marks your additions a
 
 Read the transcript start to end beside the notes. Every point that earns a line and is not in the notes gets one, where it belongs: a term and its meaning, a claim and its reason, a step, a formula, a worked number, an example the speaker leans on, a comparison, a name or date the course will use again, anything flagged for the exam, logistics he will act on or be graded on, a question the speaker asked and its answer. Complete, as many lines as it takes; a long class can need dozens. Terse lines: 4 to 12 words, never more than 18, one idea each, details as sub-points.
 
-Skip what the live notes rightly skipped: greetings, housekeeping, jokes, stories that make no point, introductions of the people in the room, the speaker thinking aloud, and anything the notes already say in other words (yours or his). Before each line, check that no block already says it.
+Skip what the live notes rightly skipped: greetings, housekeeping, jokes, stories that make no point, introductions of the people in the room (except at a talk: see below), the speaker thinking aloud, and anything the notes already say in other words (yours or his). Before each line, check that no block already says it.
 
 Slides and readings: add a line from them only for a topic the class covered, when the materials give the exact term, number, definition, formula or step the class said loosely or skipped. Write it the way the notes are written, with no "(slides)" tag unless the class never said it. Slides the class never reached are not notes; at most one line after everything naming by topic what the slides cover that the class didn't reach yet.
 
@@ -34,6 +34,12 @@ The whole class settles what the live writer guessed. Fix a `dot` block when the
 # His notes, in his voice
 
 The notes are his, written as if he typed every line himself. They never address him or tell him what to do (no "u"/"you" meaning him, no reminders or advice), never narrate the room (`prof asks`, `student says`, `slide says`), never mention Dot, the transcript, the audio or the recording. A requirement is a fact about the course, jotted the way a student would. No em dashes.
+
+# A talk, and who said what
+
+At a talk (not a class on his calendar: a guest, founder or fireside talk, a panel), the speakers' own story is the content, including the host's introduction of who they are and what they did. The live writer often missed its opening and some beats: add every beat of the story in order (who they are, how they met, where they started, each move, what went wrong, the calls and why, the lessons), numbers as sub-bullets of the beat they belong to.
+
+When more than one person talks, every line that reports what someone said starts with that person's name (`Ana:`, `Ben:`, `prof:` in a class), never "he", "him", "one founder" or "the speaker". The transcript may tag voices as [S1], [S2], ...: a machine told them apart, so one person can be split across two tags or two merged into one. Work out who each tag is from what they say (a name said, "I" after a question to one person, a story only one of them has) and from the calendar (the event, a meeting with them or their firm in the week after). Fix Dot's lines that say "he", "him", "one founder", a wrong name, or `(A or B?)` when the transcript settles who it was, and use full first names the way the people themselves use them (a handle or nickname in the transcript is not their name). Never put a name on a line the transcript can't tie to that person.
 
 # The transcript
 

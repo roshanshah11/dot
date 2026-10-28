@@ -129,9 +129,11 @@ public struct ClassNotes: Equatable, Sendable {
 
     /// After class: Dot's own line corrected from the whole lecture, and marked so. His lines, added lines and pictures never.
     @discardableResult
-    public mutating func fix(_ id: String, text: String) -> NoteBlock? {
+    /// `added`: the research pass may also correct a line the after-class pass added (a name it got wrong); his never.
+    public mutating func fix(_ id: String, text: String, added: Bool = false) -> NoteBlock? {
         let clean = text.trimmingCharacters(in: .whitespaces)
-        guard !clean.isEmpty, let i = index(id), blocks[i].author == .dot, blocks[i].image == nil, blocks[i].text != clean else { return nil }
+        guard !clean.isEmpty, let i = index(id), blocks[i].author == .dot || (added && blocks[i].author == .added),
+              blocks[i].image == nil, blocks[i].text != clean else { return nil }
         blocks[i].text = clean
         blocks[i].fixed = true
         return blocks[i]

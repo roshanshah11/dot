@@ -95,6 +95,61 @@ final class AfterClassTests: XCTestCase {
         XCTAssertTrue(md.contains("** first point here. still going.") && md.contains("** next one."), md)
     }
 
+    func testParagraphsSplitWhereTheVoiceChanges() {
+        // a host asks, a founder answers, the host again: three paragraphs, one voice each, labelled in order of speaking
+        let words: [(String, Double)] = [("\u{2581}so", 0), ("\u{2581}how", 1), ("\u{2581}did", 2), ("\u{2581}u", 3), ("\u{2581}meet?", 4),
+                                         ("\u{2581}in", 6), ("\u{2581}comp", 7), ("\u{2581}arch.", 8), ("\u{2581}nice.", 11)]
+        let tokens = words.map { TranscriptParagraphs.Token(text: $0.0, start: $0.1) }
+        let raw: [(speaker: String, start: TimeInterval, end: TimeInterval)] = [("7", 0, 5), ("3", 5.5, 9.5), ("9", 9.7, 9.9), ("7", 10.5, 12)]
+        let turns = TranscriptParagraphs.turns(raw)
+        XCTAssertEqual(turns.map(\.speaker), ["S1", "S2", "S1"], "a 0.2 s blip is dropped; ids renamed in order")
+        let grouped = TranscriptParagraphs.grouped(tokens, seconds: 30, turns: turns)
+        XCTAssertEqual(grouped.map(\.text), ["so how did u meet?", "in comp arch.", "nice."])
+        XCTAssertEqual(grouped.map(\.speaker), ["S1", "S2", "S1"])
+        let md = TranscriptParagraphs.markdown(grouped, began: Date(timeIntervalSince1970: 0), title: "Other lectures CLASS 2")
+        XCTAssertTrue(md.contains("** [S2] in comp arch."), md)
+        XCTAssertTrue(md.contains("2 voices told apart by machine"), md)
+        XCTAssertEqual(TranscriptParagraphs.group(tokens, seconds: 30).count, 1, "without turns nothing changes")
+    }
+
+    func testWeekAheadListsTimedEventsInOrder() {
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        let items = [CalendarItem(title: "Acme <> Coffee chat", start: now.addingTimeInterval(20 * 3600), end: now.addingTimeInterval(20 * 3600 + 1200), location: "Student center"),
+                     CalendarItem(title: "Halloween", start: now.addingTimeInterval(3 * 86_400), end: now.addingTimeInterval(4 * 86_400), allDay: true),
+                     CalendarItem(title: "Mechanics: Lecture", start: now.addingTimeInterval(14 * 3600), end: now.addingTimeInterval(15 * 3600)),
+                     CalendarItem(title: "next month", start: now.addingTimeInterval(9 * 86_400), end: now.addingTimeInterval(9 * 86_400 + 60)),
+                     CalendarItem(title: "before", start: now.addingTimeInterval(-3600), end: now)]
+        let lines = LectureCalendarNotes.ahead(items, from: now).split(separator: "\n").map(String.init)
+        XCTAssertEqual(lines.count, 2, lines.joined(separator: "\n"))
+        XCTAssertTrue(lines[0].hasSuffix(": Mechanics: Lecture"), lines[0])
+        XCTAssertTrue(lines[1].hasSuffix(": Acme <> Coffee chat (Student center)"), lines[1])
+    }
+
+    func testResearchMayFixAddedLinesButNeverHis() {
+        var notes = ClassNotes(number: 2, dateLabel: "Tue Oct 27", title: "")
+        let dot = notes.append(depth: 0, text: "Emi: met in comp arch")!
+        notes.add(id: "h1", after: dot.id, depth: 0, text: "my own line", at: nil)
+        let added = notes.place("Benjamin: did security research", afterSubtreeOf: "h1", depth: 0)!.block
+        XCTAssertNil(notes.fix(added.id, text: "Ben: did security research"), "the after-class pass may not touch an added line")
+        XCTAssertEqual(notes.fix(added.id, text: "Ben: did security research", added: true)?.text, "Ben: did security research")
+        XCTAssertNil(notes.fix("h1", text: "changed", added: true), "his line stays his")
+    }
+
+    func testResearchConfigKeepsAtlasReadsAndRememberOnly() throws {
+        let talk = #"{"mcpServers":{"atlas":{"command":"python3","args":["-m","atlas.mcp"],"env":{"ATLAS_CHAT_SESSION":"dot-talk","ATLAS_MCP_TOOLS":"search,draft_email,imessage_send"}},"other":{"command":"x"}}}"#
+        let data = try XCTUnwrap(ResearchConfigFile.make(talkMCP: Data(talk.utf8), stamp: "202610271930"))
+        let root = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        let servers = try XCTUnwrap(root["mcpServers"] as? [String: Any])
+        XCTAssertEqual(Array(servers.keys), ["atlas"], "only atlas comes along")
+        let env = try XCTUnwrap((servers["atlas"] as? [String: Any])?["env"] as? [String: String])
+        XCTAssertEqual(env["ATLAS_MCP_TOOLS"], "now,search,facts,people,calendar,get,remember")
+        XCTAssertEqual(env["ATLAS_CHAT_SESSION"], "dot-afterclass-202610271930")
+        XCTAssertNil(ResearchConfigFile.make(talkMCP: Data(#"{"mcpServers":{}}"#.utf8), stamp: "x"))
+        XCTAssertFalse(ResearchConfigFile.allowed.contains { $0.contains("send") || $0 == "Read" || $0.hasPrefix("Bash") })
+        XCTAssertEqual(ResearchConfigFile.saved(in: "~d4: Ben: met in comp arch\nAtlas saved: Ben (3), Ana (2)"), "Ben (3), Ana (2)")
+        XCTAssertNil(ResearchConfigFile.saved(in: "nothing"))
+    }
+
     func testRechecksAt8pmAnd8am() {
         var cal = Calendar(identifier: .gregorian)
         cal.timeZone = TimeZone(identifier: "America/Chicago")!

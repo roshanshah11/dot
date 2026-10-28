@@ -201,6 +201,8 @@ struct DotConfig: Codable {
     /// explains on its own. Off: the lecture ear only listens, as before.
     var lectureNotes = true
     var lectureModel = "sonnet"
+    /// The last after-class pass: names, sources, context at a talk, the speakers to Atlas (2026-10-27).
+    var lectureResearch = true
     var jobModel = "sonnet"
     /// Decks and anything written under his name that he didn't dictate (his rule: prose under his name runs on Opus).
     var jobProseModel = "opus"
@@ -349,6 +351,7 @@ struct DotConfig: Codable {
         atlasThread = get(.atlasThread, d.atlasThread)
         lectureNotes = get(.lectureNotes, d.lectureNotes)
         lectureModel = get(.lectureModel, d.lectureModel)
+        lectureResearch = get(.lectureResearch, d.lectureResearch)
         jobModel = get(.jobModel, d.jobModel)
         jobProseModel = get(.jobProseModel, d.jobProseModel)
         jobEffort = c.contains(.jobEffort) ? (try? c.decodeIfPresent(String.self, forKey: .jobEffort)) : d.jobEffort

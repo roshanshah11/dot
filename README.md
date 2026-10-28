@@ -100,7 +100,10 @@ Checked against the code on 2026-10-26 (parity US-11). Paths are this Mac's.
 - **Your voice.** Each hold records to a temporary WAV (`$TMPDIR/dot-audio/turn-*.wav`) that Dot deletes once the
   turn is transcribed. Speech is recognised on the Mac (Parakeet, through FluidAudio); no audio leaves it. Lecture
   mode keeps the class audio in `~/Library/Caches/Dot/lecture-audio` until the after-class pass has transcribed it
-  again, then deletes it; one a crash left behind goes at the next launch.
+  again (and told the voices apart on the Mac, with Sortformer through FluidAudio), then deletes it; one a crash left
+  behind goes at the next launch. When Dot's own recording is missing or cut short, a Murmur recording of the same
+  class is copied there instead. The last after-class pass researches names and facts on the web and in Atlas, and
+  saves a talk's speakers to Atlas (`lectureResearch` in the config turns it off).
 - **What was said.** Every spoken or typed turn, dictation, agent report and lecture line is appended as text to
   `~/Dot/transcripts/<date>.md` and `.jsonl`, and indexed for Home's History in `~/Dot/index/transcripts.sqlite`
   (with Murmur's history, which it reads). Nothing deletes them.

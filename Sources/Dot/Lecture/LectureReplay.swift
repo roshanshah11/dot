@@ -109,8 +109,6 @@ enum LectureReplay {
         print("replay over after \(Int(Date().timeIntervalSince(started))) s; ending the class")
         Task { @MainActor in
             await session.end()
-            await session.recall(value("--recall") ?? "")
-            if session.phase == .why { await session.whyAnswered(value("--why") ?? "") }
         }
         runLoop({ finished != nil }, 600)
         print("\n==== live notes saved; the after-class pass runs")

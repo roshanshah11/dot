@@ -47,12 +47,13 @@ actor Transcriber {
 
     /// A whole class recording (lecture mode's after-class pass): FluidAudio reads a long file from disk in chunks, and
     /// the token timings become half-minute paragraphs. No term boost: the live one's word list garbled 10-25's talk.
-    func transcribeLong(url: URL) async throws -> (paragraphs: [(start: TimeInterval, text: String)], audioSeconds: TimeInterval) {
+    /// With `turns` (the diarizer's voices), each paragraph is one speaker's and carries its label.
+    func transcribeLong(url: URL, turns: [TranscriptParagraphs.Turn] = []) async throws -> (paragraphs: [(start: TimeInterval, speaker: String?, text: String)], audioSeconds: TimeInterval) {
         let asr = try await ensureLoaded()
         var state = try TdtDecoderState()
         let result = try await asr.transcribe(url, decoderState: &state, language: nil)
         let tokens = (result.tokenTimings ?? []).map { TranscriptParagraphs.Token(text: $0.token, start: $0.startTime) }
-        let paragraphs = tokens.isEmpty ? [(start: 0.0, text: result.text)] : TranscriptParagraphs.group(tokens)
+        let paragraphs = tokens.isEmpty ? [(start: 0.0, speaker: nil, text: result.text)] : TranscriptParagraphs.grouped(tokens, turns: turns)
         // a long file's result reports no duration: the file's own length
         let seconds = (try? AVAudioFile(forReading: url)).map { Double($0.length) / $0.processingFormat.sampleRate } ?? result.duration
         return (paragraphs.filter { !$0.text.isEmpty }, seconds)

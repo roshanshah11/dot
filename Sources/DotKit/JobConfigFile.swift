@@ -86,3 +86,33 @@ public enum MCPConfigEdit {
     /// live config with write tools pre-allowed).
     public static func isBenchSession(kind: String, benchMode: Bool) -> Bool { benchMode }
 }
+
+/// The after-class research pass's MCP config (2026-10-27): Atlas only, reads plus `remember`, under its own chat-actor
+/// session so what it saves is traceable. The atlas server is copied from the talk config. Nil without one.
+public enum ResearchConfigFile {
+    public static let tools = ["now", "search", "facts", "people", "calendar", "get", "remember"]
+
+    public static func make(talkMCP: Data, stamp: String) -> Data? {
+        guard let root = try? JSONSerialization.jsonObject(with: talkMCP) as? [String: Any],
+              let all = root["mcpServers"] as? [String: Any], var atlas = all["atlas"] as? [String: Any] else { return nil }
+        var env = (atlas["env"] as? [String: Any]) ?? [:]
+        env["ATLAS_CHAT_SESSION"] = "dot-afterclass-\(stamp)"
+        env["ATLAS_MCP_TOOLS"] = tools.joined(separator: ",")
+        atlas["env"] = env
+        atlas["timeout"] = JobConfigFile.atlasTimeoutMs
+        return try? JSONSerialization.data(withJSONObject: ["mcpServers": ["atlas": atlas]], options: [.prettyPrinted, .sortedKeys])
+    }
+
+    /// The tool names the pass may use without asking: the web, his research folders and the Atlas tools above.
+    public static var allowed: [String] {
+        ["WebSearch", "WebFetch", "Glob", "Read(~/roshan/Career/**)", "Read(~/roshan/Areas/Knowledge/**)", "Read(~/roshan/School/**)",
+         "Read(~/roshan/Learning/Research/**)"] + tools.map { "mcp__atlas__\($0)" }
+    }
+
+    /// "atlas saved: Ben (3), Ana (2)": the pass's own count of what it remembered, for the done line.
+    public static func saved(in reply: String) -> String? {
+        reply.split(separator: "\n").map { $0.trimmingCharacters(in: .whitespaces) }
+            .first { $0.lowercased().hasPrefix("atlas saved:") }
+            .map { String($0.dropFirst("atlas saved:".count)).trimmingCharacters(in: .whitespaces) }
+    }
+}
