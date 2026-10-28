@@ -13,6 +13,7 @@ final class AtlasBridge {
     private let config: DotConfig
     private var timer: Timer?
     private var refreshing = false
+    private var retries = 0
     private let queue = DispatchQueue(label: "com.roshan.dot.atlas", qos: .utility)
 
     init(config: DotConfig) {
@@ -60,7 +61,9 @@ final class AtlasBridge {
             var errText = ""
             do {
                 try process.run()
-                let deadline = DispatchTime.now() + 40
+                // 10-28 a refresh took 18 to 37 s while Atlas was busy, and 11 of 26 hit the old 40 s limit (every launch
+                // that day among them), leaving Dot with no brief and no meeting card for ten minutes
+                let deadline = DispatchTime.now() + 90
                 let group = DispatchGroup()
                 group.enter()
                 DispatchQueue.global().async {
@@ -70,7 +73,9 @@ final class AtlasBridge {
                 }
                 if group.wait(timeout: deadline) == .timedOut {
                     process.terminate()
-                    errText = "timed out after 40 s"
+                    // the reader finishes once the pipes close, and would overwrite this with an empty stderr
+                    _ = group.wait(timeout: .now() + 5)
+                    errText = "timed out after 90 s"
                 }
                 process.waitUntilExit()
             } catch {
@@ -83,11 +88,17 @@ final class AtlasBridge {
                 if let brief {
                     self.brief = brief
                     self.lastError = nil
+                    self.retries = 0
                     Log.info("atlas: today refreshed (\(reason)) in \(Int(Date().timeIntervalSince(started) * 1000)) ms: \(brief.deadlines.count) deadlines, \(brief.today.count) events today, \(brief.unansweredCount) mail waiting")
                     self.onUpdate?(brief)
                 } else {
                     self.lastError = errText.isEmpty ? "no output" : errText
                     Log.warn("atlas: today refresh failed (\(reason)): \(Log.short(self.lastError ?? "", 300))")
+                    // a minute later, not at the next timer: a meeting card needs the brief before its ten minutes are up
+                    if self.retries < 3 {
+                        self.retries += 1
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 60) { [weak self] in self?.refresh(reason: "retry") }
+                    }
                 }
             }
         }
