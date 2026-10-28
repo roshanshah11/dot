@@ -145,7 +145,7 @@ enum LectureReplay {
             ok = await listener.start(title: "ear check", replay: audio, speed: speed)
         }
         while !ready { RunLoop.main.run(until: Date().addingTimeInterval(0.1)) }
-        guard ok else { print("FAIL: the recognizer didn't start"); return false }
+        guard ok else { print("FAIL: the recognizer didn't start or the audio can't be replayed (dot.log says which)"); return false }
         print("boosting \(terms.count) terms: \(terms.prefix(20).joined(separator: ", "))")
         let deadline = Date().addingTimeInterval(4 * 3600)
         while !ended, Date() < deadline { RunLoop.main.run(until: Date().addingTimeInterval(0.1)) }

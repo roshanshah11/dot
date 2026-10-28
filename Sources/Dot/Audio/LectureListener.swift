@@ -13,7 +13,8 @@ final class LectureListener {
     private let transcriber: Transcriber
     private let recorder = AudioRecorder()
     private var stream: SlidingWindowAsrManager?
-    private var reader: Task<Void, Never>?
+    /// Reads the current stream's updates; its value is every chunk that stream gave, once the stream is closed.
+    private var reader: Task<String, Never>?
     private var segmentTimer: Timer?
     private(set) var isListening = false
     private(set) var startedAt: Date?
@@ -25,7 +26,6 @@ final class LectureListener {
     /// What lecture mode's note writer reads: every chunk in order, never rewritten (a finished segment's tidy text
     /// can differ from its chunks).
     private(set) var feed = ""
-    private var fedInSegment = ""
     /// Words heard, and how many came in chunks the recognizer confirmed (a low share is a hard room: accent, distance).
     private(set) var heardWords = 0
     private(set) var confirmedWords = 0
@@ -58,6 +58,12 @@ final class LectureListener {
     /// `from` seconds in, and out loud when `audible` (Dot --lecture-replay and --lecture-demo: lecture mode without a class).
     func start(title: String, replay: URL? = nil, speed: Double = 1, from: Double = 0, audible: Bool = false, keepAudio: Bool = false) async -> Bool {
         guard !isListening else { return true }
+        if let replay {
+            guard let file = try? AVAudioFile(forReading: replay) else { Log.error("lecture: replay: can't read \(replay.path)"); return false }
+            guard AVAudioFramePosition(max(0, from) * file.processingFormat.sampleRate) < file.length else {
+                Log.error("lecture: replay: \(Int(from)) s is past the end of \(replay.lastPathComponent)"); return false
+            }
+        }
         self.keepAudio = keepAudio
         replayURL = replay
         keptAudio = nil
@@ -81,7 +87,6 @@ final class LectureListener {
         liveText = ""
         liveSince = Date()
         feed = ""
-        fedInSegment = ""
         heardWords = 0
         confirmedWords = 0
         let day = DateFormatter(); day.dateFormat = "yyyy-MM-dd HH.mm"; day.locale = Locale(identifier: "en_US_POSIX")
@@ -105,7 +110,7 @@ final class LectureListener {
         isListening = false
         segmentTimer?.invalidate()
         segmentTimer = nil
-        reader?.cancel()
+        let lastReader = reader
         reader = nil
         pumpTask?.cancel()
         pumpTask = nil
@@ -115,10 +120,7 @@ final class LectureListener {
             if keepAudio, let kept = LectureAudio.keep(url) { keptAudio = (kept, true) } else { try? FileManager.default.removeItem(at: url) }
         }
         if replaying, keepAudio, let replayURL { keptAudio = (replayURL, false) }
-        if let stream {
-            let fed = fedInSegment
-            closeSegment(final: try? await stream.finish(), fed: fed)
-        }
+        if let stream, let lastReader { await closeSegment(stream, read: lastReader) }
         stream = nil
         liveText = ""
         let minutes = Int((startedAt.map { Date().timeIntervalSince($0) } ?? 0) / 60)
@@ -143,11 +145,12 @@ final class LectureListener {
 
     var elapsedMinutes: Int { Int((startedAt.map { Date().timeIntervalSince($0) } ?? 0) / 60) }
 
+    /// One reader per stream, reading until the stream is closed (closeSegment), so the chunks finish() flushes reach the
+    /// feed too. Only the current stream's reader drives the live text.
     private func readUpdates() {
         guard let stream else { return }
-        reader?.cancel()
         reader = Task { @MainActor in
-            do { try await stream.startStreaming(source: .microphone) } catch { Log.warn("lecture: stream start: \(error)"); return }
+            do { try await stream.startStreaming(source: .microphone) } catch { Log.warn("lecture: stream start: \(error)"); return "" }
             var heard = ""
             for await update in await stream.transcriptionUpdates {
                 if Task.isCancelled { break }
@@ -161,10 +164,10 @@ final class LectureListener {
                 self.heardWords += count
                 if update.isConfirmed { self.confirmedWords += count }
                 heard += (heard.isEmpty ? "" : " ") + text
-                liveText = heard
-                self.fedInSegment = heard
+                if self.stream === stream { liveText = heard }
                 self.feed += (self.feed.isEmpty ? "" : " ") + text
             }
+            return heard
         }
     }
 
@@ -173,13 +176,11 @@ final class LectureListener {
     private func rollSegment() async {
         guard isListening, let old = stream else { return }
         guard let fresh = try? await makeStream() else { return }
-        reader?.cancel()
-        let fed = fedInSegment
-        fedInSegment = ""
+        let oldReader = reader
         if !replaying { recorder.swapStream(fresh) }
         stream = fresh
         readUpdates()
-        closeSegment(final: try? await old.finish(), fed: fed)
+        if let oldReader { await closeSegment(old, read: oldReader) }
         liveText = ""
         liveSince = Date()
         onStatus?("listening, \(elapsedMinutes) min")
@@ -217,6 +218,7 @@ final class LectureListener {
     /// clock (so the sound played alongside stays in step).
     private func pump(_ url: URL, speed: Double, from: Double, audible: Bool) {
         pumpTask = Task { @MainActor [weak self] in
+            defer { if !Task.isCancelled { Log.info("lecture: replay finished"); self?.onReplayEnded?() } }
             guard let file = try? AVAudioFile(forReading: url) else { Log.warn("lecture: replay: can't read \(url.lastPathComponent)"); return }
             let format = file.processingFormat
             guard let mono = AVAudioFormat(commonFormat: .pcmFormatFloat32, sampleRate: format.sampleRate, channels: 1, interleaved: false) else { return }
@@ -247,21 +249,25 @@ final class LectureListener {
                 let due = began.addingTimeInterval(fed / max(speed, 0.1)).timeIntervalSinceNow
                 if due > 0 { try? await Task.sleep(nanoseconds: UInt64(due * 1_000_000_000)) }
             }
-            guard !Task.isCancelled else { return }
-            Log.info("lecture: replay finished")
-            self?.onReplayEnded?()
         }
     }
 
-    /// A segment ended: its text is the stream's final text, and the words that has past what went on the feed chunk by
-    /// chunk (the last chunk, flushed by finish) go on the feed too. With boosting on, the final text keeps only the
-    /// chunks FluidAudio confirmed, so when it is shorter than the feed the fed chunks stand for the segment.
-    private func closeSegment(final: String?, fed: String) {
-        let done = fed.split(separator: " ").count
-        let words = (final ?? "").split(separator: " ")
-        guard words.count > done else { appendSegment(fed); return }
-        appendSegment(words.joined(separator: " "))
-        feed += (feed.isEmpty ? "" : " ") + words[done...].joined(separator: " ")
+    /// A segment ended. finish() flushes the audio short of a full window as one or two more updates, which the stream's
+    /// reader puts on the feed; cancel() then closes the updates and the reader returns every chunk it read (a reader
+    /// that hasn't closed in 5 s is cancelled). The segment is the final text when it has as many words as the chunks:
+    /// without boosting that is FluidAudio's merged transcript, but with boosting it keeps only the confirmed chunks and
+    /// the last one (FluidAudio 0.15.5), so the chunks stand for it. Never lined up by word count: the boosted final text
+    /// is no prefix of the chunks.
+    private func closeSegment(_ stream: SlidingWindowAsrManager, read: Task<String, Never>) async {
+        let final = (try? await stream.finish()) ?? ""
+        await stream.cancel()
+        let watchdog = Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 5_000_000_000)
+            if !Task.isCancelled { Log.warn("lecture: a finished stream's reader didn't close; cancelled"); read.cancel() }
+        }
+        let chunks = await read.value
+        watchdog.cancel()
+        appendSegment(final.split(separator: " ").count >= chunks.split(separator: " ").count ? final : chunks)
     }
 
     /// Delete the saved transcript (lecture mode: once the class's notes are done, what's kept is notes).

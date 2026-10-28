@@ -25,18 +25,20 @@ public enum LectureTerms {
     public static func extract(_ text: String, limit: Int = 150) -> [String] {
         var count: [String: Int] = [:]
         let lowercase = Set(text.split(whereSeparator: { !$0.isLetter }).filter { $0.first?.isLowercase == true }.map(String.init))
-        func add(_ term: String, _ weight: Int = 1) {
+        func add(_ term: String, _ weight: Int = 1, bold: Bool = false) {
             let t = term.trimmingCharacters(in: CharacterSet(charactersIn: " .,;:()[]\"'*`"))
             guard t.count >= 2, t.count <= 40, !stop.contains(t), t.rangeOfCharacter(from: .letters) != nil else { return }
             if t.allSatisfy(\.isLetter) {
+                guard t.wholeMatch(of: #/[IVX]+/#) == nil else { return }
                 let lower = t.lowercased()
                 let singular = lower.hasSuffix("s") ? String(lower.dropLast()) : lower
-                guard dictionary.names.contains(t) || !dictionary.ordinary.contains(lower), !lowercase.contains(lower), !lowercase.contains(singular), t.wholeMatch(of: #/[IVX]+/#) == nil else { return }
+                // an ordinary word is a term only when the course bolds it (**REST**, **field**)
+                guard bold || ((dictionary.names.contains(t) || !dictionary.ordinary.contains(lower)) && !lowercase.contains(lower) && !lowercase.contains(singular)) else { return }
             }
             count[t, default: 0] += weight
         }
         // **bold phrases**
-        for m in text.matches(of: #/\*\*([^*\n]{2,40})\*\*/#) { add(String(m.1), 3) }
+        for m in text.matches(of: #/\*\*([^*\n]{2,40})\*\*/#) { add(String(m.1), 3, bold: true) }
         // acronyms and mixed case: PCR, mRNA, qPCR, LC-MS, CRISPR-Cas9, t(9;22) left out
         for m in text.matches(of: #/\b(?:[a-z]{0,2}[A-Z]{2,}[a-z]?[A-Z0-9]*(?:-[A-Za-z0-9]+)*|[A-Z][a-z]+[A-Z][A-Za-z0-9]*)\b/#) { add(String(m.0), 2) }
         // capitalized words that aren't the first word of a sentence or line
