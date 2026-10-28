@@ -383,19 +383,42 @@ public enum CallFiles {
         event.kind == .chat ? "\(day(event.start))_\(base(event))_coffee_chat_recap.md" : "\(day(event.start))_\(base(event))_interview_debrief.md"
     }
 
-    /// A prep file already written for this call: dated the call's day or the day before, named for the person or the
-    /// firm, with "prep" in its name. Newest first.
+    /// `name` in `folder`, or with _2, _3, ... before the extension when that file exists: a second call with the same
+    /// person, or at the same firm, the same day never overwrites the first's transcript or recap.
+    public static func unused(_ name: String, in folder: URL, exists: (URL) -> Bool = { FileManager.default.fileExists(atPath: $0.path) }) -> String {
+        let stem = (name as NSString).deletingPathExtension, ext = (name as NSString).pathExtension
+        var candidate = name, n = 2
+        while exists(folder.appendingPathComponent(candidate)) { candidate = "\(stem)_\(n)\(ext.isEmpty ? "" : "." + ext)"; n += 1 }
+        return candidate
+    }
+
+    static let firmWords: Set<String> = ["co", "inc", "llc", "lp", "llp", "ltd", "plc", "the", "and"]
+    static let kindWords: Set<String> = ["call", "interview", "prep", "coffee", "chat"]
+
+    /// A prep file already written for this call: dated the call's day or the day before, with "prep" in its name, and
+    /// named for the person in full, else the firm in full ("Alex_Example", "Northwind"). Only when none is, one named
+    /// for the first name or the firm's first word alone ("2026-10-11_Alex_call_prep.md"): never one with another
+    /// surname after it, so an Alex Jones call doesn't pin Alex Smith's prep. Newest first.
     public static func findPrep(in names: [String], for event: CallEvent, calendar: Calendar = .current) -> String? {
         let days = [day(event.start, calendar: calendar), calendar.date(byAdding: .day, value: -1, to: event.start).map { day($0, calendar: calendar) }].compactMap { $0 }
-        let keys = [event.person, event.firm].filter { !$0.isEmpty }.flatMap { name -> [String] in
-            let parts = slug(name).lowercased().split(separator: "_").map(String.init).filter { $0.count >= 3 }
-            return parts.isEmpty ? [] : [parts.joined(separator: "_"), parts[0]]
-        }
+        func words(_ s: String) -> [String] { slug(s).lowercased().split(separator: "_").map(String.init) }
+        let keys = [words(event.person), words(event.firm).filter { !firmWords.contains($0) }].filter { !$0.isEmpty }
         guard !keys.isEmpty else { return nil }
-        return names.filter { name in
+        let candidates = names.filter { name in
             let n = name.lowercased()
-            return n.hasSuffix(".md") && n.contains("prep") && days.contains(where: { n.hasPrefix($0) }) && keys.contains(where: { n.contains($0) })
-        }.sorted(by: >).first
+            return n.hasSuffix(".md") && n.contains("prep") && days.contains(where: { n.hasPrefix($0) })
+        }.map { (name: $0, words: words(String($0.dropLast(3)))) }
+        func has(_ w: [String], _ key: [String]) -> Bool {
+            w.count >= key.count && (0...(w.count - key.count)).contains { Array(w[$0..<$0 + key.count]) == key }
+        }
+        for key in keys {
+            if let hit = candidates.filter({ has($0.words, key) }).map(\.name).sorted(by: >).first { return hit }
+        }
+        return candidates.filter { c in
+            keys.contains { key in key.count > 1 && c.words.indices.contains { i in
+                c.words[i] == key[0] && (i + 1 == c.words.count || kindWords.contains(c.words[i + 1]))
+            } }
+        }.map(\.name).sorted(by: >).first
     }
 }
 

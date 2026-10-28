@@ -1684,6 +1684,9 @@ final class Talk {
     /// True while a call is on and false after: AppDelegate hides every Dot window from screen sharing for the call.
     var onCallChanged: ((Bool) -> Void)?
     var isOnCallMode: Bool { callSession?.ended == false }
+    /// A call on, or its after-call pass (both recordings transcribed again, the transcript saved) still running: an
+    /// install now would lose the call (`Dot --jobs`).
+    var callBusy: Bool { callSession.map { !$0.ended || $0.result == nil } ?? false }
 
     /// The call on the calendar now (or a call with no calendar event), its prep pinned, both sides heard. `dial`: the
     /// card's button also dials the number on the event through the Mac's Phone app.

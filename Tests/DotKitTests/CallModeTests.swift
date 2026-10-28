@@ -190,6 +190,23 @@ final class CallModeTests: XCTestCase {
                      "\(day)_Alex_Example_coffee_chat_recap.md"]
         XCTAssertEqual(CallFiles.findPrep(in: names, for: chat), "\(yesterday)_Alex_Example_call_prep.md")
         XCTAssertEqual(CallFiles.findPrep(in: ["\(day)_Northwind_Partners_prep.md"], for: interview), "\(day)_Northwind_Partners_prep.md")
+        // another Alex's prep is not this call's; a file under his first name alone is, when nothing names him in full
+        let jones = CallEvent(title: "Call: Alex Jones", start: t0, end: t0, kind: .chat, person: "Alex Jones")
+        XCTAssertNil(CallFiles.findPrep(in: ["\(day)_Alex_Smith_call_prep.md", "\(day)_Alexandra_Jones_call_prep.md"], for: jones))
+        XCTAssertEqual(CallFiles.findPrep(in: ["\(day)_Alex_Smith_call_prep.md", "\(day)_Alex_call_prep.md"], for: jones), "\(day)_Alex_call_prep.md")
+        XCTAssertEqual(CallFiles.findPrep(in: ["\(day)_Alex_call_prep.md", "\(day)_Alex_Jones_call_prep.md"], for: jones), "\(day)_Alex_Jones_call_prep.md")
+        // "Kevin Wu": the short surname still counts, so Kevin Lee's prep doesn't match
+        let wu = CallEvent(title: "Call: Kevin Wu", start: t0, end: t0, kind: .chat, person: "Kevin Wu")
+        XCTAssertNil(CallFiles.findPrep(in: ["\(day)_Kevin_Lee_call_prep.md"], for: wu))
+    }
+
+    func testSecondCallSameDayGetsItsOwnFiles() {
+        let taken: Set<String> = ["/v/2026-10-28_Alex_Example_call_transcript.md", "/v/2026-10-28_Alex_Example_call_transcript_2.md"]
+        let folder = URL(fileURLWithPath: "/v", isDirectory: true)
+        XCTAssertEqual(CallFiles.unused("2026-10-28_Alex_Example_call_transcript.md", in: folder, exists: { taken.contains($0.path) }),
+                       "2026-10-28_Alex_Example_call_transcript_3.md")
+        XCTAssertEqual(CallFiles.unused("2026-10-28_Northwind_interview_debrief.md", in: folder, exists: { taken.contains($0.path) }),
+                       "2026-10-28_Northwind_interview_debrief.md")
     }
 
     func testPrepSchedule() {

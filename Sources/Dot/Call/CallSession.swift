@@ -25,6 +25,9 @@ final class CallSession {
     private var nudgeUp = false
     private var tick: Timer?
     private var replaying = false
+    /// When the Mac's audio first carried sound this call (nil until then), and whether he's been told it hasn't.
+    private var theirSoundAt: Date?
+    private var warnedSilent = false
     private(set) var ended = false
     private(set) var helps: [CallHelp] = []
     private(set) var nudged = false
@@ -87,8 +90,9 @@ final class CallSession {
         tick = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
             Task { @MainActor in self?.everySecond() }
         }
-        window.status(ear.hearsThem ? (listenOnly ? "listening to both sides; the debrief comes after" : "hearing both sides")
-                                    : "hearing only you: take the call on this Mac so Dot hears them")
+        // a replay plays both files; a live tap only counts once sound comes through it (theirSide)
+        window.status(!ear.hearsThem ? "hearing only you: take the call on this Mac so Dot hears them"
+                      : replaying ? bothSides : "hearing you; waiting for their side to come through this Mac")
         Log.info("call: on with \(event.who) (\(event.kind.rawValue)\(listenOnly ? ", listen-only" : ""))\(prepURL.map { ", prep \($0.lastPathComponent)" } ?? ", no prep file"), \(checklist.count) checklist items")
     }
 
@@ -125,9 +129,28 @@ final class CallSession {
         if !newly.isEmpty { window.check(newly) }
     }
 
+    private var bothSides: String { listenOnly ? "listening to both sides; the debrief comes after" : "hearing both sides" }
+
+    /// The tap starting proves nothing: without System Audio Recording (or with the call on his phone) it records exact
+    /// silence. Both sides are claimed once any sound comes through the Mac's audio; a minute in with him talking and
+    /// none, the window says so and why.
+    private func theirSide() {
+        guard ear.hearsThem, !replaying, theirSoundAt == nil, let peak = ear.theirPeak() else { return }
+        if peak > 0.001 {
+            theirSoundAt = Date()
+            window.status(bothSides)
+            Log.info("call: their side is coming through the Mac's audio")
+        } else if !warnedSilent, Date().timeIntervalSince(ear.began) > 60, ear.lines.contains(where: { $0.side == .me }) {
+            warnedSilent = true
+            window.status("no sound from them yet: is the call on this Mac? Dot needs System Audio Recording (System Settings > Privacy & Security)")
+            Log.warn("call: a minute in, the system audio tap has heard nothing (no System Audio Recording, or the call isn't on this Mac)")
+        }
+    }
+
     private func everySecond() {
         guard !ended else { return }
         window.clock(CallTranscript.clock(Date().timeIntervalSince(ear.began)))
+        theirSide()
         if !listenOnly {
             askHelper()
             releaseNudge()

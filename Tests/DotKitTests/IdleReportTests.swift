@@ -14,6 +14,8 @@ final class IdleReportTests: XCTestCase {
         XCTAssertFalse(IdleReport(workingAgents: ["email"]).idle)
         XCTAssertFalse(IdleReport(cardsWaiting: 2).idle)
         XCTAssertFalse(IdleReport(lecture: true).idle)
+        XCTAssertFalse(IdleReport(call: true).idle)
+        XCTAssertEqual(IdleReport(call: true).reasons, ["call mode is on"])
     }
 
     func testReasonsNameTheWork() {
@@ -27,7 +29,7 @@ final class IdleReportTests: XCTestCase {
 
     func testWireRoundTrip() throws {
         let report = IdleReport(jobs: [.init(id: "ab12cd", phase: "starting", goal: "g")], queued: 1, workingAgents: ["a"],
-                                cardsWaiting: 3, lecture: false)
+                                cardsWaiting: 3, lecture: false, call: true)
         let data = try JSONSerialization.data(withJSONObject: report.wire)
         let back = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
         XCTAssertEqual(IdleReport(wire: back), report)

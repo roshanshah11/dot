@@ -40,7 +40,8 @@ final class CallEar {
     /// Each side's recording, its first sample's offset from `began`, kept until the after-call pass.
     private(set) var meAudio: (url: URL, offset: TimeInterval)?
     private(set) var themAudio: (url: URL, offset: TimeInterval)?
-    /// The tap is on: Dot can hear them (false on a Mac without macOS 14.2, or when the tap failed).
+    /// The tap is on (false on a Mac without macOS 14.2, or when the tap failed). On is not heard: without System Audio
+    /// Recording, or with the call on another device, the tap records silence; theirPeak() tells.
     private(set) var hearsThem = false
     var onLine: ((CallLine) -> Void)?
     /// A replay ran out of audio on both sides.
@@ -51,6 +52,12 @@ final class CallEar {
 
     static var audioFolder: URL {
         FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0].appendingPathComponent("Dot/call-audio", isDirectory: true)
+    }
+
+    /// The loudest sample through the Mac's audio since the last read; nil without a live tap (a replay, a failed tap).
+    func theirPeak() -> Float? {
+        guard #available(macOS 14.2, *), let tap = tap as? SystemAudioTap else { return nil }
+        return tap.peak()
     }
 
     /// The words heard last on a side, live.

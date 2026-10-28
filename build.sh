@@ -85,11 +85,11 @@ fi
 lecture_busy() {
   local report
   report=$("$BIN" --jobs --json 2>/dev/null || true)   # exits 1 when busy, 3 when Dot doesn't answer
-  [[ "$report" == *'"lecture":true'* ]] && return 0
+  [[ "$report" == *'"lecture":true'* || "$report" == *'"call":true'* ]] && return 0   # call mode: a relaunch loses the call
   pgrep -f "You take a student's class notes for him, live|Class is over. During it, Dot wrote these notes live" >/dev/null
 }
 if [[ -z "${DOT_INSTALL_DURING_LECTURE:-}" ]] && lecture_busy; then
-  echo "lecture mode is writing a class now: built and signed $APP, not installed (a relaunch would end the class)" >&2
+  echo "lecture or call mode is on now: built and signed $APP, not installed (a relaunch would end the class or the call)" >&2
   echo "install after class, or set DOT_INSTALL_DURING_LECTURE=1 to end it" >&2
   exit 3
 fi

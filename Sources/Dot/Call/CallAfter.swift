@@ -41,7 +41,7 @@ enum CallAfter {
         let them = event.person.isEmpty ? (event.firm.isEmpty ? "Them" : event.firm) : event.person
         var text = CallTranscript.markdown(heading: title, lines: lines, them: them)
         text += "\n---\nTranscribed on this Mac from Dot's call mode (\(source)); his side from his microphone, theirs from the Mac's audio.\n"
-        let url = folder.appendingPathComponent(CallFiles.transcriptName(event))
+        let url = folder.appendingPathComponent(CallFiles.unused(CallFiles.transcriptName(event), in: folder))
         do {
             try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
             try text.write(to: url, atomically: true, encoding: .utf8)
@@ -69,7 +69,7 @@ enum CallAfter {
         What Dot showed him during the call: \(shown.isEmpty ? "nothing" : shown.joined(separator: " | "))
 
         Do the after-call work the networking skill describes (thank-yous, step 3), the way his recaps in \(networking) are written:
-        1. The recap at \(networking)/\(CallFiles.recapName(event)), in the shape of the newest *_coffee_chat_recap.md there: a heading with the call, how it happened, the source (this transcript); "What \(event.person.split(separator: " ").first.map(String.init) ?? "they") said" (everything substantive, their path, their firm, their advice, deals and companies named); "How it went" (good and missed, judged against the During rules in Coffee chat lessons.md: small talk, follow-ups on their words, a researched deal used, the story they asked for, the close ask, questions running long); "Next".
+        1. The recap at \(networking)/\(CallFiles.unused(CallFiles.recapName(event), in: URL(fileURLWithPath: networking, isDirectory: true))), in the shape of the newest *_coffee_chat_recap.md there: a heading with the call, how it happened, the source (this transcript); "What \(event.person.split(separator: " ").first.map(String.init) ?? "they") said" (everything substantive, their path, their firm, their advice, deals and companies named); "How it went" (good and missed, judged against the During rules in Coffee chat lessons.md: small talk, follow-ups on their words, a researched deal used, the story they asked for, the close ask, questions running long); "Next".
         2. New lessons into \(networking)/Coffee chat lessons.md under the right headings, each tagged with who said it and the date; skip what is already there; update its "Last updated" line.
         3. The tracker: `python3 ~/.claude/skills/networking/scripts/nw.py call "\(event.who)" --at <the call's ISO time> --status done`, a one-line `set ... notes=`, and `add ... --referred-by "\(event.who)"` for each person they offered or named.
         4. The thank-you, written with the roshan-email skill: one specific thing they said, and the ask for someone else to talk to (unless they already gave names: then thank them for those). Save it as an Outlook draft on their thread the way the networking skill saves reply drafts. Never send it, and never schedule it.
@@ -84,7 +84,7 @@ enum CallAfter {
         return """
         Interview at \(event.firm.isEmpty ? event.who : event.firm)\(who) just ended (\(minutes) min; calendar: "\(event.title)"). Call mode saved the whole interview, both sides labeled: \(transcript.path)\(prep.map { "\nHis prep for it: \($0.path)" } ?? "")
 
-        1. The debrief at \(folder)/\(CallFiles.recapName(event)): who interviewed him and the round; every question asked, in order, each with his answer in a line; what landed; what to fix, each with the better answer in two lines from his own material (\(folder)/roshan_interview_data_pack_merged.md and his stories there; never invent experience); any technical he missed, with the right answer; next steps and timing they named.
+        1. The debrief at \(folder)/\(CallFiles.unused(CallFiles.recapName(event), in: URL(fileURLWithPath: folder, isDirectory: true))): who interviewed him and the round; every question asked, in order, each with his answer in a line; what landed; what to fix, each with the better answer in two lines from his own material (\(folder)/roshan_interview_data_pack_merged.md and his stories there; never invent experience); any technical he missed, with the right answer; next steps and timing they named.
         2. In the interview data pack, update an open gap only where this interview answered it.
         3. A thank-you note to the interviewer with the roshan-email skill, if their email is in Atlas or his Outlook: saved as an Outlook draft, never sent.
         4. Remember the interview in Atlas: firm, round, date, interviewer, how it went in one line, the next step.
