@@ -249,6 +249,11 @@ enum AfterClassReplay {
             .appendingPathComponent(course, isDirectory: true)
         try? FileManager.default.createDirectory(at: out, withIntermediateDirectories: true)
         guard let text = try? String(contentsOf: source, encoding: .utf8) else { print("FAIL: can't read \(source.path)"); return false }
+        // a --began that doesn't parse is an error, not the replay's own start: that would shift every transcript time
+        let clock = DateFormatter(); clock.dateFormat = "yyyy-MM-dd HH:mm:ss"; clock.locale = Locale(identifier: "en_US_POSIX")
+        let explicitStart = value("--began").flatMap(clock.date(from:))
+        if let given = value("--began"), explicitStart == nil { print("FAIL: --began \"\(given)\" is not yyyy-MM-dd HH:mm:ss"); return false }
+        if args.contains("--began"), value("--began") == nil { print("FAIL: --began needs a time, yyyy-MM-dd HH:mm:ss"); return false }
         var file = CourseNotesFile.parse(text, fallbackTitle: "\(course) notes")
         guard let section = file.section(key: key), var notes = ClassNotes.parse(section: section) else { print("FAIL: no \(key) in \(source.lastPathComponent)"); return false }
         if let n = value("--his").flatMap(Int.init), n > 0 {
@@ -276,8 +281,7 @@ enum AfterClassReplay {
             var transcript = value("--transcript").flatMap { try? String(contentsOfFile: DotConfig.expand($0), encoding: .utf8) } ?? ""
             var source = "the live machine transcript"
             if let audio = value("--audio") {
-                let clock = DateFormatter(); clock.dateFormat = "yyyy-MM-dd HH:mm:ss"; clock.locale = Locale(identifier: "en_US_POSIX")
-                let began = value("--began").flatMap(clock.date(from:)) ?? started
+                let began = explicitStart ?? started
                 if let fresh = await AfterClassPass.retranscribe(audio: URL(fileURLWithPath: DotConfig.expand(audio)), began: began, transcriber: Transcriber(),
                                                                  title: "\(course) \(key)", into: transcriptOut, talk: course == LectureCourses.otherLectures) {
                     transcript = fresh
