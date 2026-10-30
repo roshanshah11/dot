@@ -63,6 +63,9 @@ final class Talk {
     private var coursesInSession: [ObjectIdentifier: Set<String>] = [:]
     /// What he got wrong and how he asked to be taught, per course or subject (2026-10-29, DeepTutor's learner memory).
     private lazy var tutor = TutorStore(root: config.talkRootURL.appendingPathComponent("tutor", isDirectory: true))
+    /// A morning review in progress: a panel answer is graded and then the next due miss asked, not "stop there".
+    private var reviewStartedAt: Date?
+    private var reviewActive: Bool { lectureSession == nil && reviewStartedAt.map { Date().timeIntervalSince($0) < 45 * 60 } == true }
     /// The question before this one, for "start another agent on that".
     private var previousAsked = ""
     /// What talk and think each said lately, so a follow-up to one ("show it to me") reaches the other with its referent.
@@ -2961,6 +2964,15 @@ final class Talk {
         lastAsked = line
         lastAskWasTyped = false
         retriedTurn = false
+        if reviewActive {
+            // the review's next question: misses still due now (the one just answered among them until its tag lands)
+            let now = Date()
+            let due = dueBlocks(now: now)
+            let message = "[panel] \(line). this is his morning review: grade it in one spoken sentence, saying why when it is wrong, and mark it [GOT:id] or [MISS:id]; then ask the next due miss below that is not the one he just answered (math or a figure: one line and [THINK]). when none is left, end with one line on how it went.\n[context]\nnow: \(Self.nowLine())\n" + (panels.contextLines() + due).joined(separator: "\n") + "\n[/context]"
+            Log.info("review: panel answer; \(due.filter { $0.hasPrefix("- m") }.count) due miss(es) listed")
+            sendTurn(message, images: [], to: session, kind: .talk)
+            return
+        }
         let message = "[panel] \(line). grade it in one spoken sentence, saying why when it is wrong, and stop there (a [MISS] or [GOT] at the end, as the tutor rules say, is not speech); if he was walking through steps, append [THINK] so the stronger model decides what comes next. never say what comes next yourself (you can't see whether the panel has another step), and don't ask whether to go on.\n[context]\nnow: \(Self.nowLine())\n" + panels.contextLines().joined(separator: "\n") + "\n[/context]"
         sendTurn(message, images: [], to: session, kind: .talk)
     }
@@ -3250,6 +3262,11 @@ final class Talk {
         return lines
     }
 
+    /// The blocks of every subject with a miss due today, for the review.
+    private func dueBlocks(now: Date) -> [String] {
+        tutor.subjects().filter { s in tutor.state(s).misses.contains { $0.isDue(now: now) } }.flatMap { tutorBlock($0, now: now) }
+    }
+
     /// The course he is in for a tutor tag that names none.
     private var currentSubject: String? {
         lastCourse.flatMap { Date().timeIntervalSince($0.at) < 2 * 3600 ? $0.code : nil }
@@ -3273,8 +3290,9 @@ final class Talk {
         }
         guard let session = session(for: .talk) else { Log.info("review: no talk session"); return }
         let now = Date()
-        let blocks = tutor.subjects().filter { s in tutor.state(s).misses.contains { $0.isDue(now: now) } }.flatMap { tutorBlock($0, now: now) }
-        guard !blocks.isEmpty else { Log.info("review: nothing due"); return }
+        let blocks = dueBlocks(now: now)
+        guard !blocks.isEmpty else { Log.info("review: nothing due"); reviewStartedAt = nil; return }
+        reviewStartedAt = now
         endBench()
         driveRequested = false
         lastAsked = "review my misses"

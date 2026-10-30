@@ -101,7 +101,7 @@ public struct TutorStyle: Equatable {
 public enum TutorLog {
     /// A right answer this soon after the miss is the retry after a hint, not recall.
     static let assistedHours: Double = 6
-    static let firstInterval: Double = 1, secondInterval: Double = 3
+    static let firstInterval = 1, secondInterval = 3
     /// Right answers on different days that resolve a miss.
     static let resolveAfter = 2
 
@@ -131,19 +131,20 @@ public enum TutorLog {
     }
 
     /// Every miss and style in one subject's events, in order.
-    public static func fold(_ events: [TutorEvent], subject: String) -> (misses: [TutorMiss], styles: [TutorStyle]) {
+    public static func fold(_ events: [TutorEvent], subject: String, calendar: Calendar = .current) -> (misses: [TutorMiss], styles: [TutorStyle]) {
         var misses: [String: TutorMiss] = [:], order: [String] = [], styles: [TutorStyle] = []
-        let calendar = Calendar.current
+        // calendar days, not 86,400 s: across a daylight-saving change "+1 day" stays the next date
+        func days(_ n: Int, after date: Date) -> Date { calendar.date(byAdding: .day, value: n, to: date) ?? date.addingTimeInterval(Double(n) * 86400) }
         for e in events.sorted(by: { $0.at < $1.at }) {
             switch e.kind {
             case .miss:
                 if var m = misses[e.id] {
                     m.lastMissAt = e.at; m.times += 1; m.streak = 0; m.lastGotAt = nil
-                    m.due = e.at.addingTimeInterval(firstInterval * 86400)
+                    m.due = days(firstInterval, after: e.at)
                     misses[e.id] = m
                 } else if let idea = e.idea, !idea.isEmpty {
                     misses[e.id] = TutorMiss(id: e.id, subject: subject, idea: idea, said: e.said ?? "", gap: e.gap ?? "", firstAt: e.at,
-                                             lastMissAt: e.at, times: 1, streak: 0, lastGotAt: nil, due: e.at.addingTimeInterval(firstInterval * 86400))
+                                             lastMissAt: e.at, times: 1, streak: 0, lastGotAt: nil, due: days(firstInterval, after: e.at))
                     order.append(e.id)
                 }
             case .got:
@@ -151,7 +152,7 @@ public enum TutorLog {
                 if e.at.timeIntervalSince(m.lastMissAt) < assistedHours * 3600 { continue }
                 if let last = m.lastGotAt, calendar.isDate(last, inSameDayAs: e.at) { continue }
                 m.streak += 1; m.lastGotAt = e.at
-                m.due = m.streak >= resolveAfter ? nil : e.at.addingTimeInterval(secondInterval * 86400)
+                m.due = m.streak >= resolveAfter ? nil : days(secondInterval, after: e.at)
                 misses[e.id] = m
             case .style:
                 guard let words = e.said, !words.isEmpty else { continue }
@@ -166,10 +167,11 @@ public enum TutorLog {
         text.lowercased().components(separatedBy: CharacterSet.alphanumerics.inverted).filter { !$0.isEmpty }.joined(separator: " ")
     }
 
-    /// His own words, or not: a STYLE line counts only when what it quotes is in what he said that turn.
+    /// His own words, or not: a STYLE line counts only when what it quotes is in what he said that turn, whole words
+    /// in order ("low" is not in "slowly please").
     public static func isHisWords(_ words: String, in asked: String) -> Bool {
         let w = normalized(words), a = normalized(asked)
-        return w.count >= 3 && a.contains(w)
+        return w.count >= 3 && (" " + a + " ").contains(" " + w + " ")
     }
 
     /// The block that joins a conversation: open misses, the due ones first, and how he asked to be taught.

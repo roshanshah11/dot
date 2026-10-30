@@ -129,6 +129,22 @@ final class TutorLogTests: XCTestCase {
         XCTAssertTrue(store.record(.style(subject: "math20250", words: "slower"), subject: nil, asked: "go slower please", now: t0).hasPrefix("style refused") == false)
         XCTAssertTrue(store.record(.style(subject: "math20250", words: "he likes figures"), subject: nil, asked: "ok next one", now: t0).hasPrefix("style refused"))
         XCTAssertEqual(store.state("math20250").styles.map(\.words), ["slower"])
+        // whole words only: "low" is not in "slowly please"
+        XCTAssertFalse(TutorLog.isHisWords("low", in: "slowly please"))
+        XCTAssertTrue(TutorLog.isHisWords("Slowly, please!", in: "ok, slowly please"))
+    }
+
+    func testTheNextDayAcrossTheFallBack() {
+        // Chicago falls back at 2 am on 2026-11-01, a 25-hour day: 86,400 s after 00:30 is 23:30 the same date,
+        // which would make the miss due at once. Calendar days put it on the 2nd.
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(identifier: "America/Chicago")!
+        let early = calendar.date(from: DateComponents(year: 2026, month: 11, day: 1, hour: 0, minute: 30))!
+        XCTAssertEqual(calendar.component(.day, from: early.addingTimeInterval(86400)), 1)   // the old arithmetic's trap
+        let m = TutorLog.fold([TutorEvent(kind: .miss, at: early, id: "m001", idea: "kernel")], subject: "x", calendar: calendar).misses[0]
+        let due = try! XCTUnwrap(m.due)
+        XCTAssertEqual(calendar.component(.day, from: due), 2)
+        XCTAssertFalse(m.isDue(now: early.addingTimeInterval(3600), calendar: calendar))
     }
 
     func testNewIDAvoidsTaken() {
