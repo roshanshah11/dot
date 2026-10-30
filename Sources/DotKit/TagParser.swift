@@ -32,6 +32,7 @@ import Foundation
 ///   [PHOTO:x,y:query] [TYPE_TEXT:e12:words]
 ///   [EDIT:m2:recolor:red] [EDIT:m2:move:x,y] [EDIT:m2:scale:1.4] [ERASE:m2] [UNDO] [ADD] [ADD:LABEL:...]
 ///   [FIGURE:animal cell|nucleus: sphere 1 #7b5cff; ...]   a 3D figure he can turn and click (FigureRecipe)
+///   [MISS:subject:idea | he said | what was off] [MISS:m4k2] [GOT:m4k2] [STYLE:subject:his words]   the tutor log (TutorMark)
 public enum DotTag: Equatable {
     case point(x: Int, y: Int, label: String, screen: Int?)
     case pointNone
@@ -77,6 +78,8 @@ public enum DotTag: Equatable {
     case inkEdit(InkEdit)
     /// A 3D figure in its own small panel (parity D5).
     case figure(FigureRecipe)
+    /// What he got wrong or right, or how he asked to be taught: a line in the tutor log (2026-10-29).
+    case tutor(TutorMark)
 }
 
 public enum ShapeKind: String, Equatable, Sendable { case line, arrow, circle, curve, polygon }
@@ -101,7 +104,7 @@ public extension DotTag {
     var isVisual: Bool {
         switch self {
         case .point, .highlight, .target, .hover, .shape, .card, .reveal, .step, .clearBoard, .type, .web, .find, .stock, .place, .images, .ink, .inkEdit, .figure: return true
-        case .pointNone, .agent, .newAgent, .tell, .note, .jobMessage, .stopAgent, .routine, .think, .act: return false
+        case .pointNone, .agent, .newAgent, .tell, .note, .jobMessage, .stopAgent, .routine, .think, .act, .tutor: return false
         }
     }
 
@@ -139,11 +142,11 @@ public struct ParsedResponse: Equatable {
 public enum TagParser {
     static let tagNames = ["POINT", "HIGHLIGHT", "TARGET", "HOVER", "SHAPE", "CARD", "REVEAL", "STEP", "CLEAR_BOARD", "TYPE", "WEB", "FIND", "STOCK", "PLACE", "IMAGES", "AGENT", "NEW_AGENT", "TELL", "NOTE", "STOP_AGENT", "JOB", "ROUTINE", "THINK", "OPEN", "SCROLL", "KEY", "CLICK", "INSERT", "GO", "PLAY", "SETTING", "SPOTIFY",
                            "WRITE", "LABEL", "NUM", "FRAME", "UNDERLINE", "STRIKE", "CHECK", "CROSS", "CONNECT", "TRACE", "STICKY", "PHOTO",
-                           "TYPE_TEXT", "EDIT", "ERASE", "UNDO", "ADD", "FIGURE"]
+                           "TYPE_TEXT", "EDIT", "ERASE", "UNDO", "ADD", "FIGURE", "MISS", "GOT", "STYLE"]
 
     // swiftlint:disable:next force_try
     static let pattern = try! NSRegularExpression(
-        pattern: #"\[(POINT|HIGHLIGHT|TARGET|HOVER|SHAPE|CARD|REVEAL|STEP|CLEAR_BOARD|TYPE_TEXT|TYPE|WEB|FIND|STOCK|PLACE|IMAGES|AGENT|NEW_AGENT|TELL|NOTE|STOP_AGENT|JOB|ROUTINE|THINK|OPEN|SCROLL|KEY|CLICK|INSERT|GO|PLAY|SETTING|SPOTIFY|WRITE|LABEL|NUM|FRAME|UNDERLINE|STRIKE|CHECK|CROSS|CONNECT|TRACE|STICKY|PHOTO|EDIT|ERASE|UNDO|ADD|FIGURE)(?::([^\]]*))?\]"#,
+        pattern: #"\[(POINT|HIGHLIGHT|TARGET|HOVER|SHAPE|CARD|REVEAL|STEP|CLEAR_BOARD|TYPE_TEXT|TYPE|WEB|FIND|STOCK|PLACE|IMAGES|AGENT|NEW_AGENT|TELL|NOTE|STOP_AGENT|JOB|ROUTINE|THINK|OPEN|SCROLL|KEY|CLICK|INSERT|GO|PLAY|SETTING|SPOTIFY|WRITE|LABEL|NUM|FRAME|UNDERLINE|STRIKE|CHECK|CROSS|CONNECT|TRACE|STICKY|PHOTO|EDIT|ERASE|UNDO|ADD|FIGURE|MISS|GOT|STYLE)(?::([^\]]*))?\]"#,
         options: []
     )
 
@@ -217,6 +220,8 @@ public enum TagParser {
             return .ink(spec)
         case "THINK":
             return .think
+        case "MISS", "GOT", "STYLE":
+            return TutorMark.parse(kind: kind, payload: payload).map { .tutor($0) }
         case "OPEN", "SCROLL", "KEY", "CLICK", "INSERT", "GO", "PLAY", "SETTING", "SPOTIFY":
             return ActionTags.make(kind: kind, payload: payload).map { .act($0) }
         case "CLEAR_BOARD":

@@ -233,6 +233,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return paused.count
         }
         talk.morningAnswer = { [weak self] yes, adjust in self?.morning.decideFirst(yes: yes, adjust: adjust) }
+        morning.reviewLine = { [weak self] in self?.talk.reviewLine() }
+        morning.startReview = { [weak self] in self?.talk.startReview() }
         morning.canShow = { [weak self] in
             guard let self else { return false }
             return self.talk.isIdle && !Quiet.now(self.config)

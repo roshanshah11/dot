@@ -28,6 +28,11 @@ final class MorningSuggestions {
     /// Registers a "do it" brief's routine (agent name, when, brief); true when it took. Unset until the
     /// wiring batch points it at RoutineScheduler.add with runFirstNow false: the handoff is run one.
     var addRoutine: ((_ agentName: String, _ when: String, _ brief: String) -> Bool)?
+    /// Misses due today in the tutor log, as the card's first line ("review 3 misses due in math 20250"); nil when
+    /// none are due or a class is on. His yes starts the review in talk, never an agent (2026-10-29: spaced review
+    /// only as an offer, outside lecture mode).
+    var reviewLine: (() -> String?)?
+    var startReview: (() -> Void)?
 
     init(config: DotConfig, atlas: AtlasBridge, hud: NotchHUD, agents: AgentManager) {
         self.config = config
@@ -60,13 +65,15 @@ final class MorningSuggestions {
         if state.dismissed.contains(today) || shownToday >= 3 { return }
         guard Date().timeIntervalSince(lastShownAt) > 20 * 60, hud.model.morning == nil, canShow() else { return }
         let scout = ScoutBriefFile.load(from: briefsFolder)
-        guard scout != nil || brief != nil else { return }
+        let review = reviewLine?().map { MorningSuggestion(key: "review:" + today, text: $0, brief: "") }
+        guard scout != nil || brief != nil || review != nil else { return }
         if let scout {
             Log.info("morning: today's scout briefs: \(scout.briefs.count)" + (scout.problems.isEmpty ? "" : "; " + scout.problems.prefix(4).joined(separator: "; ")))
         }
         let declined = Set(state.decisions.filter { Self.recent($0.date, days: 7) }.map(\.key))
-        let items = MorningPlanner.suggestions(scout: scout, deadlines: brief?.deadlines ?? [], today: brief?.today ?? [], unanswered: brief?.unanswered ?? [],
+        var items = MorningPlanner.suggestions(scout: scout, deadlines: brief?.deadlines ?? [], today: brief?.today ?? [], unanswered: brief?.unanswered ?? [],
                                               commitments: brief?.commitments ?? [], declined: declined)
+        if let review, !declined.contains(review.key) { items.insert(review, at: 0) }
         guard !items.isEmpty else { Log.info("morning: nothing to offer today"); return }
         shownToday += 1
         lastShownAt = Date()
@@ -90,6 +97,11 @@ final class MorningSuggestions {
         record(key: item.id, text: item.text, decision: yes ? "yes" : "skip")
         hud.morningDecided(item)
         guard yes else { Log.info("morning: skipped: \(item.id): \(Log.short(item.text, 70))"); return }
+        if item.id.hasPrefix("review:") {
+            Log.info("morning: do it: \(item.id): the review starts in talk")
+            startReview?()
+            return
+        }
         let suggestion = offered[item.id] ?? MorningSuggestion(key: item.id, text: item.text, brief: item.brief)
         // A scout brief names its agent; handoff founds it when it is new. A template gets a job agent of its own.
         let change = adjust.map { "\n\nHis change when he said yes: \($0)" } ?? ""

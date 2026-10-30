@@ -118,7 +118,7 @@ Checked against the code on 2026-10-26 (parity US-11). Paths are this Mac's.
   it puts in the notes, in the course folder's `notes-images/`, with the notes and the class transcript.
 - **Dot's own state.** `~/Dot/home-state.sqlite` (drafts, scroll positions, reactions, prompt cards, agent icons,
   dictation suggestions); `~/Dot/agents/<name>/` (each agent's folder, its outputs and pictures); `~/Dot/rules.json`,
-  `~/Dot/routines.json`, `~/Dot/talk/`; settings and the dictionary in `~/.config/dot/`.
+  `~/Dot/routines.json`, `~/Dot/talk/` (with the tutor log in `~/Dot/talk/tutor/`); settings and the dictionary in `~/.config/dot/`.
 - **The log.** `~/Library/Logs/Dot/dot.log` holds events and at most the first 120 characters of what you say and
   what agents report; never screenshot bytes or passwords. Dot doesn't trim it.
 - **Secrets.** Passwords come from gopass at the moment of a login and are never logged. The Spotify
@@ -288,6 +288,31 @@ Dictation is left to [Murmur](https://github.com/roshanshah11/murmur).
 
 MIT. Built by Roshan Shah.
 
+## The tutor log: what he gets wrong comes back (2026-10-29)
+
+From a study of [DeepTutor](https://github.com/HKUDS/DeepTutor) (HKU, arXiv 2604.26962), whose ablation found its
+learner memory carried most of its personalization. His pick was all six pieces:
+
+- **A miss log per course or subject.** When Dot grades something of his and it is wrong, the answer ends with
+  `[MISS:math20250:the idea | what he said | what was off]`; a listed miss is `[MISS:m4k2]` again or `[GOT:m4k2]`.
+  Each subject is an append-only file, `~/Dot/talk/tutor/<subject>.jsonl`, with his words and what he asked that
+  turn on every line (`DotKit/TutorLog.swift`). Its open misses join the conversation with the course map, and again
+  whenever he asks to be quizzed or drilled, so a drill starts from them.
+- **The schedule** is DeepTutor's SM-2-style start: a miss comes back the next day, a first right answer pushes it
+  three days out, and a second right answer on another day resolves it. A right answer within six hours of the miss
+  is the retry after a hint and moves nothing; one lucky answer never resolves a miss.
+- **Quiz questions that tell ideas apart**: each wrong option is a specific mistake (his own misses first), as long
+  and specific as the right one. **Explain it back**: in a quiz he asked for, a concept or an argument gets one
+  question in his own words, graded for what is missing. **Checked keys**: a computed answer is worked out with
+  python before the question goes up.
+- **How he wants it taught**, in his words only: `[STYLE:math20250:"just show me the figure"]` is kept only when
+  the quoted words are in what he said that turn, and joins with the course's misses. After a second explanation
+  that didn't land, Dot changes the representation, not the wording.
+- **Review on the morning card**: when misses are due, the card's first line offers "review 3 misses due in math
+  20250"; his yes starts the review in talk, one question at a time. Never during a class, and never on its own.
+
+The rules are `Prompts.tutorRules` (`Brain/Prompts+Tutor.swift`), in both the talk and think prompts.
+
 ## HeyClicky parity: drawing, jobs you can steer, cards Dot designs (2026-10-26)
 
 The plan set is `~/Dot/plans/2026-10-26-heyclicky-parity/`; each item's commit is in docs/heyclicky-gaps.md.
@@ -373,7 +398,8 @@ The plan set is `~/Dot/plans/2026-10-26-heyclicky-parity/`; each item's commit i
   by number, starts every proof with his attempt, grades a written proof
   for the gaps a proof course marks, checks numbers with python and sympy before saying them
   (the one shell command talk mode may run, `TalkGuard.isComputationCommand`), drills with
-  quiz cards and remembers misses in Atlas. (A homework guard shipped that afternoon and was
+  quiz cards. (The rule that remembered misses in Atlas went out with the visual board the same day; the tutor
+  log of 2026-10-29 does that job now. A homework guard shipped that afternoon and was
   removed the same day at his ask; Dot tutors whatever is on screen.)
 - **Task bar.** Every running task sits under the notch: agents with their last steps and a
   stop button, a walkthrough with its step, a lesson on the board. Steady work folds into pills

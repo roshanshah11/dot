@@ -61,6 +61,8 @@ final class Talk {
     private var goRun: (goal: String, started: Date)?
     /// Course maps already in each conversation.
     private var coursesInSession: [ObjectIdentifier: Set<String>] = [:]
+    /// What he got wrong and how he asked to be taught, per course or subject (2026-10-29, DeepTutor's learner memory).
+    private lazy var tutor = TutorStore(root: config.talkRootURL.appendingPathComponent("tutor", isDirectory: true))
     /// The question before this one, for "start another agent on that".
     private var previousAsked = ""
     /// What talk and think each said lately, so a follow-up to one ("show it to me") reaches the other with its referent.
@@ -2959,7 +2961,7 @@ final class Talk {
         lastAsked = line
         lastAskWasTyped = false
         retriedTurn = false
-        let message = "[panel] \(line). grade it in one spoken sentence, saying why when it is wrong, and stop there; if he was walking through steps, append [THINK] so the stronger model decides what comes next. never say what comes next yourself (you can't see whether the panel has another step), and don't ask whether to go on.\n[context]\nnow: \(Self.nowLine())\n" + panels.contextLines().joined(separator: "\n") + "\n[/context]"
+        let message = "[panel] \(line). grade it in one spoken sentence, saying why when it is wrong, and stop there (a [MISS] or [GOT] at the end, as the tutor rules say, is not speech); if he was walking through steps, append [THINK] so the stronger model decides what comes next. never say what comes next yourself (you can't see whether the panel has another step), and don't ask whether to go on.\n[context]\nnow: \(Self.nowLine())\n" + panels.contextLines().joined(separator: "\n") + "\n[/context]"
         sendTurn(message, images: [], to: session, kind: .talk)
     }
 
@@ -3106,7 +3108,9 @@ final class Talk {
         if let stale = AtlasFreshness.parse(replicaState: try? Data(contentsOf: replicaStateURL), boxWatch: try? Data(contentsOf: boxWatchURL)).staleLine(now: Date()) {
             lines.append(stale)
         }
-        lines.append(contentsOf: courseMapLines(for: transcript, kind: kind))
+        let mapLines = courseMapLines(for: transcript, kind: kind)
+        lines.append(contentsOf: mapLines)
+        lines.append(contentsOf: tutorLines(for: transcript, joined: mapLines.isEmpty ? nil : lastCourse?.code))
         // Who is working for him and what they just said, so "what did the agent find" has an answer.
         let recent = agents.recentRuns()
         if !recent.isEmpty {
@@ -3222,7 +3226,63 @@ final class Talk {
         guard !seen.contains(course.code), let map = Prompts.courseMap(course.code, in: config.talkRootURL) else { return [] }
         coursesInSession[key] = seen.union([course.code])
         Log.info("talk: \(course.label) course map joins this conversation")
-        return ["[course map] \(course.label), for this and later questions in this conversation:", map, "[/course map]"]
+        return ["[course map] \(course.label), for this and later questions in this conversation:", map, "[/course map]"] + tutorBlock(course.code)
+    }
+
+    // MARK: The tutor log (2026-10-29)
+
+    private func tutorLabel(_ subject: String) -> String {
+        panels.courses.first { $0.code == subject }?.label ?? subject.replacingOccurrences(of: "-", with: " ")
+    }
+
+    private func tutorBlock(_ subject: String, now: Date = Date()) -> [String] {
+        let state = tutor.state(subject)
+        return TutorLog.block(label: tutorLabel(subject), misses: state.misses, styles: state.styles, now: now)
+    }
+
+    /// "quiz me", "drill", "what did i get wrong": the misses of the course he is in, or of every subject when Dot
+    /// can't tell which, so the drill starts from them. `joined` is a course whose map (and misses) joined this turn.
+    private func tutorLines(for transcript: String, joined: String?) -> [String] {
+        guard TutorLog.asksForPractice(transcript) else { return [] }
+        let subjects = currentSubject.map { [$0] } ?? tutor.subjects()
+        let lines = subjects.filter { $0 != joined }.flatMap { tutorBlock($0) }
+        if !lines.isEmpty { Log.info("talk: misses join for practice: \(subjects.joined(separator: ", "))") }
+        return lines
+    }
+
+    /// The course he is in for a tutor tag that names none.
+    private var currentSubject: String? {
+        lastCourse.flatMap { Date().timeIntervalSince($0.at) < 2 * 3600 ? $0.code : nil }
+    }
+
+    /// The morning card's review line: misses due today, by subject; nil when none are due or a class is on.
+    func reviewLine(now: Date = Date()) -> String? {
+        guard lectureSession == nil else { return nil }
+        let due = tutor.subjects().map { s in (label: tutorLabel(s), count: tutor.state(s).misses.filter { $0.isDue(now: now) }.count) }
+        return TutorLog.morningLine(due: due)
+    }
+
+    /// He said yes to the morning card's review: the quick model asks the due misses one at a time. A spoken "do it"
+    /// is still being answered ("on it: ...") when this is called, so it waits for Dot to go quiet, up to fifteen seconds.
+    func startReview(attempt: Int = 0) {
+        guard lectureSession == nil else { Log.info("review: not during a class"); return }
+        guard isIdle else {
+            if attempt < 30 { DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in self?.startReview(attempt: attempt + 1) } }
+            else { Log.info("review: Dot never went quiet; not started") }
+            return
+        }
+        guard let session = session(for: .talk) else { Log.info("review: no talk session"); return }
+        let now = Date()
+        let blocks = tutor.subjects().filter { s in tutor.state(s).misses.contains { $0.isDue(now: now) } }.flatMap { tutorBlock($0, now: now) }
+        guard !blocks.isEmpty else { Log.info("review: nothing due"); return }
+        endBench()
+        driveRequested = false
+        lastAsked = "review my misses"
+        lastAskWasTyped = false
+        retriedTurn = false
+        let message = "[review] he said yes to reviewing what he got wrong before. ask the due misses below one at a time, the oldest first, each as a question that makes him tell the idea apart from what he got wrong (never the same words as last time); after each answer grade it in a sentence and mark it [GOT:id] or [MISS:id]. a question with math or a figure goes on the panel: one line and [THINK]. stop when the due ones are done or he says stop, with one line on how it went.\n[context]\nnow: \(Self.nowLine())\n" + blocks.joined(separator: "\n") + "\n[/context]"
+        Log.info("review: \(blocks.filter { $0.hasPrefix("- m") }.count) due miss(es) to the quick model")
+        sendTurn(message, images: [], to: session, kind: .talk)
     }
 
     static func nowLine() -> String {
@@ -3861,6 +3921,9 @@ final class Talk {
                         Log.warn("routine tag with an unreadable schedule: \(when)")
                     }
                 }
+            case .tutor(let mark):
+                if benchMode { Log.info("bench: would record tutor \(mark)"); break }
+                Log.info("tutor: " + tutor.record(mark, subject: currentSubject, asked: lastAsked))
             case .think:
                 if kind == "talk", let think = session(for: .think) {
                     escalated = true
