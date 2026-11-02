@@ -84,7 +84,7 @@ case "--surfaces":
     // Spotlight, Control Center, Notification Center, Cmd-Shift-5 or Mission Control open to check the rule table.
     let others = MainActor.assumeIsolated { StepAside.liveWindows() }.filter { $0.layer >= 0 && $0.alpha > 0.05 }
     for w in others {
-        print("\(w.owner) layer \(w.layer) \(Int(w.frame.width))x\(Int(w.frame.height)) at \(Int(w.frame.minX)),\(Int(w.frame.minY))\(w.name.isEmpty ? "" : " \"\(w.name)\"")")
+        print("\(w.owner) #\(w.number) layer \(w.layer) \(Int(w.frame.width))x\(Int(w.frame.height)) at \(Int(w.frame.minX)),\(Int(w.frame.minY))\(w.name.isEmpty ? "" : " \"\(w.name)\"")")
     }
     let sizes = NSScreen.screens.map(\.frame.size)
     let up = sizes.lazy.compactMap { SystemSurfaces.up(others, screen: $0) }.first

@@ -5,7 +5,8 @@ import DotKit
 /// Center is open, the screenshot tool is up or Mission Control runs, the notch, the orb with its ink and marks, and the
 /// stack fade out and let clicks through; they come back when it closes. The window list is read four times a second,
 /// only while something of Dot's is on screen. Screenshots leave Dot out anyway unless "Show Dot in screen
-/// recordings" is on (CaptureGuard).
+/// recordings" is on (CaptureGuard). A surface window still there and unmoved after two minutes is one the system left
+/// on screen, and Dot comes back past it (SurfaceClock; 2026-11-01, 58 hours hidden behind a stuck screenshot window).
 @MainActor
 final class StepAside {
     /// Whether any of Dot's floating windows is up (nothing to step aside with otherwise).
@@ -15,7 +16,10 @@ final class StepAside {
     var apply: (Bool) -> Void = { _ in }
     /// The other apps' on-screen windows; replaced by the self-test.
     var windows: () -> [SystemWindow] = StepAside.liveWindows
+    /// The clock the stuck-window rule reads; replaced by the self-test.
+    var now: () -> Date = Date.init
     private(set) var surface: SystemSurface?
+    private var clock = SurfaceClock()
     private var timer: Timer?
 
     func start() {
@@ -27,11 +31,16 @@ final class StepAside {
 
     func read() {
         guard anythingShown() || surface != nil else { return }
-        let list = windows()
-        let up = NSScreen.screens.lazy.compactMap { SystemSurfaces.up(list, screen: $0.frame.size) }.first
-            ?? (NSScreen.screens.isEmpty ? SystemSurfaces.up(list, screen: CGSize(width: 1512, height: 982)) : nil)
+        let screens = NSScreen.screens.isEmpty ? [CGSize(width: 1512, height: 982)] : NSScreen.screens.map(\.frame.size)
+        let (up, nowStuck) = clock.read(windows(), screens: screens, now: now())
+        for stuck in nowStuck {
+            Log.info("step aside: \(stuck.word) has been up \(Int(SurfaceClock.stuckAfter)) s without moving, a window left on screen; "
+                     + "Dot comes back past it while it stays")
+        }
         if up != surface {
-            Log.info(up.map { "step aside: \($0.word) is up; the notch, orb and stack fade out" } ?? "step aside: \(surface?.word ?? "it") closed; back")
+            if up != nil || nowStuck.isEmpty {
+                Log.info(up.map { "step aside: \($0.word) is up; the notch, orb and stack fade out" } ?? "step aside: \(surface?.word ?? "it") closed; back")
+            }
             surface = up
             apply(up != nil)
         } else if up != nil {

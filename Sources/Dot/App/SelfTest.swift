@@ -269,6 +269,17 @@ enum SelfTest {
         settle()
         check("Spotlight closed: they come back", watch.surface == nil && !hud.steppedAside
               && (panel?.contentView?.alphaValue ?? 1) == 1 && overlay.windows.allSatisfy { $0.contentView?.alphaValue == 1 })
+        var clock = Date()
+        watch.now = { clock }
+        list = [SystemWindow(owner: "Screenshot", layer: 24, frame: CGRect(x: 0, y: 0, width: 1512, height: 982), number: 338156)]
+        watch.read()
+        settle()
+        check("the screenshot tool up: they fade out", watch.surface == .screenshot && hud.steppedAside)
+        clock += SurfaceClock.stuckAfter
+        watch.read()
+        settle()
+        check("its window still there, unmoved, two minutes on: stuck, and they come back (2026-11-01)", watch.surface == nil && !hud.steppedAside
+              && (panel?.contentView?.alphaValue ?? 1) == 1 && overlay.windows.allSatisfy { $0.contentView?.alphaValue == 1 })
         for window in overlay.windows { window.orderOut(nil) }
         hud.dismissConsent(id: shown.id)
     }

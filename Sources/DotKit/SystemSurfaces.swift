@@ -25,13 +25,16 @@ public struct SystemWindow: Equatable, Sendable {
     public var layer: Int
     public var frame: CGRect
     public var alpha: Double
+    /// The window server's number for it (kCGWindowNumber): the same window keeps it while it stays.
+    public var number: Int
 
-    public init(owner: String, name: String = "", layer: Int, frame: CGRect, alpha: Double = 1) {
+    public init(owner: String, name: String = "", layer: Int, frame: CGRect, alpha: Double = 1, number: Int = 0) {
         self.owner = owner
         self.name = name
         self.layer = layer
         self.frame = frame
         self.alpha = alpha
+        self.number = number
     }
 
     /// From a window-list entry; nil for one without an owner.
@@ -41,7 +44,7 @@ public struct SystemWindow: Equatable, Sendable {
         func number(_ key: String) -> CGFloat { CGFloat((bounds[key] as? NSNumber)?.doubleValue ?? 0) }
         self.init(owner: owner, name: entry["kCGWindowName"] as? String ?? "", layer: (entry["kCGWindowLayer"] as? NSNumber)?.intValue ?? 0,
                   frame: CGRect(x: number("X"), y: number("Y"), width: number("Width"), height: number("Height")),
-                  alpha: (entry["kCGWindowAlpha"] as? NSNumber)?.doubleValue ?? 1)
+                  alpha: (entry["kCGWindowAlpha"] as? NSNumber)?.doubleValue ?? 1, number: (entry["kCGWindowNumber"] as? NSNumber)?.intValue ?? 0)
     }
 }
 
@@ -68,17 +71,78 @@ public enum SystemSurfaces {
     /// The surface that's up, if any. Negative layers (desktop, wallpaper, backstops, shields, widgets on the desktop)
     /// and see-through windows never count.
     public static func up(_ windows: [SystemWindow], screen: CGSize) -> SystemSurface? {
+        matches(windows, screen: screen).first?.surface
+    }
+
+    /// Every window that is an open surface, top first, with the surface it is.
+    public static func matches(_ windows: [SystemWindow], screen: CGSize) -> [(surface: SystemSurface, window: SystemWindow)] {
+        var found: [(surface: SystemSurface, window: SystemWindow)] = []
         for window in windows where window.layer >= 0 && window.alpha > 0.05 {
             for rule in rules where rule.owners.contains(window.owner) {
                 let f = window.frame
                 if rule.minScreenShare > 0 {
-                    if f.width >= screen.width * rule.minScreenShare && f.height >= screen.height * rule.minScreenShare { return rule.surface }
+                    if f.width >= screen.width * rule.minScreenShare && f.height >= screen.height * rule.minScreenShare { found.append((rule.surface, window)) }
                 } else if f.width >= rule.minWidth && f.height >= rule.minHeight {
-                    return rule.surface
+                    found.append((rule.surface, window))
                 }
             }
         }
-        return nil
+        return found
+    }
+}
+
+/// How long each surface window has been up, so one the system leaves on screen stops hiding Dot (2026-11-01: a
+/// full-screen screencaptureui window stayed from 10/30 10:10 with nothing open, and Dot stayed stepped aside for 58
+/// hours). Nobody holds Spotlight, Control Center, Notification Center, the screenshot tool or Mission Control open for
+/// `stuckAfter`; a window that is still there, unmoved, is stuck, and Dot stops stepping aside for it while it stays.
+/// A window is the same one while its owner, number and frame hold; a new one, or the same one moved, starts a new clock.
+public struct SurfaceClock: Sendable {
+    public static let stuckAfter: TimeInterval = 120
+
+    struct Key: Hashable, Sendable {
+        let owner: String
+        let number: Int
+        let x, y, width, height: Double
+
+        init(_ w: SystemWindow) {
+            owner = w.owner
+            number = w.number
+            x = w.frame.minX
+            y = w.frame.minY
+            width = w.frame.width
+            height = w.frame.height
+        }
+    }
+
+    struct Seen: Sendable {
+        let since: Date
+        var stuck: Bool
+    }
+
+    private var seen: [Key: Seen] = [:]
+
+    public init() {}
+
+    /// The surface Dot steps aside for now, and the ones whose window turned stuck on this read (to log once).
+    /// Screens are tried in order, as the window list reads them; a window gone from the list is forgotten.
+    public mutating func read(_ windows: [SystemWindow], screens: [CGSize], now: Date) -> (up: SystemSurface?, nowStuck: [SystemSurface]) {
+        var next: [Key: Seen] = [:]
+        var up: SystemSurface?
+        var nowStuck: [SystemSurface] = []
+        for screen in screens {
+            for (surface, window) in SystemSurfaces.matches(windows, screen: screen) {
+                let key = Key(window)
+                var entry = next[key] ?? seen[key] ?? Seen(since: now, stuck: false)
+                if !entry.stuck && now.timeIntervalSince(entry.since) >= Self.stuckAfter {
+                    entry.stuck = true
+                    nowStuck.append(surface)
+                }
+                next[key] = entry
+                if up == nil && !entry.stuck { up = surface }
+            }
+        }
+        seen = next
+        return (up, nowStuck)
     }
 }
 

@@ -44,6 +44,80 @@ final class SystemSurfacesTests: XCTestCase {
         let window = SystemWindow(entry)
         XCTAssertEqual(window, w("Spotlight", 23, 456, 180, 600, 60))
         XCTAssertNil(SystemWindow(["kCGWindowLayer": NSNumber(value: 0)]))
+        XCTAssertEqual(SystemWindow(entry.merging(["kCGWindowNumber": NSNumber(value: 338156)]) { $1 })?.number, 338156)
+    }
+}
+
+final class SurfaceClockTests: XCTestCase {
+    let screen = CGSize(width: 1512, height: 982)
+    let t0 = Date(timeIntervalSince1970: 1_793_000_000)
+    func at(_ seconds: TimeInterval) -> Date { t0.addingTimeInterval(seconds) }
+
+    /// The M3's list on 2026-11-01 20:32 (`Dot --surfaces`): the screenshot tool's full-screen window, left on screen
+    /// since 10/30 10:10 with nothing open, over the menu bar and his cmux window.
+    var stuckScreenshot: SystemWindow {
+        SystemWindow(owner: "Screenshot", layer: 24, frame: CGRect(x: 0, y: 0, width: 1512, height: 982), number: 338156)
+    }
+    var desk: [SystemWindow] {
+        [SystemWindow(owner: "Window Server", name: "Menubar", layer: 24, frame: CGRect(x: 0, y: 0, width: 1512, height: 33)),
+         SystemWindow(owner: "Control Center", name: "Clock", layer: 25, frame: CGRect(x: 1369, y: 0, width: 145, height: 33)),
+         SystemWindow(owner: "cmux", layer: 0, frame: CGRect(x: 0, y: 33, width: 1512, height: 949), number: 120)]
+    }
+    var controlCenter: SystemWindow {
+        SystemWindow(owner: "Control Center", layer: 25, frame: CGRect(x: 1180, y: 38, width: 320, height: 420), number: 400)
+    }
+
+    func testAShortSurfaceKeepsDotAside() {
+        var clock = SurfaceClock()
+        let list = [stuckScreenshot] + desk
+        XCTAssertEqual(clock.read(list, screens: [screen], now: at(0)).up, .screenshot)
+        let late = clock.read(list, screens: [screen], now: at(SurfaceClock.stuckAfter - 1))
+        XCTAssertEqual(late.up, .screenshot, "a screenshot he is still taking")
+        XCTAssertEqual(late.nowStuck, [])
+    }
+
+    func testAStuckWindowStopsHidingDotAndSaysSoOnce() {
+        var clock = SurfaceClock()
+        let list = [stuckScreenshot] + desk
+        _ = clock.read(list, screens: [screen], now: at(0))
+        let stuck = clock.read(list, screens: [screen], now: at(SurfaceClock.stuckAfter))
+        XCTAssertNil(stuck.up, "two minutes up and unmoved: Dot comes back")
+        XCTAssertEqual(stuck.nowStuck, [.screenshot])
+        let later = clock.read(list, screens: [screen], now: at(58 * 3600))
+        XCTAssertNil(later.up, "and stays back while the window stays")
+        XCTAssertEqual(later.nowStuck, [], "logged once")
+    }
+
+    func testARealSurfaceOverAStuckOneStillCounts() {
+        var clock = SurfaceClock()
+        _ = clock.read([stuckScreenshot] + desk, screens: [screen], now: at(0))
+        _ = clock.read([stuckScreenshot] + desk, screens: [screen], now: at(200))
+        XCTAssertEqual(clock.read([controlCenter, stuckScreenshot] + desk, screens: [screen], now: at(300)).up, .controlCenter)
+        XCTAssertEqual(clock.read([stuckScreenshot, controlCenter] + desk, screens: [screen], now: at(301)).up, .controlCenter,
+                       "under the stuck window too")
+        XCTAssertNil(clock.read([stuckScreenshot] + desk, screens: [screen], now: at(302)).up, "Control Center closed")
+        var fresh = stuckScreenshot
+        fresh.number = 338900
+        XCTAssertEqual(clock.read([fresh, stuckScreenshot] + desk, screens: [screen], now: at(303)).up, .screenshot,
+                       "a new screenshot window is a new screenshot")
+    }
+
+    func testAMovedOrReturningWindowStartsANewClock() {
+        var clock = SurfaceClock()
+        _ = clock.read([stuckScreenshot] + desk, screens: [screen], now: at(0))
+        var moved = stuckScreenshot
+        moved.frame = CGRect(x: 456, y: 860, width: 600, height: 56)
+        XCTAssertEqual(clock.read([moved] + desk, screens: [screen], now: at(SurfaceClock.stuckAfter + 5)).up, .screenshot,
+                       "the same window as the Cmd-Shift-5 bar is in use")
+        _ = clock.read(desk, screens: [screen], now: at(200))
+        XCTAssertEqual(clock.read([moved] + desk, screens: [screen], now: at(400)).up, .screenshot, "gone and back: counted from its return")
+    }
+
+    func testEveryScreenIsRead() {
+        var clock = SurfaceClock()
+        let mission = SystemWindow(owner: "Dock", name: "Mission Control", layer: 20, frame: CGRect(x: 0, y: 0, width: 1920, height: 1080), number: 7)
+        XCTAssertEqual(clock.read([mission], screens: [screen, CGSize(width: 1920, height: 1080)], now: at(0)).up, .missionControl)
+        XCTAssertNil(clock.read([], screens: [screen], now: at(1)).up)
     }
 }
 
