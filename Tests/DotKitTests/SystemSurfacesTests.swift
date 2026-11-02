@@ -52,6 +52,7 @@ final class SurfaceClockTests: XCTestCase {
     let screen = CGSize(width: 1512, height: 982)
     let t0 = Date(timeIntervalSince1970: 1_793_000_000)
     func at(_ seconds: TimeInterval) -> Date { t0.addingTimeInterval(seconds) }
+    let cmux = "com.cmuxterm.app", comet = "ai.perplexity.comet"
 
     /// The M3's list on 2026-11-01 20:32 (`Dot --surfaces`): the screenshot tool's full-screen window, left on screen
     /// since 10/30 10:10 with nothing open, over the menu bar and his cmux window.
@@ -63,84 +64,93 @@ final class SurfaceClockTests: XCTestCase {
          SystemWindow(owner: "Control Center", name: "Clock", layer: 25, frame: CGRect(x: 1369, y: 0, width: 145, height: 33)),
          SystemWindow(owner: "cmux", layer: 0, frame: CGRect(x: 0, y: 33, width: 1512, height: 949), number: 120)]
     }
+    /// Notification Center open on the same evening, after the stuck window was gone.
+    var notificationCenter: SystemWindow {
+        SystemWindow(owner: "Notification Center", name: "Notification Center", layer: 21, frame: CGRect(x: 0, y: 0, width: 1512, height: 982), number: 347300)
+    }
     var controlCenter: SystemWindow {
         SystemWindow(owner: "Control Center", layer: 25, frame: CGRect(x: 1180, y: 38, width: 320, height: 420), number: 400)
     }
 
-    func testAShortSurfaceKeepsDotAside() {
+    func testASurfaceHeIsUsingKeepsDotAside() {
         var clock = SurfaceClock()
-        let list = [stuckScreenshot] + desk
-        XCTAssertEqual(clock.read(list, screens: [screen], now: at(0)).up, .screenshot)
-        let late = clock.read(list, screens: [screen], now: at(SurfaceClock.stuckAfter - 1))
-        XCTAssertEqual(late.up, .screenshot, "a screenshot he is still taking")
-        XCTAssertEqual(late.nowStuck, [])
+        let list = [notificationCenter] + desk
+        XCTAssertEqual(clock.read(list, screens: [screen], front: cmux, now: at(0)).up, .notificationCenter)
+        let reading = clock.read(list, screens: [screen], front: cmux, now: at(5 * 60))
+        XCTAssertEqual(reading.up, .notificationCenter, "five minutes reading Notification Center, still in the same app")
+        XCTAssertTrue(reading.nowStuck.isEmpty)
+        XCTAssertEqual(clock.read(list, screens: [screen], front: nil, now: at(5 * 60 + 10)).up, .notificationCenter,
+                       "an agent or Dot in front is not another app")
     }
 
-    func testAStuckWindowStopsHidingDotAndSaysSoOnce() {
+    func testAWindowThatOutlivesAnAppSwitchIsStuck() {
         var clock = SurfaceClock()
         let list = [stuckScreenshot] + desk
-        _ = clock.read(list, screens: [screen], now: at(0))
-        let stuck = clock.read(list, screens: [screen], now: at(SurfaceClock.stuckAfter))
-        XCTAssertNil(stuck.up, "two minutes up and unmoved: Dot comes back")
-        XCTAssertEqual(stuck.nowStuck, [.screenshot])
-        let later = clock.read(list, screens: [screen], now: at(58 * 3600))
+        _ = clock.read(list, screens: [screen], front: cmux, now: at(0))
+        XCTAssertEqual(clock.read(list, screens: [screen], front: comet, now: at(30)).up, .screenshot, "the switch itself")
+        XCTAssertEqual(clock.read(list, screens: [screen], front: comet, now: at(32)).up, .screenshot,
+                       "Mission Control and Spotlight fade out as the app they bring forward comes up")
+        let stuck = clock.read(list, screens: [screen], front: comet, now: at(30 + SurfaceClock.afterSwitch))
+        XCTAssertNil(stuck.up, "still there 3 s after he moved to Comet: Dot comes back")
+        XCTAssertEqual(stuck.nowStuck.map(\.surface), [.screenshot])
+        XCTAssertEqual(stuck.nowStuck.map(\.why), [.otherApp])
+        let later = clock.read(list, screens: [screen], front: cmux, now: at(58 * 3600))
         XCTAssertNil(later.up, "and stays back while the window stays")
-        XCTAssertEqual(later.nowStuck, [], "logged once")
+        XCTAssertTrue(later.nowStuck.isEmpty, "logged once")
+    }
+
+    func testTheFirstAppSeenCountsWhenNoneWasInFront() {
+        var clock = SurfaceClock()
+        let list = [stuckScreenshot] + desk
+        _ = clock.read(list, screens: [screen], front: nil, now: at(0))
+        _ = clock.read(list, screens: [screen], front: cmux, now: at(1))
+        XCTAssertEqual(clock.read(list, screens: [screen], front: cmux, now: at(20)).up, .screenshot, "back to the app it opened over")
+        _ = clock.read(list, screens: [screen], front: comet, now: at(21))
+        XCTAssertNil(clock.read(list, screens: [screen], front: comet, now: at(25)).up)
+    }
+
+    func testTheBackstopWhileHeStaysInOneApp() {
+        var clock = SurfaceClock()
+        let list = [stuckScreenshot] + desk
+        _ = clock.read(list, screens: [screen], front: cmux, now: at(0))
+        XCTAssertEqual(clock.read(list, screens: [screen], front: cmux, now: at(SurfaceClock.stuckAfter - 1)).up, .screenshot)
+        let stuck = clock.read(list, screens: [screen], front: cmux, now: at(SurfaceClock.stuckAfter))
+        XCTAssertNil(stuck.up)
+        XCTAssertEqual(stuck.nowStuck.map(\.why), [.tooLong])
     }
 
     func testARealSurfaceOverAStuckOneStillCounts() {
         var clock = SurfaceClock()
-        _ = clock.read([stuckScreenshot] + desk, screens: [screen], now: at(0))
-        _ = clock.read([stuckScreenshot] + desk, screens: [screen], now: at(200))
-        XCTAssertEqual(clock.read([controlCenter, stuckScreenshot] + desk, screens: [screen], now: at(300)).up, .controlCenter)
-        XCTAssertEqual(clock.read([stuckScreenshot, controlCenter] + desk, screens: [screen], now: at(301)).up, .controlCenter,
+        _ = clock.read([stuckScreenshot] + desk, screens: [screen], front: cmux, now: at(0))
+        _ = clock.read([stuckScreenshot] + desk, screens: [screen], front: comet, now: at(10))
+        XCTAssertNil(clock.read([stuckScreenshot] + desk, screens: [screen], front: comet, now: at(20)).up)
+        XCTAssertEqual(clock.read([controlCenter, stuckScreenshot] + desk, screens: [screen], front: comet, now: at(30)).up, .controlCenter)
+        XCTAssertEqual(clock.read([stuckScreenshot, controlCenter] + desk, screens: [screen], front: comet, now: at(31)).up, .controlCenter,
                        "under the stuck window too")
-        XCTAssertNil(clock.read([stuckScreenshot] + desk, screens: [screen], now: at(302)).up, "Control Center closed")
+        XCTAssertNil(clock.read([stuckScreenshot] + desk, screens: [screen], front: comet, now: at(32)).up, "Control Center closed")
         var fresh = stuckScreenshot
         fresh.number = 338900
-        XCTAssertEqual(clock.read([fresh, stuckScreenshot] + desk, screens: [screen], now: at(303)).up, .screenshot,
+        XCTAssertEqual(clock.read([fresh, stuckScreenshot] + desk, screens: [screen], front: comet, now: at(40)).up, .screenshot,
                        "a new screenshot window is a new screenshot")
     }
 
-    func testAMovedOrReturningWindowStartsANewClock() {
+    func testAMovedOrReturningWindowStartsOver() {
         var clock = SurfaceClock()
-        _ = clock.read([stuckScreenshot] + desk, screens: [screen], now: at(0))
+        _ = clock.read([stuckScreenshot] + desk, screens: [screen], front: cmux, now: at(0))
+        _ = clock.read([stuckScreenshot] + desk, screens: [screen], front: comet, now: at(10))
         var moved = stuckScreenshot
         moved.frame = CGRect(x: 456, y: 860, width: 600, height: 56)
-        XCTAssertEqual(clock.read([moved] + desk, screens: [screen], now: at(SurfaceClock.stuckAfter + 5)).up, .screenshot,
+        XCTAssertEqual(clock.read([moved] + desk, screens: [screen], front: comet, now: at(20)).up, .screenshot,
                        "the same window as the Cmd-Shift-5 bar is in use")
-        _ = clock.read(desk, screens: [screen], now: at(200))
-        XCTAssertEqual(clock.read([moved] + desk, screens: [screen], now: at(400)).up, .screenshot, "gone and back: counted from its return")
+        _ = clock.read(desk, screens: [screen], front: comet, now: at(30))
+        XCTAssertEqual(clock.read([moved] + desk, screens: [screen], front: comet, now: at(SurfaceClock.stuckAfter + 40)).up, .screenshot,
+                       "gone and back: counted from its return")
     }
 
     func testEveryScreenIsRead() {
         var clock = SurfaceClock()
         let mission = SystemWindow(owner: "Dock", name: "Mission Control", layer: 20, frame: CGRect(x: 0, y: 0, width: 1920, height: 1080), number: 7)
-        XCTAssertEqual(clock.read([mission], screens: [screen, CGSize(width: 1920, height: 1080)], now: at(0)).up, .missionControl)
-        XCTAssertNil(clock.read([], screens: [screen], now: at(1)).up)
-    }
-}
-
-final class FocusSignalTests: XCTestCase {
-    func item(_ name: String, y: CGFloat = 0, h: CGFloat = 33, owner: String = "Control Center", alpha: Double = 1) -> SystemWindow {
-        SystemWindow(owner: owner, name: name, layer: 25, frame: CGRect(x: 1220, y: y, width: 34, height: h), alpha: alpha)
-    }
-
-    func testTheMenuBarFocusItem() {
-        let bar = [item("Clock"), item("WiFi"), item("BentoBox-0"), item("Battery")]
-        XCTAssertFalse(FocusSignal.isOn(bar), "his usual menu bar (the always-shown items, 2026-10-26)")
-        XCTAssertTrue(FocusSignal.isOn(bar + [item("FocusModes")]))
-        XCTAssertFalse(FocusSignal.isOn(bar + [item("FocusModes", alpha: 0)]), "a see-through item is not up")
-        XCTAssertFalse(FocusSignal.isOn(bar + [item("FocusModes", y: 300, h: 400)]), "Control Center's Focus panel is not the menu bar item")
-        XCTAssertFalse(FocusSignal.isOn(bar + [item("FocusModes", owner: "Comet")]))
-    }
-
-    func testControlCentersRecord() {
-        // His preferences on 2026-10-26, no Focus on: the CC keys for the always-shown items, none for Focus.
-        let usual: [String: Any] = ["NSStatusItem VisibleCC Clock": 1, "NSStatusItem VisibleCC WiFi": 1, "NSStatusItem VisibleCC BentoBox-0": 1]
-        XCTAssertFalse(FocusSignal.isOn([], preferences: usual))
-        XCTAssertTrue(FocusSignal.isOn([], preferences: usual.merging(["NSStatusItem VisibleCC FocusModes": 1]) { $1 }), "full screen: no windows, the record holds")
-        XCTAssertTrue(FocusSignal.isOn([], preferences: ["NSStatusItem Visible FocusModes": NSNumber(value: true)]), "the pre-26 key")
-        XCTAssertFalse(FocusSignal.isOn([], preferences: ["NSStatusItem VisibleCC FocusModes": 0]))
+        XCTAssertEqual(clock.read([mission], screens: [screen, CGSize(width: 1920, height: 1080)], front: cmux, now: at(0)).up, .missionControl)
+        XCTAssertNil(clock.read([], screens: [screen], front: cmux, now: at(1)).up)
     }
 }

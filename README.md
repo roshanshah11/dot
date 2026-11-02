@@ -345,7 +345,9 @@ The plan set is `~/Dot/plans/2026-10-26-heyclicky-parity/`; each item's commit i
   cards; file cards with thumbnails; a click on the idle notch drops Home down from it; agents have icons and moods; Home > History searches
   past chats; the notch file viewer reads xlsx and csv in a grid.
 - **System.** While Spotlight, a Control Center or Notification Center panel, the screenshot tool or Mission Control
-  is up, the notch, the ink and the stack fade and let clicks through (`Dot --surfaces`). Dot stays quiet in a Focus
+  is up, the notch, the ink and the stack fade and let clicks through (`Dot --surfaces`). A surface window still there
+  3 s after he moves to another app, or up 10 minutes while he stays in one, is one the system left on screen, and Dot
+  comes back past it (the log says so). Dot stays quiet in a Focus
   (`quietInFocus`). Dictation reads the field it types into, cleans up on the Mac (fillers, false starts, the
   dictionary, a closing period only where the field wants one) and turns his own one-word fixes into candidates he
   adds in Home > Dictation. Permissions are walked one program at a time (`Dot --permissions`), and the talk and

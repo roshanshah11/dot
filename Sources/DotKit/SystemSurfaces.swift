@@ -91,13 +91,31 @@ public enum SystemSurfaces {
     }
 }
 
-/// How long each surface window has been up, so one the system leaves on screen stops hiding Dot (2026-11-01: a
-/// full-screen screencaptureui window stayed from 10/30 10:10 with nothing open, and Dot stayed stepped aside for 58
-/// hours). Nobody holds Spotlight, Control Center, Notification Center, the screenshot tool or Mission Control open for
-/// `stuckAfter`; a window that is still there, unmoved, is stuck, and Dot stops stepping aside for it while it stays.
-/// A window is the same one while its owner, number and frame hold; a new one, or the same one moved, starts a new clock.
+/// Tells a surface he is using from a window the system left on screen (2026-11-01: a full-screen screencaptureui
+/// window stayed from 10/30 10:10 with nothing open, and Dot stayed stepped aside for 58 hours). Spotlight, Control
+/// Center, Notification Center, the screenshot tool and Mission Control all close when another app comes forward, so a
+/// window still there `afterSwitch` after he moved to another app is stuck; so is one up past `stuckAfter` while he
+/// stays in one app, longer than anyone holds one open. Dot stops stepping aside for a stuck window while it stays.
+/// A window is the same one while its owner, number and frame hold; a new one, or the same one moved, starts over.
 public struct SurfaceClock: Sendable {
-    public static let stuckAfter: TimeInterval = 120
+    /// Mission Control and Spotlight close as the app they bring forward activates; this covers their fade.
+    public static let afterSwitch: TimeInterval = 3
+    /// The backstop while he stays in one app.
+    public static let stuckAfter: TimeInterval = 600
+
+    public enum Stuck: Equatable, Sendable {
+        /// Still up `afterSwitch` after he moved to another app.
+        case otherApp
+        /// Up `stuckAfter` with no app switch.
+        case tooLong
+
+        public var why: String {
+            switch self {
+            case .otherApp: return "still up \(Int(SurfaceClock.afterSwitch)) s after he moved to another app"
+            case .tooLong: return "up \(Int(SurfaceClock.stuckAfter / 60)) min"
+            }
+        }
+    }
 
     struct Key: Hashable, Sendable {
         let owner: String
@@ -116,6 +134,9 @@ public struct SurfaceClock: Sendable {
 
     struct Seen: Sendable {
         let since: Date
+        /// The app in front while it was up (the first one seen, if none was in front then).
+        var front: String?
+        var switchedAt: Date?
         var stuck: Bool
     }
 
@@ -123,19 +144,34 @@ public struct SurfaceClock: Sendable {
 
     public init() {}
 
-    /// The surface Dot steps aside for now, and the ones whose window turned stuck on this read (to log once).
-    /// Screens are tried in order, as the window list reads them; a window gone from the list is forgotten.
-    public mutating func read(_ windows: [SystemWindow], screens: [CGSize], now: Date) -> (up: SystemSurface?, nowStuck: [SystemSurface]) {
+    /// The surface Dot steps aside for now, and the windows that turned stuck on this read (to log once). `front` is the
+    /// regular app in front (nil for none, Dot, or a menu bar agent like the surfaces themselves). Screens are tried in
+    /// order, as the window list reads them; a window gone from the list is forgotten.
+    public mutating func read(_ windows: [SystemWindow], screens: [CGSize], front: String?, now: Date)
+        -> (up: SystemSurface?, nowStuck: [(surface: SystemSurface, why: Stuck)]) {
         var next: [Key: Seen] = [:]
         var up: SystemSurface?
-        var nowStuck: [SystemSurface] = []
+        var nowStuck: [(surface: SystemSurface, why: Stuck)] = []
         for screen in screens {
             for (surface, window) in SystemSurfaces.matches(windows, screen: screen) {
                 let key = Key(window)
-                var entry = next[key] ?? seen[key] ?? Seen(since: now, stuck: false)
-                if !entry.stuck && now.timeIntervalSince(entry.since) >= Self.stuckAfter {
-                    entry.stuck = true
-                    nowStuck.append(surface)
+                if let entry = next[key] {
+                    if up == nil && !entry.stuck { up = surface }
+                    continue
+                }
+                var entry = seen[key] ?? Seen(since: now, front: front, switchedAt: nil, stuck: false)
+                if entry.front == nil {
+                    entry.front = front
+                } else if let front, front != entry.front, entry.switchedAt == nil {
+                    entry.switchedAt = now
+                }
+                if !entry.stuck {
+                    let why: Stuck? = entry.switchedAt.map { now.timeIntervalSince($0) >= Self.afterSwitch } == true ? .otherApp
+                        : now.timeIntervalSince(entry.since) >= Self.stuckAfter ? .tooLong : nil
+                    if let why {
+                        entry.stuck = true
+                        nowStuck.append((surface, why))
+                    }
                 }
                 next[key] = entry
                 if up == nil && !entry.stuck { up = surface }

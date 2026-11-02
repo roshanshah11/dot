@@ -88,7 +88,9 @@ case "--surfaces":
     }
     let sizes = NSScreen.screens.map(\.frame.size)
     let up = sizes.lazy.compactMap { SystemSurfaces.up(others, screen: $0) }.first
-    print(up.map { "up: \($0.word) (Dot steps aside)" } ?? "up: nothing (Dot stays)")
+    print(up.map { "up: \($0.word) (by the rule table)" } ?? "up: nothing (Dot stays)")
+    // The running Dot also times each window (SurfaceClock), which this one-off read can't: its latest decision.
+    print("live: \(Log.lastLine(containing: "step aside:", since: " launching; config ") ?? "no step aside since the running Dot launched")")
     exit(0)
 case "--xlsx-dump":
     // H3: what the notch viewer reads from a workbook, read only. --json prints every cell (for comparing with openpyxl).
@@ -290,7 +292,7 @@ case "--help", "-h":
       Dot --skill-avatars                  each skill's picture by Dot's rule table
       Dot --xlsx-dump <file.xlsx> [--json] what the file viewer reads from a workbook (read only)
       Dot --view <file>                    show a file in the running Dot's notch viewer
-      Dot --surfaces                       the system surface Dot would step aside for right now, and the windows it read
+      Dot --surfaces                       the system surface the rule table finds now, the windows it read, and Dot's latest step-aside line
       Dot --skill-draft "<links>" "<purpose>"   draft a SKILL.md from links and print it (saves nothing)
       Dot --agent-tell <name> "<message>" [--quiet]  pass an agent a message, like a typed follow-up [--json]
       Dot --agent-note <to> "<text>" [--from <name>]   leave an agent a note for its next step or turn [--json]
@@ -448,6 +450,8 @@ case "--lecture-demo":
     print("sent to Dot: \(demoInfo["name"] ?? "the default") lecture demo at \(demoInfo["speed"]!)x from minute \(demoInfo["from"]!)\(demoInfo["mute"] == nil ? ", out loud" : ", muted")")
     exit(0)
 case "--selftest":
+    // Its fake Spotlight and screenshot tool log to its own file: `Dot --surfaces` reads his dot.log as the running Dot's.
+    setenv("DOT_LOG_FILE", "/tmp/dot-selftest-\(getpid()).log", 1)
     let selfTestApp = NSApplication.shared
     selfTestApp.setActivationPolicy(.accessory)
     selfTestApp.finishLaunching()

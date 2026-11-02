@@ -243,6 +243,8 @@ enum SelfTest {
         var list: [SystemWindow] = []
         watch.windows = { list }
         watch.anythingShown = { true }
+        var front: String? = "com.cmuxterm.app"
+        watch.front = { front }
         watch.apply = { on in hud.stepAside(on); overlay.stepAside(on) }
         func settle() {
             let until = Date().addingTimeInterval(0.4)
@@ -275,10 +277,16 @@ enum SelfTest {
         watch.read()
         settle()
         check("the screenshot tool up: they fade out", watch.surface == .screenshot && hud.steppedAside)
-        clock += SurfaceClock.stuckAfter
+        clock += 5 * 60
         watch.read()
         settle()
-        check("its window still there, unmoved, two minutes on: stuck, and they come back (2026-11-01)", watch.surface == nil && !hud.steppedAside
+        check("five minutes on in the same app: still faded (he may be using it)", watch.surface == .screenshot && hud.steppedAside)
+        front = "ai.perplexity.comet"
+        watch.read()
+        clock += SurfaceClock.afterSwitch
+        watch.read()
+        settle()
+        check("its window still there 3 s after he moved to Comet: stuck, and they come back (2026-11-01)", watch.surface == nil && !hud.steppedAside
               && (panel?.contentView?.alphaValue ?? 1) == 1 && overlay.windows.allSatisfy { $0.contentView?.alphaValue == 1 })
         for window in overlay.windows { window.orderOut(nil) }
         hud.dismissConsent(id: shown.id)

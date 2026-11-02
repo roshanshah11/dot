@@ -5,8 +5,9 @@ import DotKit
 /// Center is open, the screenshot tool is up or Mission Control runs, the notch, the orb with its ink and marks, and the
 /// stack fade out and let clicks through; they come back when it closes. The window list is read four times a second,
 /// only while something of Dot's is on screen. Screenshots leave Dot out anyway unless "Show Dot in screen
-/// recordings" is on (CaptureGuard). A surface window still there and unmoved after two minutes is one the system left
-/// on screen, and Dot comes back past it (SurfaceClock; 2026-11-01, 58 hours hidden behind a stuck screenshot window).
+/// recordings" is on (CaptureGuard). A surface window still there 3 s after he moved to another app, or up 10 minutes
+/// while he stays in one, is one the system left on screen, and Dot comes back past it (SurfaceClock; 2026-11-01, 58
+/// hours hidden behind a stuck screenshot window).
 @MainActor
 final class StepAside {
     /// Whether any of Dot's floating windows is up (nothing to step aside with otherwise).
@@ -16,8 +17,9 @@ final class StepAside {
     var apply: (Bool) -> Void = { _ in }
     /// The other apps' on-screen windows; replaced by the self-test.
     var windows: () -> [SystemWindow] = StepAside.liveWindows
-    /// The clock the stuck-window rule reads; replaced by the self-test.
+    /// The clock and the app in front the stuck-window rule reads; replaced by the self-test.
     var now: () -> Date = Date.init
+    var front: () -> String? = StepAside.frontApp
     private(set) var surface: SystemSurface?
     private var clock = SurfaceClock()
     private var timer: Timer?
@@ -32,10 +34,9 @@ final class StepAside {
     func read() {
         guard anythingShown() || surface != nil else { return }
         let screens = NSScreen.screens.isEmpty ? [CGSize(width: 1512, height: 982)] : NSScreen.screens.map(\.frame.size)
-        let (up, nowStuck) = clock.read(windows(), screens: screens, now: now())
+        let (up, nowStuck) = clock.read(windows(), screens: screens, front: front(), now: now())
         for stuck in nowStuck {
-            Log.info("step aside: \(stuck.word) has been up \(Int(SurfaceClock.stuckAfter)) s without moving, a window left on screen; "
-                     + "Dot comes back past it while it stays")
+            Log.info("step aside: \(stuck.surface.word) \(stuck.why.why), a window left on screen; Dot comes back past it while it stays")
         }
         if up != surface {
             if up != nil || nowStuck.isEmpty {
@@ -46,6 +47,13 @@ final class StepAside {
         } else if up != nil {
             apply(true)
         }
+    }
+
+    /// The regular app in front, nil for Dot or a menu bar agent (the surfaces themselves are agents).
+    static func frontApp() -> String? {
+        guard let app = NSWorkspace.shared.frontmostApplication, app.activationPolicy == .regular,
+              app.processIdentifier != ProcessInfo.processInfo.processIdentifier else { return nil }
+        return app.bundleIdentifier ?? "pid \(app.processIdentifier)"
     }
 
     /// Every other app's on-screen window, top first.

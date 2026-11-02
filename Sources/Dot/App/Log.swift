@@ -27,6 +27,19 @@ enum Log {
     /// last thing before the process ends.
     static func flush() { queue.sync {} }
 
+    /// The newest line in the file's last megabyte that contains `text`, written after the newest line containing `since`
+    /// (a running Dot's latest decision since it launched, for a CLI).
+    static func lastLine(containing text: String, since: String) -> String? {
+        guard let handle = try? FileHandle(forReadingFrom: fileURL) else { return nil }
+        defer { try? handle.close() }
+        let end = (try? handle.seekToEnd()) ?? 0
+        try? handle.seek(toOffset: end > 1_000_000 ? end - 1_000_000 : 0)
+        guard let data = try? handle.readToEnd() else { return nil }
+        let lines = String(decoding: data, as: UTF8.self).split(separator: "\n")
+        let start = lines.lastIndex { $0.contains(since) } ?? lines.startIndex
+        return lines[start...].last { $0.contains(text) }.map(String.init)
+    }
+
     static func short(_ text: String, _ limit: Int = 120) -> String {
         let one = text.replacingOccurrences(of: "\n", with: " ")
         return one.count > limit ? String(one.prefix(limit)) + "…" : one
