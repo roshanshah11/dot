@@ -19,7 +19,7 @@ final class RoutineScheduler {
     private(set) var online = true
     private var waitingOffline: Set<String> = []
     /// Running routines by agent slug, so the outcome can be matched to its routine.
-    private var inFlight: [String: String] = [:]
+    private var running = RoutineRuns()
     /// Whether a run may start now (not on a call); the app supplies it.
     var canRun: (() -> Bool)?
     var onChanged: (() -> Void)?
@@ -38,7 +38,7 @@ final class RoutineScheduler {
 
     func start() {
         guard config.routines else { Log.info("routines: off in config"); return }
-        agents.routineOutcome = { [weak self] slug, failed, note in self?.outcome(slug: slug, failed: failed, note: note) }
+        agents.routineOutcome = { [weak self] slug, end in self?.outcome(slug: slug, end: end) }
         timer = Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { [weak self] _ in
             Task { @MainActor in
                 self?.tick()
@@ -110,7 +110,7 @@ final class RoutineScheduler {
     func tick(now: Date = Date()) {
         guard config.routines else { return }
         for routine in book.due(at: now) {
-            guard !inFlight.values.contains(routine.id) else { continue }
+            guard !running.isRunning(routine.id) else { continue }
             guard online else {
                 if !waitingOffline.contains(routine.id) {
                     waitingOffline.insert(routine.id)
@@ -130,7 +130,8 @@ final class RoutineScheduler {
         let late = !byHand && WakePlan.isLate(due: routine.nextRun, now: now)
         book.markStarted(routine.id, at: now)
         save()
-        inFlight[routine.agent] = routine.id
+        let agent = agent(for: routine)
+        running.start(routine.id, agent: agent.slug)
         let when = routine.lastRun.map { "the last run was \(Self.relative($0, now: now))" } ?? "this is the first run"
         let brief = "[routine] \(routine.brief)"
         let mode = routine.runMode
@@ -142,16 +143,26 @@ final class RoutineScheduler {
             note += " This run is late: it was due at \(f.string(from: routine.nextRun)) while the Mac was asleep or Dot was closed; say so in one clause."
             Log.info("routines: \(routine.id) is late (due \(routine.nextRun))")
         }
-        agents.handoff(brief: brief, agentName: routine.agentName, context: nil, shots: nil, note: note, routine: true, routineMode: mode)
-        Log.info("routines: ran \(routine.id) (\(routine.agent), \(mode.rawValue))\(byHand ? " by hand" : "")")
+        agents.handoff(brief: brief, agentName: routine.agentName, context: nil, shots: nil, note: note, routine: true, agent: agent, routineMode: mode)
+        Log.info("routines: ran \(routine.id) (\(agent.slug), \(mode.rawValue))\(byHand ? " by hand" : "")")
         onChanged?()
     }
 
-    private func outcome(slug: String, failed: Bool, note: String?) {
-        guard let id = inFlight[slug] else { return }
-        inFlight[slug] = nil
-        let paused = book.markFinished(id, failed: failed, note: note)
+    /// The routine's own agent, by its folder: by name, a renamed agent's routine founded a new agent under
+    /// the new name, and its outcome never found the routine.
+    private func agent(for routine: Routine) -> AgentManager.Agent {
+        agents.roster().first(where: { $0.slug == routine.agent }) ?? agents.ensureAgent(named: routine.agentName)
+    }
+
+    private func outcome(slug: String, end: RoutineRunEnd) {
+        guard let id = running.end(agent: slug) else { return }
+        let paused = book.markEnded(id, end)
         save()
+        switch end {
+        case .stopped: Log.info("routines: \(id) stopped; it runs again at its next time")
+        case .broke(let why): Log.info("routines: \(id) failed: \(why) (\(book.routines.first(where: { $0.id == id })?.failures ?? 0) in a row)")
+        case .result: break
+        }
         if paused, let routine = book.routines.first(where: { $0.id == id }) {
             // "fix it" (TC-11, HeyClicky's C102): the agent gets its brief, the last failure and where the failed runs are.
             hud.notify(NotchNotice(id: "routine-paused-\(id)", icon: "pause.circle", title: "\(routine.agentName)'s routine is paused",
@@ -164,7 +175,7 @@ final class RoutineScheduler {
     /// or the agent's reply changes it with a Routine line.
     func fix(_ id: String) {
         guard let routine = book.routines.first(where: { $0.id == id }) else { return }
-        agents.handoff(brief: routine.fixBrief, agentName: routine.agentName, context: nil, shots: nil)
+        agents.handoff(brief: routine.fixBrief, agentName: routine.agentName, context: nil, shots: nil, agent: agent(for: routine))
         Log.info("routines: \(id) handed to \(routine.agent) to fix")
     }
 

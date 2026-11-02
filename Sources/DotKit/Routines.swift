@@ -269,6 +269,29 @@ public struct Routine: Codable, Identifiable, Equatable, Sendable {
     public static let failuresBeforePause = 3
 }
 
+/// How a routine's run ended. Every end frees the routine (GitHub #1: a stop, a crash or a session that never
+/// started used to leave it marked running, and the scheduler skipped it until Dot relaunched).
+public enum RoutineRunEnd: Equatable, Sendable {
+    /// The turn's result came in.
+    case result(failed: Bool, note: String?)
+    /// He stopped, paused or redirected it.
+    case stopped
+    /// The session ended mid-run or never started: a failed run.
+    case broke(String)
+}
+
+/// The routines running now, by agent slug, so a run's end finds its routine. In memory only: a relaunch
+/// ends every run.
+public struct RoutineRuns: Equatable, Sendable {
+    private var byAgent: [String: String] = [:]
+    public init() {}
+
+    public mutating func start(_ id: String, agent slug: String) { byAgent[slug] = id }
+    public func isRunning(_ id: String) -> Bool { byAgent.values.contains(id) }
+    /// The routine the agent was running, no longer marked running; nil when it ran none.
+    public mutating func end(agent slug: String) -> String? { byAgent.removeValue(forKey: slug) }
+}
+
 /// The routines file (`~/Dot/routines.json`).
 public struct RoutineBook: Codable, Equatable {
     public var routines: [Routine]
@@ -304,6 +327,17 @@ public struct RoutineBook: Codable, Equatable {
             routines[i].lastNote = nil
         }
         return false
+    }
+
+    /// Records how a run ended; returns true when it paused the routine. A stop is neither a success nor a
+    /// failure, so the count stays where it was.
+    @discardableResult
+    public mutating func markEnded(_ id: String, _ end: RoutineRunEnd) -> Bool {
+        switch end {
+        case .result(let failed, let note): return markFinished(id, failed: failed, note: note)
+        case .broke(let note): return markFinished(id, failed: true, note: note)
+        case .stopped: return false
+        }
     }
 
     public static func load(from url: URL) -> RoutineBook {

@@ -86,7 +86,7 @@ final class AgentManager {
     var rules: AgentRules
     private let rulesURL: URL
     /// A routine run finished: (agent slug, failed, a note); the scheduler listens.
-    var routineOutcome: ((String, Bool, String?) -> Void)?
+    var routineOutcome: ((String, RoutineRunEnd) -> Void)?
     /// A turn ended with a `Routine:` line (TC-06): (agent slug, agent name, the command); the
     /// scheduler carries it out and says what it did. AppDelegate sets it.
     var onRoutineCommand: ((String, String, RoutineCommand) -> RoutineChange?)?
@@ -173,6 +173,8 @@ final class AgentManager {
         // Its questions leave with it (F1): an answer would go to a session that is gone.
         let withdrawn = hud.withdrawConsent(agent: slug)
         if withdrawn > 0 { Log.info("agent[\(slug)] stopped with \(withdrawn) question(s) open; withdrawn") }
+        // A routine's run ends here with no result; before onExit sees it, so it is not counted a failure (GitHub #1).
+        if run.isRoutine { run.isRoutine = false; routineOutcome?(slug, .stopped) }
         run.session.stop()
         runs[slug] = nil
         postActivity()
@@ -316,7 +318,10 @@ final class AgentManager {
             return agent
         } else {
             noteFoundingBrief(agent, brief)
-            guard let fresh = startRun(for: agent) else { return agent }
+            guard let fresh = startRun(for: agent) else {
+                if routine { routineOutcome?(agent.slug, .broke("could not start the session")) }
+                return agent
+            }
             run = fresh
         }
         run.startedAt = Date()
@@ -485,6 +490,11 @@ final class AgentManager {
                 row.chip = .failed
                 self.hud.upsertAgent(row)
             }
+            // A routine whose session ended before its result is a failed run (GitHub #1).
+            if run.isRoutine {
+                run.isRoutine = false
+                self.routineOutcome?(run.agent.slug, .broke("the session ended mid-run (exit \(status))"))
+            }
         }
         if let seq {
             guard session.attachToHost(id: agent.slug, from: seq, turnInFlight: turnInFlight) else { return nil }
@@ -518,7 +528,7 @@ final class AgentManager {
                 run.pendingSteer = nil
                 run.turnsOwed = 0
                 // A routine run he paused or redirected still reports back, or the scheduler waits on it forever.
-                if run.isRoutine { run.isRoutine = false; routineOutcome?(agent.slug, false, nil) }
+                if run.isRoutine { run.isRoutine = false; routineOutcome?(agent.slug, .stopped) }
                 appendTranscript(agent, role: "progress", text: steer.isEmpty ? "paused by him" : "stopped there; he changed course")
                 if steer.isEmpty {
                     var row = run.row("paused; tell it what next", state: .done)
@@ -686,7 +696,7 @@ final class AgentManager {
         if !unprompted { AtlasThread.shared.record(kind: "agent", asked: "\(agent.name): \(Log.short(run.lastBrief, 200))", said: (failed ? "failed: " : "") + summary) }
         run.isRoutine = false
         if !run.owedQuiet.isEmpty { run.owedQuiet.removeFirst() }
-        if wasRoutine { routineOutcome?(agent.slug, failed, failed ? summary : nil) }
+        if wasRoutine { routineOutcome?(agent.slug, .result(failed: failed, note: failed ? summary : nil)) }
         // On a call or a muted Mac the result waits in the stack: no chime, no voice (FX-11, decided item 22).
         if report.chime { Chimes.shared.play(failed ? .failed : .done) }
         activities[agent.slug] = nil

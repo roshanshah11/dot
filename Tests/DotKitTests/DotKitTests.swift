@@ -787,6 +787,35 @@ final class RoutineTests: XCTestCase {
         XCTAssertEqual(book.routines[0].failures, 0)
     }
 
+    // GitHub #1: a run that ends without a result frees the routine, so it runs again at its next time.
+    func testEveryRunEndFreesTheRoutine() {
+        let now = date(2026, 10, 16, 8, 0)
+        var book = RoutineBook(routines: [Routine(id: "a", agent: "email", agentName: "Email", brief: "draft replies", schedule: RoutineSchedule(kind: .daily, hour: 8), now: date(2026, 10, 15, 9, 0))])
+        var runs = RoutineRuns()
+        for end in [RoutineRunEnd.stopped, .broke("the session ended mid-run (exit 15)"), .result(failed: false, note: nil)] {
+            book.markStarted("a", at: now)
+            runs.start("a", agent: "email")
+            XCTAssertTrue(runs.isRunning("a"))
+            XCTAssertEqual(runs.end(agent: "email"), "a")
+            book.markEnded("a", end)
+            XCTAssertFalse(runs.isRunning("a"), "\(end)")
+            XCTAssertEqual(book.due(at: book.routines[0].nextRun).map(\.id), ["a"], "\(end)")
+        }
+        XCTAssertNil(runs.end(agent: "email"))
+    }
+
+    func testABrokenRunIsAStrikeAndAStopIsNot() {
+        var book = RoutineBook(routines: [Routine(id: "a", agent: "email", agentName: "Email", brief: "draft replies", schedule: RoutineSchedule(kind: .daily, hour: 8))])
+        XCTAssertFalse(book.markEnded("a", .broke("could not start the session")))
+        XCTAssertFalse(book.markEnded("a", .stopped))
+        XCTAssertEqual(book.routines[0].failures, 1)
+        XCTAssertEqual(book.routines[0].lastNote, "could not start the session")
+        XCTAssertFalse(book.markEnded("a", .result(failed: true, note: "no network")))
+        XCTAssertTrue(book.markEnded("a", .broke("the session ended mid-run (exit 1)")))
+        XCTAssertTrue(book.routines[0].paused)
+        XCTAssertEqual(book.routines[0].lastNote, "paused after 3 failed runs in a row: the session ended mid-run (exit 1)")
+    }
+
     func testRoutineTagParses() {
         let tags = TagParser.parse("every morning at eight, email drafts the replies. [ROUTINE:Email:every morning at 8:draft replies to anyone waiting on him]").tags
         XCTAssertEqual(tags, [.routine(agent: "Email", when: "every morning at 8", brief: "draft replies to anyone waiting on him")])
